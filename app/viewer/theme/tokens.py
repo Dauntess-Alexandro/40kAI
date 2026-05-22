@@ -29,10 +29,30 @@ class ViewerPalette:
     highlight: QtGui.QColor
     ui_font_family: str
     ui_font_size: int
+    header_font_family: str
+    header_font_size: int
+    mono_font_family: str
+    mono_font_size: int
+    radius_sm: int
+    radius_md: int
+    radius_btn: int
+    radius_groupbox: int
+    spacing_xs: int
+    spacing_sm: int
+    spacing_md: int
+    spacing_lg: int
+    spacing_xl: int
 
 
 def _q(hex_value: str) -> QtGui.QColor:
     return QtGui.QColor(hex_value)
+
+
+def _int_val(data: Dict[str, Any], key: str, default: int) -> int:
+    try:
+        return int(data.get(key, default))
+    except (TypeError, ValueError):
+        return default
 
 
 def palette_from_tokens(tokens: Optional[Dict[str, Any]] = None) -> ViewerPalette:
@@ -45,6 +65,9 @@ def palette_from_tokens(tokens: Optional[Dict[str, Any]] = None) -> ViewerPalett
     game = color.get("game") or {}
     font_ui = (data.get("font") or {}).get("ui") or {}
     font_viewer = (data.get("font") or {}).get("viewerBody") or {}
+    font_data = (data.get("font") or {}).get("data") or {}
+    radius = data.get("radius") or {}
+    spacing = data.get("spacing") or {}
 
     border_muted = str(border.get("borderMuted", "#334155"))
     return ViewerPalette(
@@ -63,7 +86,20 @@ def palette_from_tokens(tokens: Optional[Dict[str, Any]] = None) -> ViewerPalett
         selection=_q(str(game.get("selection", "#d7b66f"))),
         highlight=_q(str(accent.get("accentP1", "#2f6ed8"))),
         ui_font_family=str(font_viewer.get("family") or font_ui.get("family") or "Segoe UI"),
-        ui_font_size=int(font_viewer.get("sizePx") or font_ui.get("sizePx") or 11),
+        ui_font_size=_int_val(font_viewer, "sizePx", _int_val(font_ui, "sizePx", 11)),
+        header_font_family=str(font_ui.get("family") or "Rajdhani"),
+        header_font_size=_int_val(font_ui, "sizePx", 14),
+        mono_font_family=str(font_data.get("family") or "Consolas"),
+        mono_font_size=_int_val(font_data, "sizePx", 12),
+        radius_sm=_int_val(radius, "sm", 8),
+        radius_md=_int_val(radius, "md", 12),
+        radius_btn=_int_val(radius, "button", 4),
+        radius_groupbox=_int_val(radius, "groupBox", 6),
+        spacing_xs=_int_val(spacing, "xs", 6),
+        spacing_sm=_int_val(spacing, "sm", 8),
+        spacing_md=_int_val(spacing, "md", 12),
+        spacing_lg=_int_val(spacing, "lg", 16),
+        spacing_xl=_int_val(spacing, "xl", 20),
     )
 
 
@@ -88,6 +124,19 @@ _LEGACY_PALETTE = ViewerPalette(
     highlight=_q("#4a7aa8"),
     ui_font_family="Inter",
     ui_font_size=10,
+    header_font_family="Inter",
+    header_font_size=12,
+    mono_font_family="Consolas",
+    mono_font_size=10,
+    radius_sm=6,
+    radius_md=8,
+    radius_btn=4,
+    radius_groupbox=6,
+    spacing_xs=6,
+    spacing_sm=8,
+    spacing_md=12,
+    spacing_lg=16,
+    spacing_xl=20,
 )
 
 

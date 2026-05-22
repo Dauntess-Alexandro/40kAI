@@ -28,6 +28,43 @@ class Theme:
     highlight = QtGui.QColor("#4a7aa8")
     _ui_font_family = "Inter"
     _ui_font_size = 10
+    _header_font_family = "Inter"
+    _header_font_size = 12
+    _mono_font_family = "Consolas"
+    _mono_font_size = 10
+    radius_sm = 6
+    radius_md = 8
+    radius_btn = 4
+    radius_groupbox = 6
+    spacing_xs = 6
+    spacing_sm = 8
+    spacing_md = 12
+    spacing_lg = 16
+    spacing_xl = 20
+    _ui_scale = 1.0
+    _base_ui_font_size = 10
+    _base_header_font_size = 12
+    _base_mono_font_size = 10
+
+    @classmethod
+    def ui_scale(cls) -> float:
+        return float(cls._ui_scale)
+
+    @classmethod
+    def set_ui_scale(cls, scale: float) -> None:
+        cls._ui_scale = max(1.0, min(1.5, float(scale)))
+
+    @classmethod
+    def scaled_ui_font_size(cls) -> int:
+        return max(8, round(cls._base_ui_font_size * cls._ui_scale))
+
+    @classmethod
+    def scaled_header_font_size(cls) -> int:
+        return max(9, round(cls._base_header_font_size * cls._ui_scale))
+
+    @classmethod
+    def scaled_mono_font_size(cls) -> int:
+        return max(8, round(cls._base_mono_font_size * cls._ui_scale))
 
     @classmethod
     def apply_from_config(cls, cfg: Optional[Dict[str, Any]] = None) -> ViewerPalette:
@@ -49,7 +86,23 @@ class Theme:
         cls.selection = palette.selection
         cls.highlight = palette.highlight
         cls._ui_font_family = palette.ui_font_family
-        cls._ui_font_size = palette.ui_font_size
+        cls._base_ui_font_size = palette.ui_font_size
+        cls._base_header_font_size = palette.header_font_size
+        cls._base_mono_font_size = palette.mono_font_size
+        cls._ui_font_size = cls.scaled_ui_font_size()
+        cls._header_font_family = palette.header_font_family
+        cls._header_font_size = cls.scaled_header_font_size()
+        cls._mono_font_family = palette.mono_font_family
+        cls._mono_font_size = cls.scaled_mono_font_size()
+        cls.radius_sm = palette.radius_sm
+        cls.radius_md = palette.radius_md
+        cls.radius_btn = palette.radius_btn
+        cls.radius_groupbox = palette.radius_groupbox
+        cls.spacing_xs = palette.spacing_xs
+        cls.spacing_sm = palette.spacing_sm
+        cls.spacing_md = palette.spacing_md
+        cls.spacing_lg = palette.spacing_lg
+        cls.spacing_xl = palette.spacing_xl
         return palette
 
     @classmethod
@@ -65,9 +118,17 @@ class Theme:
         return viewer_palette_v2_enabled(cfg)
 
     @staticmethod
-    def font(size: Optional[int] = None, bold: bool = False):
-        point = size if size is not None else Theme._ui_font_size
-        font = QtGui.QFont(Theme._ui_font_family, pointSize=point)
+    def font(size: Optional[int] = None, bold: bool = False, mono: bool = False, header: bool = False):
+        if mono:
+            family = Theme._mono_font_family
+            point = size if size is not None else Theme._mono_font_size
+        elif header:
+            family = Theme._header_font_family
+            point = size if size is not None else Theme._header_font_size
+        else:
+            family = Theme._ui_font_family
+            point = size if size is not None else Theme._ui_font_size
+        font = QtGui.QFont(family, pointSize=point)
         font.setBold(bold)
         return font
 
@@ -83,8 +144,8 @@ class Theme:
 
     @staticmethod
     def stylesheet():
-        radius_gb = 6
-        radius_btn = 4
+        radius_gb = Theme.radius_groupbox
+        radius_btn = Theme.radius_btn
         return f"""
         QMainWindow {{
             background-color: {Theme.background.name()};

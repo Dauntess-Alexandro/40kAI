@@ -252,8 +252,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._fx_v2 = viewer_flag("viewer.fx.v2", _vw_cfg)
         self._viewer_cfg_snapshot: Dict[str, Any] = dict(_vw_cfg)
         self._fx_tune_base: Optional[Dict[str, float]] = None
-        q0 = str(os.environ.get("VIEWER_FX_QUALITY", "") or _vw_cfg.get("fx_quality") or "medium").strip().lower()
-        self._fx_quality_resolved = q0 if q0 in {"low", "medium", "high"} else "medium"
+        q0 = str(os.environ.get("VIEWER_FX_QUALITY", "") or _vw_cfg.get("fx_quality") or "high").strip().lower()
+        self._fx_quality_resolved = q0 if q0 in {"low", "medium", "high"} else "high"
         self._fx_gauss_alpha_scale = 1.0
         self._paint_serial = 0
         self._last_click_screen: Optional[QtCore.QPointF] = None
@@ -458,10 +458,13 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._tooltip_follow_timer.setInterval(25)
         self._tooltip_follow_timer.timeout.connect(self._tick_tooltip_follow)
         self._tooltip_pinned = False
+        self._highlighted_sides: set[str] = set()
         self._tooltip_widget = UnitTooltipWidget(self)
         self._tooltip_widget.weapon_hovered.connect(self._on_tooltip_weapon_hovered)
         self._tooltip_widget.weapon_hover_left.connect(self._on_tooltip_weapon_hover_left)
         self._tooltip_widget.copy_stats_requested.connect(self._on_tooltip_copy_stats_requested)
+        self._tooltip_widget.goto_unit_in_list_requested.connect(self._on_tooltip_goto_unit_list)
+        self._tooltip_widget.pinned_changed.connect(self._on_tooltip_pin_changed)
         self._tooltip_widget.status_chip_hovered.connect(self._on_status_chip_hovered)
         self._tooltip_widget.status_chip_left.connect(self._on_status_chip_left)
         self._terrain_tooltip_widget = TerrainTooltipWidget(self)
@@ -1642,6 +1645,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
             self._selected_unit_side = side
             self.update()
 
+    def center_on_unit(self, side: str, unit_id: int) -> bool:
+        key = (str(side or ""), int(unit_id))
+        render = self._unit_by_key.get(key)
+        if render is None:
+            return False
+        state_pos = self._world_to_state_pos(render.center)
+        if state_pos is None:
+            return False
+        return self.center_on_state_cell(int(state_pos[1]), int(state_pos[0]))
+
+    def highlight_unit_preview(self, side: str, unit_id: int) -> None:
+        self.set_selected_unit(side, unit_id)
+
+    def set_highlighted_sides(self, sides: List[str]) -> None:
+        self._highlighted_sides = {str(s).strip().lower() for s in (sides or [])}
+        self.update()
+
     def fit_to_view(self) -> None:
         if self._board_rect.isEmpty():
             return
@@ -2208,10 +2228,9 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._apply_fx_quality_tuning()
 
     def set_fx_quality(self, level: Optional[str]) -> None:
-        """Runtime FX tier (``low`` / ``medium`` / ``high``); used with ``viewer.fx.v2``."""
-        lvl = str(level or "").strip().lower()
-        if lvl not in {"low", "medium", "high"}:
-            lvl = "medium"
+        """Визуальные эффекты всегда high (настройка убрана из UI)."""
+        _ = level
+        lvl = "high"
         if lvl != self._fx_quality_resolved:
             self._fx_quality_resolved = lvl
             self._apply_fx_quality_tuning()
@@ -2267,11 +2286,7 @@ class OpenGLBoardWidget(QOpenGLWidget):
         base = self._fx_tune_base
         if base is None:
             return
-        cfg = getattr(self, "_viewer_cfg_snapshot", None) or {}
-        env_q = str(os.environ.get("VIEWER_FX_QUALITY", "") or "").strip().lower()
-        lvl = env_q if env_q in {"low", "medium", "high"} else str(cfg.get("fx_quality", "medium")).strip().lower()
-        if lvl not in {"low", "medium", "high"}:
-            lvl = "medium"
+        lvl = "high"
         self._fx_quality_resolved = lvl
 
         scales = {
@@ -2829,6 +2844,23 @@ class OpenGLBoardWidget(QOpenGLWidget):
         target_pan = cursor - world_before * new_scale
         self._set_target_view(new_scale, target_pan)
         self.update()
+
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton:
+            self._rebuild_unit_hitboxes_screen()
+            unit_key = self._unit_key_at_screen_pos(QtCore.QPointF(event.position()))
+            if unit_key:
+                self._tooltip_pinned = not self._tooltip_pinned
+                self._tooltip_widget.set_pinned(self._tooltip_pinned)
+                if self._tooltip_pinned:
+                    self._show_unit_tooltip_immediate(
+                        unit_key,
+                        event.globalPosition().toPoint(),
+                        event.modifiers(),
+                    )
+                else:
+                    self._clear_hover_tooltip(force=True)
+        super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.LeftButton:
@@ -5055,6 +5087,16 @@ class OpenGLBoardWidget(QOpenGLWidget):
         clipboard = QtWidgets.QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(str(text or ""))
+
+    def _on_tooltip_goto_unit_list(self, unit_id: int) -> None:
+        win = self.window()
+        vc = getattr(win, "viewer_controller", None)
+        if vc is not None:
+            vc.selectUnit(int(unit_id))
+            vc.scrollUnitsListToUnit(int(unit_id))
+
+    def _on_tooltip_pin_changed(self, pinned: bool) -> None:
+        self._tooltip_pinned = bool(pinned)
 
     def _on_status_chip_hovered(self, ids: object) -> None:
         if isinstance(ids, list):

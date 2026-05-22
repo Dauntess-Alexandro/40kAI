@@ -113,42 +113,6 @@ Rectangle {
             font.pixelSize: 10
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Label {
-                text: qsTr("FX:")
-                color: textSecondaryColor
-                font.pixelSize: 11
-            }
-            ComboBox {
-                id: fxBox
-                Layout.fillWidth: true
-                enabled: hasCtrl
-                model: ["low", "medium", "high"]
-                onActivated: (i) => {
-                    if (hasCtrl)
-                        viewerController.setFxQuality(model[i])
-                }
-                Component.onCompleted: {
-                    if (!hasCtrl)
-                        return
-                    var q = viewerController.fxQuality
-                    var j = model.indexOf(q)
-                    if (j >= 0)
-                        currentIndex = j
-                }
-                Connections {
-                    target: hasCtrl ? viewerController : null
-                    enabled: hasCtrl
-                    function onFxQualityChanged() {
-                        var j = fxBox.model.indexOf(viewerController.fxQuality)
-                        if (j >= 0)
-                            fxBox.currentIndex = j
-                    }
-                }
-            }
-        }
-
         Label {
             text: qsTr("КОМАНДЫ")
             font.pixelSize: 11

@@ -68,6 +68,43 @@ class TestViewerController(unittest.TestCase):
         self.assertEqual(ctrl.selectedUnitId, 7)
         self.assertEqual(ctrl.selectedUnitSide, "player")
 
+    def test_command_kind_defaults(self) -> None:
+        ctrl = ViewerController()
+        self.assertEqual(ctrl.commandKind, "idle")
+        ctrl.set_command_kind("move")
+        self.assertEqual(ctrl.commandKind, "move")
+
+    def test_map_overlay_legend_movement(self) -> None:
+        ctrl = ViewerController()
+        ctrl.set_map_overlay_legend(
+            [
+                {"key": "move", "color": "#4882ff", "label": 'Move 6"'},
+                {"key": "advance", "color": "#ecc240", "label": "Advance +D6"},
+            ]
+        )
+        self.assertEqual(len(ctrl.mapOverlayLegend), 2)
+        self.assertEqual(ctrl.mapOverlayLegend[0]["key"], "move")
+
+    def test_right_panel_tab_clamped(self) -> None:
+        ctrl = ViewerController()
+        ctrl.setRightPanelTab(5)
+        self.assertEqual(ctrl.rightPanelTab, 1)
+        ctrl.setRightPanelTab(-1)
+        self.assertEqual(ctrl.rightPanelTab, 0)
+
+    def test_selection_source_label(self) -> None:
+        ctrl = ViewerController()
+        ctrl.set_selection_source("map")
+        self.assertEqual(ctrl.selectionSource, "карта")
+        ctrl.set_selection_source("list")
+        self.assertEqual(ctrl.selectionSource, "список")
+
+    def test_push_selection_no_recursion_smoke(self) -> None:
+        ctrl = ViewerController()
+        for i in range(20):
+            ctrl.push_selection("player", i % 5)
+        self.assertEqual(ctrl.selectedUnitId, 4)
+
     def test_select_unit_calls_window_resolver(self) -> None:
         ctrl = ViewerController()
         calls = []

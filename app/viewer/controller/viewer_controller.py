@@ -8,7 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from PySide6.QtCore import QObject, QPointF, Property, Signal, Slot
+import json
+
+from PySide6.QtCore import QObject, QPointF, Property, QSettings, Signal, Slot
 
 
 @dataclass(frozen=True)
@@ -134,11 +136,42 @@ class ViewerController(QObject):
     selectedUnitSideChanged = Signal()
     pendingRequestSummaryChanged = Signal()
     boardCursorTextChanged = Signal()
-    fxQualityChanged = Signal()
     commandPromptTextChanged = Signal()
     commandHintTextChanged = Signal()
     unitsSummaryChanged = Signal()
     logRevisionChanged = Signal()
+    commandKindChanged = Signal()
+    commandHotkeysChanged = Signal()
+    commandChoicesChanged = Signal()
+    commandConfirmEnabledChanged = Signal()
+    intSpinMinChanged = Signal()
+    intSpinMaxChanged = Signal()
+    intSpinValueChanged = Signal()
+    engineBusyChanged = Signal()
+    playerRoleLabelChanged = Signal()
+    modelRoleLabelChanged = Signal()
+    sideHighlightPlayerChanged = Signal()
+    sideHighlightModelChanged = Signal()
+    objectiveHighlightChanged = Signal()
+    shootPopoverOpenChanged = Signal()
+    shootStageChanged = Signal()
+    shootStepTitleChanged = Signal()
+    shootStepperTextChanged = Signal()
+    shootTargetTextChanged = Signal()
+    shootMetaTextChanged = Signal()
+    shootActionLabelChanged = Signal()
+    shootDiceInputChanged = Signal()
+    shootDiceCounterChanged = Signal()
+    shootInfoTextChanged = Signal()
+    shootNeedsDiceInputChanged = Signal()
+    unitDetailsPayloadChanged = Signal()
+    logSearchTextChanged = Signal()
+    logFiltersChanged = Signal()
+    rightPanelTabChanged = Signal()
+    mapOnlyModeChanged = Signal()
+    mapOverlayLegendChanged = Signal()
+    selectionSourceChanged = Signal()
+    logFilterHiddenCountsChanged = Signal()
 
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
@@ -159,10 +192,50 @@ class ViewerController(QObject):
         self._selected_unit_side = ""
         self._pending_request_summary = ""
         self._board_cursor_text = ""
-        self._fx_quality = "medium"
         self._command_prompt_text = ""
         self._command_hint_text = ""
         self._units_summary_text = ""
+        self._command_kind = "idle"
+        self._command_hotkeys: list = []
+        self._command_choices: list = []
+        self._command_confirm_enabled = True
+        self._int_spin_min = 0
+        self._int_spin_max = 999
+        self._int_spin_value = 0
+        self._engine_busy = False
+        self._player_role_label = "Игрок"
+        self._model_role_label = "Модель"
+        self._side_highlight_player = False
+        self._side_highlight_model = False
+        self._objective_highlight = True
+        self._shoot_popover_open = False
+        self._shoot_stage = ""
+        self._shoot_step_title = ""
+        self._shoot_stepper_text = ""
+        self._shoot_target_text = ""
+        self._shoot_meta_text = ""
+        self._shoot_action_label = ""
+        self._shoot_dice_input = ""
+        self._shoot_dice_counter = "0/0"
+        self._shoot_info_text = ""
+        self._shoot_needs_dice_input = False
+        self._unit_details_payload: Dict[str, Any] = {}
+        self._log_search_text = ""
+        self._log_filters = {
+            "movement": True,
+            "shooting": True,
+            "charge": True,
+            "fight": True,
+            "result": True,
+            "errors": True,
+            "debug": False,
+        }
+        self._right_panel_tab = 0
+        self._map_only_mode = False
+        self._units_scroll_target_id = -1
+        self._map_overlay_legend: list = []
+        self._selection_source = ""
+        self._log_filter_hidden_counts: Dict[str, int] = {}
 
     def attach_window(self, window: Any) -> None:
         """Keep weak coupling to ``ViewerWindow`` for slot delegation."""
@@ -248,11 +321,6 @@ class ViewerController(QObject):
 
     boardCursor = Property(str, _get_board_cursor_text, notify=boardCursorTextChanged)
 
-    def _get_fx_quality(self) -> str:
-        return self._fx_quality
-
-    fxQuality = Property(str, _get_fx_quality, notify=fxQualityChanged)
-
     def _get_command_prompt_text(self) -> str:
         return self._command_prompt_text
 
@@ -262,6 +330,19 @@ class ViewerController(QObject):
         return self._command_hint_text
 
     commandHintText = Property(str, _get_command_hint_text, notify=commandHintTextChanged)
+
+    def _get_command_confirm_enabled(self) -> bool:
+        return self._command_confirm_enabled
+
+    commandConfirmEnabled = Property(
+        bool, _get_command_confirm_enabled, notify=commandConfirmEnabledChanged
+    )
+
+    def set_command_confirm_enabled(self, enabled: bool) -> None:
+        e = bool(enabled)
+        if e != self._command_confirm_enabled:
+            self._command_confirm_enabled = e
+            self.commandConfirmEnabledChanged.emit()
 
     def _get_units_summary_text(self) -> str:
         return self._units_summary_text
@@ -289,6 +370,493 @@ class ViewerController(QObject):
     def bump_log_refresh(self) -> None:
         """Notify QML ``LogPanel`` ListView to scroll after model reset."""
         self.logRevisionChanged.emit()
+
+    def _get_command_kind(self) -> str:
+        return self._command_kind
+
+    commandKind = Property(str, _get_command_kind, notify=commandKindChanged)
+
+    def _get_command_hotkeys(self) -> list:
+        return self._command_hotkeys
+
+    commandHotkeys = Property(list, _get_command_hotkeys, notify=commandHotkeysChanged)
+
+    def _get_command_choices(self) -> list:
+        return self._command_choices
+
+    commandChoices = Property(list, _get_command_choices, notify=commandChoicesChanged)
+
+    def _get_int_spin_min(self) -> int:
+        return self._int_spin_min
+
+    intSpinMin = Property(int, _get_int_spin_min, notify=intSpinMinChanged)
+
+    def _get_int_spin_max(self) -> int:
+        return self._int_spin_max
+
+    intSpinMax = Property(int, _get_int_spin_max, notify=intSpinMaxChanged)
+
+    def _get_int_spin_value(self) -> int:
+        return self._int_spin_value
+
+    intSpinValue = Property(int, _get_int_spin_value, notify=intSpinValueChanged)
+
+    def _get_engine_busy(self) -> bool:
+        return self._engine_busy
+
+    engineBusy = Property(bool, _get_engine_busy, notify=engineBusyChanged)
+
+    def _get_player_role_label(self) -> str:
+        return self._player_role_label
+
+    playerRoleLabel = Property(str, _get_player_role_label, notify=playerRoleLabelChanged)
+
+    def _get_model_role_label(self) -> str:
+        return self._model_role_label
+
+    modelRoleLabel = Property(str, _get_model_role_label, notify=modelRoleLabelChanged)
+
+    def _get_side_highlight_player(self) -> bool:
+        return self._side_highlight_player
+
+    sideHighlightPlayer = Property(bool, _get_side_highlight_player, notify=sideHighlightPlayerChanged)
+
+    def _get_side_highlight_model(self) -> bool:
+        return self._side_highlight_model
+
+    sideHighlightModel = Property(bool, _get_side_highlight_model, notify=sideHighlightModelChanged)
+
+    def _get_objective_highlight(self) -> bool:
+        return self._objective_highlight
+
+    objectiveHighlight = Property(bool, _get_objective_highlight, notify=objectiveHighlightChanged)
+
+    def _get_shoot_popover_open(self) -> bool:
+        return self._shoot_popover_open
+
+    shootPopoverOpen = Property(bool, _get_shoot_popover_open, notify=shootPopoverOpenChanged)
+
+    def _get_shoot_stage(self) -> str:
+        return self._shoot_stage
+
+    shootStage = Property(str, _get_shoot_stage, notify=shootStageChanged)
+
+    def _get_shoot_step_title(self) -> str:
+        return self._shoot_step_title
+
+    shootStepTitle = Property(str, _get_shoot_step_title, notify=shootStepTitleChanged)
+
+    def _get_shoot_stepper_text(self) -> str:
+        return self._shoot_stepper_text
+
+    shootStepperText = Property(str, _get_shoot_stepper_text, notify=shootStepperTextChanged)
+
+    def _get_shoot_target_text(self) -> str:
+        return self._shoot_target_text
+
+    shootTargetText = Property(str, _get_shoot_target_text, notify=shootTargetTextChanged)
+
+    def _get_shoot_meta_text(self) -> str:
+        return self._shoot_meta_text
+
+    shootMetaText = Property(str, _get_shoot_meta_text, notify=shootMetaTextChanged)
+
+    def _get_shoot_action_label(self) -> str:
+        return self._shoot_action_label
+
+    shootActionLabel = Property(str, _get_shoot_action_label, notify=shootActionLabelChanged)
+
+    def _get_shoot_dice_input(self) -> str:
+        return self._shoot_dice_input
+
+    shootDiceInput = Property(str, _get_shoot_dice_input, notify=shootDiceInputChanged)
+
+    def _get_shoot_dice_counter(self) -> str:
+        return self._shoot_dice_counter
+
+    shootDiceCounter = Property(str, _get_shoot_dice_counter, notify=shootDiceCounterChanged)
+
+    def _get_shoot_info_text(self) -> str:
+        return self._shoot_info_text
+
+    shootInfoText = Property(str, _get_shoot_info_text, notify=shootInfoTextChanged)
+
+    def _get_shoot_needs_dice_input(self) -> bool:
+        return self._shoot_needs_dice_input
+
+    shootNeedsDiceInput = Property(bool, _get_shoot_needs_dice_input, notify=shootNeedsDiceInputChanged)
+
+    def _get_unit_details_payload(self) -> Dict[str, Any]:
+        return self._unit_details_payload
+
+    unitDetailsPayload = Property("QVariantMap", _get_unit_details_payload, notify=unitDetailsPayloadChanged)
+
+    def _get_log_search_text(self) -> str:
+        return self._log_search_text
+
+    logSearchText = Property(str, _get_log_search_text, notify=logSearchTextChanged)
+
+    def _get_log_filters(self) -> dict:
+        return self._log_filters
+
+    logFilters = Property("QVariantMap", _get_log_filters, notify=logFiltersChanged)
+
+    def _get_right_panel_tab(self) -> int:
+        return self._right_panel_tab
+
+    rightPanelTab = Property(int, _get_right_panel_tab, notify=rightPanelTabChanged)
+
+    def _get_map_overlay_legend(self) -> list:
+        return self._map_overlay_legend
+
+    mapOverlayLegend = Property(list, _get_map_overlay_legend, notify=mapOverlayLegendChanged)
+
+    def _get_selection_source(self) -> str:
+        return self._selection_source
+
+    selectionSource = Property(str, _get_selection_source, notify=selectionSourceChanged)
+
+    def _get_log_filter_hidden_counts(self) -> Dict[str, int]:
+        return self._log_filter_hidden_counts
+
+    logFilterHiddenCounts = Property(
+        "QVariantMap", _get_log_filter_hidden_counts, notify=logFilterHiddenCountsChanged
+    )
+
+    def set_map_overlay_legend(self, items: list) -> None:
+        new_items = list(items or [])
+        if new_items != self._map_overlay_legend:
+            self._map_overlay_legend = new_items
+            self.mapOverlayLegendChanged.emit()
+
+    def set_selection_source(self, source: str) -> None:
+        labels = {
+            "map": "карта",
+            "table": "список",
+            "list": "список",
+            "auto": "",
+            "deploy": "",
+        }
+        s = str(source or "")
+        label = labels.get(s, "")
+        if label != self._selection_source:
+            self._selection_source = label
+            self.selectionSourceChanged.emit()
+
+    def set_log_filter_hidden_counts(self, counts: Dict[str, int]) -> None:
+        normalized = {str(k): int(v) for k, v in (counts or {}).items()}
+        if normalized != self._log_filter_hidden_counts:
+            self._log_filter_hidden_counts = normalized
+            self.logFilterHiddenCountsChanged.emit()
+
+    def _get_map_only_mode(self) -> bool:
+        return self._map_only_mode
+
+    mapOnlyMode = Property(bool, _get_map_only_mode, notify=mapOnlyModeChanged)
+
+    def _get_units_scroll_target_id(self) -> int:
+        return self._units_scroll_target_id
+
+    unitsScrollTargetId = Property(int, _get_units_scroll_target_id, notify=selectedUnitIdChanged)
+
+    def set_role_labels(self, player: str, model: str) -> None:
+        p, m = str(player or "Игрок"), str(model or "Модель")
+        if p != self._player_role_label:
+            self._player_role_label = p
+            self.playerRoleLabelChanged.emit()
+        if m != self._model_role_label:
+            self._model_role_label = m
+            self.modelRoleLabelChanged.emit()
+
+    def set_engine_busy(self, busy: bool) -> None:
+        b = bool(busy)
+        if b != self._engine_busy:
+            self._engine_busy = b
+            self.engineBusyChanged.emit()
+
+    def set_command_kind(self, kind: str) -> None:
+        k = str(kind or "idle")
+        if k != self._command_kind:
+            self._command_kind = k
+            self.commandKindChanged.emit()
+
+    def set_command_hotkeys(self, items: list) -> None:
+        self._command_hotkeys = list(items or [])
+        self.commandHotkeysChanged.emit()
+
+    def set_command_choices(self, items: list) -> None:
+        self._command_choices = list(items or [])
+        self.commandChoicesChanged.emit()
+
+    def set_int_spin_range(self, min_v: int, max_v: int, value: int) -> None:
+        self._int_spin_min = int(min_v)
+        self._int_spin_max = int(max_v)
+        self._int_spin_value = int(value)
+        self.intSpinMinChanged.emit()
+        self.intSpinMaxChanged.emit()
+        self.intSpinValueChanged.emit()
+
+    def set_shoot_popover_open(self, open_: bool) -> None:
+        o = bool(open_)
+        if o != self._shoot_popover_open:
+            self._shoot_popover_open = o
+            self.shootPopoverOpenChanged.emit()
+
+    def update_shoot_ui(
+        self,
+        *,
+        stage: str = "",
+        step_title: str = "",
+        stepper: str = "",
+        target_text: str = "",
+        meta_text: str = "",
+        action_label: str = "",
+        dice_input: Optional[str] = None,
+        dice_counter: str = "",
+        info_text: str = "",
+        needs_dice: bool = False,
+    ) -> None:
+        if stage != self._shoot_stage:
+            self._shoot_stage = stage
+            self.shootStageChanged.emit()
+        if step_title != self._shoot_step_title:
+            self._shoot_step_title = step_title
+            self.shootStepTitleChanged.emit()
+        if stepper != self._shoot_stepper_text:
+            self._shoot_stepper_text = stepper
+            self.shootStepperTextChanged.emit()
+        if target_text != self._shoot_target_text:
+            self._shoot_target_text = target_text
+            self.shootTargetTextChanged.emit()
+        if meta_text != self._shoot_meta_text:
+            self._shoot_meta_text = meta_text
+            self.shootMetaTextChanged.emit()
+        if action_label != self._shoot_action_label:
+            self._shoot_action_label = action_label
+            self.shootActionLabelChanged.emit()
+        if dice_input is not None and dice_input != self._shoot_dice_input:
+            self._shoot_dice_input = dice_input
+            self.shootDiceInputChanged.emit()
+        if dice_counter != self._shoot_dice_counter:
+            self._shoot_dice_counter = dice_counter
+            self.shootDiceCounterChanged.emit()
+        if info_text != self._shoot_info_text:
+            self._shoot_info_text = info_text
+            self.shootInfoTextChanged.emit()
+        if needs_dice != self._shoot_needs_dice_input:
+            self._shoot_needs_dice_input = needs_dice
+            self.shootNeedsDiceInputChanged.emit()
+
+    def set_unit_details_payload(self, payload: Dict[str, Any]) -> None:
+        self._unit_details_payload = dict(payload or {})
+        self.unitDetailsPayloadChanged.emit()
+
+    @Slot(str)
+    def setLogSearchText(self, text: str) -> None:
+        t = str(text or "")
+        if t != self._log_search_text:
+            self._log_search_text = t
+            self.logSearchTextChanged.emit()
+            win = self._window
+            fn = getattr(win, "_refresh_log_views", None)
+            if callable(fn):
+                fn()
+
+    @Slot(str, bool)
+    def setLogFilter(self, key: str, enabled: bool) -> None:
+        k = str(key or "")
+        if k in self._log_filters:
+            self._log_filters[k] = bool(enabled)
+            self.logFiltersChanged.emit()
+            win = self._window
+            fn = getattr(win, "_refresh_log_views", None)
+            if callable(fn):
+                fn()
+
+    @Slot(int)
+    def setRightPanelTab(self, tab: int) -> None:
+        t = max(0, min(1, int(tab)))
+        if t != self._right_panel_tab:
+            self._right_panel_tab = t
+            self.rightPanelTabChanged.emit()
+            self._save_ui_settings()
+
+    @Slot(bool)
+    def setMapOnlyMode(self, enabled: bool) -> None:
+        _ = enabled  # режим убран из UI — панель всегда видна
+        e = False
+        if e != self._map_only_mode:
+            self._map_only_mode = e
+            self.mapOnlyModeChanged.emit()
+            win = self._window
+            fn = getattr(win, "_apply_map_only_mode", None)
+            if callable(fn):
+                fn(e)
+            self._save_ui_settings()
+
+    @Slot(str, bool)
+    def setSideHighlight(self, side: str, enabled: bool) -> None:
+        s = str(side or "").strip().lower()
+        e = bool(enabled)
+        if s in {"player", "enemy"}:
+            if e != self._side_highlight_player:
+                self._side_highlight_player = e
+                self.sideHighlightPlayerChanged.emit()
+        elif s == "model":
+            if e != self._side_highlight_model:
+                self._side_highlight_model = e
+                self.sideHighlightModelChanged.emit()
+        win = self._window
+        fn = getattr(win, "_apply_side_highlights", None)
+        if callable(fn):
+            fn()
+
+    @Slot(bool)
+    def setObjectiveHighlight(self, enabled: bool) -> None:
+        e = bool(enabled)
+        if e != self._objective_highlight:
+            self._objective_highlight = e
+            self.objectiveHighlightChanged.emit()
+            win = self._window
+            fn = getattr(win, "_set_objective_radius_visible", None) if win is not None else None
+            if callable(fn):
+                fn(e)
+
+    @Slot(int)
+    def centerCameraOnUnit(self, unit_id: int) -> None:
+        win = self._window
+        if win is None:
+            return
+        fn = getattr(win, "_center_camera_on_unit", None)
+        if callable(fn):
+            fn(int(unit_id))
+
+    @Slot(int)
+    def previewUnit(self, unit_id: int) -> None:
+        win = self._window
+        if win is None:
+            return
+        fn = getattr(win, "_preview_unit_on_map", None)
+        if callable(fn):
+            fn(int(unit_id))
+
+    @Slot(int)
+    def scrollUnitsListToUnit(self, unit_id: int) -> None:
+        sid = int(unit_id)
+        if sid != self._units_scroll_target_id:
+            self._units_scroll_target_id = sid
+            self.selectedUnitIdChanged.emit()
+
+    @Slot(str)
+    def submitDirection(self, direction: str) -> None:
+        self.submitChoice(str(direction))
+
+    @Slot(bool)
+    def submitBool(self, value: bool) -> None:
+        win = self._window
+        if win is None:
+            return
+        handler = getattr(win, "_controller_submit_answer_object", None)
+        if callable(handler):
+            handler(bool(value))
+
+    @Slot(int)
+    def submitInt(self, value: int) -> None:
+        win = self._window
+        if win is None:
+            return
+        handler = getattr(win, "_controller_submit_answer_object", None)
+        if callable(handler):
+            handler(int(value))
+
+    @Slot(str)
+    def submitText(self, text: str) -> None:
+        win = self._window
+        if win is None:
+            return
+        handler = getattr(win, "_controller_submit_answer_object", None)
+        if callable(handler):
+            handler(str(text))
+
+    @Slot()
+    def submitPaceNext(self) -> None:
+        self.submitBool(True)
+
+    @Slot(str)
+    def submitShootStep(self, action: str) -> None:
+        win = self._window
+        if win is None:
+            return
+        act = str(action or "").strip().lower()
+        if act == "cancel":
+            fn = getattr(win, "_cancel_shoot_sequence", None)
+            if callable(fn):
+                fn()
+            return
+        fn = getattr(win, "_shoot_step_action", None)
+        if callable(fn):
+            fn()
+
+    @Slot(str)
+    def setShootDiceInput(self, text: str) -> None:
+        win = self._window
+        if win is None:
+            return
+        win._shoot_dice_input_text = str(text or "")
+        if text != self._shoot_dice_input:
+            self._shoot_dice_input = str(text or "")
+            self.shootDiceInputChanged.emit()
+        fn = getattr(win, "_update_shoot_input_feedback", None)
+        if callable(fn):
+            fn()
+
+    def _save_ui_settings(self) -> None:
+        settings = QSettings("40kAI", "Viewer")
+        settings.setValue("rightPanelTab", self._right_panel_tab)
+        settings.setValue("logFilters", json.dumps(self._log_filters))
+
+    def load_ui_settings(self) -> None:
+        settings = QSettings("40kAI", "Viewer")
+        tab = int(settings.value("rightPanelTab", 0))
+        self._right_panel_tab = max(0, min(1, tab))
+        self.rightPanelTabChanged.emit()
+        self._map_only_mode = False
+        raw = settings.value("logFilters", "")
+        if raw:
+            try:
+                loaded = json.loads(str(raw))
+                if isinstance(loaded, dict):
+                    self._log_filters.update(loaded)
+                    self.logFiltersChanged.emit()
+            except json.JSONDecodeError:
+                pass
+
+    @Slot()
+    def onLogClearRequested(self) -> None:
+        win = self._window
+        if win is None:
+            return
+        bridge = getattr(win, "viewer_dialogs", None)
+        if bridge is not None:
+            win._pending_confirm_action = "log_clear"
+            bridge.openConfirm(
+                "Очистить журнал?",
+                "Все строки журнала будут удалены из окна Viewer.",
+            )
+            return
+        fn = getattr(win, "_clear_log_viewer", None)
+        if callable(fn):
+            fn()
+
+    @Slot()
+    def startQuickMatch(self) -> None:
+        """Заглушка: быстрый старт матча из пустого журнала."""
+        win = self._window
+        if win is None:
+            return
+        bridge = getattr(win, "viewer_dialogs", None)
+        if bridge is not None:
+            bridge.showToast("Быстрый матч: запустите игру из меню «Игра».", 4000)
 
     @Slot(int)
     def onLogRowClicked(self, row: int) -> None:
@@ -446,19 +1014,13 @@ class ViewerController(QObject):
         if callable(handler):
             handler()
 
-    @Slot(str)
-    def setFxQuality(self, level: str) -> None:
-        lvl = str(level or "").strip().lower() or "medium"
-        if lvl not in {"low", "medium", "high"}:
-            lvl = "medium"
+    def set_fx_quality_high(self) -> None:
+        """Визуальные эффекты всегда high (настройка убрана из UI)."""
         win = self._window
         scene = getattr(win, "map_scene", None) if win is not None else None
         fn = getattr(scene, "set_fx_quality", None)
         if callable(fn):
-            fn(lvl)
-        if lvl != self._fx_quality:
-            self._fx_quality = lvl
-            self.fxQualityChanged.emit()
+            fn("high")
 
     @Slot(int)
     def submitChoiceAtIndex(self, idx: int) -> None:

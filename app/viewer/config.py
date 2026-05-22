@@ -21,7 +21,7 @@ _DEFAULTS: Dict[str, Any] = {
     "move_seq_floor_new_step_ms": 260,
     "move_seq_floor_default_ms": 180,
     "move_ease": "smoothstep",
-    "fx_quality": "medium",
+    "fx_quality": "high",
     "flags": {
         "viewer.theme.v2": True,
         "viewer.controller.v1": True,

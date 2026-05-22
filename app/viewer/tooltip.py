@@ -86,6 +86,8 @@ class UnitTooltipWidget(QtWidgets.QFrame):
     weapon_hovered = QtCore.Signal(object)
     weapon_hover_left = QtCore.Signal()
     copy_stats_requested = QtCore.Signal(str)
+    goto_unit_in_list_requested = QtCore.Signal(int)
+    pinned_changed = QtCore.Signal(bool)
     status_chip_hovered = QtCore.Signal(object)
     status_chip_left = QtCore.Signal()
 
@@ -169,6 +171,18 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         self._copy_btn.setText("Copy stats")
         self._copy_btn.clicked.connect(self._emit_copy_stats)
 
+        self._pin_btn = QtWidgets.QToolButton(self)
+        self._pin_btn.setObjectName("unitTooltipAction")
+        self._pin_btn.setCheckable(True)
+        self._pin_btn.setText(self._icon_map.get("pin", "📌"))
+        self._pin_btn.setToolTip("Закрепить карточку")
+        self._pin_btn.toggled.connect(self._on_pin_toggled)
+
+        self._goto_list_btn = QtWidgets.QToolButton(self)
+        self._goto_list_btn.setObjectName("unitTooltipAction")
+        self._goto_list_btn.setText("В списке")
+        self._goto_list_btn.clicked.connect(self._emit_goto_list)
+
         header_layout = QtWidgets.QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(6)
@@ -184,6 +198,8 @@ class UnitTooltipWidget(QtWidgets.QFrame):
         action_row.addWidget(self._meta_label, 1)
         action_row.addWidget(self._details_btn)
         action_row.addWidget(self._copy_btn)
+        action_row.addWidget(self._pin_btn)
+        action_row.addWidget(self._goto_list_btn)
 
         self._keywords_row = QtWidgets.QWidget(self)
         keywords_layout = QtWidgets.QHBoxLayout(self._keywords_row)
@@ -269,13 +285,33 @@ class UnitTooltipWidget(QtWidgets.QFrame):
     def set_debug_mode(self, enabled: bool) -> None:
         self._debug_mode = enabled
 
+    def _on_pin_toggled(self, checked: bool) -> None:
+        self.set_pinned(checked)
+
+    def _emit_goto_list(self) -> None:
+        uid = getattr(self, "_unit_id", None)
+        if uid is not None:
+            try:
+                self.goto_unit_in_list_requested.emit(int(uid))
+            except (TypeError, ValueError):
+                pass
+
     def set_pinned(self, pinned: bool) -> None:
-        self._pinned = pinned
+        self._pinned = bool(pinned)
+        if hasattr(self, "_pin_btn"):
+            self._pin_btn.blockSignals(True)
+            self._pin_btn.setChecked(self._pinned)
+            self._pin_btn.blockSignals(False)
+        self.pinned_changed.emit(self._pinned)
 
     def update_content(self, payload: Dict, accent: QtGui.QColor) -> None:
         self._accent_color = accent
         self._title_label.setText(str(payload.get("title") or "Юнит"))
         unit_id = payload.get("unit_id", "—")
+        try:
+            self._unit_id = int(unit_id)
+        except (TypeError, ValueError):
+            self._unit_id = None
         self._meta_label.setText(f"ID: {unit_id} • Side: {payload.get('side', '—')}")
 
         portrait_icon = payload.get("portrait_icon")

@@ -46,7 +46,8 @@ from app.viewer.controller.viewer_controller import (
 )
 from app.viewer.opengl_view import OpenGLBoardWidget
 from app.viewer.ui.dialog_bridge import ViewerDialogBridge
-from app.viewer.ui.log_model import ViewerLogListModel
+from app.viewer.ui.log_model import ViewerLogListModel, classify_log_kind, extract_log_timestamp
+from app.viewer.ui.units_model import ViewerUnitsListModel
 from app.viewer.gun_fx import get_gun_fx_config, resolve_fx_profile
 from app.viewer.state import StateWatcher
 from app.viewer.styles import Theme
@@ -340,13 +341,26 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._qml_fs_watcher = None
         self._qml_reload_timer = None
         self._qml_log_model = None
-        self._qt_status_points_mirror: Optional[QtWidgets.QWidget] = None
+        self._viewer_units_model = None
+        self._command_prompt_text = "Ожидаю команду..."
+        self._command_hint_text = "Горячие клавиши: —"
+        self._shoot_dice_input_text = ""
+        self._choice_options: list = []
+        self._int_spin_min = 0
+        self._int_spin_max = 999
+        self._int_spin_value = 0
+        self._last_command_text = ""
+        self._last_choice_text = ""
         self.viewer_controller = ViewerController(parent=self)
         self.viewer_controller.attach_window(self)
+        self.viewer_controller.set_role_labels(
+            self._viewer_player_role_label,
+            self._viewer_model_role_label,
+        )
         self.viewer_dialogs = ViewerDialogBridge(self)
+        self._pending_confirm_action: Optional[str] = None
+        self.viewer_dialogs.confirmAccepted.connect(self._on_viewer_confirm_accepted)
         self._retain_qml_context_objects()
-        if self._controller_v1:
-            self.viewer_controller.stateUpdated.connect(self._apply_controller_status_labels_to_widgets)
         cell_size = int(self._viewer_config.get("cell_size", 24))
         unit_icon_scale = float(self._viewer_config.get("unit_icon_scale", 2.75))
         model_icon_scale = float(self._viewer_config.get("model_icon_scale", 0.75))
@@ -360,7 +374,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             terrain_barrel_cell_scale=max(0.1, min(1.0, terrain_barrel_cell_scale)),
         )
         self.map_scene.set_move_animation_config(self._viewer_config)
-        self.viewer_controller.setFxQuality(str(self._viewer_config.get("fx_quality", "medium")))
+        self._apply_viewer_fx_quality()
         self.map_scene.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding,
             QtWidgets.QSizePolicy.Expanding,
@@ -371,33 +385,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.cell_hovered.connect(self._on_cell_hovered)
         self.map_scene.unit_right_clicked.connect(self._on_unit_right_clicked)
         self.map_scene.shoot_overlay_mode_changed.connect(self._on_shoot_overlay_mode_changed)
-
-        self.status_round = QtWidgets.QLabel("Раунд: —")
-        self.status_turn = QtWidgets.QLabel("Ход: —")
-        self.status_phase = QtWidgets.QLabel("Фаза: —")
-        self.status_active = QtWidgets.QLabel("Активен: —")
-        self.status_deployment = QtWidgets.QLabel("Деплой: ожидание ролл-оффа")
-
-        self.points_vp_player = QtWidgets.QLabel("Player VP: —")
-        self.points_vp_model = QtWidgets.QLabel("Model VP: —")
-        self.points_cp_player = QtWidgets.QLabel("Player CP: —")
-        self.points_cp_model = QtWidgets.QLabel("Model CP: —")
-
-        self.units_table = QtWidgets.QTableWidget(0, 5)
-        self.units_table.setHorizontalHeaderLabels(["Сторона", "ID", "Имя", "HP", "Модели"])
-        header = self.units_table.horizontalHeader()
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
-        header.sortIndicatorChanged.connect(self._rebuild_unit_row_mapping)
-        self.units_table.verticalHeader().setVisible(False)
-        self.units_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.units_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.units_table.setAlternatingRowColors(True)
-        self.units_table.itemSelectionChanged.connect(self._sync_selection_from_table)
-        self._apply_units_table_font()
 
         self._log_entries = []
         self._current_turn_number = None
@@ -431,16 +418,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._controller_v1:
             self.add_log_line("[VIEWER] Режим controller.v1: статус через ViewerController.")
         if viewer_flag("viewer.fx.v2", self._viewer_config):
-            self.add_log_line("[VIEWER] FX v2 включён (viewer.fx.v2): см. fx_quality и theme motion.fxV2.")
+            self.add_log_line("[VIEWER] FX v2 включён (viewer.fx.v2), качество эффектов: high.")
         if self._qml_panels:
-            self.add_log_line("[VIEWER] UI: QML-панели (viewer.ui.qml_panels); отряды — таблица Qt ниже.")
+            self.add_log_line("[VIEWER] UI: QML RightPanel (viewer.ui.qml_panels).")
         try:
             get_event_bus().subscribe(self._on_event_bus_event)
         except Exception:
             pass
-
-        fit_button = QtWidgets.QPushButton("Fit")
-        fit_button.clicked.connect(self._fit_view)
 
         left_widget = QtWidgets.QWidget()
         left_widget.setSizePolicy(
@@ -449,85 +433,34 @@ class ViewerWindow(QtWidgets.QMainWindow):
         )
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(6)
-        left_layout.addWidget(fit_button, alignment=QtCore.Qt.AlignLeft)
+        left_layout.setSpacing(0)
         left_layout.addWidget(self.map_scene, 1)
 
-        log_group = QtWidgets.QGroupBox("ЖУРНАЛ")
-        log_layout = QtWidgets.QVBoxLayout(log_group)
-        log_layout.addLayout(self._log_controls_layout)
-        log_layout.addWidget(self._log_panel_widget)
-        log_group.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
-        )
-
-        command_group = QtWidgets.QGroupBox("КОМАНДЫ")
-        self.command_group = command_group
-        command_layout = QtWidgets.QVBoxLayout(command_group)
-        self.command_prompt = QtWidgets.QLabel("Ожидаю команду...")
-        self.command_prompt.setWordWrap(True)
-        command_layout.addWidget(self.command_prompt)
-        self.command_hint = QtWidgets.QLabel("Горячие клавиши: —")
-        self.command_hint.setStyleSheet(f"color: {Theme.muted.name()};")
-        command_layout.addWidget(self.command_hint)
-
-        self.command_stack = QtWidgets.QStackedWidget()
-        self._build_command_pages()
-        self._build_shoot_popover()
-        command_layout.addWidget(self.command_stack)
-
-        legacy_right_top = QtWidgets.QWidget()
-        legacy_right_top_layout = QtWidgets.QVBoxLayout(legacy_right_top)
-        legacy_right_top_layout.setSpacing(8)
-
-        right_top_widget = legacy_right_top
+        self._right_panel_host = QtWidgets.QWidget()
+        self._right_panel_host.setMinimumWidth(360)
+        right_panel_layout = QtWidgets.QVBoxLayout(self._right_panel_host)
+        right_panel_layout.setContentsMargins(0, 0, 0, 0)
         if self._qml_panels:
             try:
-                right_top_widget = self._compose_qml_right_top()
-                # Статус/очки остаются QLabel и синхронизируются из ViewerController; в QML-колонке
-                # они не вмонтированы. Раньше они жили только во временном legacy_right_top, который
-                # выкидывался — без родителя C++ объект удалялся → crash при .text() в журнале.
-                mirror = QtWidgets.QWidget(self)
-                mirror.hide()
-                ml = QtWidgets.QVBoxLayout(mirror)
-                ml.setContentsMargins(0, 0, 0, 0)
-                ml.addWidget(self._group_status())
-                ml.addWidget(self._group_points())
-                self._qt_status_points_mirror = mirror
+                self._qml_quick_widget = self._create_qml_side_panel_widget()
+                right_panel_layout.addWidget(self._qml_quick_widget)
+                self._maybe_install_qml_hot_reload(self._qml_quick_widget)
             except Exception as exc:
                 self._qml_panels = False
-                self._qt_status_points_mirror = None
-                legacy_right_top_layout.addWidget(self._group_status())
-                legacy_right_top_layout.addWidget(self._group_points())
-                legacy_right_top_layout.addWidget(self._group_units())
-                legacy_right_top_layout.addWidget(self._group_legend())
-                legacy_right_top_layout.addWidget(command_group)
-                legacy_right_top_layout.addStretch()
-                right_top_widget = legacy_right_top
-                self.add_log_line(f"[VIEWER] QML панели недоступны ({exc}); классический UI.")
+                err = QtWidgets.QLabel(f"QML недоступен: {exc}")
+                err.setWordWrap(True)
+                right_panel_layout.addWidget(err)
+                self.add_log_line(f"[VIEWER] QML панели недоступны ({exc}).")
         else:
-            legacy_right_top_layout.addWidget(self._group_status())
-            legacy_right_top_layout.addWidget(self._group_points())
-            legacy_right_top_layout.addWidget(self._group_units())
-            legacy_right_top_layout.addWidget(self._group_legend())
-            legacy_right_top_layout.addWidget(command_group)
-            legacy_right_top_layout.addStretch()
-
-        self._right_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        self._right_splitter.addWidget(right_top_widget)
-        self._right_splitter.addWidget(log_group)
-        self._right_splitter.setStretchFactor(0, 3)
-        self._right_splitter.setStretchFactor(1, 2)
-        self._right_splitter.setChildrenCollapsible(False)
+            err = QtWidgets.QLabel("QML отключён (viewer.ui.qml_panels=false)")
+            right_panel_layout.addWidget(err)
 
         self._top_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self._top_splitter.addWidget(left_widget)
-        self._top_splitter.addWidget(self._right_splitter)
+        self._top_splitter.addWidget(self._right_panel_host)
         self._top_splitter.setStretchFactor(0, 1)
         self._top_splitter.setStretchFactor(1, 0)
         self._top_splitter.setChildrenCollapsible(False)
-        self._right_splitter.setMinimumWidth(380)
-        self._right_splitter.setMaximumWidth(450)
 
         central = QtWidgets.QWidget()
         central_layout = QtWidgets.QVBoxLayout(central)
@@ -538,7 +471,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         self._apply_dark_theme()
         self._build_toolbar()
+        self.viewer_controller.load_ui_settings()
         QtCore.QTimer.singleShot(0, self._apply_initial_splitter_sizes)
+        QtCore.QTimer.singleShot(0, lambda: self._apply_map_only_mode(False))
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -554,16 +489,67 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _build_toolbar(self):
         toolbar = self.addToolBar("Вид")
         toolbar.setMovable(False)
-        self.toggle_objective_radius = QtGui.QAction("Показать радиус целей", self)
-        self.toggle_objective_radius.setCheckable(True)
-        self.toggle_objective_radius.setChecked(True)
-        self.toggle_objective_radius.toggled.connect(self._toggle_objective_radius)
-        toolbar.addAction(self.toggle_objective_radius)
+        fit_action = QtGui.QAction("Fit", self)
+        fit_action.triggered.connect(self._fit_view)
+        toolbar.addAction(fit_action)
+        toolbar.addSeparator()
+        view_menu = self.menuBar().addMenu("Вид")
+        view_menu.addAction(fit_action)
+        scale_menu = view_menu.addMenu("Масштаб")
+        self._ui_scale_group = QtGui.QActionGroup(self)
+        for pct, scale in (("100%", 1.0), ("125%", 1.25), ("150%", 1.5)):
+            act = QtGui.QAction(pct, self, checkable=True)
+            act.setData(scale)
+            self._ui_scale_group.addAction(act)
+            scale_menu.addAction(act)
+            act.triggered.connect(lambda checked=False, s=scale: self._set_ui_scale(s) if checked else None)
+        self._ui_scale_actions = {1.0: None, 1.25: None, 1.5: None}
+        for act in self._ui_scale_group.actions():
+            self._ui_scale_actions[float(act.data())] = act
+        self._load_ui_scale_settings()
+        self._set_objective_radius_visible(True)
 
-    def _toggle_objective_radius(self, checked):
-        self._show_objective_radius = checked
-        self.map_scene.set_objective_radius_visible(checked)
+    def _set_objective_radius_visible(self, visible: bool) -> None:
+        self._show_objective_radius = bool(visible)
+        self.map_scene.set_objective_radius_visible(self._show_objective_radius)
         self.map_scene.refresh_overlays()
+
+    def _apply_viewer_fx_quality(self) -> None:
+        """Визуальные эффекты всегда на максимальном качестве (настройка убрана из UI)."""
+        self.viewer_controller.set_fx_quality_high()
+        self.map_scene.set_fx_quality("high")
+
+    def _set_ui_scale(self, scale: float, *, persist: bool = True) -> None:
+        Theme.set_ui_scale(scale)
+        Theme._ui_font_size = Theme.scaled_ui_font_size()
+        Theme._header_font_size = Theme.scaled_header_font_size()
+        Theme._mono_font_size = Theme.scaled_mono_font_size()
+        if persist:
+            QtCore.QSettings("40kAI", "Viewer").setValue("uiScale", float(scale))
+        actions = getattr(self, "_ui_scale_actions", None)
+        if isinstance(actions, dict):
+            for s, act in actions.items():
+                if act is not None:
+                    act.setChecked(abs(float(s) - float(scale)) < 0.01)
+        qw = getattr(self, "_qml_quick_widget", None)
+        if qw is not None:
+            self._bind_viewer_main_qml_context(qw)
+
+    def _load_ui_scale_settings(self) -> None:
+        settings = QtCore.QSettings("40kAI", "Viewer")
+        if not settings.contains("uiScale"):
+            default = 1.5
+        else:
+            try:
+                default = float(settings.value("uiScale", 1.0))
+            except (TypeError, ValueError):
+                default = 1.0
+        self._set_ui_scale(default, persist=False)
+
+    def _on_viewer_confirm_accepted(self) -> None:
+        if self._pending_confirm_action == "log_clear":
+            self._clear_log_viewer()
+        self._pending_confirm_action = None
 
     def _apply_dark_theme(self):
         Theme.apply_from_config(self._viewer_config)
@@ -583,26 +569,6 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if Theme.is_v2(self._viewer_config):
             self.add_log_line("[VIEWER] Тема: tokens v2 (theme/tokens.json).")
 
-    def _apply_controller_status_labels_to_widgets(self) -> None:
-        vc = self.viewer_controller
-
-        def _set(lbl: QtWidgets.QLabel, text: str) -> None:
-            try:
-                lbl.setText(text)
-            except RuntimeError:
-                # Виджет уже уничтожен (например, смена компоновки) — игнорируем.
-                pass
-
-        _set(self.status_round, vc.roundText)
-        _set(self.status_turn, vc.turnText)
-        _set(self.status_phase, vc.phaseText)
-        _set(self.status_active, vc.activeLabelText)
-        _set(self.status_deployment, vc.deploymentText)
-        _set(self.points_vp_player, vc.vpPlayerText)
-        _set(self.points_vp_model, vc.vpModelText)
-        _set(self.points_cp_player, vc.cpPlayerText)
-        _set(self.points_cp_model, vc.cpModelText)
-
     def _controller_resolve_select_unit(self, unit_id: int) -> None:
         for (side, uid), _unit in list(self._units_by_key.items()):
             if uid == unit_id:
@@ -615,71 +581,50 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _controller_cancel_pending(self) -> None:
         pass
 
-    def _apply_units_table_font(self):
-        body_font = Theme.font(size=11)
-        header_font = Theme.font(size=10, bold=True)
-        self.units_table.setFont(body_font)
-        header = self.units_table.horizontalHeader()
-        header.setFont(header_font)
-        self.units_table.verticalHeader().setDefaultSectionSize(22)
+    def _unit_icon_path_for_qml(self, unit_name: str) -> str:
+        pix = self.map_scene._icon_for_unit_name(str(unit_name or ""))
+        if pix is None or pix.isNull():
+            return ""
+        cache_dir = APP_DIR / "gui_qt" / ".icon_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r"[^a-zA-Z0-9_]+", "_", str(unit_name or "unit")).strip("_") or "unit"
+        path = cache_dir / f"{safe}_28.png"
+        if not path.is_file():
+            pix.scaled(28, 28, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation).save(str(path))
+        return str(path.resolve()).replace("\\", "/")
 
-    def _group_status(self):
-        box = QtWidgets.QGroupBox("СТАТУС")
-        layout = QtWidgets.QVBoxLayout(box)
-        layout.addWidget(self.status_round)
-        layout.addWidget(self.status_turn)
-        layout.addWidget(self.status_phase)
-        layout.addWidget(self.status_active)
-        layout.addWidget(self.status_deployment)
-        return box
+    def _apply_map_only_mode(self, enabled: Optional[bool] = None) -> None:
+        host = getattr(self, "_right_panel_host", None)
+        if host is not None:
+            host.setVisible(not bool(enabled))
 
-    def _group_points(self):
-        box = QtWidgets.QGroupBox("ОЧКИ")
-        layout = QtWidgets.QVBoxLayout(box)
-        layout.addWidget(self.points_vp_player)
-        layout.addWidget(self.points_vp_model)
-        layout.addWidget(self.points_cp_player)
-        layout.addWidget(self.points_cp_model)
-        return box
+    def _apply_side_highlights(self) -> None:
+        vc = self.viewer_controller
+        sides = []
+        if vc.sideHighlightPlayer:
+            sides.append("player")
+        if vc.sideHighlightModel:
+            sides.append("model")
+        fn = getattr(self.map_scene, "set_highlighted_sides", None)
+        if callable(fn):
+            fn(sides)
 
-    def _group_units(self):
-        box = QtWidgets.QGroupBox("ОТРЯДЫ")
-        layout = QtWidgets.QVBoxLayout(box)
-        layout.addWidget(self.units_table)
-        return box
+    def _center_camera_on_unit(self, unit_id: int) -> None:
+        for (side, uid), unit in list(self._units_by_key.items()):
+            if int(uid) == int(unit_id):
+                self._set_selected_unit(side, unit_id, source="list", select_row=True)
+                fn = getattr(self.map_scene, "center_on_unit", None)
+                if callable(fn):
+                    fn(side, unit_id)
+                return
 
-    def _group_legend(self):
-        box = QtWidgets.QGroupBox("ЛЕГЕНДА")
-        layout = QtWidgets.QVBoxLayout(box)
-        layout.addLayout(self._legend_row(self._viewer_player_role_label, Theme.player))
-        layout.addLayout(self._legend_row(self._viewer_model_role_label, Theme.model))
-        layout.addLayout(self._legend_row("Цель", Theme.objective))
-        return box
-
-    def _legend_row(self, label, color):
-        row = QtWidgets.QHBoxLayout()
-        swatch = QtWidgets.QLabel()
-        swatch.setFixedSize(14, 14)
-        swatch.setStyleSheet(f"background-color: {color.name()}; border-radius: 7px;")
-        row.addWidget(swatch)
-        row.addWidget(QtWidgets.QLabel(label))
-        row.addStretch()
-        return row
-
-    def _compose_qml_right_top(self) -> QtWidgets.QWidget:
-        host = QtWidgets.QWidget()
-        lay = QtWidgets.QVBoxLayout(host)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-        qw = self._create_qml_side_panel_widget()
-        qw.setMinimumHeight(380)
-        lay.addWidget(qw, 5)
-        lay.addWidget(self._group_units(), 3)
-        lay.addWidget(self.command_group)
-        lay.addStretch()
-        self._qml_quick_widget = qw
-        self._maybe_install_qml_hot_reload(qw)
-        return host
+    def _preview_unit_on_map(self, unit_id: int) -> None:
+        for (side, uid), _ in list(self._units_by_key.items()):
+            if int(uid) == int(unit_id):
+                fn = getattr(self.map_scene, "highlight_unit_preview", None)
+                if callable(fn):
+                    fn(side, unit_id)
+                return
 
     def _retain_qml_context_objects(self) -> None:
         """Keep bridge QObjects owned by C++ so QML never sees null context props."""
@@ -688,32 +633,66 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _bind_viewer_main_qml_context(self, qw: QQuickWidget) -> None:
         self._retain_qml_context_objects()
+        if self._viewer_units_model is None:
+            self._viewer_units_model = ViewerUnitsListModel(self)
+            self._viewer_units_model.set_icon_resolver(self._unit_icon_path_for_qml)
+        if self._qml_log_model is None:
+            self._qml_log_model = ViewerLogListModel(self)
+        if self._qml_command_label_model is None:
+            self._qml_command_label_model = QStringListModel(self)
         ctx = qw.rootContext()
         ctx.setContextProperty("viewerController", self.viewer_controller)
         ctx.setContextProperty("viewerDialogs", self.viewer_dialogs)
         ctx.setContextProperty("commandLabelModel", self._qml_command_label_model)
+        ctx.setContextProperty("viewerUnitsModel", self._viewer_units_model)
+        ctx.setContextProperty("viewerLogModel", self._qml_log_model)
         ctx.setContextProperty("bgSurfaceColor", Theme.panel.name())
+        ctx.setContextProperty("bgElevatedColor", Theme.panel_alt.name())
+        ctx.setContextProperty("borderMutedColor", Theme.accent_dark.name())
         ctx.setContextProperty("textPrimaryColor", Theme.text.name())
         ctx.setContextProperty("textSecondaryColor", Theme.muted.name())
         ctx.setContextProperty("accentColor", Theme.accent.name())
+        ctx.setContextProperty("accentPrimaryColor", Theme.accent.name())
+        scale = Theme.ui_scale()
+        body = Theme.scaled_ui_font_size()
+        mono = Theme.scaled_mono_font_size()
+        ctx.setContextProperty("bodyFontSize", body)
+        ctx.setContextProperty("monoFontSize", mono)
+        ctx.setContextProperty("fontXs", max(8, round(body * 0.82)))
+        ctx.setContextProperty("fontSm", max(9, round(body * 0.91)))
+        ctx.setContextProperty("fontMd", body)
+        ctx.setContextProperty("fontLg", max(body + 1, round(body * 1.18)))
+        ctx.setContextProperty("selectionColor", Theme.selection.name())
         ctx.setContextProperty("playerColor", Theme.player.name())
         ctx.setContextProperty("modelColor", Theme.model.name())
         ctx.setContextProperty("objectiveColor", Theme.objective.name())
         ctx.setContextProperty("legendPlayer", self._viewer_player_role_label)
         ctx.setContextProperty("legendModel", self._viewer_model_role_label)
-
-    def _bind_viewer_log_qml_context(self, qw: QQuickWidget) -> None:
-        self._retain_qml_context_objects()
-        ctx = qw.rootContext()
-        ctx.setContextProperty("viewerController", self.viewer_controller)
-        ctx.setContextProperty("bgSurfaceColor", Theme.panel.name())
-        ctx.setContextProperty("textPrimaryColor", Theme.text.name())
-        ctx.setContextProperty("textSecondaryColor", Theme.muted.name())
+        ctx.setContextProperty("headerFontFamily", Theme._header_font_family)
+        ctx.setContextProperty("headerFontSize", Theme.scaled_header_font_size())
+        ctx.setContextProperty("monoFontFamily", Theme._mono_font_family)
+        ctx.setContextProperty("radiusSm", Theme.radius_sm)
+        ctx.setContextProperty("radiusMd", Theme.radius_md)
+        ctx.setContextProperty("radiusBtn", Theme.radius_btn)
+        ctx.setContextProperty("spacingXs", Theme.spacing_xs)
+        ctx.setContextProperty("spacingSm", Theme.spacing_sm)
+        ctx.setContextProperty("spacingMd", Theme.spacing_md)
+        ctx.setContextProperty("spacingLg", Theme.spacing_lg)
+        ctx.setContextProperty("spacingXl", Theme.spacing_xl)
+        ctx.setContextProperty(
+            "phaseColors",
+            {
+                "movement": Theme.player.name(),
+                "shooting": Theme.objective.name(),
+                "charge": "#d97706",
+                "fight": Theme.model.name(),
+                "command": Theme.muted.name(),
+                "defaultPhase": Theme.muted.name(),
+            },
+        )
 
     def _create_qml_side_panel_widget(self) -> QQuickWidget:
-        self._qml_command_label_model = QStringListModel(self)
         self._qml_command_payloads = []
-        self._qml_command_label_model.setStringList([])
         qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
         qw = QQuickWidget(self)
         qw.setResizeMode(_QQUICK_RESIZE_ROOT_TO_VIEW)
@@ -721,29 +700,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
         eng = qw.engine()
         eng.addImportPath(str(qml_dir))
         self._bind_viewer_main_qml_context(qw)
-        qw.setSource(QUrl.fromLocalFile(str(qml_dir / "ViewerMain.qml")))
+        qw.setSource(QUrl.fromLocalFile(str(qml_dir / "RightPanel.qml")))
         if qw.status() == QQuickWidget.Status.Error:
             errs = qw.errors()
             raise RuntimeError("; ".join(str(e) for e in errs) if errs else "QML Error")
         self._bind_viewer_main_qml_context(qw)
         self._sync_qml_side_state()
-        return qw
-
-    def _create_qml_log_panel_widget(self) -> QQuickWidget:
-        qml_dir = (APP_DIR / "viewer" / "ui" / "qml").resolve()
-        qw = QQuickWidget(self)
-        qw.setResizeMode(_QQUICK_RESIZE_ROOT_TO_VIEW)
-        qw.setClearColor(QtGui.QColor(Theme.panel.name()))
-        eng = qw.engine()
-        eng.addImportPath(str(qml_dir))
-        self._bind_viewer_log_qml_context(qw)
-        ctx = qw.rootContext()
-        ctx.setContextProperty("viewerLogModel", self._qml_log_model)
-        qw.setSource(QUrl.fromLocalFile(str(qml_dir / "LogPanel.qml")))
-        if qw.status() == QQuickWidget.Status.Error:
-            errs = qw.errors()
-            raise RuntimeError("; ".join(str(e) for e in errs) if errs else "LogPanel QML error")
-        self._bind_viewer_log_qml_context(qw)
         return qw
 
     def _maybe_install_qml_hot_reload(self, qw: QQuickWidget) -> None:
@@ -777,25 +739,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _sync_qml_side_state(self) -> None:
         if not self._qml_panels:
             return
-        self.viewer_controller.set_command_prompt_text(self.command_prompt.text())
-        self.viewer_controller.set_command_hint_text(self.command_hint.text())
+        self.viewer_controller.set_command_prompt_text(self._command_prompt_text)
+        self.viewer_controller.set_command_hint_text(self._command_hint_text)
         self._sync_qml_command_models()
+        self._emit_command_state()
 
     def _sync_qml_units_summary(self) -> None:
-        if not self._qml_panels:
-            return
-        lines: list[str] = []
-        max_rows = 28
-        for row in range(min(self.units_table.rowCount(), max_rows)):
-            cells: list[str] = []
-            for col in range(5):
-                it = self.units_table.item(row, col)
-                cells.append(it.text() if it is not None else "")
-            lines.append(" · ".join(cells))
-        extra = self.units_table.rowCount() - max_rows
-        if extra > 0:
-            lines.append(f"… ещё строк: {extra}")
-        self.viewer_controller.set_units_summary_text("\n".join(lines))
+        return
 
     def _sync_qml_command_models(self) -> None:
         if not self._qml_panels or self._qml_command_label_model is None:
@@ -830,8 +780,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
             labels = ["Далее"]
             payloads = [True]
         elif kind == "int":
-            labels = [f"ОК ({self.int_spin.value()})"]
-            payloads = [self.int_spin.value()]
+            labels = [f"ОК ({self._int_spin_value})"]
+            payloads = [self._int_spin_value]
         elif kind == "choice":
             raw_opts = list(getattr(req, "options", None) or [])
             labels = [str(o) for o in raw_opts]
@@ -846,176 +796,53 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _controller_submit_answer_object(self, value: object) -> None:
         self._submit_answer(value)
 
-    def _build_command_pages(self):
-        self._command_pages = {}
+    def _emit_command_state(self) -> None:
+        req = self._pending_request
+        vc = self.viewer_controller
+        if req is None:
+            vc.set_command_kind("idle")
+            vc.set_command_hotkeys([])
+            vc.set_command_choices([])
+            vc.set_engine_busy(False)
+            return
+        vc.set_engine_busy(True)
+        kind = getattr(req, "kind", "text")
+        if self._is_movement_move_request(req):
+            kind = "move"
+        elif self._is_shooting_target_request(req) or self._is_shooting_dice_request(req):
+            kind = "shoot"
+        vc.set_command_kind(str(kind))
+        hotkeys: list = []
+        if kind == "move":
+            hotkeys = [
+                {"label": "ПКМ", "key": "Move", "secondary": True},
+                {"label": "Stay", "key": "Backspace", "secondary": True},
+            ]
+        elif kind == "shoot":
+            hotkeys = [
+                {"label": "Fire", "key": "ПКМ", "secondary": True},
+                {"label": "Cancel", "key": "Esc", "secondary": True},
+            ]
+        elif kind == "pace":
+            hotkeys = [{"label": "Далее", "key": "Enter"}]
+        elif kind == "bool":
+            hotkeys = [{"label": "Да", "key": ""}, {"label": "Нет", "key": ""}]
+        vc.set_command_hotkeys(hotkeys)
+        if kind == "int":
+            min_v = int(getattr(req, "min_value", 0) or 0)
+            max_v = int(getattr(req, "max_value", 999) or 999)
+            vc.set_int_spin_range(min_v, max_v, min_v)
+        if kind == "choice":
+            raw_opts = list(getattr(req, "options", None) or [])
+            vc.set_command_choices([{"label": str(o), "value": str(o)} for o in raw_opts])
 
-        text_page = QtWidgets.QWidget()
-        text_layout = QtWidgets.QHBoxLayout(text_page)
-        self.command_input = QtWidgets.QLineEdit()
-        self.command_input.setPlaceholderText("Введите команду...")
-        self.command_send = QtWidgets.QPushButton("Отправить")
-        self.command_input.returnPressed.connect(self._submit_text)
-        self.command_send.clicked.connect(self._submit_text)
-        text_layout.addWidget(self.command_input)
-        text_layout.addWidget(self.command_send)
-        self._command_pages["text"] = self.command_stack.addWidget(text_page)
+    def _set_command_prompt(self, text: str) -> None:
+        self._command_prompt_text = str(text or "")
+        self.viewer_controller.set_command_prompt_text(self._command_prompt_text)
 
-        direction_page = QtWidgets.QWidget()
-        direction_layout = QtWidgets.QGridLayout(direction_page)
-        self.direction_buttons = {}
-        direction_map = {
-            "up": "↑",
-            "down": "↓",
-            "left": "←",
-            "right": "→",
-            "none": "Нет",
-        }
-        self.direction_buttons["up"] = QtWidgets.QPushButton(direction_map["up"])
-        self.direction_buttons["down"] = QtWidgets.QPushButton(direction_map["down"])
-        self.direction_buttons["left"] = QtWidgets.QPushButton(direction_map["left"])
-        self.direction_buttons["right"] = QtWidgets.QPushButton(direction_map["right"])
-        self.direction_buttons["none"] = QtWidgets.QPushButton(direction_map["none"])
-        self.direction_buttons["up"].clicked.connect(lambda: self._submit_answer("up"))
-        self.direction_buttons["down"].clicked.connect(lambda: self._submit_answer("down"))
-        self.direction_buttons["left"].clicked.connect(lambda: self._submit_answer("left"))
-        self.direction_buttons["right"].clicked.connect(lambda: self._submit_answer("right"))
-        self.direction_buttons["none"].clicked.connect(lambda: self._submit_answer("none"))
-        direction_layout.addWidget(self.direction_buttons["up"], 0, 1)
-        direction_layout.addWidget(self.direction_buttons["left"], 1, 0)
-        direction_layout.addWidget(self.direction_buttons["none"], 1, 1)
-        direction_layout.addWidget(self.direction_buttons["right"], 1, 2)
-        direction_layout.addWidget(self.direction_buttons["down"], 2, 1)
-        self._command_pages["direction"] = self.command_stack.addWidget(direction_page)
-
-        bool_page = QtWidgets.QWidget()
-        bool_layout = QtWidgets.QHBoxLayout(bool_page)
-        self.bool_yes = QtWidgets.QPushButton("Да")
-        self.bool_no = QtWidgets.QPushButton("Нет")
-        self.bool_yes.clicked.connect(lambda: self._submit_answer(True))
-        self.bool_no.clicked.connect(lambda: self._submit_answer(False))
-        bool_layout.addWidget(self.bool_yes)
-        bool_layout.addWidget(self.bool_no)
-        self._command_pages["bool"] = self.command_stack.addWidget(bool_page)
-
-        pace_page = QtWidgets.QWidget()
-        pace_layout = QtWidgets.QHBoxLayout(pace_page)
-        self.pace_next_button = QtWidgets.QPushButton("Далее")
-        self.pace_next_button.setToolTip("Продолжить микрошаг (Viewer pacing)")
-        self.pace_next_button.clicked.connect(lambda: self._submit_answer(True))
-        pace_layout.addWidget(self.pace_next_button)
-        self._command_pages["pace"] = self.command_stack.addWidget(pace_page)
-
-        int_page = QtWidgets.QWidget()
-        int_layout = QtWidgets.QHBoxLayout(int_page)
-        self.int_spin = QtWidgets.QSpinBox()
-        self.int_spin.setRange(0, 999)
-        self.int_spin.valueChanged.connect(lambda _v: self._sync_qml_command_models())
-        self.int_ok = QtWidgets.QPushButton("ОК")
-        self.int_ok.clicked.connect(lambda: self._submit_answer(self.int_spin.value()))
-        int_layout.addWidget(self.int_spin)
-        int_layout.addWidget(self.int_ok)
-        self._command_pages["int"] = self.command_stack.addWidget(int_page)
-
-        choice_page = QtWidgets.QWidget()
-        choice_layout = QtWidgets.QHBoxLayout(choice_page)
-        self.choice_combo = QtWidgets.QComboBox()
-        self.choice_combo.currentTextChanged.connect(self._on_choice_target_changed)
-        self.choice_ok = QtWidgets.QPushButton("ОК")
-        self.choice_ok.clicked.connect(self._submit_choice)
-        choice_layout.addWidget(self.choice_combo)
-        choice_layout.addWidget(self.choice_ok)
-        self._command_pages["choice"] = self.command_stack.addWidget(choice_page)
-
-        self.command_stack.setCurrentIndex(self._command_pages["text"])
-
-    def _build_shoot_popover(self) -> None:
-        self.shoot_popover = QtWidgets.QFrame(self, QtCore.Qt.Popup)
-        self.shoot_popover.setObjectName("shootPopover")
-        self.shoot_popover.setStyleSheet(
-            f"QFrame#shootPopover {{ background: {Theme.panel.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 12px; }}"
-        )
-        if not sys.platform.startswith("win"):
-            shadow = QtWidgets.QGraphicsDropShadowEffect(self.shoot_popover)
-            shadow.setBlurRadius(18)
-            shadow.setOffset(0, 6)
-            shadow.setColor(QtGui.QColor(0, 0, 0, 130))
-            self.shoot_popover.setGraphicsEffect(shadow)
-
-        layout = QtWidgets.QVBoxLayout(self.shoot_popover)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(8)
-        # На Windows popup может пересчитать minimum size после show() (DPI/font metrics),
-        # поэтому не форсим resize вручную и просим layout держать фиксированный sizeHint.
-        layout.setSizeConstraint(QtWidgets.QLayout.SetFixedSize)
-
-        self.shoot_popover_title = QtWidgets.QLabel("FIRE")
-        self.shoot_popover_title.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {Theme.text.name()};")
-        self.shoot_popover_units = QtWidgets.QLabel("Unit — → Unit —")
-        self.shoot_popover_units.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {Theme.text.name()};")
-        self.shoot_popover_meta = QtWidgets.QLabel("Weapon: — • Range — • LoS —")
-        self.shoot_popover_meta.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        self.shoot_popover_meta.setWordWrap(False)
-        layout.addWidget(self.shoot_popover_title)
-        layout.addWidget(self.shoot_popover_units)
-        layout.addWidget(self.shoot_popover_meta)
-
-        self.shoot_stepper = QtWidgets.QLabel("Hit • Wound • Allocate • Save • Damage")
-        self.shoot_stepper.setWordWrap(False)
-        self.shoot_stepper.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        layout.addWidget(self.shoot_stepper)
-
-        self.shoot_popover_step_title = QtWidgets.QLabel("STEP 1/5: Hit Roll")
-        self.shoot_popover_step_title.setStyleSheet(f"font-size: 13px; font-weight: 600; color: {Theme.text.name()};")
-        self.shoot_popover_step_summary = QtWidgets.QLabel("Need: — dice")
-        self.shoot_popover_step_summary.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        layout.addWidget(self.shoot_popover_step_title)
-        layout.addWidget(self.shoot_popover_step_summary)
-
-        self.shoot_popover_input_label = QtWidgets.QLabel("Кубы (D6):")
-        self.shoot_popover_input_label.setStyleSheet(f"font-size: 12px; color: {Theme.text.name()};")
-        layout.addWidget(self.shoot_popover_input_label)
-
-        input_row = QtWidgets.QHBoxLayout()
-        input_row.setSpacing(8)
-        self.shoot_popover_dice_input = QtWidgets.QLineEdit()
-        self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 или слитно 416213…")
-        self.shoot_popover_dice_input.textChanged.connect(self._on_shoot_dice_input_changed)
-        self.shoot_popover_dice_counter = QtWidgets.QLabel("0/0")
-        self.shoot_popover_dice_counter.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()}; min-width: 42px;")
-        input_row.addWidget(self.shoot_popover_dice_input, 1)
-        input_row.addWidget(self.shoot_popover_dice_counter, 0, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        layout.addLayout(input_row)
-
-        self.shoot_popover_info = QtWidgets.QLabel("ℹ Нажмите Roll Hit, чтобы начать")
-        self.shoot_popover_info.setWordWrap(True)
-        self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        layout.addWidget(self.shoot_popover_info)
-
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.setSpacing(8)
-        self.shoot_popover_action = QtWidgets.QPushButton("Roll Hit")
-        self.shoot_popover_cancel = QtWidgets.QPushButton("Cancel")
-        self.shoot_popover_action.setStyleSheet(
-            "QPushButton { background: #2b7cff; color: #ffffff; border: 1px solid #3d8cff; border-radius: 8px; padding: 7px 12px; font-weight: 600; }"
-            "QPushButton:hover { background: #3d8cff; }"
-            "QPushButton:disabled { background: #334b77; color: #9bb3d8; border-color: #415980; }"
-        )
-        self.shoot_popover_cancel.setStyleSheet(
-            f"QPushButton {{ background: {Theme.panel_alt.name() if hasattr(Theme, 'panel_alt') else Theme.panel.name()}; color: {Theme.text.name()}; border: 1px solid {Theme.outline.name()}; border-radius: 8px; padding: 7px 12px; }}"
-            f"QPushButton:hover {{ border-color: {Theme.accent.name() if hasattr(Theme, 'accent') else Theme.text.name()}; }}"
-        )
-        self.shoot_popover_action.setMinimumHeight(34)
-        self.shoot_popover_cancel.setMinimumHeight(34)
-        self.shoot_popover_action.clicked.connect(self._shoot_step_action)
-        self.shoot_popover_cancel.clicked.connect(self._cancel_shoot_sequence)
-        btn_row.addWidget(self.shoot_popover_action)
-        btn_row.addWidget(self.shoot_popover_cancel)
-        layout.addLayout(btn_row)
-
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.shoot_popover, activated=self._shoot_step_action)
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Enter), self.shoot_popover, activated=self._shoot_step_action)
-        QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Escape), self.shoot_popover, activated=self._cancel_shoot_sequence)
-        self.shoot_popover.hide()
+    def _set_command_hint(self, text: str) -> None:
+        self._command_hint_text = str(text or "")
+        self.viewer_controller.set_command_hint_text(self._command_hint_text)
 
     def _is_shooting_target_request(self, request) -> bool:
         if not self._is_target_request(request):
@@ -1038,16 +865,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         weapon_range = None
         if isinstance(unit, dict):
             weapon, weapon_range = self._resolve_active_weapon(unit)
-        unit_label = str(unit_id) if unit_id is not None else "—"
         weapon_suffix = f" (R{weapon_range})" if isinstance(weapon_range, int) and weapon_range > 0 else ""
         overlay_mode = "Targets"
         if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
             overlay_mode = str(self.map_scene.shooting_overlay_mode_label())
         return (
-            f"Стрельба: Unit {unit_label}\n"
-            f"Weapon: {weapon}{weapon_suffix} • Overlay: {overlay_mode}\n"
-            "ПКМ по врагу: выбрать цель • R: показать/скрыть клетки\n"
-            "Enter: Continue • Esc: Cancel"
+            f"Выберите цель ({weapon}{weapon_suffix})\n"
+            f"Overlay: {overlay_mode} • ПКМ — Fire • Enter — Shoot • Esc — отмена"
         )
 
     def _valid_target_ids_from_request(self, request) -> set[int]:
@@ -1143,17 +967,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._update_shoot_input_feedback()
 
     def _update_shoot_input_feedback(self) -> None:
-        if not hasattr(self, "shoot_popover") or not self._shoot_resolver_active:
+        if not self._shoot_resolver_active:
             return
+        vc = self.viewer_controller
         req = self._pending_request
         stage = self._resolve_shoot_stage(req)
         expects_dice = bool(getattr(req, "kind", "") == "dice" and stage in {"hit", "wound", "save"})
         if not expects_dice:
-            self.shoot_popover_dice_counter.setText("0/0")
-            self.shoot_popover_info.setText("ℹ На этом шаге ввод кубов не требуется")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+            vc.update_shoot_ui(dice_counter="0/0", info_text="ℹ На этом шаге ввод кубов не требуется", needs_dice=False)
             return
-
         count = int(getattr(req, "count", 0) or 0)
         min_v = int(getattr(req, "min_value", 1) or 1)
         max_v = int(getattr(req, "max_value", 6) or 6)
@@ -1161,58 +983,39 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
             lock_suffix = f" • Цель Unit {int(self._shoot_locked_target_id)} зафиксирована"
         entered, has_error, has_tokens = self._count_dice_tokens(
-            self.shoot_popover_dice_input.text(), min_value=min_v, max_value=max_v
+            self._shoot_dice_input_text, min_value=min_v, max_value=max_v
         )
-        self.shoot_popover_dice_counter.setText(f"{entered}/{count}")
+        info = ""
         if has_error:
-            self.shoot_popover_info.setText(
-                f"⚠ Только цифры {min_v}–{max_v}: «1 2 3» или слитно «123» (без пробела — по одной цифре на куб)"
-            )
-            self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #e06c75;")
-            return
-
-        if count <= 0:
-            self.shoot_popover_info.setText(f"ℹ Движок не запросил количество кубов{lock_suffix}")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-            return
-
-        if entered < count:
+            info = f"⚠ Только цифры {min_v}–{max_v}: «1 2 3» или слитно «123»"
+        elif count <= 0:
+            info = f"ℹ Движок не запросил количество кубов{lock_suffix}"
+        elif entered < count:
             rest = count - entered
-            if has_tokens:
-                self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6 • Осталось: {rest}{lock_suffix}")
-            else:
-                self.shoot_popover_info.setText(
-                    f"ℹ Нужно: {count} значений d6. Пример: «4 1 6…» или слитно «416…»{lock_suffix}"
-                )
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+            info = f"ℹ Нужно: {count} d6 • Осталось: {rest}{lock_suffix}" if has_tokens else f"ℹ Нужно: {count} d6{lock_suffix}"
         elif entered > count:
-            extra = entered - count
-            self.shoot_popover_info.setText(f"⚠ Лишних: {extra}. Нужно ровно {count} значений d6{lock_suffix}")
-            self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #d8b26e;")
+            info = f"⚠ Лишних: {entered - count}. Нужно ровно {count}{lock_suffix}"
         else:
-            self.shoot_popover_info.setText(f"ℹ Готово к броску{lock_suffix}")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+            info = f"ℹ Готово к броску{lock_suffix}"
+        vc.update_shoot_ui(dice_counter=f"{entered}/{count}", info_text=info, needs_dice=True)
 
     def _parse_popover_dice_values(self, request) -> Optional[list[int]]:
         count = int(getattr(request, "count", 0) or 0)
         min_value = int(getattr(request, "min_value", 1) or 1)
         max_value = int(getattr(request, "max_value", 6) or 6)
-        raw = self.shoot_popover_dice_input.text().strip()
+        raw = self._shoot_dice_input_text.strip()
         if not raw:
-            self.shoot_popover_info.setText(f"ℹ Нужно: {count} значений d6")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+            self.viewer_controller.update_shoot_ui(info_text=f"ℹ Нужно: {count} значений d6")
             return None
         try:
             return parse_dice_values(raw, count=count, min_value=min_value, max_value=max_value)
         except ValueError as exc:
-            self.shoot_popover_info.setText(f"⚠ Ошибка ввода: {exc}")
-            self.shoot_popover_info.setStyleSheet("font-size: 12px; color: #e06c75;")
-            if os.getenv("VIEWER_DEBUG", "0") == "1":
-                self.add_log_line(f"[VIEWER_DEBUG] FIRE input parse error: {exc}")
+            self.viewer_controller.update_shoot_ui(info_text=f"⚠ Ошибка ввода: {exc}")
             return None
 
     def _update_shoot_popover_ui(self) -> None:
         if not self._shoot_resolver_active or self._shoot_popover_target_id is None:
+            self.viewer_controller.set_shoot_popover_open(False)
             return
         attacker = self._shoot_resolver_attacker_id
         request = self._pending_request
@@ -1222,24 +1025,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._shoot_popover_target_id = int(locked_target)
         else:
             target = int(self._shoot_popover_target_id)
-
         if self._is_shooting_dice_request(request):
             req_target = self._shoot_request_target_id
             if req_target is not None and int(target) != int(req_target):
-                self.add_log_line(
-                    "REQ: конфликт цели в Fire popover. Где: viewer/app.py (_update_shoot_popover_ui). "
-                    f"Что случилось: dice-request привязан к Unit {int(req_target)}, а UI пытается показать Unit {int(target)}. "
-                    "Что делать дальше: последовательность сброшена, выберите цель заново."
-                )
                 self._close_shoot_popover(reset_lock=True, keep_request_target=False)
                 self.map_scene.clear_target_selection()
                 self._current_target_id = None
                 self._shoot_request_flow_active = False
                 return
-        self.shoot_popover_title.setText("FIRE")
-        self.shoot_popover_units.setText(f"Unit {attacker} → Unit {target}")
-        weapon = "—"
-        weapon_range = None
+        weapon, weapon_range = "—", None
         if attacker is not None:
             shooter_side = self._side_from_unit_id(int(attacker))
             if shooter_side is not None:
@@ -1248,66 +1042,34 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     weapon, weapon_range = self._resolve_active_weapon(unit)
                     self._remember_active_weapon(attacker, weapon, weapon_range)
         range_text = f"R{weapon_range}" if isinstance(weapon_range, int) and weapon_range > 0 else "—"
-        overlay_mode = "Targets"
-        if hasattr(self, "map_scene") and hasattr(self.map_scene, "shooting_overlay_mode_label"):
-            overlay_mode = str(self.map_scene.shooting_overlay_mode_label())
-        self.shoot_popover_meta.setText(f"Weapon: {weapon} ({range_text}) • Overlay: {overlay_mode} • LoS OK")
-
+        overlay_mode = str(self.map_scene.shooting_overlay_mode_label()) if hasattr(self.map_scene, "shooting_overlay_mode_label") else "Targets"
         stage = self._resolve_shoot_stage(request)
         self._shoot_ui_stage = stage
         self._shoot_resolver_step = self._shoot_stage_to_step(stage)
-        self.shoot_stepper.setText(self._shoot_stepper_text())
-
         dice_mode = getattr(request, "kind", "") == "dice"
         count = int(getattr(request, "count", 0) or 0)
-
         needs_input = dice_mode and stage in {"hit", "wound", "save"}
-        self.shoot_popover_input_label.setVisible(needs_input)
-        self.shoot_popover_dice_input.setVisible(needs_input)
-        self.shoot_popover_dice_counter.setVisible(needs_input)
-        if needs_input and count > 0:
-            self.shoot_popover_dice_input.setPlaceholderText("например: 4 1 6 или слитно 416213…")
-
-        if stage == "target":
-            self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
-            self.shoot_popover_step_summary.setText("Need: — dice")
-            self.shoot_popover_action.setText("Roll Hit")
-            self.shoot_popover_info.setText("ℹ Нажмите Roll Hit, чтобы выбрать цель и перейти к броску")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif stage == "hit":
-            self.shoot_popover_step_title.setText("STEP 1/5: Hit Roll")
-            self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
-            self.shoot_popover_action.setText("Roll Hit")
-            if not dice_mode:
-                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Hit от движка")
-                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        elif stage == "wound":
-            self.shoot_popover_step_title.setText("STEP 2/5: Wound Roll")
-            self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
-            self.shoot_popover_action.setText("Roll Wound")
-            if not dice_mode:
-                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Wound от движка")
-                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
+        action = "Roll Hit"
+        step_title = "STEP 1/5: Hit Roll"
+        if stage == "wound":
+            action, step_title = "Roll Wound", "STEP 2/5: Wound Roll"
         elif stage == "save":
-            self.shoot_popover_step_title.setText("STEP 4/5: Saving Throw")
-            self.shoot_popover_step_summary.setText(f"Need: {count if dice_mode else '—'} dice")
-            self.shoot_popover_action.setText("Roll Save")
-            if not dice_mode:
-                self.shoot_popover_info.setText("ℹ Ожидаю запрос кубов Save от движка")
-                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-        else:
-            self.shoot_popover_step_title.setText("STEP 5/5: Inflict Damage")
-            self.shoot_popover_step_summary.setText("Need: — dice")
-            self.shoot_popover_action.setText("Continue")
-            self.shoot_popover_info.setText("ℹ Ожидаю следующий шаг от движка")
-            self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
-
+            action, step_title = "Roll Save", "STEP 4/5: Saving Throw"
+        elif stage not in {"target", "hit", "wound", "save"}:
+            action, step_title = "Continue", "STEP 5/5: Inflict Damage"
+        info = "ℹ Нажмите Roll Hit, чтобы выбрать цель" if stage == "target" else "ℹ Введите кубы и подтвердите"
+        self.viewer_controller.set_shoot_popover_open(True)
+        self.viewer_controller.update_shoot_ui(
+            stage=stage,
+            step_title=step_title,
+            stepper=self._shoot_stepper_text(),
+            target_text=f"Unit {attacker} → Unit {target}",
+            meta_text=f"Weapon: {weapon} ({range_text}) • Overlay: {overlay_mode}",
+            action_label=action,
+            info_text=info,
+            needs_dice=needs_input,
+        )
         if needs_input:
-            if self._is_shooting_dice_request(request) and self._shoot_locked_target_id is not None:
-                self.shoot_popover_info.setText(
-                    "ℹ Цель зафиксирована для текущего выстрела. Смена цели будет доступна после завершения текущего броска."
-                )
-                self.shoot_popover_info.setStyleSheet(f"font-size: 12px; color: {Theme.muted.name()};")
             self._update_shoot_input_feedback()
 
     def _open_shoot_popover(self, target_id: int, global_pos: Optional[QtCore.QPoint] = None) -> None:
@@ -1315,12 +1077,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             return
         req = self._pending_request
         if self._is_shooting_dice_request(req) and self._shoot_locked_target_id is not None:
-            locked = int(self._shoot_locked_target_id)
-            if int(target_id) != locked:
-                self.add_log_line(
-                    f"REQ: цель Unit {int(target_id)} отклонена. Где: viewer/app.py (_open_shoot_popover). "
-                    f"Что случилось: на шаге кубов цель уже зафиксирована как Unit {locked}. "
-                    "Что делать дальше: завершите текущий выстрел или нажмите Cancel и выберите цель заново."
+            if int(target_id) != int(self._shoot_locked_target_id):
+                self.viewer_dialogs.showToast(
+                    f"Цель Unit {target_id} недоступна — зафиксирована Unit {self._shoot_locked_target_id}"
                 )
                 return
         if not self._shoot_resolver_active:
@@ -1333,17 +1092,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._current_target_id = int(target_id)
         self.map_scene.set_target_unit(int(target_id))
         self._shoot_popover_target_id = int(target_id)
-        self.shoot_popover_dice_input.clear()
+        self._shoot_dice_input_text = ""
+        self.viewer_controller.setShootDiceInput("")
         self._update_shoot_popover_ui()
-        anchor = global_pos or QtGui.QCursor.pos()
-        self.shoot_popover.adjustSize()
-        self.shoot_popover.show()
-        popup_h = self.shoot_popover.frameGeometry().height()
-        pos = QtCore.QPoint(anchor.x() + 18, anchor.y() - popup_h - 12)
-        self.shoot_popover.move(pos)
-        self.shoot_popover.raise_()
-        self.shoot_popover.activateWindow()
-        self.shoot_popover_action.setFocus()
 
     def _close_shoot_popover(self, *, reset_lock: bool = True, keep_request_target: bool = True) -> None:
         self._shoot_popover_target_id = None
@@ -1355,10 +1106,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._shoot_ui_stage = "target"
         if not keep_request_target:
             self._shoot_request_target_id = None
-        if hasattr(self, "shoot_popover"):
-            self.shoot_popover.hide()
+        self.viewer_controller.set_shoot_popover_open(False)
         if self._is_shooting_target_request(self._pending_request) or self._is_shooting_dice_request(self._pending_request):
-            self.command_prompt.setText(self._shoot_instruction_text())
+            self._set_command_prompt(self._shoot_instruction_text())
 
     def _cancel_shoot_sequence(self) -> None:
         req = self._pending_request
@@ -1411,7 +1161,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             if values is None:
                 return
             self._submit_answer(values)
-            self.shoot_popover_dice_input.clear()
+            self._shoot_dice_input_text = ""
         else:
             self._update_shoot_popover_ui()
             return
@@ -1461,12 +1211,10 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._clear_deploy_overlays()
             self.map_scene.clear_temporary_deploy_units()
             if self.controller.is_finished:
-                self.command_prompt.setText("Игра завершена.")
+                self._set_command_prompt("Игра завершена.")
             else:
-                self.command_prompt.setText("Команда не требуется.")
-            self.command_stack.setEnabled(False)
-            self.command_stack.setVisible(True)
-            self.command_hint.setText("Горячие клавиши: —")
+                self._set_command_prompt("Команда не требуется.")
+            self._set_command_hint("Горячие клавиши: —")
             self.map_scene.set_target_cell(None)
             self._shoot_targets_valid = set()
             self._shoot_request_flow_active = False
@@ -1532,58 +1280,27 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._shoot_targets_valid = set()
         self._update_deploy_status_from_request(request)
         display_prompt = self._deploy_status_text if self._deploy_status_text else request.prompt
-        self.command_prompt.setText(display_prompt)
-        self.command_stack.setEnabled(True)
-        self.command_stack.setVisible(True)
+        self._set_command_prompt(display_prompt)
         kind = getattr(request, "kind", "text")
         if self._is_movement_move_request(request):
-            self.command_prompt.setText(self._move_instruction_text())
-            self.command_stack.setEnabled(False)
-            self.command_stack.setVisible(False)
-            self.command_hint.setText("Горячие клавиши: ПКМ — идти, Backspace — stay")
+            self._set_command_prompt(self._move_instruction_text())
+            self._set_command_hint("Горячие клавиши: ПКМ — идти, Backspace — stay")
         elif self._is_shooting_target_request(request) or self._is_shooting_dice_request(request):
-            self.command_prompt.setText(self._shoot_instruction_text())
-            self.command_stack.setEnabled(False)
-            self.command_stack.setVisible(False)
-            self.command_hint.setText("Горячие клавиши: ПКМ — Fire, Enter — Shoot, Esc — отмена")
-        elif kind == "direction":
-            self.command_input.setPlaceholderText("Введите команду...")
-            self.command_stack.setCurrentIndex(self._command_pages["direction"])
-        elif kind == "bool":
-            self.command_input.setPlaceholderText("Введите команду...")
-            self.command_stack.setCurrentIndex(self._command_pages["bool"])
-        elif kind == "pace":
-            self.command_input.setPlaceholderText("Далее")
-            self.command_stack.setCurrentIndex(self._command_pages["pace"])
+            self._set_command_prompt(self._shoot_instruction_text())
+            self._set_command_hint("Горячие клавиши: ПКМ — Fire, Enter — Shoot, Esc — отмена")
         elif kind == "int":
             min_value = request.min_value if request.min_value is not None else 0
             max_value = request.max_value if request.max_value is not None else 999
-            self.int_spin.setRange(min_value, max_value)
-            self.int_spin.setValue(min_value)
-            self.command_input.setPlaceholderText("Введите команду...")
-            self.command_stack.setCurrentIndex(self._command_pages["int"])
+            self._int_spin_min = int(min_value)
+            self._int_spin_max = int(max_value)
+            self._int_spin_value = int(min_value)
         elif kind == "choice":
-            self.choice_combo.clear()
-            if request.options:
-                self.choice_combo.addItems([str(opt) for opt in request.options])
-                self.command_stack.setCurrentIndex(self._command_pages["choice"])
+            self._choice_options = [str(o) for o in list(getattr(request, "options", None) or [])]
+            if self._choice_options:
+                self._last_choice_text = self._choice_options[0]
                 if self._is_target_request(request):
-                    self._sync_target_from_choice(self.choice_combo.currentText())
+                    self._sync_target_from_choice(self._last_choice_text)
                     self._set_confirm_enabled(self._current_target_id is not None)
-            else:
-                self.command_stack.setCurrentIndex(self._command_pages["text"])
-            self.command_input.setPlaceholderText("Введите команду...")
-        elif kind == "dice":
-            count = request.count or 0
-            example_values = [str((idx % 6) + 1) for idx in range(count)]
-            spaced = " ".join(example_values)
-            comma = ",".join(example_values)
-            compact = "".join(example_values)
-            self.command_input.setPlaceholderText(
-                f"Например: {spaced} или {comma}"
-                + (f" или {compact}" if compact else "")
-            )
-            self.command_stack.setCurrentIndex(self._command_pages["text"])
         elif kind == "deploy_coord":
             meta = getattr(request, "meta", {}) or {}
             if self._is_movement_move_request(request):
@@ -1592,41 +1309,44 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 self._refresh_active_context()
                 self._sync_qml_side_state()
                 return
-            x_min = meta.get("x_min", "?")
-            x_max = meta.get("x_max", "?")
-            y_min = meta.get("y_min", "?")
-            y_max = meta.get("y_max", "?")
-            self.command_input.setPlaceholderText(f"X Y (X={x_min}..{x_max}, Y={y_min}..{y_max})")
-            self.command_stack.setCurrentIndex(self._command_pages["text"])
-            self._deploy_context = dict(meta)
-            current_side = self._deploy_context.get("deploy_side")
-            current_unit_id = self._deploy_context.get("deploy_unit_id")
+            current_side = self._deploy_context.get("deploy_side") if self._deploy_context else None
+            current_unit_id = self._deploy_context.get("deploy_unit_id") if self._deploy_context else None
             if current_unit_id is not None:
                 side_for_table = "player" if current_side == "enemy" else "model"
                 self._set_selected_unit(side_for_table, int(current_unit_id), source="deploy", select_row=True)
             self._refresh_deploy_preview()
-        else:
-            self.command_input.setPlaceholderText("Введите команду...")
-            self.command_stack.setCurrentIndex(self._command_pages["text"])
-        self._update_command_hint(kind)
         self._refresh_active_context()
-        if self._shoot_resolver_active and (self._is_shooting_target_request(request) or self._is_shooting_dice_request(request)):
+        if self._shoot_resolver_active and (
+            self._is_shooting_target_request(request) or self._is_shooting_dice_request(request)
+        ):
             self._update_shoot_popover_ui()
         self._sync_qml_side_state()
 
     def _move_instruction_text(self) -> str:
-        unit_id, side = self._resolve_active_unit()
-        unit = self._units_by_key.get((side, unit_id)) if unit_id is not None else None
-        unit_name = str(unit.get("name") or unit.get("unit_name") or "—") if isinstance(unit, dict) else "—"
-        unit_label = str(unit_id) if unit_id is not None else "—"
         return (
-            f"Ходьба: Unit {unit_label} — {unit_name}\n"
-            "ЛКМ: выделить/hover клетку\n"
-            "ПКМ: идти в клетку\n"
-            "Backspace: stay (остаться на месте)\n"
-            "Синий: обычный Move (до M)\n"
-            "Жёлтый: Advance (до M+6)"
+            "Выберите клетку для хода\n"
+            "ЛКМ: hover • ПКМ: идти • Backspace: stay"
         )
+
+    def _build_map_overlay_legend(
+        self,
+        phase_for_overlay: Optional[str],
+        move_range: Optional[object],
+        shoot_range: Optional[object],
+    ) -> list:
+        phase_norm = str(phase_for_overlay or "").strip().lower()
+        items: list = []
+        if self._is_movement_phase(phase_for_overlay):
+            mr = move_range if move_range is not None else "M"
+            items.append({"key": "move", "color": "#4882ff", "label": f'Move {mr}"'})
+            items.append({"key": "advance", "color": "#ecc240", "label": "Advance +D6"})
+        elif self._is_shooting_phase(phase_for_overlay):
+            sr = shoot_range if shoot_range is not None else "?"
+            items.append({"key": "in_range", "color": Theme.player.name(), "label": f'В range {sr}"'})
+            items.append({"key": "out_range", "color": Theme.muted.name(), "label": "Вне range"})
+        elif "charge" in phase_norm:
+            items.append({"key": "charge", "color": "#d97706", "label": "Charge 2D6"})
+        return items
 
     def _is_movement_move_request(self, request) -> bool:
         # В viewer move_request используется только для ручного Movement UX.
@@ -1700,14 +1420,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
         return str(unit_id)
 
     def _set_confirm_enabled(self, enabled: bool) -> None:
-        self.command_send.setEnabled(enabled)
-        self.command_input.setEnabled(enabled)
-        self.bool_yes.setEnabled(enabled)
-        self.bool_no.setEnabled(enabled)
-        self.int_spin.setEnabled(enabled)
-        self.int_ok.setEnabled(enabled)
-        self.choice_combo.setEnabled(enabled)
-        self.choice_ok.setEnabled(enabled)
+        vc = getattr(self, "viewer_controller", None)
+        if vc is not None:
+            vc.set_command_confirm_enabled(bool(enabled))
 
     def _on_choice_target_changed(self, value: str) -> None:
         if not self._is_target_request(self._pending_request):
@@ -1743,8 +1458,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
     def _on_shoot_overlay_mode_changed(self, _mode: str) -> None:
         req = self._pending_request
         if self._is_shooting_target_request(req) or self._is_shooting_dice_request(req):
-            self.command_prompt.setText(self._shoot_instruction_text())
-            if getattr(self, "shoot_popover", None) and self.shoot_popover.isVisible():
+            self._set_command_prompt(self._shoot_instruction_text())
+            if self.viewer_controller.shootPopoverOpen:
                 self._update_shoot_popover_ui()
 
     def _on_unit_right_clicked(self, side: str, unit_id: int, global_pos) -> None:
@@ -1772,7 +1487,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if not self._is_deploy_request(self._pending_request):
             return
         self.map_scene.set_target_cell((x, y))
-        self.command_input.setText(f"{x} {y}")
+        # removed command_input.setText(f"{x} {y}")
         ok, reason, _ghost_cells = self._validate_deploy_cell(x, y)
         if ok:
             self.add_log_line(f"REQ: deploy cell accepted x={x}, y={y}")
@@ -1797,7 +1512,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         if move_mode is None:
             return False
         self.map_scene.set_target_cell((x, y))
-        self.command_input.setText(f"{x} {y}")
+        # removed command_input.setText(f"{x} {y}")
         self.add_log_line(f"REQ: move cell accepted ({source}) x={x}, y={y}, mode={move_mode}")
         self._submit_answer({"x": x, "y": y, "mode": move_mode})
         return True
@@ -1882,7 +1597,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         unit_name = str((self._deploy_context or {}).get("deploy_unit_name") or (self._deploy_context or {}).get("deploy_unit_label") or "")
         self.map_scene.set_deploy_ghost(ghost_cells, ok, unit_name)
         if not ok:
-            self.command_hint.setText(f"Клик заблокирован: {reason}. Выберите валидную клетку.")
+            self._set_command_hint(f"Клик заблокирован: {reason}. Выберите валидную клетку.")
 
     def _validate_deploy_cell(self, x: int, y: int):
         offsets = [
@@ -1946,81 +1661,36 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _update_command_hint(self, kind):
         if kind == "direction":
-            self.command_hint.setText("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
+            self._set_command_hint("Горячие клавиши: ↑ ↓ ← →, пробел/0 — нет")
         elif kind == "bool":
-            self.command_hint.setText("Горячие клавиши: Y — да, N — нет")
+            self._set_command_hint("Горячие клавиши: Y — да, N — нет")
         elif kind == "pace":
-            self.command_hint.setText("Горячие клавиши: Enter / Пробел — далее")
+            self._set_command_hint("Горячие клавиши: Enter / Пробел — далее")
         elif kind == "int":
-            self.command_hint.setText("Горячие клавиши: Enter — отправить")
+            self._set_command_hint("Горячие клавиши: Enter — отправить")
         elif kind == "choice":
             if self._is_shooting_target_request(self._pending_request):
-                self.command_hint.setText("ПКМ по валидной цели откроет Fire popover")
+                self._set_command_hint("ПКМ по валидной цели откроет Fire popover")
             else:
-                self.command_hint.setText("Горячие клавиши: Enter — выбрать")
+                self._set_command_hint("Горячие клавиши: Enter — выбрать")
         elif kind == "deploy_coord":
             if self._is_movement_move_request(self._pending_request):
-                self.command_hint.setText("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — stay")
+                self._set_command_hint("ПКМ по подсвеченной клетке. ЛКМ — hover/выбор, Backspace — stay")
             elif self._is_move_cell_request(self._pending_request):
-                self.command_hint.setText("RMB по подсвеченной клетке или введите X Y, затем Enter")
+                self._set_command_hint("RMB по подсвеченной клетке или введите X Y, затем Enter")
             else:
-                self.command_hint.setText("Кликните клетку на поле или введите X Y, затем Enter")
+                self._set_command_hint("Кликните клетку на поле или введите X Y, затем Enter")
         else:
-            self.command_hint.setText("Горячие клавиши: Enter — отправить")
+            self._set_command_hint("Горячие клавиши: Enter — отправить")
 
-    def _init_log_viewer(self):
-        self._log_status_label = QtWidgets.QLabel("Режим: Игровой")
-        self._log_status_label.setStyleSheet(f"color: {Theme.muted.name()};")
-
-        filter_defs = [
-            ("movement", "👣"),
-            ("shooting", "🎯"),
-            ("charge", "⚡"),
-            ("fight", "⚔️"),
-            ("result", "🏁"),
-            ("errors", "⚠️"),
-            ("debug", "🧪"),
-        ]
-        for key, label in filter_defs:
-            btn = QtWidgets.QToolButton()
-            btn.setText(label)
-            btn.setCheckable(True)
-            btn.setChecked(key in {"movement", "shooting", "charge", "fight"})
-            btn.toggled.connect(self._refresh_log_views)
-            self._log_filter_buttons[key] = btn
-
-        self.log_clear_all_button = QtWidgets.QToolButton()
-        self.log_clear_all_button.setText("🧹")
-        self.log_clear_all_button.setToolTip("Очистить всё")
-        self.log_clear_all_button.clicked.connect(self._clear_log_viewer)
-
+    def _init_log_viewer(self) -> None:
+        self._log_status_label = None
         self._log_controls_layout = QtWidgets.QHBoxLayout()
-        self._log_controls_layout.addWidget(self._log_status_label)
-        for key in ("movement", "shooting", "charge", "fight", "result", "errors", "debug"):
-            self._log_controls_layout.addWidget(self._log_filter_buttons[key])
-        self._log_controls_layout.addWidget(self.log_clear_all_button)
-        self._log_controls_layout.addStretch()
-
-        fixed_font = QtGui.QFontDatabase.systemFont(QtGui.QFontDatabase.FixedFont)
-        fixed_font.setPointSize(10)
-
-        if self._qml_panels:
-            self.log_view = None
-            self._qml_log_model = ViewerLogListModel(self)
-            self._qml_log_widget = self._create_qml_log_panel_widget()
-            self._log_panel_widget = self._qml_log_widget
-        else:
-            self._qml_log_model = None
-            self._qml_log_widget = None
-            self.log_view = HoverLogListWidget()
-            self.log_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-            self.log_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-            self.log_view.setMouseTracking(True)
-            self.log_view.setFont(fixed_font)
-            self.log_view.itemClicked.connect(self._on_log_item_clicked)
-            self.log_view.itemHovered.connect(self._on_log_item_hovered)
-            self.log_view.hoverLeft.connect(self._on_log_item_hover_left)
-            self._log_panel_widget = self.log_view
+        self._log_filter_buttons = {}
+        self.log_view = None
+        self._log_panel_widget = None
+        self._qml_log_model = ViewerLogListModel(self)
+        self._qml_log_model.set_filters(self.viewer_controller._log_filters)
 
     def _append_log(self, messages):
         if not messages:
@@ -2089,7 +1759,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._popup_seen = OrderedDict()
 
     def _submit_text(self):
-        text = self.command_input.text().strip()
+        text = self._last_command_text.strip()
         if self._is_movement_move_request(self._pending_request):
             self.add_log_line("Ходьба: ввод с клавиатуры отключён. Что делать дальше: используйте ПКМ по подсвеченной клетке.")
             return
@@ -2143,21 +1813,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 values = parse_dice_values(text, count=count, min_value=min_value, max_value=max_value)
             except ValueError as exc:
                 entered = self._count_dice_entries(text, min_value=min_value, max_value=max_value)
-                self.command_prompt.setText(
+                self._set_command_prompt(
                     "Ошибка ввода кубов в панели «Команды»: "
                     f"{exc}. Нужно {count}, введено {entered}. "
                     "Что делать дальше: исправьте ввод и отправьте снова.\n"
                     f"{self._pending_request.prompt}"
                 )
                 return
-            self.command_input.clear()
+            self._last_command_text = ""
             self._submit_answer(values)
             return
-        self.command_input.clear()
+        self._last_command_text = ""
         self._submit_answer(text)
 
     def _submit_choice(self):
-        value = self.choice_combo.currentText()
+        value = self._last_choice_text
         if self._is_shooting_target_request(self._pending_request):
             target_id = self._extract_unit_id(value)
             if target_id is None:
@@ -2220,15 +1890,18 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self.map_scene.clear_target_selection()
 
     def _apply_initial_splitter_sizes(self) -> None:
+        settings = QtCore.QSettings("40kAI", "Viewer")
+        saved = settings.value("topSplitterSizes")
+        if isinstance(saved, list) and len(saved) >= 2:
+            try:
+                self._top_splitter.setSizes([int(v) for v in saved])
+                return
+            except (TypeError, ValueError):
+                pass
         total_w = max(self.width(), 2560)
-        right_w = max(380, min(450, int(total_w * 0.2)))
-        left_w = max(1400, total_w - right_w)
+        right_w = max(360, min(520, int(total_w * 0.22)))
+        left_w = max(1200, total_w - right_w)
         self._top_splitter.setSizes([left_w, right_w])
-
-        total_h = max(self.height(), 800)
-        top_h = int(total_h * 0.72)
-        bottom_h = max(180, total_h - top_h)
-        self._right_splitter.setSizes([top_h, bottom_h])
 
     def _fit_view(self):
         self.map_scene.fit_to_view()
@@ -2369,22 +2042,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
         active_raw = str(state.get("active") or state.get("active_side") or "").strip().lower()
         phase_raw_val = str(state.get("phase") or "").strip().lower()
 
-        if self._controller_v1:
-            self.viewer_controller.apply_labels(
-                labels,
-                phase_raw=phase_raw_val,
-                active_side_raw=active_raw,
-            )
-        else:
-            self.status_round.setText(labels.round_text)
-            self.status_turn.setText(labels.turn_text)
-            self.status_phase.setText(labels.phase_text)
-            self.status_active.setText(labels.active_label_text)
-            self.status_deployment.setText(labels.deployment_text)
-            self.points_vp_player.setText(labels.vp_player_text)
-            self.points_vp_model.setText(labels.vp_model_text)
-            self.points_cp_player.setText(labels.cp_player_text)
-            self.points_cp_model.setText(labels.cp_model_text)
+        self.viewer_controller.apply_labels(
+            labels,
+            phase_raw=phase_raw_val,
+            active_side_raw=active_raw,
+        )
 
         if os.getenv("VIEWER_DEBUG", "0") == "1":
             deployment = state.get("deployment", {}) if isinstance(state.get("deployment", {}), dict) else {}
@@ -2394,7 +2056,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
             deploy_active = ("deploy" in deploy_phase_text) or ("расст" in deploy_phase_text)
             self.add_log_line(
                 f"[STATUS] phase={state.get('phase')} deploy_state={'active' if deploy_active else 'completed'} "
-                f"attacker={attacker} defender={defender} text=\"{self.status_deployment.text()}\""
+                f"attacker={attacker} defender={defender} text=\"{self.viewer_controller.deploymentText}\""
             )
 
         self._populate_units_table(state_for_view.get("units", []))
@@ -2412,31 +2074,28 @@ class ViewerWindow(QtWidgets.QMainWindow):
             self._close_shoot_popover()
 
     def _populate_units_table(self, units):
-        self.units_table.setRowCount(len(units))
-        self.units_table.setSortingEnabled(False)
+        self._populate_units_model(units)
+
+    def _populate_units_model(self, units):
         self._unit_row_by_key = {}
-        for row, unit in enumerate(units):
-            side_label = (
-                self._viewer_player_role_label
-                if unit.get("side") == "player"
-                else self._viewer_model_role_label
-            )
-            unit_key = (unit.get("side"), unit.get("id"))
-            values = [
-                side_label,
-                str(unit.get("id", "—")),
-                unit.get("name", "—"),
-                str(unit.get("hp", "—")),
-                str(unit.get("models", "—")),
-            ]
-            for col, value in enumerate(values):
-                item = QtWidgets.QTableWidgetItem(value)
-                if col == 0:
-                    item.setData(QtCore.Qt.UserRole, unit_key)
-                self.units_table.setItem(row, col, item)
-            self._unit_row_by_key[unit_key] = row
-        self.units_table.setSortingEnabled(True)
-        self._rebuild_unit_row_mapping()
+        if self._viewer_units_model is None:
+            return
+        active_side = self._active_unit_side
+        active_id = self._active_unit_id
+        self._viewer_units_model.populate(
+            list(units or []),
+            player_label=self._viewer_player_role_label,
+            model_label=self._viewer_model_role_label,
+            active_side=active_side,
+            active_unit_id=active_id,
+            selected_side=self._selected_unit_side,
+            selected_unit_id=self._selected_unit_id,
+        )
+        for row_idx in range(self._viewer_units_model.rowCount()):
+            side = self._viewer_units_model.data(self._viewer_units_model.index(row_idx, 0), ViewerUnitsListModel.SideRole)
+            uid = self._viewer_units_model.data(self._viewer_units_model.index(row_idx, 0), ViewerUnitsListModel.IdRole)
+            if side and uid is not None:
+                self._unit_row_by_key[(side, int(uid))] = row_idx
         self._sync_qml_units_summary()
 
     def _update_log(self, lines):
@@ -2499,10 +2158,15 @@ class ViewerWindow(QtWidgets.QMainWindow):
         self._selected_unit_side = side
         self._selected_unit_id = unit_id
         if self._controller_v1:
+            self.viewer_controller.set_selection_source(source)
             self.viewer_controller.push_selection(side, unit_id)
         self.map_scene.set_selected_unit(side, unit_id)
         if select_row:
-            self._select_row_for_unit_id(unit_id, side=side)
+            self._scroll_units_list_to_unit(unit_id, side=side)
+        if self._viewer_units_model is not None:
+            self._viewer_units_model.update_selection(
+                self._selected_unit_side, self._selected_unit_id
+            )
         if source == "map":
             unit_name = self._units_by_key.get((side, unit_id), {}).get("name", "—")
             self._append_log([f"Выбрано на карте: unit_id={unit_id}, name={unit_name}"])
@@ -2518,26 +2182,12 @@ class ViewerWindow(QtWidgets.QMainWindow):
             row = self._find_row_for_unit(unit_key)
         if row is None:
             return
-        self._set_selected_unit(side, unit_id, source="map", select_row=True)
+        self._set_selected_unit(side, unit_id, source="map", select_row=False)
+        self._scroll_units_list_to_unit(unit_id, side=side)
         self._on_target_selected(unit_id)
 
     def _sync_selection_from_table(self):
-        if self._syncing_table_selection:
-            return
-        selected = self.units_table.selectionModel().selectedRows()
-        if not selected:
-            return
-        row = selected[0].row()
-        item = self.units_table.item(row, 0)
-        if item is None:
-            return
-        unit_key = item.data(QtCore.Qt.UserRole)
-        if not unit_key:
-            return
-        side, unit_id = unit_key
-        if side and unit_id is not None:
-            self._set_selected_unit(side, unit_id, source="table")
-            self._on_target_selected(unit_id)
+        pass
 
     def add_log_line(self, line: str):
         raw_text = str(line)
@@ -2922,9 +2572,9 @@ class ViewerWindow(QtWidgets.QMainWindow):
             "errors": "errors" in categories or channel == "error",
             "debug": channel in {"fx", "los", "reward", "req", "system"} or "debug" in categories,
         }
-        for key, enabled in mapping.items():
-            btn = self._log_filter_buttons.get(key)
-            if btn is not None and btn.isChecked() and enabled:
+        filters = self.viewer_controller._log_filters
+        for key, match in mapping.items():
+            if filters.get(key, True) and match:
                 return True
         return False
 
@@ -2969,7 +2619,8 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _timeline_label_text(self) -> str:
         try:
-            return f"{self.status_round.text()} • {self.status_active.text()} • {self.status_phase.text()}"
+            vc = self.viewer_controller
+            return f"{vc.roundText} • {vc.activeLabelText} • {vc.phaseText}"
         except RuntimeError:
             if self._controller_v1:
                 vc = self.viewer_controller
@@ -3010,21 +2661,13 @@ class ViewerWindow(QtWidgets.QMainWindow):
         lines = [v["text"] for v in visible_entries]
 
         alert_lines = self._collect_alert_lines()
-        result_btn = self._log_filter_buttons.get("result")
-        round_card = self._build_round_summary_card() if (result_btn is not None and result_btn.isChecked()) else []
-        errors_btn = self._log_filter_buttons.get("errors")
-        show_alerts = bool(alert_lines and errors_btn is not None and errors_btn.isChecked())
+        filters = self.viewer_controller._log_filters
+        round_card = self._build_round_summary_card() if filters.get("result", True) else []
+        show_alerts = bool(alert_lines and filters.get("errors", True))
         if show_alerts:
             lines.extend(["", "=== АЛЕРТЫ ===", *alert_lines])
         if round_card:
             lines.extend(["", *round_card])
-
-        if not lines:
-            lines = ["Пока нет логов."]
-        debug_btn = self._log_filter_buttons.get("debug")
-        mode_core = "Режим: Игровой + Debug" if (debug_btn is not None and debug_btn.isChecked()) else "Режим: Игровой"
-        mode_text = f"{mode_core} | {self._timeline_label_text()}"
-        self._log_status_label.setText(mode_text)
 
         self._visible_log_entries = list(visible_entries)
         if show_alerts:
@@ -3036,24 +2679,40 @@ class ViewerWindow(QtWidgets.QMainWindow):
             for line in round_card[1:]:
                 self._visible_log_entries.append({"text": line, "color": "#7aa2f7", "entry_idx": -1, "is_aux": True})
 
-        if not self._visible_log_entries:
-            self._visible_log_entries.append(
-                {"text": "Пока нет логов.", "color": Theme.muted.name(), "entry_idx": -1, "is_aux": True}
-            )
-
         if self._qml_log_model is not None:
-            qml_rows = []
+            self._qml_log_model.set_filters(self.viewer_controller._log_filters)
+            self._qml_log_model.set_search(self.viewer_controller.logSearchText)
+            turn_key = f"{self._current_turn_number}:{self._current_turn_side}"
+            self._qml_log_model.set_current_turn_key(turn_key)
+            enriched = []
             for item_data in self._visible_log_entries:
-                qml_rows.append(
+                raw = str(item_data.get("text") or "")
+                kind = classify_log_kind(raw)
+                enriched.append(
                     {
-                        "text": str(item_data.get("text") or ""),
-                        "color": str(item_data.get("color") or Theme.text.name()),
-                        "entry_idx": int(item_data.get("entry_idx", -1)),
-                        "is_aux": bool(item_data.get("is_aux", False)),
+                        **item_data,
+                        "kind": kind,
+                        "timestamp": extract_log_timestamp(raw),
+                        "is_header": False,
+                        "header_text": "",
+                        "unit_id": -1,
+                        "is_current_turn": True,
                     }
                 )
+            def _row_color(kind: str) -> str:
+                if kind == "header":
+                    return Theme.muted.name()
+                return Theme.text.name()
+
+            qml_rows = self._qml_log_model.build_rows_from_entries(
+                enriched,
+                color_resolver=_row_color,
+            )
+            if not qml_rows:
+                qml_rows = []
             self._qml_log_model.set_rows(qml_rows)
             self.viewer_controller.bump_log_refresh()
+        self._update_log_filter_hidden_counts()
 
         if self.log_view is not None:
             self.log_view.clear()
@@ -3309,22 +2968,16 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
     def _rebuild_unit_row_mapping(self):
         self._unit_row_by_key = {}
-        for row in range(self.units_table.rowCount()):
-            item = self.units_table.item(row, 0)
-            if item is None:
-                continue
-            unit_key = item.data(QtCore.Qt.UserRole)
-            if unit_key:
-                self._unit_row_by_key[unit_key] = row
+        if self._viewer_units_model is None:
+            return
+        for row in range(self._viewer_units_model.rowCount()):
+            side = self._viewer_units_model.data(self._viewer_units_model.index(row, 0), ViewerUnitsListModel.SideRole)
+            uid = self._viewer_units_model.data(self._viewer_units_model.index(row, 0), ViewerUnitsListModel.IdRole)
+            if side and uid is not None:
+                self._unit_row_by_key[(side, int(uid))] = row
 
     def _find_row_for_unit(self, unit_key):
-        for row in range(self.units_table.rowCount()):
-            item = self.units_table.item(row, 0)
-            if item is None:
-                continue
-            if item.data(QtCore.Qt.UserRole) == unit_key:
-                return row
-        return None
+        return self._unit_row_by_key.get(unit_key)
 
     def _extract_unit_id(self, prompt):
         if not prompt:
@@ -3476,28 +3129,21 @@ class ViewerWindow(QtWidgets.QMainWindow):
 
         QtCore.QTimer.singleShot(1500, _clear)
 
-    def _select_row_for_unit_id(self, unit_id, side=None):
-        if unit_id is None:
-            return
-        row = None
-        if side is not None:
-            unit_key = (side, unit_id)
-            row = self._unit_row_by_key.get(unit_key)
-            if row is None:
-                row = self._find_row_for_unit(unit_key)
-        else:
-            for (candidate_side, candidate_id), candidate_row in self._unit_row_by_key.items():
-                if candidate_id == unit_id:
-                    row = candidate_row
+    def _scroll_units_list_to_unit(self, unit_id, side=None) -> None:
+        if side is None:
+            for (s, uid) in self._unit_row_by_key:
+                if uid == unit_id:
+                    side = s
                     break
-        if row is None:
+        if side is None:
             return
-        self._syncing_table_selection = True
-        try:
-            self.units_table.selectRow(row)
-        finally:
-            self._syncing_table_selection = False
+        if self._controller_v1 and self.viewer_controller is not None:
+            self.viewer_controller.scrollUnitsListToUnit(int(unit_id))
 
+    def _select_row_for_unit_id(self, unit_id, side=None):
+        self._scroll_units_list_to_unit(unit_id, side=side)
+
+    
     def _refresh_active_context(self):
         state = self.state_watcher.state if self.state_watcher else None
         model_turn = self._state_active_is_model(state)
@@ -3558,6 +3204,22 @@ class ViewerWindow(QtWidgets.QMainWindow):
             show_objective_radius=self._show_objective_radius,
             targets=targets_ctx,
         )
+        if self._controller_v1:
+            self.viewer_controller.set_map_overlay_legend(
+                self._build_map_overlay_legend(phase_for_overlay, move_range, shoot_range)
+            )
+
+    def _update_log_filter_hidden_counts(self) -> None:
+        from collections import Counter
+
+        filters = self.viewer_controller._log_filters
+        hidden: Counter = Counter()
+        for entry in self._log_entries:
+            raw = str(entry.get("raw") or entry.get("display") or "")
+            kind = classify_log_kind(raw)
+            if kind in filters and not filters.get(kind, True):
+                hidden[kind] += 1
+        self.viewer_controller.set_log_filter_hidden_counts(dict(hidden))
 
     def _enqueue_fx_event(self, event: FxShotEvent) -> None:
         self._fx_shot_queue.append(event)
@@ -3799,7 +3461,7 @@ class ViewerWindow(QtWidgets.QMainWindow):
                 if key == QtCore.Qt.Key_Escape:
                     self._cancel_shoot_sequence()
                     return True
-                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter) and getattr(self, "shoot_popover", None) and self.shoot_popover.isVisible():
+                if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter) and self.viewer_controller.shootPopoverOpen:
                     self._shoot_step_action()
                     return True
             if kind == "direction":
@@ -3826,11 +3488,11 @@ class ViewerWindow(QtWidgets.QMainWindow):
                     self._submit_answer("n")
                     return True
                 if key == QtCore.Qt.Key_Escape:
-                    self.command_input.clear()
+                    self._last_command_text = ""
                     return True
             elif kind == "int":
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                    self._submit_answer(self.int_spin.value())
+                    self._submit_answer(self._int_spin_value)
                     return True
             elif kind == "choice":
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
