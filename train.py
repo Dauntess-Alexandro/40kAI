@@ -102,7 +102,7 @@ from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer, GMZTransition
 from core.models.gumbel_muzero_selfplay import play_episode_with_gumbel_muzero, GumbelSelfPlayConfig
-from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, train_gumbel_muzero_step
+from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, train_gumbel_muzero_step, make_gmz_lr_scheduler
 from core.models.action_contract import ordered_action_keys, action_sizes_from_env
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
@@ -2577,11 +2577,18 @@ GMZ_MAX_POLICY_STALENESS_UPDATES = int(
 )
 GMZ_LATENT_DIM = int(os.getenv("GMZ_LATENT_DIM", str(GMZ_CFG.get("latent_dim", 256))))
 GMZ_HIDDEN_DIM = int(os.getenv("GMZ_HIDDEN_DIM", str(GMZ_CFG.get("hidden_dim", 256))))
+GMZ_NUM_LAYERS = int(os.getenv("GMZ_NUM_LAYERS", str(GMZ_CFG.get("num_layers", 2))))
 GMZ_ACTION_EMBED_DIM = int(os.getenv("GMZ_ACTION_EMBED_DIM", str(GMZ_CFG.get("action_embed_dim", 64))))
-GMZ_MCTS_SIMS = int(os.getenv("GMZ_MCTS_SIMS", str(GMZ_CFG.get("num_simulations", 96))))
-GMZ_ROOT_TOP_K = int(os.getenv("GMZ_ROOT_TOP_K", str(GMZ_CFG.get("root_top_k", 16))))
+GMZ_MCTS_SIMS = int(os.getenv("GMZ_MCTS_SIMS", str(GMZ_CFG.get("num_simulations", 32))))
+GMZ_ROOT_TOP_K = int(os.getenv("GMZ_ROOT_TOP_K", str(GMZ_CFG.get("root_top_k", 8))))
 GMZ_GUMBEL_SCALE = float(os.getenv("GMZ_GUMBEL_SCALE", str(GMZ_CFG.get("gumbel_scale", 1.0))))
 GMZ_SEARCH_TEMP = float(os.getenv("GMZ_SEARCH_TEMPERATURE", str(GMZ_CFG.get("search_temperature", 0.15))))
+GMZ_PRIOR_WEIGHT = float(os.getenv("GMZ_PRIOR_WEIGHT", str(GMZ_CFG.get("prior_weight", 0.25))))
+GMZ_MAX_GRAD_NORM = float(os.getenv("GMZ_MAX_GRAD_NORM", str(GMZ_CFG.get("max_grad_norm", 1.0))))
+GMZ_TBPTT_TRUNCATE = int(os.getenv("GMZ_TBPTT_TRUNCATE", str(GMZ_CFG.get("tbptt_truncate", 3))))
+GMZ_LR_SCHEDULER = str(os.getenv("GMZ_LR_SCHEDULER", str(GMZ_CFG.get("lr_scheduler", "none"))))
+GMZ_LR_WARMUP_STEPS = int(os.getenv("GMZ_LR_WARMUP_STEPS", str(GMZ_CFG.get("lr_warmup_steps", 0))))
+GMZ_LR_TOTAL_STEPS = int(os.getenv("GMZ_LR_TOTAL_STEPS", str(GMZ_CFG.get("lr_total_steps", 0))))
 GMZ_TEMP_OPENING_MOVES = int(os.getenv("GMZ_TEMP_OPENING_MOVES", str(GMZ_CFG.get("temperature_opening_moves", 12))))
 GMZ_TEMP_OPENING = float(os.getenv("GMZ_TEMP_OPENING", str(GMZ_CFG.get("temperature_opening_value", 1.0))))
 GMZ_TEMP_LATE = float(os.getenv("GMZ_TEMP_LATE", str(GMZ_CFG.get("temperature_late_value", 0.25))))
@@ -8234,6 +8241,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
             action_sizes=[int(x) for x in n_actions],
             latent_dim=int(search_cfg_payload.get("latent_dim", GMZ_LATENT_DIM)),
             hidden_dim=int(search_cfg_payload.get("hidden_dim", GMZ_HIDDEN_DIM)),
+            num_layers=int(search_cfg_payload.get("num_layers", GMZ_NUM_LAYERS)),
             action_embed_dim=int(search_cfg_payload.get("action_embed_dim", GMZ_ACTION_EMBED_DIM)),
         ).to(cpu_device)
         gmz_net.load_state_dict(normalize_state_dict(init_weights))
@@ -8246,6 +8254,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
                 discount=float(search_cfg_payload.get("discount", GMZ_DISCOUNT)),
                 temperature=float(search_cfg_payload.get("temperature", GMZ_SEARCH_TEMP)),
                 gumbel_scale=float(search_cfg_payload.get("gumbel_scale", GMZ_GUMBEL_SCALE)),
+                prior_weight=float(search_cfg_payload.get("prior_weight", GMZ_PRIOR_WEIGHT)),
             ),
             device=cpu_device,
         )
@@ -8464,6 +8473,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         action_sizes=[int(x) for x in n_actions],
         latent_dim=int(GMZ_LATENT_DIM),
         hidden_dim=int(GMZ_HIDDEN_DIM),
+        num_layers=int(GMZ_NUM_LAYERS),
         action_embed_dim=int(GMZ_ACTION_EMBED_DIM),
     ).to(device)
     optimizer = optim.AdamW(gmz_net.parameters(), lr=GMZ_LR, amsgrad=True)
@@ -8473,11 +8483,17 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         lr=GMZ_LR,
         batch_size=GMZ_BATCH_SIZE,
         unroll_steps=GMZ_UNROLL_STEPS,
+        tbptt_truncate=GMZ_TBPTT_TRUNCATE,
         value_loss_weight=GMZ_VALUE_LOSS_WEIGHT,
         reward_loss_weight=GMZ_REWARD_LOSS_WEIGHT,
         l2_weight=GMZ_L2_WEIGHT,
+        max_grad_norm=GMZ_MAX_GRAD_NORM,
+        lr_scheduler=GMZ_LR_SCHEDULER,
+        lr_warmup_steps=GMZ_LR_WARMUP_STEPS,
+        lr_total_steps=GMZ_LR_TOTAL_STEPS,
         max_policy_staleness_updates=int(GMZ_MAX_POLICY_STALENESS_UPDATES),
     )
+    gmz_scheduler = make_gmz_lr_scheduler(optimizer, trainer_cfg)
 
     policy_version = 0
     optimize_steps = 0
@@ -8655,8 +8671,10 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                         "discount": GMZ_DISCOUNT,
                         "temperature": GMZ_SEARCH_TEMP,
                         "gumbel_scale": GMZ_GUMBEL_SCALE,
+                        "prior_weight": GMZ_PRIOR_WEIGHT,
                         "latent_dim": GMZ_LATENT_DIM,
                         "hidden_dim": GMZ_HIDDEN_DIM,
+                        "num_layers": GMZ_NUM_LAYERS,
                         "action_embed_dim": GMZ_ACTION_EMBED_DIM,
                     },
                     {
@@ -8776,6 +8794,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 config=trainer_cfg,
                 device=device,
                 current_policy_version=int(policy_version),
+                scheduler=gmz_scheduler,
             )
             if update_info is None:
                 continue

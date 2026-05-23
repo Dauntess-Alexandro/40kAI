@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -8,11 +9,121 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+
+GMZ_PRESETS: dict[str, dict] = {
+    "fast": {
+        "latent_dim": 128,
+        "hidden_dim": 128,
+        "num_layers": 1,
+        "action_embed_dim": 32,
+    },
+    "balanced": {
+        "latent_dim": 256,
+        "hidden_dim": 256,
+        "num_layers": 2,
+        "action_embed_dim": 64,
+    },
+    "heavy": {
+        "latent_dim": 512,
+        "hidden_dim": 512,
+        "num_layers": 3,
+        "action_embed_dim": 128,
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Factory helpers
+# ---------------------------------------------------------------------------
+
+def gumbel_muzero_kwargs_from_env() -> dict:
+    preset_name = os.getenv("GMZ_PRESET", "balanced").lower()
+    preset = GMZ_PRESETS.get(preset_name, GMZ_PRESETS["balanced"]).copy()
+    overrides = {
+        "latent_dim": int(os.getenv("GMZ_LATENT_DIM", str(preset["latent_dim"]))),
+        "hidden_dim": int(os.getenv("GMZ_HIDDEN_DIM", str(preset["hidden_dim"]))),
+        "num_layers": int(os.getenv("GMZ_NUM_LAYERS", str(preset["num_layers"]))),
+        "action_embed_dim": int(os.getenv("GMZ_ACTION_EMBED_DIM", str(preset["action_embed_dim"]))),
+    }
+    return overrides
+
+
+def gumbel_muzero_arch_from_payload(payload: dict | None) -> dict:
+    if isinstance(payload, dict):
+        arch = payload.get("arch")
+        if isinstance(arch, dict):
+            out = gumbel_muzero_kwargs_from_env()
+            for key in ("latent_dim", "hidden_dim", "num_layers", "action_embed_dim"):
+                if key in arch:
+                    out[key] = int(arch[key])
+            return out
+    return gumbel_muzero_kwargs_from_env()
+
+
+def make_gumbel_muzero_net(obs_dim: int, action_sizes: list[int], **overrides):
+    kwargs = gumbel_muzero_kwargs_from_env()
+    kwargs.update(overrides)
+    return GumbelMuZeroNet(obs_dim, action_sizes, **kwargs)
+
+
+def make_gumbel_muzero_net_preset(obs_dim: int, action_sizes: list[int], preset: str = "balanced", **overrides):
+    kwargs = GMZ_PRESETS.get(preset, GMZ_PRESETS["balanced"]).copy()
+    kwargs.update(overrides)
+    return GumbelMuZeroNet(obs_dim, action_sizes, **kwargs)
+
+
+def load_gumbel_muzero_state_dict(net: "GumbelMuZeroNet", state_dict: dict, *, log_fn=None) -> tuple:
+    state = dict(state_dict)
+    legacy = any(str(k).startswith("representation.0.") for k in state) and not any(
+        str(k).startswith("repr_input_fc.") for k in state
+    )
+    if legacy and log_fn is not None:
+        log_fn(
+            "[GMZ][WARN] Чекпойнт со старой архитектурой (простой MLP). "
+            "Нужно переобучить модель — миграция весов не поддерживается."
+        )
+    missing, unexpected = net.load_state_dict(state, strict=False)
+    if log_fn is not None and (missing or unexpected):
+        log_fn(
+            f"[GMZ][WARN] load_state_dict: missing={len(missing)} unexpected={len(unexpected)} "
+            f"(первые missing: {list(missing)[:3]})"
+        )
+    return missing, unexpected
+
+
+# ---------------------------------------------------------------------------
+# Building blocks
+# ---------------------------------------------------------------------------
+
 def _normalize_latent(latent: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
     mean = latent.mean(dim=1, keepdim=True)
     std = latent.std(dim=1, keepdim=True).clamp_min(eps)
     return (latent - mean) / std
 
+
+class ResidualBlock(nn.Module):
+    """Pre-norm residual MLP block — mirrors AlphaZero trunk."""
+
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.fc1 = nn.Linear(hidden_dim, hidden_dim)
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        x = F.relu(self.norm1(self.fc1(x)))
+        x = self.norm2(self.fc2(x))
+        return F.relu(x + residual)
+
+
+# ---------------------------------------------------------------------------
+# Config dataclass
+# ---------------------------------------------------------------------------
 
 @dataclass
 class GumbelMuZeroModelConfig:
@@ -20,15 +131,20 @@ class GumbelMuZeroModelConfig:
     action_sizes: list[int]
     latent_dim: int = 256
     hidden_dim: int = 256
+    num_layers: int = 2
     action_embed_dim: int = 64
 
 
+# ---------------------------------------------------------------------------
+# Main network
+# ---------------------------------------------------------------------------
+
 class GumbelMuZeroNet(nn.Module):
     """
-    Factorized Gumbel MuZero network:
-    - representation: obs -> latent
-    - dynamics: (latent, action) -> next_latent + reward
-    - prediction: latent -> policy heads + value
+    Factorized Gumbel MuZero network with residual trunk:
+    - representation: obs -> latent  (LayerNorm + ResidualBlocks)
+    - dynamics: (latent, action) -> next_latent + reward  (skip connection + MLP reward head)
+    - prediction: latent -> policy heads + value  (ResidualBlock trunk)
     """
 
     def __init__(
@@ -37,6 +153,7 @@ class GumbelMuZeroNet(nn.Module):
         action_sizes: list[int],
         latent_dim: int = 256,
         hidden_dim: int = 256,
+        num_layers: int = 2,
         action_embed_dim: int = 64,
     ):
         super().__init__()
@@ -44,39 +161,63 @@ class GumbelMuZeroNet(nn.Module):
         self.action_sizes = [int(x) for x in action_sizes]
         self.latent_dim = int(latent_dim)
         self.hidden_dim = int(hidden_dim)
+        self.num_layers = max(1, int(num_layers))
         self.action_embed_dim = int(action_embed_dim)
         self.num_heads = len(self.action_sizes)
 
-        self.representation = nn.Sequential(
-            nn.Linear(self.obs_dim, self.hidden_dim),
-            nn.ReLU(),
-            nn.Linear(self.hidden_dim, self.latent_dim),
-            nn.ReLU(),
+        # --- Representation: obs -> hidden -> ... -> latent ---
+        self.repr_input_fc = nn.Linear(self.obs_dim, self.hidden_dim)
+        self.repr_input_norm = nn.LayerNorm(self.hidden_dim)
+        self.repr_blocks = nn.ModuleList(
+            [ResidualBlock(self.hidden_dim) for _ in range(self.num_layers)]
         )
+        self.repr_output_fc = nn.Linear(self.hidden_dim, self.latent_dim)
 
+        # --- Action embeddings ---
         self.action_embeddings = nn.ModuleList(
             [nn.Embedding(int(size), self.action_embed_dim) for size in self.action_sizes]
         )
 
+        # --- Dynamics: (latent + action_emb) -> next_latent + reward ---
         dyn_in = self.latent_dim + self.action_embed_dim * self.num_heads
-        self.dynamics_torso = nn.Sequential(
-            nn.Linear(dyn_in, self.hidden_dim),
-            nn.ReLU(),
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.ReLU(),
-        )
+        self.dyn_input_norm = nn.LayerNorm(dyn_in)
+        self.dyn_fc1 = nn.Linear(dyn_in, self.hidden_dim)
+        self.dyn_norm1 = nn.LayerNorm(self.hidden_dim)
+        self.dyn_fc2 = nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.dyn_norm2 = nn.LayerNorm(self.hidden_dim)
+        self.dyn_skip = nn.Linear(dyn_in, self.hidden_dim)
         self.next_latent_head = nn.Linear(self.hidden_dim, self.latent_dim)
-        self.reward_head = nn.Linear(self.hidden_dim, 1)
-
-        self.prediction_torso = nn.Sequential(
-            nn.Linear(self.latent_dim, self.hidden_dim),
+        self.reward_head = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+            nn.LayerNorm(self.hidden_dim // 2),
             nn.ReLU(),
+            nn.Linear(self.hidden_dim // 2, 1),
         )
-        self.policy_heads = nn.ModuleList([nn.Linear(self.hidden_dim, int(size)) for size in self.action_sizes])
-        self.value_head = nn.Linear(self.hidden_dim, 1)
+
+        # --- Prediction: latent -> policy + value ---
+        self.pred_input_fc = nn.Linear(self.latent_dim, self.hidden_dim)
+        self.pred_input_norm = nn.LayerNorm(self.hidden_dim)
+        self.pred_blocks = nn.ModuleList(
+            [ResidualBlock(self.hidden_dim) for _ in range(max(1, self.num_layers - 1))]
+        )
+        self.policy_heads = nn.ModuleList(
+            [nn.Linear(self.hidden_dim, int(size)) for size in self.action_sizes]
+        )
+        self.value_head = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim // 2, 1),
+        )
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
 
     def encode(self, obs: torch.Tensor) -> torch.Tensor:
-        latent = self.representation(obs)
+        h = F.relu(self.repr_input_norm(self.repr_input_fc(obs)))
+        for block in self.repr_blocks:
+            h = block(h)
+        latent = self.repr_output_fc(h)
         return _normalize_latent(latent)
 
     def _embed_actions(self, actions: torch.Tensor) -> torch.Tensor:
@@ -88,14 +229,21 @@ class GumbelMuZeroNet(nn.Module):
 
     def dynamics(self, latent: torch.Tensor, actions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         action_emb = self._embed_actions(actions)
-        h = self.dynamics_torso(torch.cat([latent, action_emb], dim=1))
+        x = torch.cat([latent, action_emb], dim=1)
+        x = self.dyn_input_norm(x)
+        h = F.relu(self.dyn_norm1(self.dyn_fc1(x)))
+        h = self.dyn_norm2(self.dyn_fc2(h))
+        skip = F.relu(self.dyn_skip(x))
+        h = F.relu(h + skip)
         next_latent = _normalize_latent(self.next_latent_head(h))
         reward = self.reward_head(h).squeeze(1)
         return next_latent, reward
 
     def predict(self, latent: torch.Tensor, masks_by_head: Optional[list[torch.Tensor]] = None):
-        trunk = self.prediction_torso(latent)
-        logits = [head(trunk) for head in self.policy_heads]
+        h = F.relu(self.pred_input_norm(self.pred_input_fc(latent)))
+        for block in self.pred_blocks:
+            h = block(h)
+        logits = [head(h) for head in self.policy_heads]
         if masks_by_head:
             masked_logits: list[torch.Tensor] = []
             for i, head_logits in enumerate(logits):
@@ -108,8 +256,12 @@ class GumbelMuZeroNet(nn.Module):
                         continue
                 masked_logits.append(head_logits)
             logits = masked_logits
-        value = torch.tanh(self.value_head(trunk).squeeze(1))
+        value = torch.tanh(self.value_head(h).squeeze(1))
         return logits, value
+
+    # ------------------------------------------------------------------
+    # Public inference API
+    # ------------------------------------------------------------------
 
     def initial_inference(self, obs: torch.Tensor, masks_by_head: Optional[list[torch.Tensor]] = None):
         latent = self.encode(obs)

@@ -6156,7 +6156,7 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                 }
                                 Label {
-                                    text: "AlphaZero · Gumbel MuZero — сильнее за счёт просчёта вперёд, дороже по времени."
+                                    text: "AlphaZero Tree · Gumbel MuZero — сильная игра за счёт просчёта вперёд, дороже по времени.\nAlphaZero Proxy — тот же self-play, но на ходу без полного MCTS (быстрее инференс)."
                                     wrapMode: Text.WordWrap
                                     color: "#334155"
                                     Layout.fillWidth: true
@@ -6485,17 +6485,17 @@ ApplicationWindow {
                         }
                     }
 
-                    // AlphaZero
+                    // AlphaZero Tree
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: azCardRow.implicitHeight
+                        implicitHeight: azTreeCardRow.implicitHeight
                         radius: Math.round(12 * root.uiScale)
                         color: root.bgElevated
                         border.color: root.uiBorder
                         border.width: 1
 
                         RowLayout {
-                            id: azCardRow
+                            id: azTreeCardRow
                             width: parent.width
                             spacing: 0
 
@@ -6511,7 +6511,7 @@ ApplicationWindow {
                                 Layout.margins: Math.round(12 * root.uiScale)
 
                                 Text {
-                                    text: "AlphaZero (AZ)"
+                                    text: "AlphaZero Tree (AZ Tree)"
                                     font.bold: true
                                     font.pixelSize: Math.round(16 * root.uiScale)
                                     color: root.uiTextMain
@@ -6525,10 +6525,10 @@ ApplicationWindow {
                                     Rectangle {
                                         radius: Math.round(999 * root.uiScale)
                                         color: "#ede9fe"
-                                        implicitHeight: azB1.implicitHeight + Math.round(6 * root.uiScale)
-                                        implicitWidth: azB1.implicitWidth + Math.round(14 * root.uiScale)
+                                        implicitHeight: azTreeB1.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azTreeB1.implicitWidth + Math.round(14 * root.uiScale)
                                         Text {
-                                            id: azB1
+                                            id: azTreeB1
                                             anchors.centerIn: parent
                                             text: "Тактика+"
                                             font.pixelSize: Math.round(11 * root.uiScale)
@@ -6538,10 +6538,10 @@ ApplicationWindow {
                                     Rectangle {
                                         radius: Math.round(999 * root.uiScale)
                                         color: "#ddd6fe"
-                                        implicitHeight: azB2.implicitHeight + Math.round(6 * root.uiScale)
-                                        implicitWidth: azB2.implicitWidth + Math.round(14 * root.uiScale)
+                                        implicitHeight: azTreeB2.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azTreeB2.implicitWidth + Math.round(14 * root.uiScale)
                                         Text {
-                                            id: azB2
+                                            id: azTreeB2
                                             anchors.centerIn: parent
                                             text: "Качество"
                                             font.pixelSize: Math.round(11 * root.uiScale)
@@ -6551,12 +6551,12 @@ ApplicationWindow {
                                     Rectangle {
                                         radius: Math.round(999 * root.uiScale)
                                         color: "#ede9fe"
-                                        implicitHeight: azB3.implicitHeight + Math.round(6 * root.uiScale)
-                                        implicitWidth: azB3.implicitWidth + Math.round(14 * root.uiScale)
+                                        implicitHeight: azTreeB3.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azTreeB3.implicitWidth + Math.round(14 * root.uiScale)
                                         Text {
-                                            id: azB3
+                                            id: azTreeB3
                                             anchors.centerIn: parent
-                                            text: "Compute-heavy"
+                                            text: "Super Very Compute-heavy"
                                             font.pixelSize: Math.round(11 * root.uiScale)
                                             color: "#5b21b6"
                                         }
@@ -6564,10 +6564,10 @@ ApplicationWindow {
                                     Rectangle {
                                         radius: Math.round(999 * root.uiScale)
                                         color: "#ddd6fe"
-                                        implicitHeight: azB4.implicitHeight + Math.round(6 * root.uiScale)
-                                        implicitWidth: azB4.implicitWidth + Math.round(14 * root.uiScale)
+                                        implicitHeight: azTreeB4.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azTreeB4.implicitWidth + Math.round(14 * root.uiScale)
                                         Text {
-                                            id: azB4
+                                            id: azTreeB4
                                             anchors.centerIn: parent
                                             text: "MCTS"
                                             font.pixelSize: Math.round(11 * root.uiScale)
@@ -6587,7 +6587,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "ИИ, который сочетает нейросеть и поиск по дереву (MCTS). Нейросеть подсказывает хорошие направления, а MCTS просчитывает варианты вперед и помогает выбрать более сильный ход."
+                                    text: "ИИ с настоящим поиском по дереву (MCTS): нейросеть даёт приоритеты и оценку позиции, а поиск прокручивает варианты вперёд (число симуляций и глубина реально влияют на силу хода)."
                                 }
                                 Label {
                                     text: "Как учится"
@@ -6600,7 +6600,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "играет self-play матчи, накапливает позиции и улучшает сеть так, чтобы она лучше оценивала ходы и состояния, опираясь на результаты поиска."
+                                    text: "Self-play: акторы играют партии, в позициях используется MCTS, сеть учится предсказывать политику и value так, как если бы играла с этим поиском."
                                 }
                                 Label {
                                     text: "Сильные стороны"
@@ -6613,7 +6613,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "• сильная тактическая игра за счёт просчета вперед;\n• лучше учитывает последствия на несколько ходов;\n• часто заметно усиливается при росте search-бюджета;\n• хорошо подходит для eval/viewer, где важна сила решений."
+                                    text: "• максимальная сила среди вариантов AZ в нашем проекте;\n• лучше видит последствия на несколько ходов;\n• при росте mcts_simulations / mcts_max_depth обычно заметно крепче;\n• лучший выбор для eval/viewer, если важна сила, а не скорость хода."
                                 }
                                 Label {
                                     text: "Ограничения"
@@ -6626,7 +6626,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "• медленнее на инференсе из-за MCTS;\n• требует больше CPU/GPU ресурсов;\n• чувствителен к настройкам поиска (simulations, c_puct, temperature);\n• при слишком малом search-бюджете может терять преимущество."
+                                    text: "• самый тяжёлый AZ по CPU/GPU на каждом ходу;\n• чувствителен к search-настройкам (mcts_simulations, c_puct, mcts_max_depth, temperature);\n• при малом бюджете поиска преимущество над PPO/DQN может быть неочевидным."
                                 }
                                 Label {
                                     text: "Режимы инференса"
@@ -6639,7 +6639,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "• Greedy — быстро, без поиска;\n• MCTS — сильнее, но медленнее."
+                                    text: "• Greedy — один проход сети, без MCTS (быстро, слабее);\n• MCTS — с поиском (сильнее, медленнее)."
                                 }
                                 Label {
                                     text: "Температура"
@@ -6652,7 +6652,7 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "влияет только в MCTS (в Greedy не используется)."
+                                    text: "Только в режиме MCTS (в Greedy не используется)."
                                 }
                                 Label {
                                     text: "Когда выбирать"
@@ -6665,7 +6665,193 @@ ApplicationWindow {
                                     wrapMode: Text.WordWrap
                                     Layout.fillWidth: true
                                     color: root.uiTextMuted
-                                    text: "когда приоритет — качество решений и сила игры, а не максимальная скорость."
+                                    text: "когда приоритет — качество решений и сила игры, есть ресурсы на обучение и на медленный инференс."
+                                }
+                            }
+                        }
+                    }
+
+                    // AlphaZero Proxy
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: azProxyCardRow.implicitHeight
+                        radius: Math.round(12 * root.uiScale)
+                        color: root.bgElevated
+                        border.color: root.uiBorder
+                        border.width: 1
+
+                        RowLayout {
+                            id: azProxyCardRow
+                            width: parent.width
+                            spacing: 0
+
+                            Rectangle {
+                                width: Math.round(6 * root.uiScale)
+                                Layout.fillHeight: true
+                                color: "#6366f1"
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Layout.margins: Math.round(12 * root.uiScale)
+
+                                Text {
+                                    text: "AlphaZero Proxy (AZ Proxy)"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(16 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: Math.round(6 * root.uiScale)
+
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#e0e7ff"
+                                        implicitHeight: azProxyB1.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azProxyB1.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azProxyB1
+                                            anchors.centerIn: parent
+                                            text: "Тактика"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#3730a3"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#c7d2fe"
+                                        implicitHeight: azProxyB2.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azProxyB2.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azProxyB2
+                                            anchors.centerIn: parent
+                                            text: "Лёгкий MCTS"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#312e81"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#e0e7ff"
+                                        implicitHeight: azProxyB3.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azProxyB3.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azProxyB3
+                                            anchors.centerIn: parent
+                                            text: "Compute-light"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#3730a3"
+                                        }
+                                    }
+                                    Rectangle {
+                                        radius: Math.round(999 * root.uiScale)
+                                        color: "#c7d2fe"
+                                        implicitHeight: azProxyB4.implicitHeight + Math.round(6 * root.uiScale)
+                                        implicitWidth: azProxyB4.implicitWidth + Math.round(14 * root.uiScale)
+                                        Text {
+                                            id: azProxyB4
+                                            anchors.centerIn: parent
+                                            text: "Proxy-поиск"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            color: "#312e81"
+                                        }
+                                    }
+                                }
+
+                                Label {
+                                    text: "Что это"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "Тот же семейство AlphaZero (policy + value, self-play, replay), но на ходу поиск упрощён: вместо полного MCTS — один проход сети и шум Dirichlet в корне. Это компромисс «обучаемся как AZ, играем быстрее»."
+                                }
+                                Label {
+                                    text: "Как учится"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "Так же через self-play и replay, но в акторах используется proxy-режим поиска (не разворачивается полное дерево, как в Tree)."
+                                }
+                                Label {
+                                    text: "Сильные стороны"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "• быстрее Tree на инференсе и при большом числе акторов;\n• проще тюнить, если не хочется возиться с sims×depth;\n• удобен для длинных прогонов self-play, когда MCTS на каждом шаге слишком дорог;\n• хорош как промежуточный вариант между PPO и AZ Tree."
+                                }
+                                Label {
+                                    text: "Ограничения"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "• потолок силы ниже, чем у AZ Tree с нормальным MCTS;\n• параметр mcts_simulations в Proxy не разворачивает полное дерево — на силу хода влияют в основном сеть, mcts_top_k, Dirichlet, temperature;\n• для «максимальной силы в Viewer» обычно лучше Tree или GMZ."
+                                }
+                                Label {
+                                    text: "Режимы инференса"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "• Greedy — быстро, без search;\n• MCTS — в интерфейсе так же называется, но внутри это не полный Tree-MCTS; ожидайте поведение ближе к search-lite, не к Tree."
+                                }
+                                Label {
+                                    text: "Температура"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "Как у AZ: влияет в search-режиме, в Greedy — нет."
+                                }
+                                Label {
+                                    text: "Когда выбирать"
+                                    font.bold: true
+                                    font.pixelSize: Math.round(12 * root.uiScale)
+                                    color: root.uiTextMain
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    wrapMode: Text.WordWrap
+                                    Layout.fillWidth: true
+                                    color: root.uiTextMuted
+                                    text: "когда нужен пайплайн AlphaZero, но важнее скорость self-play / хода, чем абсолютный максимум тактики. Для «лучшего бота в турнире» — чаще Tree или GMZ."
                                 }
                             }
                         }
