@@ -103,6 +103,7 @@ from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSea
 from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer, GMZTransition
 from core.models.gumbel_muzero_selfplay import play_episode_with_gumbel_muzero, GumbelSelfPlayConfig
 from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, train_gumbel_muzero_step, make_gmz_lr_scheduler
+from core.models.gumbel_muzero_reanalysis import GumbelMuZeroReanalyzer, GumbelMuZeroReanalysisConfig
 from core.models.action_contract import ordered_action_keys, action_sizes_from_env
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
@@ -2597,6 +2598,8 @@ GMZ_OUTCOME_ONLY = str(os.getenv("GMZ_OUTCOME_ONLY", str(GMZ_CFG.get("outcome_on
 GMZ_OUTCOME_VALUE_WIN = float(os.getenv("GMZ_OUTCOME_VALUE_WIN", str(GMZ_CFG.get("outcome_value_win", 1.0))))
 GMZ_OUTCOME_VALUE_LOSS = float(os.getenv("GMZ_OUTCOME_VALUE_LOSS", str(GMZ_CFG.get("outcome_value_loss", -1.0))))
 GMZ_OUTCOME_VALUE_DRAW = float(os.getenv("GMZ_OUTCOME_VALUE_DRAW", str(GMZ_CFG.get("outcome_value_draw", -0.25))))
+# B2: fraction of training steps to run reanalysis (0=disabled)
+GMZ_REANALYZE_FRACTION = float(os.getenv("GMZ_REANALYZE_FRACTION", "0.15"))
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -8497,6 +8500,38 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     )
     gmz_scheduler = make_gmz_lr_scheduler(optimizer, trainer_cfg)
 
+    # B4: EMA target for SimSiam consistency loss
+    from core.models.gumbel_muzero_trainer import GumbelMuZeroEMATarget
+    ema_tau = 0.005
+    ema_target = None
+    if float(GMZ_CONSISTENCY_W) > 0.0:
+        ema_target = GumbelMuZeroEMATarget(gmz_net, tau=ema_tau)
+        append_agent_log(f"[GMZ][EMA] tau={ema_tau} consistency_w={GMZ_CONSISTENCY_W}")
+
+    # B2: Reanalyzer for real-search policy target refresh
+    reanalyze_frac = float(GMZ_REANALYZE_FRACTION)
+    gmz_reanalyzer = None
+    if reanalyze_frac > 0.0:
+        from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
+        _search_for_reanalyze = GumbelMuZeroSearch(
+            gmz_net,
+            config=GumbelMuZeroSearchConfig(
+                num_simulations=max(1, int(GMZ_MCTS_SIMS) // 2),  # fast search for reanalysis
+                root_top_k=max(1, int(GMZ_ROOT_TOP_K) // 2),
+                discount=float(GMZ_DISCOUNT),
+                temperature=float(GMZ_SEARCH_TEMP),
+                gumbel_scale=float(GMZ_GUMBEL_SCALE),
+                prior_weight=float(GMZ_PRIOR_WEIGHT),
+            ),
+            device=device,
+        )
+        gmz_reanalyzer = GumbelMuZeroReanalyzer(
+            config=GumbelMuZeroReanalysisConfig(fast_sims=max(1, int(GMZ_MCTS_SIMS) // 2)),
+            search=_search_for_reanalyze,
+            device=device,
+        )
+        append_agent_log(f"[GMZ][REANALYZE] fraction={reanalyze_frac} fast_sims={max(1, int(GMZ_MCTS_SIMS) // 2)}")
+
     policy_version = 0
     optimize_steps = 0
     global_step = 0
@@ -8797,6 +8832,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 device=device,
                 current_policy_version=int(policy_version),
                 scheduler=gmz_scheduler,
+                ema_target=ema_target,
             )
             if update_info is None:
                 continue
@@ -8804,6 +8840,16 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             policy_version += 1
             last_loss = float(update_info.get("loss", 0.0) or 0.0)
             metrics_obj.updateLoss(float(last_loss))
+            # B2: Periodic reanalysis — refresh policy targets with real search
+            if (
+                gmz_reanalyzer is not None
+                and float(reanalyze_frac) > 0.0
+                and optimize_steps > 0
+                and (optimize_steps % max(1, int(1.0 / float(reanalyze_frac)))) == 0
+            ):
+                n_reanalyzed = gmz_reanalyzer.update_replay_with_reanalysis(replay, gmz_net)
+                if n_reanalyzed > 0:
+                    append_agent_log(f"[GMZ][REANALYZE] step={optimize_steps} updated={n_reanalyzed}")
             append_agent_log(
                 "[GMZ][UPDATE] "
                 f"step={optimize_steps} policy_version={policy_version} "

@@ -15,7 +15,9 @@ class GMZTransition:
     reward: float
     done: bool
     policy_targets: list[np.ndarray]
+    behavior_logits: list[np.ndarray]  # A3: pre-softmax root logits for V-trace IS
     value_target: float
+    legal_masks_by_head: list[np.ndarray] | None = None  # B2: for real-search reanalysis
     policy_version: int = 0
 
 
@@ -63,6 +65,7 @@ class GumbelMuZeroReplayBuffer:
             seq_dones: list[float] = []
             seq_policies: list[list[np.ndarray]] = []
             seq_values: list[float] = []
+            seq_behavior_logits: list[list[np.ndarray]] = []  # A3
             for k in range(max(1, int(unroll_steps))):
                 idx = min(start + k, len(self.buffer) - 1)
                 cur = self.buffer[idx]
@@ -72,6 +75,9 @@ class GumbelMuZeroReplayBuffer:
                 seq_dones.append(float(bool(cur.done)))
                 seq_policies.append([np.asarray(x, dtype=np.float32) for x in cur.policy_targets])
                 seq_values.append(float(cur.value_target))
+                seq_behavior_logits.append(
+                    [np.asarray(x, dtype=np.float32) for x in (cur.behavior_logits or [])]
+                )
                 if bool(cur.done):
                     break
             out.append(
@@ -82,6 +88,12 @@ class GumbelMuZeroReplayBuffer:
                     "dones": seq_dones,
                     "policy_targets": seq_policies,
                     "value_targets": seq_values,
+                    "behavior_logits": seq_behavior_logits,
+                    "legal_masks_by_head": [
+                        [np.asarray(x, dtype=np.float32) for x in cur.legal_masks_by_head]
+                        if cur.legal_masks_by_head else []
+                        for _ in range(len(seq_states))
+                    ],
                     "policy_version": int(tr.policy_version),
                 }
             )
@@ -97,6 +109,12 @@ class GumbelMuZeroReplayBuffer:
                     "reward": float(x.reward),
                     "done": bool(x.done),
                     "policy_targets": [np.asarray(p, dtype=np.float32) for p in x.policy_targets],
+                    "behavior_logits": [
+                        np.asarray(b, dtype=np.float32) for b in (x.behavior_logits or [])
+                    ],
+                    "legal_masks_by_head": [
+                        np.asarray(m, dtype=np.float32) for m in (x.legal_masks_by_head or [])
+                    ],
                     "value_target": float(x.value_target),
                     "policy_version": int(x.policy_version),
                 }
@@ -120,6 +138,12 @@ class GumbelMuZeroReplayBuffer:
                     reward=float(row.get("reward", 0.0) or 0.0),
                     done=bool(row.get("done", False)),
                     policy_targets=[np.asarray(p, dtype=np.float32) for p in (row.get("policy_targets") or [])],
+                    behavior_logits=[
+                        np.asarray(b, dtype=np.float32) for b in (row.get("behavior_logits") or [])
+                    ],
+                    legal_masks_by_head=[
+                        np.asarray(m, dtype=np.float32) for m in (row.get("legal_masks_by_head") or [])
+                    ],
                     value_target=float(row.get("value_target", 0.0) or 0.0),
                     policy_version=int(row.get("policy_version", 0) or 0),
                 )

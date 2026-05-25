@@ -60,7 +60,7 @@ def play_episode_with_gumbel_muzero(
         legal_masks = [legal_dict[k] for k in ordered_keys]
         _temp = cfg.temperature_opening_value if steps < int(cfg.temperature_opening_moves) else cfg.temperature_late_value
 
-        pi_targets, action_list, value_est = search.run(
+        pi_targets, behavior_logits, action_list, value_est = search.run(
             obs=obs_np,
             legal_masks_by_head=legal_masks,
             deterministic=False,
@@ -90,7 +90,9 @@ def play_episode_with_gumbel_muzero(
                 "reward": float(reward),
                 "done": bool(done),
                 "policy_targets": [np.asarray(x, dtype=np.float32) for x in pi_targets],
+                "behavior_logits": [np.asarray(x, dtype=np.float32) for x in behavior_logits],
                 "value_est": float(value_est),
+                "legal_masks_by_head": [np.asarray(x, dtype=np.float32) for x in legal_masks],  # B2: for reanalysis
             }
         )
         final_value = float(np.tanh(float(value_est)))
@@ -109,6 +111,10 @@ def play_episode_with_gumbel_muzero(
             final_value = outcome_value_loss
         else:
             final_value = outcome_value_draw
+    else:
+        # When outcome_only=False, still clip via atom range so value_target stays in distribution support
+        from core.models.gumbel_muzero_model import VALUE_ATOM_MIN, VALUE_ATOM_MAX
+        final_value = float(np.clip(final_value, VALUE_ATOM_MIN, VALUE_ATOM_MAX))
 
     out: list[GMZTransition] = []
     for rec in records:
@@ -119,7 +125,9 @@ def play_episode_with_gumbel_muzero(
                 reward=float(rec["reward"]),
                 done=bool(rec["done"]),
                 policy_targets=[np.asarray(x, dtype=np.float32) for x in rec["policy_targets"]],
+                behavior_logits=[np.asarray(x, dtype=np.float32) for x in rec["behavior_logits"]],
                 value_target=float(final_value),
+                legal_masks_by_head=rec.get("legal_masks_by_head", []),  # B2: for real-search reanalysis
                 policy_version=int(policy_version),
             )
         )

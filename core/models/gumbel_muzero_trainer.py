@@ -1,10 +1,40 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import copy
+import numpy as np
 import torch
 import torch.nn.functional as F
 
 from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer
+
+
+# ---------------------------------------------------------------------------
+# B4: EMA target for SimSiam consistency (Conservative Polyak)
+# ---------------------------------------------------------------------------
+
+class GumbelMuZeroEMATarget:
+    """Slow-moving copy of the network for SimSiam consistency loss.
+
+    Uses Conservative Polyak (tau=0.005) to keep the target encoder stable.
+    This provides the target latent for the consistency loss between
+    the online network's prediction and the EMA-encoded observation.
+    """
+
+    def __init__(self, net, tau: float = 0.005):
+        self.tau = tau
+        # Deep copy of the entire network as the EMA target
+        self.target = copy.deepcopy(net)
+        self.target.eval()
+        # Freeze target to prevent gradients
+        for p in self.target.parameters():
+            p.requires_grad_(False)
+
+    def ema_update(self, net) -> None:
+        """Move EMA target toward online network (Conservative Polyak)."""
+        with torch.no_grad():
+            for tp, sp in zip(self.target.parameters(), net.parameters()):
+                tp.data.mul_(1.0 - self.tau).add_(sp.data, alpha=self.tau)
 
 
 @dataclass
@@ -32,6 +62,46 @@ def _policy_ce_loss(logits_by_head, target_by_head, device: torch.device) -> tor
         logp = F.log_softmax(logits, dim=1)
         loss = loss + (-(target * logp).sum(dim=1).mean())
     return loss
+
+
+def _vtrace_is_weights(
+    logits: list[torch.Tensor],
+    behavior_logits: list[np.ndarray],
+    actions: list[int],
+    clip_rho: float = 10.0,
+) -> float:
+    """Compute per-sample V-trace importance-sampling (IS) ratio for one step.
+
+    For each head h:
+        ρ_h = π_target[a_h | h] / π_behavior[a_h | h]
+    where π_target = softmax(logits) and π_behavior = softmax(behavior_logits).
+
+    The overall ratio is the product over heads: ρ = ∏_h ρ_h.
+    Clamped to [0, clip_rho] to prevent instability.
+
+    Args:
+        logits: current-network logits per head, each [n_actions]
+        behavior_logits: stored root logits per head, each [n_actions]
+        actions: the action indices taken at this step per head
+
+    Returns:
+        Scalar IS weight (clamped, for multiplying policy loss).
+    """
+    log_rho = 0.0
+    for h_idx, (logits_h, beh_np, act_h) in enumerate(zip(logits, behavior_logits, actions)):
+        # log π_target[a] = logits_h[a] - logsumexp(logits_h)
+        log_target = logits_h.float()
+        log_target = log_target - logits_h.logsumexp(dim=0)
+        target_logprob = log_target[act_h] if act_h < len(log_target) else logits_h.new_full((1,), -1e9)[0]
+
+        # log π_behavior[a] = beh_np[a] - logsumexp(beh_np)
+        beh_t = torch.as_tensor(beh_np, dtype=torch.float32, device=logits_h.device)
+        beh_log_softmax = beh_t - beh_t.logsumexp(dim=0)
+        beh_logprob = beh_log_softmax[act_h] if act_h < len(beh_log_softmax) else beh_t.new_full((1,), -1e9)[0]
+
+        log_rho = log_rho + float(target_logprob - beh_logprob)
+
+    return float(np.clip(np.exp(log_rho), 0.0, float(clip_rho)))
 
 
 def make_gmz_lr_scheduler(optimizer, config: GumbelMuZeroTrainConfig):
@@ -90,13 +160,18 @@ def train_gumbel_muzero_step(
         rewards = sample["rewards"]
         policies = sample["policy_targets"]
         values = sample["value_targets"]
+        behavior_logits_seq = sample.get("behavior_logits", []) or []
         if not states:
             continue
         samples_count += 1
 
+        # A3: V-trace IS weight for step 0
         obs0 = torch.as_tensor(states[0], dtype=torch.float32, device=device).unsqueeze(0)
         logits, value, reward0, latent = net.initial_inference(obs0, masks_by_head=None)
-        total_policy_loss = total_policy_loss + _policy_ce_loss(logits, policies[0], device=device)
+        logits_list = [l.squeeze(0) for l in logits]
+        beh0 = behavior_logits_seq[0] if behavior_logits_seq else []
+        is_weight = _vtrace_is_weights(logits_list, beh0, actions[0]) if beh0 else 1.0
+        total_policy_loss = total_policy_loss + _policy_ce_loss(logits, policies[0], device=device) * is_weight
         total_value_loss = total_value_loss + F.mse_loss(
             value, torch.tensor([float(values[0])], device=device)
         )
@@ -113,7 +188,10 @@ def train_gumbel_muzero_step(
             logits_t, value_t, reward_t, latent = net.recurrent_inference(
                 latent, action_t, masks_by_head=None
             )
-            total_policy_loss = total_policy_loss + _policy_ce_loss(logits_t, policies[t], device=device)
+            logits_t_list = [l.squeeze(0) for l in logits_t]
+            beh_t = behavior_logits_seq[t] if t < len(behavior_logits_seq) else []
+            is_weight_t = _vtrace_is_weights(logits_t_list, beh_t, actions[t - 1]) if beh_t else 1.0
+            total_policy_loss = total_policy_loss + _policy_ce_loss(logits_t, policies[t], device=device) * is_weight_t
             total_value_loss = total_value_loss + F.mse_loss(
                 value_t, torch.tensor([float(values[t])], device=device)
             )
@@ -154,6 +232,10 @@ def train_gumbel_muzero_step(
     loss.backward()
     torch.nn.utils.clip_grad_norm_(net.parameters(), float(config.max_grad_norm))
     optimizer.step()
+
+    # B4: EMA update for consistency target (Conservative Polyak)
+    if ema_target is not None:
+        ema_target.ema_update(net)
 
     if scheduler is not None:
         scheduler.step()
