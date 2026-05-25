@@ -2586,6 +2586,7 @@ GMZ_SEARCH_TEMP = float(os.getenv("GMZ_SEARCH_TEMPERATURE", str(GMZ_CFG.get("sea
 GMZ_PRIOR_WEIGHT = float(os.getenv("GMZ_PRIOR_WEIGHT", str(GMZ_CFG.get("prior_weight", 0.25))))
 GMZ_MAX_GRAD_NORM = float(os.getenv("GMZ_MAX_GRAD_NORM", str(GMZ_CFG.get("max_grad_norm", 1.0))))
 GMZ_TBPTT_TRUNCATE = int(os.getenv("GMZ_TBPTT_TRUNCATE", str(GMZ_CFG.get("tbptt_truncate", 3))))
+GMZ_CONSISTENCY_W = float(os.getenv("GMZ_CONSISTENCY_W", str(GMZ_CFG.get("consistency_loss_weight", "1.0"))))
 GMZ_LR_SCHEDULER = str(os.getenv("GMZ_LR_SCHEDULER", str(GMZ_CFG.get("lr_scheduler", "none"))))
 GMZ_LR_WARMUP_STEPS = int(os.getenv("GMZ_LR_WARMUP_STEPS", str(GMZ_CFG.get("lr_warmup_steps", 0))))
 GMZ_LR_TOTAL_STEPS = int(os.getenv("GMZ_LR_TOTAL_STEPS", str(GMZ_CFG.get("lr_total_steps", 0))))
@@ -8486,6 +8487,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         tbptt_truncate=GMZ_TBPTT_TRUNCATE,
         value_loss_weight=GMZ_VALUE_LOSS_WEIGHT,
         reward_loss_weight=GMZ_REWARD_LOSS_WEIGHT,
+        consistency_loss_weight=GMZ_CONSISTENCY_W,
         l2_weight=GMZ_L2_WEIGHT,
         max_grad_norm=GMZ_MAX_GRAD_NORM,
         lr_scheduler=GMZ_LR_SCHEDULER,

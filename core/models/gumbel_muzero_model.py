@@ -116,9 +116,9 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
-        x = F.relu(self.norm1(self.fc1(x)))
+        x = F.silu(self.norm1(self.fc1(x)))
         x = self.norm2(self.fc2(x))
-        return F.relu(x + residual)
+        return F.silu(x + residual)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ class GumbelMuZeroNet(nn.Module):
         self.reward_head = nn.Sequential(
             nn.Linear(self.hidden_dim, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Linear(self.hidden_dim // 2, 1),
         )
 
@@ -205,16 +205,30 @@ class GumbelMuZeroNet(nn.Module):
         )
         self.value_head = nn.Sequential(
             nn.Linear(self.hidden_dim, self.hidden_dim // 2),
-            nn.ReLU(),
+            nn.SiLU(),
             nn.Linear(self.hidden_dim // 2, 1),
+        )
+
+        # --- Consistency projection (SimSiam-style) ---
+        proj_dim = max(64, self.latent_dim // 2)
+        self.consistency_projector = nn.Sequential(
+            nn.Linear(self.latent_dim, proj_dim),
+            nn.LayerNorm(proj_dim),
+            nn.SiLU(),
+            nn.Linear(proj_dim, proj_dim),
         )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
+    def project_latent(self, latent: torch.Tensor) -> torch.Tensor:
+        """L2-normalised projection for SimSiam consistency loss."""
+        z = self.consistency_projector(latent)
+        return F.normalize(z, dim=1)
+
     def encode(self, obs: torch.Tensor) -> torch.Tensor:
-        h = F.relu(self.repr_input_norm(self.repr_input_fc(obs)))
+        h = F.silu(self.repr_input_norm(self.repr_input_fc(obs)))
         for block in self.repr_blocks:
             h = block(h)
         latent = self.repr_output_fc(h)
@@ -231,16 +245,16 @@ class GumbelMuZeroNet(nn.Module):
         action_emb = self._embed_actions(actions)
         x = torch.cat([latent, action_emb], dim=1)
         x = self.dyn_input_norm(x)
-        h = F.relu(self.dyn_norm1(self.dyn_fc1(x)))
+        h = F.silu(self.dyn_norm1(self.dyn_fc1(x)))
         h = self.dyn_norm2(self.dyn_fc2(h))
-        skip = F.relu(self.dyn_skip(x))
-        h = F.relu(h + skip)
+        skip = F.silu(self.dyn_skip(x))
+        h = F.silu(h + skip)
         next_latent = _normalize_latent(self.next_latent_head(h))
         reward = self.reward_head(h).squeeze(1)
         return next_latent, reward
 
     def predict(self, latent: torch.Tensor, masks_by_head: Optional[list[torch.Tensor]] = None):
-        h = F.relu(self.pred_input_norm(self.pred_input_fc(latent)))
+        h = F.silu(self.pred_input_norm(self.pred_input_fc(latent)))
         for block in self.pred_blocks:
             h = block(h)
         logits = [head(h) for head in self.policy_heads]

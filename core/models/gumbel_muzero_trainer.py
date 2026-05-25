@@ -15,6 +15,7 @@ class GumbelMuZeroTrainConfig:
     tbptt_truncate: int = 3
     value_loss_weight: float = 1.0
     reward_loss_weight: float = 1.0
+    consistency_loss_weight: float = 1.0
     l2_weight: float = 1e-6
     max_grad_norm: float = 1.0
     lr_scheduler: str = "none"
@@ -61,6 +62,7 @@ def train_gumbel_muzero_step(
     device: torch.device,
     current_policy_version: int = 0,
     scheduler=None,
+    ema_target=None,
 ):
     batch = replay.sample_unroll(
         batch_size=int(config.batch_size),
@@ -76,7 +78,11 @@ def train_gumbel_muzero_step(
     total_policy_loss = torch.tensor(0.0, device=device)
     total_value_loss = torch.tensor(0.0, device=device)
     total_reward_loss = torch.tensor(0.0, device=device)
+    total_consistency_loss = torch.tensor(0.0, device=device)
     samples_count = 0
+
+    _consistency_w = float(getattr(config, "consistency_loss_weight", 0.0))
+    _target_enc = (ema_target.target if ema_target is not None else net) if _consistency_w > 0.0 else None
 
     for sample in batch:
         states = sample["states"]
@@ -115,12 +121,24 @@ def train_gumbel_muzero_step(
                 reward_t, torch.tensor([float(rewards[t - 1])], device=device)
             )
 
+            # Consistency loss: predicted latent vs EMA-target encoding of next obs
+            if _target_enc is not None and t < len(states):
+                obs_t = torch.as_tensor(states[t], dtype=torch.float32, device=device).unsqueeze(0)
+                with torch.no_grad():
+                    _enc = _target_enc
+                    target_proj = _enc.project_latent(_enc.encode(obs_t)).detach()
+                pred_proj = net.project_latent(latent)
+                total_consistency_loss = total_consistency_loss + (
+                    1.0 - (pred_proj * target_proj).sum(dim=1).mean()
+                )
+
     if samples_count <= 0:
         return None
 
     policy_loss = total_policy_loss / float(samples_count)
     value_loss = total_value_loss / float(samples_count)
     reward_loss = total_reward_loss / float(samples_count)
+    consistency_loss = total_consistency_loss / float(samples_count)
     l2 = torch.tensor(0.0, device=device)
     for p in net.parameters():
         l2 = l2 + torch.sum(p * p)
@@ -129,6 +147,7 @@ def train_gumbel_muzero_step(
         policy_loss
         + float(config.value_loss_weight) * value_loss
         + float(config.reward_loss_weight) * reward_loss
+        + _consistency_w * consistency_loss
         + float(config.l2_weight) * l2
     )
     optimizer.zero_grad()
@@ -144,4 +163,5 @@ def train_gumbel_muzero_step(
         "policy_loss": float(policy_loss.item()),
         "value_loss": float(value_loss.item()),
         "reward_loss": float(reward_loss.item()),
+        "consistency_loss": float(consistency_loss.item()),
     }
