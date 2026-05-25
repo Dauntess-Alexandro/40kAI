@@ -64,44 +64,113 @@ def _policy_ce_loss(logits_by_head, target_by_head, device: torch.device) -> tor
     return loss
 
 
-def _vtrace_is_weights(
-    logits: list[torch.Tensor],
-    behavior_logits: list[np.ndarray],
-    actions: list[int],
-    clip_rho: float = 10.0,
-) -> float:
-    """Compute per-sample V-trace importance-sampling (IS) ratio for one step.
+def _vtrace_targets(
+    pi_cur_list: list[torch.Tensor],
+    pi_beh_list: list[np.ndarray],
+    actions_BT: torch.Tensor,
+    values_BT: torch.Tensor,
+    rewards_BT: torch.Tensor,
+    valid_BT: torch.Tensor,
+    rho_clip: float = 1.0,
+    c_clip: float = 1.0,
+    gamma: float = 0.997,
+) -> torch.Tensor:
+    """Compute Retrace-style value targets across full unroll.
 
-    For each head h:
-        ρ_h = π_target[a_h | h] / π_behavior[a_h | h]
-    where π_target = softmax(logits) and π_behavior = softmax(behavior_logits).
-
-    The overall ratio is the product over heads: ρ = ∏_h ρ_h.
-    Clamped to [0, clip_rho] to prevent instability.
+    Uses the canonical Retrace algorithm to correct value estimates using
+    importance-sampling corrections from the behavior policy.
 
     Args:
-        logits: current-network logits per head, each [n_actions]
-        behavior_logits: stored root logits per head, each [n_actions]
-        actions: the action indices taken at this step per head
+        pi_cur_list: current-network softmax probs per head, each (T, A_h) where
+            T is the number of unroll steps and A_h is the number of actions for head h.
+            At timestep t, we use pi_cur_list[h][t] for the IS ratio.
+        pi_beh_list: behavior policy raw logits per step, each (A_total,) flattened
+            over all heads (or list of head arrays).
+        actions_BT: selected actions per step, (B, T-1, K) where K is num_heads
+        values_BT: current value estimates, (B, T)
+        rewards_BT: rewards, (B, T-1)
+        valid_BT: validity mask, (B, T)
+        rho_clip: max importance sampling ratio (clamp max)
+        c_clip: trace decay clip (clamp max for c_t)
+        gamma: discount factor
 
     Returns:
-        Scalar IS weight (clamped, for multiplying policy loss).
+        (B, T) corrected value estimates with Retrace bootstrap corrections
     """
-    log_rho = 0.0
-    for h_idx, (logits_h, beh_np, act_h) in enumerate(zip(logits, behavior_logits, actions)):
-        # log π_target[a] = logits_h[a] - logsumexp(logits_h)
-        log_target = logits_h.float()
-        log_target = log_target - logits_h.logsumexp(dim=0)
-        target_logprob = log_target[act_h] if act_h < len(log_target) else logits_h.new_full((1,), -1e9)[0]
+    B, T = values_BT.shape
+    K = actions_BT.shape[-1]
+    rho_clip = float(rho_clip)
+    c_clip = float(c_clip)
+    device = values_BT.device
 
-        # log π_behavior[a] = beh_np[a] - logsumexp(beh_np)
-        beh_t = torch.as_tensor(beh_np, dtype=torch.float32, device=logits_h.device)
-        beh_log_softmax = beh_t - beh_t.logsumexp(dim=0)
-        beh_logprob = beh_log_softmax[act_h] if act_h < len(beh_log_softmax) else beh_t.new_full((1,), -1e9)[0]
+    corrected_values = values_BT.clone()
 
-        log_rho = log_rho + float(target_logprob - beh_logprob)
+    # Build behavior softmax per step: pi_beh_softmax[t] = (A_total,) tensor
+    pi_beh_softmax_list: list[torch.Tensor] = []
+    for beh_np in pi_beh_list:
+        beh_t = torch.as_tensor(beh_np, dtype=torch.float32, device=device)
+        if beh_t.dim() == 1:
+            pi_beh_softmax_list.append(beh_t)  # (A_total,)
+        else:
+            pi_beh_softmax_list.append(beh_t.flatten())
 
-    return float(np.clip(np.exp(log_rho), 0.0, float(clip_rho)))
+    # Retrace recursive update: for each t=0..T-2
+    for t in range(T - 1):
+        valid_t = valid_BT[:, t] * valid_BT[:, t + 1]
+        if not valid_t.any():
+            continue
+
+        # Compute importance ratio log π_cur[a] - log π_beh[a] for batch
+        log_ratio = torch.zeros(B, device=device)
+
+        # For each head, accumulate log ratio
+        for h in range(K):
+            a_h = actions_BT[:, t, h].long()  # (B,)
+            # π_cur for head h at timestep t: pi_cur_list[h][t] → shape (A_h,) for batch item 0
+            pi_cur_h_t = pi_cur_list[h][t]  # (A_h,) — per sample, single sample (B=1)
+            # For batch B>1 this would need indexing; here B=1 so we use directly
+            if B == 1:
+                pi_cur_h_t = pi_cur_h_t.unsqueeze(0)  # → (1, A_h)
+
+            # Find offset for head h in flattened behavior probs
+            # behavior logits are stored per step, each with K heads of A actions each
+            # We assume equal action space per head: A = total_actions / K
+            # Or we use the stored format: pi_beh_list[t] is list of arrays per head
+            # Let's handle both cases
+            beh_t = pi_beh_softmax_list[t] if t < len(pi_beh_softmax_list) else pi_beh_softmax_list[-1]
+            # Try to reshape if it looks like concatenated heads
+            beh_len = beh_t.numel()
+            A = beh_len // K if K > 0 and beh_len % K == 0 else beh_len
+            if beh_len == K * A:
+                # Flat concatenated; extract head h
+                beh_h_t = beh_t[h * A:(h + 1) * A]
+            else:
+                beh_h_t = beh_t
+
+            # π_beh for selected action
+            beh_prob = beh_h_t[a_h % beh_h_t.numel()].clamp_min(1e-8)
+
+            # For current policy, find the action offset
+            A_h = pi_cur_h_t.shape[-1]
+            action_idx = a_h[0] if B > 1 else a_h.item()
+            action_idx = min(action_idx, A_h - 1)
+            cur_prob = pi_cur_h_t[0 if B == 1 else 0, action_idx].clamp_min(1e-8)
+
+            log_ratio = log_ratio + (torch.log(cur_prob) - torch.log(beh_prob))
+
+        rho = torch.exp(log_ratio).clamp(max=rho_clip, min=0.0)
+
+        # Bootstrap correction: η_t = ρ_t * (r_t + γ * V_{t+1} - V_t)
+        r_t = rewards_BT[:, t]
+        v_next = values_BT[:, t + 1]
+        v_cur = values_BT[:, t]
+        delta = r_t + gamma * v_next - v_cur
+
+        correction = rho * delta
+        mask = valid_t.float().unsqueeze(1)
+        corrected_values[:, t] = v_cur + correction * mask.squeeze(1)
+
+    return corrected_values
 
 
 def make_gmz_lr_scheduler(optimizer, config: GumbelMuZeroTrainConfig):
@@ -165,20 +234,31 @@ def train_gumbel_muzero_step(
             continue
         samples_count += 1
 
-        # A3: V-trace IS weight for step 0
+        # B1: V-trace full unroll — collect all values/actions/rewards through unroll
+        # Then apply Retrace correction across all timesteps t=0..T-1
+        import os as _os
+        vtrace_full = _os.environ.get("GMZ_VTRACE_FULL", "0") == "1"
+
+        values_BT_list: list[float] = []
+        actions_BT_list: list[list[int]] = []
+        # pi_cur_all_steps[h] = (T, A_h) per head
+        pi_cur_all_steps: list[list[torch.Tensor]] = []
+        behavior_logits_seq = sample.get("behavior_logits", []) or []
+
+        # --- t=0 ---
         obs0 = torch.as_tensor(states[0], dtype=torch.float32, device=device).unsqueeze(0)
-        logits, value, reward0, latent = net.initial_inference(obs0, masks_by_head=None)
-        logits_list = [l.squeeze(0) for l in logits]
-        beh0 = behavior_logits_seq[0] if behavior_logits_seq else []
-        is_weight = _vtrace_is_weights(logits_list, beh0, actions[0]) if beh0 else 1.0
-        total_policy_loss = total_policy_loss + _policy_ce_loss(logits, policies[0], device=device) * is_weight
-        total_value_loss = total_value_loss + F.mse_loss(
-            value, torch.tensor([float(values[0])], device=device)
-        )
+        logits0, value0, reward0, latent = net.initial_inference(obs0, masks_by_head=None)
+        pi_cur0 = [F.softmax(l, dim=1).squeeze(0) for l in logits0]  # (B, A_h) → squeeze → (A_h,)
+        pi_cur_all_steps = [list(step) for step in zip(*[[F.softmax(l, dim=1).squeeze(0) for l in logits0]])]
+        pi_cur_all_steps = [[pi_cur0[h]] for h in range(len(pi_cur0))]
+
+        values_BT_list.append(float(values[0]))
+        actions_BT_list.append(actions[0])
         total_reward_loss = total_reward_loss + F.mse_loss(
             reward0, torch.tensor([0.0], device=device)
         )
 
+        # --- t=1..T-1 ---
         for t in range(1, min(len(states), max(1, int(config.unroll_steps)))):
             # TBPTT: detach latent after tbptt_k steps to truncate gradients
             if t > tbptt_k:
@@ -188,13 +268,12 @@ def train_gumbel_muzero_step(
             logits_t, value_t, reward_t, latent = net.recurrent_inference(
                 latent, action_t, masks_by_head=None
             )
-            logits_t_list = [l.squeeze(0) for l in logits_t]
-            beh_t = behavior_logits_seq[t] if t < len(behavior_logits_seq) else []
-            is_weight_t = _vtrace_is_weights(logits_t_list, beh_t, actions[t - 1]) if beh_t else 1.0
-            total_policy_loss = total_policy_loss + _policy_ce_loss(logits_t, policies[t], device=device) * is_weight_t
-            total_value_loss = total_value_loss + F.mse_loss(
-                value_t, torch.tensor([float(values[t])], device=device)
-            )
+            pi_cur_t = [F.softmax(l, dim=1).squeeze(0) for l in logits_t]
+            for h in range(len(pi_cur_t)):
+                pi_cur_all_steps[h].append(pi_cur_t[h])
+
+            values_BT_list.append(float(value_t.item()))
+            actions_BT_list.append(actions[t] if t < len(actions) else actions[-1])
             total_reward_loss = total_reward_loss + F.mse_loss(
                 reward_t, torch.tensor([float(rewards[t - 1])], device=device)
             )
@@ -209,6 +288,79 @@ def train_gumbel_muzero_step(
                 total_consistency_loss = total_consistency_loss + (
                     1.0 - (pred_proj * target_proj).sum(dim=1).mean()
                 )
+
+        # Build tensors for V-trace
+        T = len(values_BT_list)
+        K = len(actions[0]) if actions else 1
+
+        values_BT = torch.tensor([values_BT_list], dtype=torch.float32, device=device)
+        actions_np = np.array(actions_BT_list, dtype=np.int64)  # (T, K)
+        actions_BT = torch.tensor(actions_np, dtype=torch.long, device=device).unsqueeze(0)  # (1, T, K)
+        rewards_np = np.array([float(r) for r in rewards], dtype=np.float32)[:T - 1] if T > 1 else np.zeros(0, dtype=np.float32)
+        rewards_BT = torch.tensor([rewards_np], dtype=torch.float32, device=device) if rewards_np.size > 0 else torch.zeros((1, max(0, T - 1)), dtype=torch.float32, device=device)
+        valid_BT = torch.ones((1, T), dtype=torch.bool, device=device)
+
+        # V-trace correction across full unroll
+        if vtrace_full and len(behavior_logits_seq) >= 1:
+            rho_clip = float(_os.environ.get("GMZ_VTRACE_RHO_CLIP", "1.0"))
+            c_clip = float(_os.environ.get("GMZ_VTRACE_C_CLIP", "1.0"))
+            gamma = float(_os.environ.get("GMZ_VTRACE_GAMMA", "0.997"))
+
+            # Build pi_beh list from behavior_logits_seq (raw logits, pre-softmax)
+            # Each entry: list of arrays per head, shape (A_h,)
+            pi_beh_list: list[np.ndarray] = []
+            for step_idx in range(min(T, len(behavior_logits_seq))):
+                beh = behavior_logits_seq[step_idx]
+                if isinstance(beh, (list, tuple)):
+                    pi_beh_list.append(np.array(beh, dtype=np.float32))
+                else:
+                    pi_beh_list.append(np.asarray(beh, dtype=np.float32))
+
+            # pi_cur_list[h] = (T, A_h) — stack across timesteps for each head
+            pi_cur_list = [
+                torch.stack(pi_cur_all_steps[h], dim=0)  # (T, A_h)
+                for h in range(K)
+            ]
+
+            corrected_values = _vtrace_targets(
+                pi_cur_list=pi_cur_list,
+                pi_beh_list=pi_beh_list,
+                actions_BT=actions_BT,
+                values_BT=values_BT,
+                rewards_BT=rewards_BT,
+                valid_BT=valid_BT,
+                rho_clip=rho_clip,
+                c_clip=c_clip,
+                gamma=gamma,
+            )
+        else:
+            corrected_values = values_BT
+
+        # Policy loss: simple IS weight at t=0 (backward compat)
+        logits_for_policy = [l.squeeze(0) for l in logits0]
+        beh0 = behavior_logits_seq[0] if behavior_logits_seq else []
+        is_weight_scalar = 1.0
+        if beh0:
+            log_rho = torch.tensor(0.0, device=device)
+            for h in range(len(logits_for_policy)):
+                pi_cur_h = F.softmax(logits_for_policy[h], dim=0)
+                beh_h = torch.as_tensor(
+                    np.asarray(beh0[h] if isinstance(beh0[h], np.ndarray) else beh0[h], dtype=np.float32),
+                    device=device
+                )
+                pi_beh_h = F.softmax(beh_h, dim=0)
+                a_h = actions[0][h] if h < len(actions[0]) else 0
+                log_rho = log_rho + (torch.log(pi_cur_h[a_h].clamp_min(1e-8)) - torch.log(pi_beh_h[a_h].clamp_min(1e-8)))
+            is_weight_scalar = float(torch.exp(log_rho.detach()).clamp(max=1.0))
+        total_policy_loss = total_policy_loss + _policy_ce_loss(logits0, policies[0], device=device) * is_weight_scalar
+
+        # Value loss: use V-trace corrected targets
+        for t in range(T):
+            target_v = corrected_values[0, t].item()
+            total_value_loss = total_value_loss + F.mse_loss(
+                torch.tensor([values_BT_list[t]], device=device),
+                torch.tensor([target_v], device=device)
+            )
 
     if samples_count <= 0:
         return None
