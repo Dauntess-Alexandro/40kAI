@@ -13,6 +13,10 @@ def _tr(idx: int, done: bool, ver: int) -> GMZTransition:
             np.array([0.6, 0.4], dtype=np.float32),
             np.array([0.2, 0.3, 0.5], dtype=np.float32),
         ],
+        behavior_logits=[
+            np.zeros(2, dtype=np.float32),
+            np.zeros(3, dtype=np.float32),
+        ],
         value_target=float(1.0 if idx % 2 == 0 else -1.0),
         policy_version=int(ver),
     )

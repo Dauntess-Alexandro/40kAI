@@ -14,6 +14,7 @@ def _make_transition(n_obs: int, n_actions: list[int], value: float, policy_vers
         reward=float(np.random.uniform(-1.0, 1.0)),
         done=False,
         policy_targets=[np.ones(a, dtype=np.float32) / float(a) for a in n_actions],
+        behavior_logits=[np.zeros(a, dtype=np.float32) for a in n_actions],
         value_target=float(value),
         policy_version=int(policy_version),
     )

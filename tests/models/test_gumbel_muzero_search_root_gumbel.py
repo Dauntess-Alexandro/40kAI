@@ -32,7 +32,7 @@ def test_gumbel_muzero_search_policy_targets_sum_to_one():
         np.array([1, 0, 1], dtype=bool),
         np.array([1, 1, 1, 0, 0], dtype=bool),
     ]
-    pi, actions, value = search.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
+    pi, _, actions, value = search.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
     assert len(pi) == len(n_actions)
     assert len(actions) == len(n_actions)
     for head_idx, p in enumerate(pi):
@@ -52,7 +52,7 @@ def test_gumbel_muzero_search_illegal_actions_zero_prob():
     )
     obs = np.zeros(n_obs, dtype=np.float32)
     legal = [np.array([True, False, False, True, False], dtype=bool)]
-    pi, actions, _ = search.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
+    pi, _, actions, _ = search.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
     # illegal actions must have zero probability
     assert pi[0][1] == 0.0
     assert pi[0][2] == 0.0
@@ -70,7 +70,7 @@ def test_gumbel_muzero_search_deterministic_vs_stochastic():
     obs = np.zeros(n_obs, dtype=np.float32)
     legal = [np.ones(4, dtype=bool), np.ones(3, dtype=bool)]
 
-    _, actions_det, _ = search.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
+    _, _, actions_det, _ = search.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
     # deterministic must return a valid action
     for a, size in zip(actions_det, n_actions):
         assert 0 <= a < size
