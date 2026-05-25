@@ -10,6 +10,24 @@ import torch.nn.functional as F
 
 
 # ---------------------------------------------------------------------------
+# Atom range configuration (controlled by GMZ_ATOM_RANGE env var)
+# "tight"  — value: [-1.05, 1.05], reward: [-0.06, 0.06]   (default for new training)
+# "legacy" — value: [-20.0,  20.0], reward: [-5.0,   5.0]   (backward compatible)
+# ---------------------------------------------------------------------------
+ATOM_MODE: str = str(os.getenv("GMZ_ATOM_RANGE", "tight")).lower()
+if ATOM_MODE == "tight":
+    VALUE_ATOM_MIN: float = -1.05
+    VALUE_ATOM_MAX: float = 1.05
+    REWARD_ATOM_MIN: float = -0.06
+    REWARD_ATOM_MAX: float = 0.06
+else:  # legacy / default
+    VALUE_ATOM_MIN: float = -20.0
+    VALUE_ATOM_MAX: float = 20.0
+    REWARD_ATOM_MIN: float = -5.0
+    REWARD_ATOM_MAX: float = 5.0
+
+
+# ---------------------------------------------------------------------------
 # Presets
 # ---------------------------------------------------------------------------
 

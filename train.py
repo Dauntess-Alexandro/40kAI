@@ -2598,6 +2598,12 @@ GMZ_OUTCOME_ONLY = str(os.getenv("GMZ_OUTCOME_ONLY", str(GMZ_CFG.get("outcome_on
 GMZ_OUTCOME_VALUE_WIN = float(os.getenv("GMZ_OUTCOME_VALUE_WIN", str(GMZ_CFG.get("outcome_value_win", 1.0))))
 GMZ_OUTCOME_VALUE_LOSS = float(os.getenv("GMZ_OUTCOME_VALUE_LOSS", str(GMZ_CFG.get("outcome_value_loss", -1.0))))
 GMZ_OUTCOME_VALUE_DRAW = float(os.getenv("GMZ_OUTCOME_VALUE_DRAW", str(GMZ_CFG.get("outcome_value_draw", -0.25))))
+# A1: tight atom range for value/reward heads — biggest single improvement
+# "tight" = [-1.05, 1.05] for value, [-0.06, 0.06] for reward (matches actual target range)
+# "legacy" = [-20, 20] / [-5, 5] (backward compatible with old checkpoints)
+GMZ_ATOM_RANGE = str(os.getenv("GMZ_ATOM_RANGE", "tight")).lower()
+# B1: V-trace on full unroll (Retrace-style, not just t=0) — adds ~10-15% wall-clock
+GMZ_VTRACE_FULL = int(os.getenv("GMZ_VTRACE_FULL", "1"))
 # B2: fraction of training steps to run reanalysis (0=disabled)
 GMZ_REANALYZE_FRACTION = float(os.getenv("GMZ_REANALYZE_FRACTION", "0.15"))
 
