@@ -100,6 +100,52 @@ class GumbelMuZeroSearch:
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.last_run_stats: dict[str, float] = {}
 
+        # B3: Real tree reuse — warm-start visits/Q from previous search
+        import os as _os
+        self._tree_reuse_enabled = _os.environ.get("GMZ_TREE_REUSE", "1") == "1"
+        self._prev_visits: dict[int, np.ndarray] | None = None
+        self._prev_q_sums: dict[int, np.ndarray] | None = None
+        self._prev_latent: torch.Tensor | None = None
+        self._prev_legal_masks: list[np.ndarray] | None = None
+        self._last_selected_actions: list[int] | None = None
+
+    def _can_warm_start(self, legal_masks_by_head: list[np.ndarray]) -> bool:
+        """Check if we can warm-start from previous tree state."""
+        if not self._tree_reuse_enabled:
+            return False
+        if self._prev_latent is None or self._prev_visits is None:
+            return False
+        if self._prev_legal_masks is None:
+            return False
+        # Shapes must match
+        if len(legal_masks_by_head) != len(self._prev_legal_masks):
+            return False
+        for a, b in zip(legal_masks_by_head, self._prev_legal_masks):
+            if a.shape != b.shape:
+                return False
+        return True
+
+    def _save_tree_state(
+        self,
+        visits_by_head: dict[int, np.ndarray],
+        q_sums_by_head: dict[int, np.ndarray],
+        latent: torch.Tensor,
+        legal_masks_by_head: list[np.ndarray],
+    ) -> None:
+        """Save tree state after successful search for reuse in next move."""
+        self._prev_visits = {k: v.copy() for k, v in visits_by_head.items()}
+        self._prev_q_sums = {k: v.copy() for k, v in q_sums_by_head.items()}
+        self._prev_latent = latent.detach().clone()
+        self._prev_legal_masks = [m.copy() for m in legal_masks_by_head]
+
+    def clear_tree_state(self) -> None:
+        """Clear saved tree state (e.g., when game state changes significantly)."""
+        self._prev_visits = None
+        self._prev_q_sums = None
+        self._prev_latent = None
+        self._prev_legal_masks = None
+        self._last_selected_actions = None
+
     @torch.no_grad()
     def run(
         self,
@@ -107,7 +153,12 @@ class GumbelMuZeroSearch:
         obs: np.ndarray,
         legal_masks_by_head: list[np.ndarray],
         deterministic: bool = True,
-    ) -> tuple[list[np.ndarray], list[int], float]:
+    ) -> tuple[list[np.ndarray], list[np.ndarray], list[int], float]:
+        """Returns (policy_targets, behavior_logits, selected_actions, value_out).
+
+        behavior_logits are the pre-softmax raw network outputs from the root —
+        used as the behavior policy for V-trace importance-sampling correction.
+        """
         obs_t = torch.tensor(np.asarray(obs, dtype=np.float32), device=self.device).unsqueeze(0)
         masks_t = [
             torch.as_tensor(m, dtype=torch.bool, device=self.device).unsqueeze(0)
@@ -128,13 +179,21 @@ class GumbelMuZeroSearch:
         base_action = [int(torch.argmax(head.squeeze(0), dim=0).item()) for head in root_logits]
 
         policy_targets: list[np.ndarray] = []
+        behavior_logits: list[np.ndarray] = []  # ← A3: pre-softmax root logits
         selected_actions: list[int] = []
         value_samples: list[float] = []
+
+        # B3: Tree reuse — initialize visits/q_sums with warm-start from previous search
+        visits_by_head: dict[int, np.ndarray] = {}
+        q_sums_by_head: dict[int, np.ndarray] = {}
 
         for head_idx, head_logits in enumerate(root_logits):
             logits_np = head_logits.squeeze(0).detach().cpu().numpy().astype(np.float32)
             legal = np.asarray(legal_masks_by_head[head_idx], dtype=bool)
             legal_idx = np.where(legal)[0]
+
+            # A3: store raw logits BEFORE any masking / mixing
+            behavior_logits.append(logits_np.copy())
 
             if legal_idx.size == 0:
                 policy_targets.append(
@@ -161,9 +220,20 @@ class GumbelMuZeroSearch:
             top_local = ranking[: min(root_top_k, ranking.size)]
             candidate_actions = legal_idx[top_local]
 
-            # Per-action statistics
+            # B3: Per-action statistics — try warm-start from previous tree
             visits = np.zeros(logits_np.size, dtype=np.float32)
             q_sums = np.zeros(logits_np.size, dtype=np.float32)
+
+            # Warm-start: use previous search tree for heads that match
+            if self._can_warm_start(legal_masks_by_head):
+                prev_v = self._prev_visits.get(head_idx)
+                prev_q = self._prev_q_sums.get(head_idx)
+                if prev_v is not None and prev_q is not None:
+                    # Copy previous visits/q_sums that are still valid (shape match)
+                    copy_len = min(len(visits), len(prev_v))
+                    if copy_len > 0:
+                        visits[:copy_len] = prev_v[:copy_len]
+                        q_sums[:copy_len] = prev_q[:copy_len]
 
             for sim in range(sims):
                 # Cycle through candidates; each gets ~equal budget
@@ -180,6 +250,10 @@ class GumbelMuZeroSearch:
                 visits[candidate] += 1.0
                 q_sums[candidate] += q
                 value_samples.append(q)
+
+            # Store visits/q_sums for tree reuse
+            visits_by_head[head_idx] = visits.copy()
+            q_sums_by_head[head_idx] = q_sums.copy()
 
             # Mean Q-values for visited actions; fallback to logit for unvisited
             q_values = np.where(visits > 0, q_sums / np.maximum(visits, 1.0), logits_np)
@@ -219,4 +293,9 @@ class GumbelMuZeroSearch:
         value_out = float(
             np.mean(value_samples) if value_samples else float(root_value.item())
         )
-        return policy_targets, selected_actions, value_out
+
+        # B3: Save tree state for warm-start in next search
+        self._save_tree_state(visits_by_head, q_sums_by_head, latent, legal_masks_by_head)
+        self._last_selected_actions = selected_actions.copy()
+
+        return policy_targets, behavior_logits, selected_actions, value_out
