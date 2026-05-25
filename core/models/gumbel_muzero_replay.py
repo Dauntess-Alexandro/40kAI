@@ -15,8 +15,8 @@ class GMZTransition:
     reward: float
     done: bool
     policy_targets: list[np.ndarray]
-    behavior_logits: list[np.ndarray]  # A3: pre-softmax root logits for V-trace IS
     value_target: float
+    behavior_logits: list[np.ndarray] | None = None  # A3: pre-softmax root logits for V-trace IS
     legal_masks_by_head: list[np.ndarray] | None = None  # B2: for real-search reanalysis
     policy_version: int = 0
 
