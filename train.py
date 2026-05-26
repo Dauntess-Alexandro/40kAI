@@ -2585,7 +2585,7 @@ GMZ_ROOT_TOP_K = int(os.getenv("GMZ_ROOT_TOP_K", str(GMZ_CFG.get("root_top_k", 8
 GMZ_GUMBEL_SCALE = float(os.getenv("GMZ_GUMBEL_SCALE", str(GMZ_CFG.get("gumbel_scale", 1.0))))
 GMZ_SEARCH_TEMP = float(os.getenv("GMZ_SEARCH_TEMPERATURE", str(GMZ_CFG.get("search_temperature", 0.15))))
 GMZ_PRIOR_WEIGHT = float(os.getenv("GMZ_PRIOR_WEIGHT", str(GMZ_CFG.get("prior_weight", 0.25))))
-GMZ_MAX_GRAD_NORM = float(os.getenv("GMZ_MAX_GRAD_NORM", str(GMZ_CFG.get("max_grad_norm", 1.0))))
+GMZ_MAX_GRAD_NORM = float(os.getenv("GMZ_MAX_GRAD_NORM", str(GMZ_CFG.get("max_grad_norm", 0.5))))
 GMZ_TBPTT_TRUNCATE = int(os.getenv("GMZ_TBPTT_TRUNCATE", str(GMZ_CFG.get("tbptt_truncate", 3))))
 GMZ_CONSISTENCY_W = float(os.getenv("GMZ_CONSISTENCY_W", str(GMZ_CFG.get("consistency_loss_weight", "1.0"))))
 GMZ_LR_SCHEDULER = str(os.getenv("GMZ_LR_SCHEDULER", str(GMZ_CFG.get("lr_scheduler", "none"))))
@@ -8256,6 +8256,17 @@ def _actor_learner_actor_entry_gumbel_muzero(
         ).to(cpu_device)
         gmz_net.load_state_dict(normalize_state_dict(init_weights))
         gmz_net.eval()
+
+        # torch.compile for actors — reduces Python/operator overhead on CPU inference
+        # ~10-30% faster per forward pass; compilation costs ~5-15s but amortized over 1000s of calls
+        actor_compile = os.getenv("GMZ_ACTOR_COMPILE", "1") == "1"
+        if actor_compile and hasattr(torch, "compile"):
+            try:
+                gmz_net = torch.compile(gmz_net, mode="default", fullgraph=False)
+                append_agent_log("[GMZ][ACTOR] torch.compile enabled for actor inference (mode=default)")
+            except Exception as e:
+                append_agent_log(f"[GMZ][ACTOR] torch.compile skipped: {e}")
+
         search = GumbelMuZeroSearch(
             gmz_net,
             config=GumbelMuZeroSearchConfig(
@@ -8486,6 +8497,16 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         num_layers=int(GMZ_NUM_LAYERS),
         action_embed_dim=int(GMZ_ACTION_EMBED_DIM),
     ).to(device)
+
+    # torch.compile for learner — ~15-30% faster training, compilation cost ~10-20s
+    learner_compile = os.getenv("GMZ_LEARNER_COMPILE", "1") == "1"
+    if learner_compile and device.type == "cuda" and hasattr(torch, "compile"):
+        try:
+            gmz_net = torch.compile(gmz_net, mode="reduce-overhead", fullgraph=False)
+            append_agent_log("[GMZ][LEARNER] torch.compile enabled (mode=reduce-overhead)")
+        except Exception as e:
+            append_agent_log(f"[GMZ][LEARNER] torch.compile skipped: {e}")
+
     optimizer = optim.AdamW(gmz_net.parameters(), lr=GMZ_LR, amsgrad=True)
     _patch_optimizer_methods_no_compile(optimizer)
     replay = GumbelMuZeroReplayBuffer(capacity=GMZ_REPLAY_CAPACITY)

@@ -302,8 +302,8 @@ def train_gumbel_muzero_step(
 
         # V-trace correction across full unroll
         if vtrace_full and len(behavior_logits_seq) >= 1:
-            rho_clip = float(_os.environ.get("GMZ_VTRACE_RHO_CLIP", "1.0"))
-            c_clip = float(_os.environ.get("GMZ_VTRACE_C_CLIP", "1.0"))
+            rho_clip = float(_os.environ.get("GMZ_VTRACE_RHO_CLIP", "0.7"))
+            c_clip = float(_os.environ.get("GMZ_VTRACE_C_CLIP", "0.7"))
             gamma = float(_os.environ.get("GMZ_VTRACE_GAMMA", "0.997"))
 
             # Build pi_beh list from behavior_logits_seq (raw logits, pre-softmax)
