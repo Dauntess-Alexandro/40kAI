@@ -4255,10 +4255,17 @@ class GUIController(QtCore.QObject):
             gmz_replay = int(self._gmz_hyperparams.get("replay_capacity", self._default_gmz_hyperparams["replay_capacity"]))
             gmz_batch = int(self._gmz_hyperparams.get("batch_size", self._default_gmz_hyperparams["batch_size"]))
             gmz_actors = int(self._gmz_hyperparams.get("num_actors", self._default_gmz_hyperparams["num_actors"]))
+            gmz_vtrace = int(self._gmz_hyperparams.get("vtrace_full", self._default_gmz_hyperparams.get("vtrace_full", 1)))
+            gmz_atom = str(self._gmz_hyperparams.get("atom_range", self._default_gmz_hyperparams.get("atom_range", "tight")))
+            gmz_tree_reuse = int(self._gmz_hyperparams.get("tree_reuse", self._default_gmz_hyperparams.get("tree_reuse", 1)))
+            gmz_reanalyze = float(self._gmz_hyperparams.get("reanalyze_fraction", self._default_gmz_hyperparams.get("reanalyze_fraction", 0.15)))
+            gmz_batch_rec = int(self._gmz_hyperparams.get("batch_recurrent", self._default_gmz_hyperparams.get("batch_recurrent", 1)))
             start_message = (
                 f"Старт {status_prefix.lower()}: GumbelMuZero="
                 f"on(sims={gmz_sims},root_top_k={gmz_top_k},unroll={gmz_unroll},"
-                f"replay={gmz_replay},batch={gmz_batch},actors={gmz_actors})."
+                f"replay={gmz_replay},batch={gmz_batch},actors={gmz_actors},"
+                f"vtrace={gmz_vtrace},atom={gmz_atom},tree_reuse={gmz_tree_reuse},"
+                f"reanalyze={gmz_reanalyze},batch_rec={gmz_batch_rec})."
             )
         else:
             dqn_hp = self._dqn_hyperparams

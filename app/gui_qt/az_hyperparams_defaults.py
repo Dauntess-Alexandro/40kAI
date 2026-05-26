@@ -15,6 +15,8 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "mcts_top_k_per_head",
     "mcts_max_depth",
     "mcts_root_dirichlet_only",
+    "mcts_batch_eval_size",
+    "mcts_parallel_sims",
     "snapshot_opp_deterministic",
     "opponent_stochastic_eps",
     "temperature_opening_moves",
@@ -95,6 +97,8 @@ _AZ_BASE: dict[str, int | float | str] = {
     "pw_alpha": 1.0,
     "pw_beta": 0.5,
     "prior_weight_early": 0.25,
+    "mcts_batch_eval_size": 16,
+    "mcts_parallel_sims": 8,
 }
 
 DEFAULT_AZ_TREE_HYPERPARAMS: dict[str, int | float | str] = {
@@ -111,6 +115,8 @@ DEFAULT_AZ_PROXY_HYPERPARAMS: dict[str, int | float | str] = {
     "mcts_simulations": 32,
     "mcts_top_k_per_head": 8,
     "mcts_max_depth": 1,
+    "mcts_batch_eval_size": 1,
+    "mcts_parallel_sims": 0,
 }
 
 AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
@@ -119,6 +125,8 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "mcts_max_depth": 1,
         "mcts_top_k_per_head": 6,
         "mcts_eval_cache_size": 5000,
+        "mcts_batch_eval_size": 8,
+        "mcts_parallel_sims": 4,
         "num_actors": 8,
         "actor_batch_send": 16,
         "actor_queue_max": 64,
@@ -134,6 +142,8 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "mcts_max_depth": 2,
         "mcts_top_k_per_head": 10,
         "mcts_eval_cache_size": 10000,
+        "mcts_batch_eval_size": 16,
+        "mcts_parallel_sims": 8,
         "num_actors": 8,
         "actor_batch_send": 32,
         "actor_queue_max": 128,
@@ -149,6 +159,8 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "mcts_max_depth": 4,
         "mcts_top_k_per_head": 12,
         "mcts_eval_cache_size": 15000,
+        "mcts_batch_eval_size": 32,
+        "mcts_parallel_sims": 8,
         "num_actors": 10,
         "actor_batch_send": 64,
         "actor_queue_max": 256,
@@ -204,6 +216,8 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
             "mcts_top_k_per_head",
             "mcts_root_dirichlet_only",
             "mcts_eval_cache_size",
+            "mcts_batch_eval_size",
+            "mcts_parallel_sims",
         ),
         "default_collapsed": False,
     },
@@ -318,6 +332,8 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "pw_beta": "Progressive widening beta.",
     "prior_weight_early": "Вес prior в opening.",
     "balanced_outcome_sampling": "1 = баланс win/loss в replay.",
+    "mcts_batch_eval_size": "Размер батча для оценки листьев MCTS (GPU). 1 = отключено, 8-32 = рекомендуется для Tree.",
+    "mcts_parallel_sims": "Число параллельных симуляций в MCTS (ThreadPool). 0 = отключено, 4-8 = рекомендуется для Tree.",
 }
 
 AZ_PROXY_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {

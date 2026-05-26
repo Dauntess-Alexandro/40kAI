@@ -98,7 +98,9 @@
         "pw_alpha": 1.0,
         "pw_beta": 0.5,
         "prior_weight_early": 0.25,
-        "mcts_mode": "tree"
+        "mcts_mode": "tree",
+        "mcts_batch_eval_size": 16,
+        "mcts_parallel_sims": 8
     },
     "alphazero_proxy": {
         "learning_rate": 0.0003,
@@ -145,7 +147,9 @@
         "pw_alpha": 1.0,
         "pw_beta": 0.5,
         "prior_weight_early": 0.25,
-        "mcts_mode": "proxy"
+        "mcts_mode": "proxy",
+        "mcts_batch_eval_size": 1,
+        "mcts_parallel_sims": 0
     },
     "gumbel_muzero_fast": {
         "learning_rate": 0.0003,
@@ -155,7 +159,7 @@
         "value_loss_weight": 1.0,
         "reward_loss_weight": 1.0,
         "l2_weight": 1e-06,
-        "max_grad_norm": 1.0,
+        "max_grad_norm": 0.5,
         "lr_scheduler": "none",
         "lr_warmup_steps": 0,
         "lr_total_steps": 0,
@@ -183,7 +187,18 @@
         "outcome_only": 1,
         "outcome_value_win": 1.0,
         "outcome_value_loss": -1.0,
-        "outcome_value_draw": -0.25
+        "outcome_value_draw": -0.25,
+        "batch_recurrent": 1,
+        "vtrace_full": 1,
+        "vtrace_rho_clip": 0.7,
+        "vtrace_c_clip": 0.7,
+        "atom_range": "tight",
+        "tree_reuse": 1,
+        "reanalyze_fraction": 0.05,
+        "consistency_loss_weight": 0.5,
+        "ema_tau": 0.005,
+        "actor_compile": 1,
+        "learner_compile": 1
     },
     "gumbel_muzero": {
         "learning_rate": 0.0003,
@@ -193,7 +208,7 @@
         "value_loss_weight": 1.0,
         "reward_loss_weight": 1.0,
         "l2_weight": 1e-06,
-        "max_grad_norm": 1.0,
+        "max_grad_norm": 0.5,
         "lr_scheduler": "none",
         "lr_warmup_steps": 0,
         "lr_total_steps": 0,
@@ -221,7 +236,18 @@
         "outcome_only": 1,
         "outcome_value_win": 1.0,
         "outcome_value_loss": -1.0,
-        "outcome_value_draw": -0.25
+        "outcome_value_draw": -0.25,
+        "batch_recurrent": 1,
+        "vtrace_full": 1,
+        "vtrace_rho_clip": 0.7,
+        "vtrace_c_clip": 0.7,
+        "atom_range": "tight",
+        "tree_reuse": 1,
+        "reanalyze_fraction": 0.15,
+        "consistency_loss_weight": 1.0,
+        "ema_tau": 0.005,
+        "actor_compile": 1,
+        "learner_compile": 1
     },
     "gumbel_muzero_heavy": {
         "learning_rate": 0.0002,
@@ -259,6 +285,17 @@
         "outcome_only": 1,
         "outcome_value_win": 1.0,
         "outcome_value_loss": -1.0,
-        "outcome_value_draw": -0.25
+        "outcome_value_draw": -0.25,
+        "batch_recurrent": 1,
+        "vtrace_full": 1,
+        "vtrace_rho_clip": 0.7,
+        "vtrace_c_clip": 0.7,
+        "atom_range": "tight",
+        "tree_reuse": 1,
+        "reanalyze_fraction": 0.2,
+        "consistency_loss_weight": 1.0,
+        "ema_tau": 0.005,
+        "actor_compile": 1,
+        "learner_compile": 1
     }
 }

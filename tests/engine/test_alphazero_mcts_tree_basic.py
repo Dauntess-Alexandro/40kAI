@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import torch
 from contextlib import contextmanager
@@ -148,3 +150,92 @@ def test_alphazero_tree_mcts_respects_max_depth():
         len_model=len_model,
     )
     assert float(mcts.last_run_stats.get("depth_max", 0.0)) >= 2.0
+
+
+def test_simulate_enemy_in_tree_false_still_valid():
+    """Sprint 4: simulate_enemy_in_tree=False must produce valid policy targets."""
+    len_model = 1
+    n_obs = 12
+    n_actions = [5, 2, 4, 4, 5, 2, 24]
+    net = AlphaZeroPolicyValueNet(n_obs, n_actions)
+    env = _FakeTreeEnv(n_obs=n_obs, n_actions=n_actions, len_model=len_model)
+    legal_dict = env.get_legal_action_masks_by_head("model")
+    legal = [legal_dict[k] for k in ordered_action_keys(len_model)]
+
+    mcts_with_enemy = AlphaZeroFactorizedMCTS(
+        net,
+        config=MCTSConfig(simulations=16, mode="tree", top_k_per_head=4,
+                          simulate_enemy_in_tree=True),
+        device=torch.device("cpu"),
+    )
+    mcts_skip_enemy = AlphaZeroFactorizedMCTS(
+        net,
+        config=MCTSConfig(simulations=16, mode="tree", top_k_per_head=4,
+                          simulate_enemy_in_tree=False),
+        device=torch.device("cpu"),
+    )
+
+    obs = np.zeros(n_obs, dtype=np.float32)
+
+    pi_with, act_with, val_with = mcts_with_enemy.run(
+        obs=obs, legal_masks_by_head=legal, temperature=1.0,
+        env=env, len_model=len_model,
+    )
+    pi_skip, act_skip, val_skip = mcts_skip_enemy.run(
+        obs=obs, legal_masks_by_head=legal, temperature=1.0,
+        env=env, len_model=len_model,
+    )
+
+    # Both must produce valid policy targets
+    for head_idx, (p_with, p_skip) in enumerate(zip(pi_with, pi_skip)):
+        assert abs(float(np.sum(p_with)) - 1.0) < 1e-5, f"head {head_idx}: with-enemy pi sums != 1"
+        assert abs(float(np.sum(p_skip)) - 1.0) < 1e-5, f"head {head_idx}: skip-enemy pi sums != 1"
+        assert np.all(p_with[~legal[head_idx]] <= 1e-12), "with-enemy: illegal actions nonzero"
+        assert np.all(p_skip[~legal[head_idx]] <= 1e-12), "skip-enemy: illegal actions nonzero"
+
+    assert -1.0 <= float(val_with) <= 1.0
+    assert -1.0 <= float(val_skip) <= 1.0
+    assert len(act_with) == len(n_actions)
+    assert len(act_skip) == len(n_actions)
+
+
+def test_batch_eval_size_matches_sequential():
+    """Sprint 3: batch_eval_size > 1 must produce same policy shape/validity as size=1."""
+    len_model = 1
+    n_obs = 16
+    n_actions = [5, 2, 6, 6, 5, 3, 24]
+    net = AlphaZeroPolicyValueNet(n_obs, n_actions)
+    env = _FakeTreeEnv(n_obs=n_obs, n_actions=n_actions, len_model=len_model)
+    legal_dict = env.get_legal_action_masks_by_head("model")
+    legal = [legal_dict[k] for k in ordered_action_keys(len_model)]
+
+    obs = np.zeros(n_obs, dtype=np.float32)
+
+    mcts_seq = AlphaZeroFactorizedMCTS(
+        net,
+        config=MCTSConfig(simulations=16, mode="tree", top_k_per_head=4, batch_eval_size=1),
+        device=torch.device("cpu"),
+    )
+    mcts_batch = AlphaZeroFactorizedMCTS(
+        net,
+        config=MCTSConfig(simulations=16, mode="tree", top_k_per_head=4, batch_eval_size=8),
+        device=torch.device("cpu"),
+    )
+
+    pi_seq, act_seq, val_seq = mcts_seq.run(
+        obs=obs, legal_masks_by_head=legal, temperature=1.0,
+        env=env, len_model=len_model,
+    )
+    pi_batch, act_batch, val_batch = mcts_batch.run(
+        obs=obs, legal_masks_by_head=legal, temperature=1.0,
+        env=env, len_model=len_model,
+    )
+
+    assert len(pi_seq) == len(pi_batch) == len(n_actions)
+    for head_idx in range(len(n_actions)):
+        assert abs(float(np.sum(pi_seq[head_idx])) - 1.0) < 1e-5
+        assert abs(float(np.sum(pi_batch[head_idx])) - 1.0) < 1e-5
+        assert np.all(pi_seq[head_idx][~legal[head_idx]] <= 1e-12)
+        assert np.all(pi_batch[head_idx][~legal[head_idx]] <= 1e-12)
+    assert -1.0 <= float(val_seq) <= 1.0
+    assert -1.0 <= float(val_batch) <= 1.0

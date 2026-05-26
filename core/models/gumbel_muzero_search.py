@@ -19,6 +19,10 @@ class GumbelMuZeroSearchConfig:
     temperature: float = 0.15
     gumbel_scale: float = 1.0
     prior_weight: float = 0.25
+    # Sprint 3: batch recurrent_inference calls (True = batch all sims at once)
+    batch_recurrent: bool = True
+    # B3: tree reuse — warm-start visits/Q from previous search
+    tree_reuse: bool = True
 
 
 SEARCH_PRESETS: dict[str, dict] = {
@@ -101,8 +105,7 @@ class GumbelMuZeroSearch:
         self.last_run_stats: dict[str, float] = {}
 
         # B3: Real tree reuse — warm-start visits/Q from previous search
-        import os as _os
-        self._tree_reuse_enabled = _os.environ.get("GMZ_TREE_REUSE", "1") == "1"
+        self._tree_reuse_enabled = bool(getattr(self.cfg, "tree_reuse", True))
         self._prev_visits: dict[int, np.ndarray] | None = None
         self._prev_q_sums: dict[int, np.ndarray] | None = None
         self._prev_latent: torch.Tensor | None = None
@@ -235,21 +238,45 @@ class GumbelMuZeroSearch:
                         visits[:copy_len] = prev_v[:copy_len]
                         q_sums[:copy_len] = prev_q[:copy_len]
 
-            for sim in range(sims):
-                # Cycle through candidates; each gets ~equal budget
-                candidate = int(candidate_actions[sim % candidate_actions.size])
-                action_vec = list(base_action)
-                action_vec[head_idx] = candidate
-                action_t = torch.tensor([action_vec], dtype=torch.long, device=self.device)
+            if bool(getattr(self.cfg, "batch_recurrent", True)) and sims > 1:
+                # Batch all sims into a single recurrent_inference call.
+                # latent is the same root latent for all sims — expand it.
+                sim_candidates = [
+                    int(candidate_actions[s % candidate_actions.size]) for s in range(sims)
+                ]
+                action_vecs = [list(base_action) for _ in range(sims)]
+                for s_idx, cand in enumerate(sim_candidates):
+                    action_vecs[s_idx][head_idx] = cand
+                action_t_batch = torch.tensor(action_vecs, dtype=torch.long, device=self.device)
+                latent_batch = latent.expand(sims, -1)
+                masks_t_batch = [m.expand(sims, -1) for m in masks_t]
 
-                _p, val_next, rew_next, _nl = self.net.recurrent_inference(
-                    latent, action_t, masks_by_head=masks_t
-                )
-                q = float(rew_next.item()) + discount * float(val_next.item())
+                with torch.no_grad():
+                    _p_batch, val_batch, rew_batch, _nl = self.net.recurrent_inference(
+                        latent_batch, action_t_batch, masks_by_head=masks_t_batch
+                    )
 
-                visits[candidate] += 1.0
-                q_sums[candidate] += q
-                value_samples.append(q)
+                for s_idx, cand in enumerate(sim_candidates):
+                    q = float(rew_batch[s_idx].item()) + discount * float(val_batch[s_idx].item())
+                    visits[cand] += 1.0
+                    q_sums[cand] += q
+                    value_samples.append(q)
+            else:
+                for sim in range(sims):
+                    # Cycle through candidates; each gets ~equal budget
+                    candidate = int(candidate_actions[sim % candidate_actions.size])
+                    action_vec = list(base_action)
+                    action_vec[head_idx] = candidate
+                    action_t = torch.tensor([action_vec], dtype=torch.long, device=self.device)
+
+                    _p, val_next, rew_next, _nl = self.net.recurrent_inference(
+                        latent, action_t, masks_by_head=masks_t
+                    )
+                    q = float(rew_next.item()) + discount * float(val_next.item())
+
+                    visits[candidate] += 1.0
+                    q_sums[candidate] += q
+                    value_samples.append(q)
 
             # Store visits/q_sums for tree reuse
             visits_by_head[head_idx] = visits.copy()

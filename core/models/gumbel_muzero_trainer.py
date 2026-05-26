@@ -47,11 +47,14 @@ class GumbelMuZeroTrainConfig:
     reward_loss_weight: float = 1.0
     consistency_loss_weight: float = 1.0
     l2_weight: float = 1e-6
-    max_grad_norm: float = 1.0
+    max_grad_norm: float = 0.5
     lr_scheduler: str = "none"
     lr_warmup_steps: int = 0
     lr_total_steps: int = 0
     max_policy_staleness_updates: int = -1
+    vtrace_full: bool = True
+    vtrace_rho_clip: float = 0.7
+    vtrace_c_clip: float = 0.7
 
 
 def _policy_ce_loss(logits_by_head, target_by_head, device: torch.device) -> torch.Tensor:
@@ -66,36 +69,32 @@ def _policy_ce_loss(logits_by_head, target_by_head, device: torch.device) -> tor
 
 def _vtrace_targets(
     pi_cur_list: list[torch.Tensor],
-    pi_beh_list: list[np.ndarray],
+    pi_beh_list: list[list[np.ndarray]],
     actions_BT: torch.Tensor,
     values_BT: torch.Tensor,
     rewards_BT: torch.Tensor,
     valid_BT: torch.Tensor,
-    rho_clip: float = 1.0,
-    c_clip: float = 1.0,
+    rho_clip: float = 0.7,
+    c_clip: float = 0.7,
     gamma: float = 0.997,
 ) -> torch.Tensor:
     """Compute Retrace-style value targets across full unroll.
 
-    Uses the canonical Retrace algorithm to correct value estimates using
-    importance-sampling corrections from the behavior policy.
-
     Args:
-        pi_cur_list: current-network softmax probs per head, each (T, A_h) where
-            T is the number of unroll steps and A_h is the number of actions for head h.
-            At timestep t, we use pi_cur_list[h][t] for the IS ratio.
-        pi_beh_list: behavior policy raw logits per step, each (A_total,) flattened
-            over all heads (or list of head arrays).
-        actions_BT: selected actions per step, (B, T-1, K) where K is num_heads
-        values_BT: current value estimates, (B, T)
-        rewards_BT: rewards, (B, T-1)
-        valid_BT: validity mask, (B, T)
-        rho_clip: max importance sampling ratio (clamp max)
-        c_clip: trace decay clip (clamp max for c_t)
-        gamma: discount factor
+        pi_cur_list: current-network softmax probs per head. pi_cur_list[h] has shape (T, A_h).
+        pi_beh_list: per-step behavior logits (raw, pre-softmax). Each element is a list
+            of per-head arrays: pi_beh_list[t][h] → np.ndarray of shape (A_h,).
+            Heads can have different action-space sizes (factorized actions).
+        actions_BT: selected actions per step, shape (B, T, K).
+        values_BT: current value estimates, shape (B, T).
+        rewards_BT: rewards, shape (B, T-1).
+        valid_BT: validity mask, shape (B, T).
+        rho_clip: max IS ratio clamp (e.g. 0.7).
+        c_clip: trace-decay clip (e.g. 0.7).
+        gamma: discount factor.
 
     Returns:
-        (B, T) corrected value estimates with Retrace bootstrap corrections
+        (B, T) corrected value estimates.
     """
     B, T = values_BT.shape
     K = actions_BT.shape[-1]
@@ -105,70 +104,64 @@ def _vtrace_targets(
 
     corrected_values = values_BT.clone()
 
-    # Build behavior softmax per step: pi_beh_softmax[t] = (A_total,) tensor
-    pi_beh_softmax_list: list[torch.Tensor] = []
-    for beh_np in pi_beh_list:
-        beh_t = torch.as_tensor(beh_np, dtype=torch.float32, device=device)
-        if beh_t.dim() == 1:
-            pi_beh_softmax_list.append(beh_t)  # (A_total,)
-        else:
-            pi_beh_softmax_list.append(beh_t.flatten())
-
-    # Retrace recursive update: for each t=0..T-2
     for t in range(T - 1):
         valid_t = valid_BT[:, t] * valid_BT[:, t + 1]
         if not valid_t.any():
             continue
 
-        # Compute importance ratio log π_cur[a] - log π_beh[a] for batch
+        # Skip timestep if behavior logits are unavailable (IS weight defaults to 1)
+        if t >= len(pi_beh_list):
+            continue
+        beh_heads = pi_beh_list[t]  # list[np.ndarray], one per head
+
         log_ratio = torch.zeros(B, device=device)
+        skipped_head = False
 
-        # For each head, accumulate log ratio
         for h in range(K):
-            a_h = actions_BT[:, t, h].long()  # (B,)
-            # π_cur for head h at timestep t: pi_cur_list[h][t] → shape (A_h,) for batch item 0
-            pi_cur_h_t = pi_cur_list[h][t]  # (A_h,) — per sample, single sample (B=1)
-            # For batch B>1 this would need indexing; here B=1 so we use directly
-            if B == 1:
-                pi_cur_h_t = pi_cur_h_t.unsqueeze(0)  # → (1, A_h)
+            # --- behavior probability for head h ---
+            if h >= len(beh_heads):
+                skipped_head = True
+                break
+            beh_h_np = beh_heads[h]
+            if not isinstance(beh_h_np, np.ndarray):
+                beh_h_np = np.asarray(beh_h_np, dtype=np.float32)
+            if beh_h_np.size == 0:
+                skipped_head = True
+                break
+            beh_h_logits = torch.as_tensor(beh_h_np.astype(np.float32), device=device)
+            beh_h_probs = torch.softmax(beh_h_logits, dim=0)  # (A_h,)
 
-            # Find offset for head h in flattened behavior probs
-            # behavior logits are stored per step, each with K heads of A actions each
-            # We assume equal action space per head: A = total_actions / K
-            # Or we use the stored format: pi_beh_list[t] is list of arrays per head
-            # Let's handle both cases
-            beh_t = pi_beh_softmax_list[t] if t < len(pi_beh_softmax_list) else pi_beh_softmax_list[-1]
-            # Try to reshape if it looks like concatenated heads
-            beh_len = beh_t.numel()
-            A = beh_len // K if K > 0 and beh_len % K == 0 else beh_len
-            if beh_len == K * A:
-                # Flat concatenated; extract head h
-                beh_h_t = beh_t[h * A:(h + 1) * A]
-            else:
-                beh_h_t = beh_t
+            # --- current-policy probability for head h ---
+            pi_cur_h_t = pi_cur_list[h][t]  # (A_h,) — already softmax
+            A_h = pi_cur_h_t.shape[0]
 
-            # π_beh for selected action
-            beh_prob = beh_h_t[a_h % beh_h_t.numel()].clamp_min(1e-8)
+            # action taken at this timestep for head h (B=1)
+            a_h_idx = int(actions_BT[0, t, h].item())
+            a_h_beh = min(a_h_idx, beh_h_probs.shape[0] - 1)
+            a_h_cur = min(a_h_idx, A_h - 1)
 
-            # For current policy, find the action offset
-            A_h = pi_cur_h_t.shape[-1]
-            action_idx = a_h[0] if B > 1 else a_h.item()
-            action_idx = min(action_idx, A_h - 1)
-            cur_prob = pi_cur_h_t[0 if B == 1 else 0, action_idx].clamp_min(1e-8)
+            beh_prob = beh_h_probs[a_h_beh].clamp_min(1e-8)
+            cur_prob = pi_cur_h_t[a_h_cur].clamp_min(1e-8)
 
             log_ratio = log_ratio + (torch.log(cur_prob) - torch.log(beh_prob))
 
-        rho = torch.exp(log_ratio).clamp(max=rho_clip, min=0.0)
+        if skipped_head:
+            # Incomplete behavior logits — skip IS correction for this step
+            continue
 
-        # Bootstrap correction: η_t = ρ_t * (r_t + γ * V_{t+1} - V_t)
+        rho = torch.exp(log_ratio).clamp(max=rho_clip, min=0.0)
+        c_t = torch.exp(log_ratio).clamp(max=c_clip, min=0.0)
+
         r_t = rewards_BT[:, t]
         v_next = values_BT[:, t + 1]
         v_cur = values_BT[:, t]
         delta = r_t + gamma * v_next - v_cur
 
-        correction = rho * delta
-        mask = valid_t.float().unsqueeze(1)
-        corrected_values[:, t] = v_cur + correction * mask.squeeze(1)
+        mask = valid_t.float()
+        corrected_values[:, t] = v_cur + rho * delta * mask
+        # Propagate correction backward (Retrace trace)
+        if t + 1 < T:
+            corrected_values[:, t + 1] = corrected_values[:, t + 1] + gamma * c_t * delta * mask
 
     return corrected_values
 
@@ -236,8 +229,7 @@ def train_gumbel_muzero_step(
 
         # B1: V-trace full unroll — collect all values/actions/rewards through unroll
         # Then apply Retrace correction across all timesteps t=0..T-1
-        import os as _os
-        vtrace_full = _os.environ.get("GMZ_VTRACE_FULL", "0") == "1"
+        vtrace_full = bool(getattr(config, "vtrace_full", True))
 
         values_BT_list: list[float] = []
         actions_BT_list: list[list[int]] = []
@@ -302,19 +294,24 @@ def train_gumbel_muzero_step(
 
         # V-trace correction across full unroll
         if vtrace_full and len(behavior_logits_seq) >= 1:
-            rho_clip = float(_os.environ.get("GMZ_VTRACE_RHO_CLIP", "0.7"))
-            c_clip = float(_os.environ.get("GMZ_VTRACE_C_CLIP", "0.7"))
-            gamma = float(_os.environ.get("GMZ_VTRACE_GAMMA", "0.997"))
+            rho_clip = float(getattr(config, "vtrace_rho_clip", 0.7))
+            c_clip = float(getattr(config, "vtrace_c_clip", 0.7))
+            gamma = float(getattr(config, "discount", 0.997) if hasattr(config, "discount") else 0.997)
 
-            # Build pi_beh list from behavior_logits_seq (raw logits, pre-softmax)
-            # Each entry: list of arrays per head, shape (A_h,)
-            pi_beh_list: list[np.ndarray] = []
+            # Build pi_beh_list: list[list[np.ndarray]] — per-step, per-head raw logits
+            # Each pi_beh_list[t][h] is a 1-D np.ndarray of shape (A_h,)
+            # Heads can have different action-space sizes (factorized actions)
+            pi_beh_list: list[list[np.ndarray]] = []
             for step_idx in range(min(T, len(behavior_logits_seq))):
                 beh = behavior_logits_seq[step_idx]
                 if isinstance(beh, (list, tuple)):
-                    pi_beh_list.append(np.array(beh, dtype=np.float32))
+                    # Already a list of per-head arrays — keep as-is
+                    pi_beh_list.append([np.asarray(x, dtype=np.float32) for x in beh])
+                elif isinstance(beh, np.ndarray) and beh.ndim == 0:
+                    pi_beh_list.append([])
                 else:
-                    pi_beh_list.append(np.asarray(beh, dtype=np.float32))
+                    # Unexpected format — skip
+                    pi_beh_list.append([])
 
             # pi_cur_list[h] = (T, A_h) — stack across timesteps for each head
             pi_cur_list = [

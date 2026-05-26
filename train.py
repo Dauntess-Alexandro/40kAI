@@ -2519,6 +2519,8 @@ AZ_PW_ALPHA = float(os.getenv("AZ_PW_ALPHA", str(AZ_CFG.get("pw_alpha", 1.0))))
 AZ_PW_BETA = float(os.getenv("AZ_PW_BETA", str(AZ_CFG.get("pw_beta", 0.5))))
 AZ_PRIOR_WEIGHT_EARLY = float(os.getenv("AZ_PRIOR_WEIGHT_EARLY", str(AZ_CFG.get("prior_weight_early", 0.25))))
 AZ_BALANCED_FACTION_SAMPLING = str(os.getenv("AZ_BALANCED_FACTION_SAMPLING", "0")).strip() == "1"
+AZ_MCTS_BATCH_EVAL_SIZE = int(os.getenv("AZ_MCTS_BATCH_EVAL_SIZE", str(AZ_CFG.get("mcts_batch_eval_size", 16))))
+AZ_MCTS_PARALLEL_SIMS = int(os.getenv("AZ_MCTS_PARALLEL_SIMS", str(AZ_CFG.get("mcts_parallel_sims", 8))))
 
 
 def _make_alphazero(n_observations, n_actions, **overrides):
@@ -2555,6 +2557,8 @@ def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig
         progress=float(progress),
         move_count=int(move_count),
         temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
+        batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
+        parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
     )
 
 
@@ -2598,14 +2602,24 @@ GMZ_OUTCOME_ONLY = str(os.getenv("GMZ_OUTCOME_ONLY", str(GMZ_CFG.get("outcome_on
 GMZ_OUTCOME_VALUE_WIN = float(os.getenv("GMZ_OUTCOME_VALUE_WIN", str(GMZ_CFG.get("outcome_value_win", 1.0))))
 GMZ_OUTCOME_VALUE_LOSS = float(os.getenv("GMZ_OUTCOME_VALUE_LOSS", str(GMZ_CFG.get("outcome_value_loss", -1.0))))
 GMZ_OUTCOME_VALUE_DRAW = float(os.getenv("GMZ_OUTCOME_VALUE_DRAW", str(GMZ_CFG.get("outcome_value_draw", -0.25))))
+GMZ_BATCH_RECURRENT = str(os.getenv("GMZ_BATCH_RECURRENT", str(GMZ_CFG.get("batch_recurrent", 1)))).strip() == "1"
 # A1: tight atom range for value/reward heads — biggest single improvement
 # "tight" = [-1.05, 1.05] for value, [-0.06, 0.06] for reward (matches actual target range)
 # "legacy" = [-20, 20] / [-5, 5] (backward compatible with old checkpoints)
-GMZ_ATOM_RANGE = str(os.getenv("GMZ_ATOM_RANGE", "tight")).lower()
+GMZ_ATOM_RANGE = str(os.getenv("GMZ_ATOM_RANGE", str(GMZ_CFG.get("atom_range", "tight")))).lower()
 # B1: V-trace on full unroll (Retrace-style, not just t=0) — adds ~10-15% wall-clock
-GMZ_VTRACE_FULL = int(os.getenv("GMZ_VTRACE_FULL", "1"))
+GMZ_VTRACE_FULL = int(os.getenv("GMZ_VTRACE_FULL", str(GMZ_CFG.get("vtrace_full", 1))))
+# B1: V-trace IS weight clips (rho/c)
+GMZ_VTRACE_RHO_CLIP = float(os.getenv("GMZ_VTRACE_RHO_CLIP", str(GMZ_CFG.get("vtrace_rho_clip", 0.7))))
+GMZ_VTRACE_C_CLIP = float(os.getenv("GMZ_VTRACE_C_CLIP", str(GMZ_CFG.get("vtrace_c_clip", 0.7))))
 # B2: fraction of training steps to run reanalysis (0=disabled)
-GMZ_REANALYZE_FRACTION = float(os.getenv("GMZ_REANALYZE_FRACTION", "0.15"))
+GMZ_REANALYZE_FRACTION = float(os.getenv("GMZ_REANALYZE_FRACTION", str(GMZ_CFG.get("reanalyze_fraction", 0.15))))
+# B3: tree reuse across moves
+GMZ_TREE_REUSE = str(os.getenv("GMZ_TREE_REUSE", str(GMZ_CFG.get("tree_reuse", 1)))).strip() == "1"
+# B4: EMA tau for consistency target + torch.compile flags
+GMZ_EMA_TAU = float(os.getenv("GMZ_EMA_TAU", str(GMZ_CFG.get("ema_tau", 0.005))))
+GMZ_ACTOR_COMPILE = str(os.getenv("GMZ_ACTOR_COMPILE", str(GMZ_CFG.get("actor_compile", 1)))).strip() == "1"
+GMZ_LEARNER_COMPILE = str(os.getenv("GMZ_LEARNER_COMPILE", str(GMZ_CFG.get("learner_compile", 1)))).strip() == "1"
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -7805,7 +7819,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={AZ_MCTS_MAX_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
         f"lr_scheduler={AZ_LR_SCHEDULER} c_puct_schedule={AZ_C_PUCT_SCHEDULE} "
-        f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
+        f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label} "
+        f"batch_eval={AZ_MCTS_BATCH_EVAL_SIZE} parallel_sims={AZ_MCTS_PARALLEL_SIMS}"
     )
 
     ep_rows: list[dict] = []
@@ -8259,8 +8274,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
 
         # torch.compile for actors — reduces Python/operator overhead on CPU inference
         # ~10-30% faster per forward pass; compilation costs ~5-15s but amortized over 1000s of calls
-        actor_compile = os.getenv("GMZ_ACTOR_COMPILE", "1") == "1"
-        if actor_compile and hasattr(torch, "compile"):
+        if GMZ_ACTOR_COMPILE and hasattr(torch, "compile"):
             try:
                 gmz_net = torch.compile(gmz_net, mode="default", fullgraph=False)
                 append_agent_log("[GMZ][ACTOR] torch.compile enabled for actor inference (mode=default)")
@@ -8276,6 +8290,8 @@ def _actor_learner_actor_entry_gumbel_muzero(
                 temperature=float(search_cfg_payload.get("temperature", GMZ_SEARCH_TEMP)),
                 gumbel_scale=float(search_cfg_payload.get("gumbel_scale", GMZ_GUMBEL_SCALE)),
                 prior_weight=float(search_cfg_payload.get("prior_weight", GMZ_PRIOR_WEIGHT)),
+                batch_recurrent=bool(int(search_cfg_payload.get("batch_recurrent", int(GMZ_BATCH_RECURRENT)))),
+                tree_reuse=bool(int(search_cfg_payload.get("tree_reuse", int(GMZ_TREE_REUSE)))),
             ),
             device=cpu_device,
         )
@@ -8499,8 +8515,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     ).to(device)
 
     # torch.compile for learner — ~15-30% faster training, compilation cost ~10-20s
-    learner_compile = os.getenv("GMZ_LEARNER_COMPILE", "1") == "1"
-    if learner_compile and device.type == "cuda" and hasattr(torch, "compile"):
+    if GMZ_LEARNER_COMPILE and device.type == "cuda" and hasattr(torch, "compile"):
         try:
             gmz_net = torch.compile(gmz_net, mode="reduce-overhead", fullgraph=False)
             append_agent_log("[GMZ][LEARNER] torch.compile enabled (mode=reduce-overhead)")
@@ -8524,16 +8539,18 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         lr_warmup_steps=GMZ_LR_WARMUP_STEPS,
         lr_total_steps=GMZ_LR_TOTAL_STEPS,
         max_policy_staleness_updates=int(GMZ_MAX_POLICY_STALENESS_UPDATES),
+        vtrace_full=bool(GMZ_VTRACE_FULL),
+        vtrace_rho_clip=GMZ_VTRACE_RHO_CLIP,
+        vtrace_c_clip=GMZ_VTRACE_C_CLIP,
     )
     gmz_scheduler = make_gmz_lr_scheduler(optimizer, trainer_cfg)
 
     # B4: EMA target for SimSiam consistency loss
     from core.models.gumbel_muzero_trainer import GumbelMuZeroEMATarget
-    ema_tau = 0.005
     ema_target = None
     if float(GMZ_CONSISTENCY_W) > 0.0:
-        ema_target = GumbelMuZeroEMATarget(gmz_net, tau=ema_tau)
-        append_agent_log(f"[GMZ][EMA] tau={ema_tau} consistency_w={GMZ_CONSISTENCY_W}")
+        ema_target = GumbelMuZeroEMATarget(gmz_net, tau=GMZ_EMA_TAU)
+        append_agent_log(f"[GMZ][EMA] tau={GMZ_EMA_TAU} consistency_w={GMZ_CONSISTENCY_W}")
 
     # B2: Reanalyzer for real-search policy target refresh
     reanalyze_frac = float(GMZ_REANALYZE_FRACTION)
@@ -8549,6 +8566,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 temperature=float(GMZ_SEARCH_TEMP),
                 gumbel_scale=float(GMZ_GUMBEL_SCALE),
                 prior_weight=float(GMZ_PRIOR_WEIGHT),
+                batch_recurrent=GMZ_BATCH_RECURRENT,
+                tree_reuse=GMZ_TREE_REUSE,
             ),
             device=device,
         )
@@ -8613,11 +8632,14 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
 
     append_agent_log(
         "[GMZ][CONFIG] "
-        f"num_actors={GMZ_NUM_ACTORS} actor_batch_send={GMZ_ACTOR_BATCH_SEND} queue_max={GMZ_ACTOR_QUEUE_MAX} "
-        f"sync_every_updates={GMZ_SYNC_EVERY_UPDATES} updates_per_rollout={GMZ_UPDATES_PER_ROLLOUT} "
-        f"max_staleness={GMZ_MAX_POLICY_STALENESS_UPDATES} replay_min={GMZ_REPLAY_MIN_SIZE} "
-        f"outcome_only={int(GMZ_OUTCOME_ONLY)} sims={GMZ_MCTS_SIMS} root_top_k={GMZ_ROOT_TOP_K} "
-        f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label}"
+        f"sims={GMZ_MCTS_SIMS} root_top_k={GMZ_ROOT_TOP_K} unroll={GMZ_UNROLL_STEPS} "
+        f"batch={GMZ_BATCH_SIZE} actors={GMZ_NUM_ACTORS} replay={GMZ_REPLAY_CAPACITY} "
+        f"vtrace_full={int(GMZ_VTRACE_FULL)} rho_clip={GMZ_VTRACE_RHO_CLIP} c_clip={GMZ_VTRACE_C_CLIP} "
+        f"atom={GMZ_ATOM_RANGE} tree_reuse={int(GMZ_TREE_REUSE)} batch_rec={int(GMZ_BATCH_RECURRENT)} "
+        f"reanalyze={GMZ_REANALYZE_FRACTION} consistency_w={GMZ_CONSISTENCY_W} "
+        f"ema_tau={GMZ_EMA_TAU} max_grad_norm={GMZ_MAX_GRAD_NORM} "
+        f"actor_compile={int(GMZ_ACTOR_COMPILE)} learner_compile={int(GMZ_LEARNER_COMPILE)} "
+        f"outcome_only={int(GMZ_OUTCOME_ONLY)} opponent={opponent_source_label}/{opponent_algo_label}"
     )
 
     ep_rows: list[dict] = []

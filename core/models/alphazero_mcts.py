@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+import threading
 from collections import OrderedDict
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import torch
@@ -33,6 +35,12 @@ class MCTSConfig:
     progress: float = 0.0
     move_count: int = 0
     temperature_opening_moves: int = 12
+    # Sprint 3: batch network evaluation (1 = sequential, same as before)
+    batch_eval_size: int = 1
+    # Sprint 4: skip enemy turn in tree mode when using proxy-style value estimate
+    simulate_enemy_in_tree: bool = True
+    # Sprint 5: parallel simulations via thread pool (0 or 1 = disabled)
+    parallel_simulations: int = 0
 
 
 @dataclass
@@ -58,13 +66,17 @@ class MCTSNode:
 
 
 class EvalCache:
-    """LRU cache for network evaluations keyed by obs + legal masks."""
+    """LRU cache for network evaluations keyed by obs + legal masks.
+
+    Thread-safe: all public methods are protected by an internal RLock.
+    """
 
     def __init__(self, max_size: int = 10000):
         self.max_size = max(1, int(max_size))
         self._cache: OrderedDict[bytes, tuple[list[np.ndarray], float]] = OrderedDict()
         self.hits = 0
         self.misses = 0
+        self._lock = threading.RLock()
 
     @staticmethod
     def _key(obs: np.ndarray, legal_masks_by_head: list[np.ndarray]) -> bytes:
@@ -74,22 +86,24 @@ class EvalCache:
         return b"".join(parts)
 
     def get(self, obs: np.ndarray, legal_masks_by_head: list[np.ndarray]) -> tuple[list[np.ndarray], float] | None:
-        key = self._key(obs, legal_masks_by_head)
-        if key not in self._cache:
-            self.misses += 1
-            return None
-        self.hits += 1
-        val = self._cache.pop(key)
-        self._cache[key] = val
-        return val
+        with self._lock:
+            key = self._key(obs, legal_masks_by_head)
+            if key not in self._cache:
+                self.misses += 1
+                return None
+            self.hits += 1
+            val = self._cache.pop(key)
+            self._cache[key] = val
+            return val
 
     def set(self, obs: np.ndarray, legal_masks_by_head: list[np.ndarray], priors: list[np.ndarray], value: float) -> None:
-        key = self._key(obs, legal_masks_by_head)
-        if key in self._cache:
-            self._cache.pop(key)
-        elif len(self._cache) >= self.max_size:
-            self._cache.popitem(last=False)
-        self._cache[key] = (priors, float(value))
+        with self._lock:
+            key = self._key(obs, legal_masks_by_head)
+            if key in self._cache:
+                self._cache.pop(key)
+            elif len(self._cache) >= self.max_size:
+                self._cache.popitem(last=False)
+            self._cache[key] = (priors, float(value))
 
 
 def _masked_normalize(prior: np.ndarray, legal_mask: np.ndarray) -> np.ndarray:
@@ -209,6 +223,59 @@ class AlphaZeroFactorizedMCTS:
         self._eval_cache.set(obs, legal_masks_by_head, priors, value)
         return priors, value
 
+    def _evaluate_value_batch(
+        self,
+        leaves: list[dict],
+    ) -> list[float]:
+        """Batch-evaluate value estimates for a list of pending leaf positions.
+
+        Each element of ``leaves`` must have keys ``'obs'`` (np.ndarray) and
+        ``'legal_masks'`` (list[np.ndarray]).  Cache is consulted per leaf;
+        only uncached leaves reach the network in a single forward pass.
+
+        Returns a list of float values aligned with the input list.
+        """
+        n = len(leaves)
+        if n == 0:
+            return []
+
+        values: list[Optional[float]] = [None] * n
+        uncached_indices: list[int] = []
+
+        for i, leaf in enumerate(leaves):
+            cached = self._eval_cache.get(leaf["obs"], leaf["legal_masks"])
+            if cached is not None:
+                values[i] = float(cached[1])
+            else:
+                uncached_indices.append(i)
+
+        if uncached_indices:
+            obs_batch = np.stack([leaves[i]["obs"] for i in uncached_indices])
+            obs_t = torch.tensor(obs_batch, dtype=torch.float32, device=self.device)
+
+            num_heads = len(leaves[uncached_indices[0]]["legal_masks"])
+            masks_t: list[torch.Tensor] = []
+            for h in range(num_heads):
+                head_masks = np.stack([
+                    np.asarray(leaves[i]["legal_masks"][h], dtype=bool)
+                    for i in uncached_indices
+                ])
+                masks_t.append(torch.as_tensor(head_masks, dtype=torch.bool, device=self.device))
+
+            with torch.no_grad():
+                priors_t, values_t = self.net.infer(obs_t, masks_by_head=masks_t)
+
+            for j, i in enumerate(uncached_indices):
+                priors_np = [
+                    priors_t[h][j].detach().cpu().numpy().astype(np.float32)
+                    for h in range(num_heads)
+                ]
+                val = float(values_t[j].item())
+                self._eval_cache.set(leaves[i]["obs"], leaves[i]["legal_masks"], priors_np, val)
+                values[i] = val
+
+        return [float(v) for v in values]  # type: ignore[arg-type]
+
     def _terminal_value_from_info(self, info: dict[str, Any]) -> Optional[float]:
         winner = str((info or {}).get("winner", "") or "").strip().lower()
         end_reason = str((info or {}).get("end reason", "") or "").strip().lower()
@@ -265,6 +332,86 @@ class AlphaZeroFactorizedMCTS:
             "eval_cache_misses": float(self._eval_cache.misses),
         }
         return policy_targets, selected_actions, value
+
+    def _run_one_sim_on_clone(
+        self,
+        *,
+        clone_env,
+        obs: np.ndarray,
+        action_list: list[int],
+        len_model: int,
+        max_depth: int,
+        ordered_keys: list[str],
+        root_value: float,
+        enemy_policy_fn,
+        simulate_enemy: bool,
+        reset_options: dict | None,
+        rng_seed: int | None = None,
+    ) -> dict:
+        """Run one MCTS simulation on a clone env. Thread-safe: uses its own snapshot/restore."""
+        import numpy as _np
+        if rng_seed is not None:
+            _np.random.seed(rng_seed)
+
+        env_u = unwrap_env(clone_env)
+        snapshot = env_u.snapshot_state() if hasattr(env_u, "snapshot_state") else None
+        current_obs = _np.asarray(obs, dtype=_np.float32)
+        leaf_value: Optional[float] = None
+        needs_net_eval = False
+        depth_reached = 0
+        leaf_legal: list[_np.ndarray] = []
+
+        sim_ctx = env_u.simulation_mode() if hasattr(env_u, "simulation_mode") else nullcontext(env_u)
+        with sim_ctx:
+            try:
+                current_action = list(action_list)
+                for depth in range(max_depth):
+                    depth_reached = depth + 1
+                    action_dict = action_tensor_to_dict(
+                        torch.tensor([current_action], dtype=torch.long),
+                        len_model=int(len_model),
+                    )
+                    next_obs, _reward, done, trunc, info = clone_env.step(action_dict)
+                    if not bool(done or trunc) and simulate_enemy:
+                        env_u.enemyTurn(trunc=False, policy_fn=enemy_policy_fn)
+                        done = bool(getattr(env_u, "game_over", False))
+                        info = env_u.get_info()
+
+                    term = self._terminal_value_from_info(info or {})
+                    current_obs = _np.asarray(next_obs, dtype=_np.float32)
+                    if term is not None or bool(done or trunc):
+                        leaf_value = float(term if term is not None else 0.0)
+                        break
+
+                    if depth < (max_depth - 1):
+                        legal_dict_next = env_u.get_legal_action_masks_by_head(side="model")
+                        next_legal = [legal_dict_next[k] for k in ordered_keys]
+                        next_priors, _value_tmp = self._evaluate_net(
+                            obs=current_obs,
+                            legal_masks_by_head=next_legal,
+                        )
+                        next_action: list[int] = []
+                        for head_idx, prior_next in enumerate(next_priors):
+                            legal_next = _np.asarray(next_legal[head_idx], dtype=bool)
+                            legal_topk_next = self._masked_topk(prior_next, legal_next)
+                            pi_next = _masked_normalize(prior_next, legal_topk_next)
+                            next_action.append(int(_np.random.choice(_np.arange(pi_next.size), p=pi_next)))
+                        current_action = next_action
+
+                if leaf_value is None:
+                    legal_dict_leaf = env_u.get_legal_action_masks_by_head(side="model")
+                    leaf_legal = [legal_dict_leaf[k] for k in ordered_keys]
+                    needs_net_eval = True
+            finally:
+                self._restore_env_safe(env_u, snapshot, reset_options=reset_options)
+
+        return {
+            "obs": current_obs,
+            "legal_masks": leaf_legal,
+            "terminal_value": leaf_value,
+            "needs_net_eval": needs_net_eval,
+            "depth_reached": depth_reached,
+        }
 
     def _restore_env_safe(self, env, snapshot, reset_options: dict | None = None) -> bool:
         if snapshot is None:
@@ -400,89 +547,218 @@ class AlphaZeroFactorizedMCTS:
 
         env_u = unwrap_env(env)
         ordered_keys = ordered_action_keys(int(len_model))
+        batch_eval_size = max(1, int(getattr(self.cfg, "batch_eval_size", 1) or 1))
+        simulate_enemy = bool(getattr(self.cfg, "simulate_enemy_in_tree", True))
+        n_parallel = max(0, int(getattr(self.cfg, "parallel_simulations", 0) or 0))
 
-        for _ in range(sims):
-            # Progressive widening: add a new child if allowed
-            if progressive_widening_allowed(root.visit_count, len(root.children), pw_alpha, pw_beta):
-                for action_tuple in candidates:
-                    if action_tuple not in root.children:
+        completed = 0
+        snapshot_fallback = False
+
+        # --- Sprint 5: Parallel simulations via thread pool ---
+        if n_parallel > 1 and hasattr(env_u, "snapshot_state"):
+            try:
+                from core.envs.env_clone_pool import EnvClonePool
+                _pool = EnvClonePool(env_u, pool_size=n_parallel)
+            except Exception:
+                _pool = None
+        else:
+            _pool = None
+
+        if _pool is not None:
+            # Parallel path:
+            # 1. Collect action lists via sequential PUCT (tree structure is not thread-safe)
+            # 2. Dispatch env rollouts to threads (each grabs its own clone from pool)
+            # 3. Batch-eval deferred leaves, backpropagate
+            all_action_lists: list[tuple[list[int], list[MCTSNode]]] = []
+            for _ in range(sims):
+                if progressive_widening_allowed(root.visit_count, len(root.children), pw_alpha, pw_beta):
+                    for action_tuple in candidates:
+                        if action_tuple not in root.children:
+                            self._expand_root_child(root, action_tuple, priors, legal_masks)
+                            break
+                if not root.children:
+                    for action_tuple in candidates[: max(1, int(self.cfg.top_k_per_head))]:
                         self._expand_root_child(root, action_tuple, priors, legal_masks)
-                        break
+                child = self._select_child_puct(root, c_puct)
+                if child is None or child.action_tuple is None:
+                    action_list_i = [int(np.argmax(priors[i])) for i in range(len(priors))]
+                else:
+                    action_list_i = list(child.action_tuple)
+                path_i: list[MCTSNode] = [root]
+                if child is not None:
+                    path_i.append(child)
+                all_action_lists.append((action_list_i, path_i))
 
-            # Ensure at least one child
-            if not root.children:
-                for action_tuple in candidates[: max(1, int(self.cfg.top_k_per_head))]:
-                    self._expand_root_child(root, action_tuple, priors, legal_masks)
+            def _pool_worker(sim_idx: int, action_list_i: list[int]) -> tuple[int, dict]:
+                with _pool.acquire() as clone_env:
+                    result = self._run_one_sim_on_clone(
+                        clone_env=clone_env,
+                        obs=obs,
+                        action_list=action_list_i,
+                        len_model=len_model,
+                        max_depth=max_depth,
+                        ordered_keys=ordered_keys,
+                        root_value=root_value,
+                        enemy_policy_fn=enemy_policy_fn,
+                        simulate_enemy=simulate_enemy,
+                        reset_options=reset_options,
+                        rng_seed=sim_idx,
+                    )
+                return sim_idx, result
 
-            child = self._select_child_puct(root, c_puct)
-            if child is None or child.action_tuple is None:
-                action_list = [int(np.argmax(priors[i])) for i in range(len(priors))]
-            else:
-                action_list = list(child.action_tuple)
+            # Submit all sims; pool semaphore limits concurrency to n_parallel
+            sim_results_par: list[Optional[dict]] = [None] * sims
+            with ThreadPoolExecutor(max_workers=n_parallel) as executor:
+                futures_map = {
+                    executor.submit(_pool_worker, i, al): i
+                    for i, (al, _) in enumerate(all_action_lists)
+                }
+                for fut in as_completed(futures_map):
+                    try:
+                        idx, res = fut.result()
+                        sim_results_par[idx] = res
+                    except Exception:
+                        pass
 
-            snapshot = env_u.snapshot_state() if hasattr(env_u, "snapshot_state") else None
-            current_obs = np.asarray(obs, dtype=np.float32)
-            leaf_value: Optional[float] = None
-            depth_reached = 0
-            path = [root]
-            if child is not None:
-                path.append(child)
+            # Batch-evaluate deferred leaves
+            deferred_par = [r for r in sim_results_par if r is not None and r.get("needs_net_eval")]
+            if deferred_par:
+                par_values = self._evaluate_value_batch(deferred_par)
+                for leaf_ctx_p, v in zip(deferred_par, par_values):
+                    leaf_ctx_p["terminal_value"] = v
 
-            sim_ctx = env_u.simulation_mode() if hasattr(env_u, "simulation_mode") else nullcontext(env_u)
-            with sim_ctx:
-                try:
-                    current_action = list(action_list)
-                    for depth in range(max_depth):
-                        depth_reached = depth + 1
-                        action_dict = action_tensor_to_dict(
-                            torch.tensor([current_action], dtype=torch.long),
-                            len_model=int(len_model),
-                        )
-                        next_obs, _reward, done, trunc, info = env.step(action_dict)
-                        if not bool(done or trunc):
-                            env_u.enemyTurn(trunc=False, policy_fn=enemy_policy_fn)
-                            done = bool(getattr(env_u, "game_over", False))
-                            info = env_u.get_info()
+            # Backpropagate
+            for sim_idx, result in enumerate(sim_results_par):
+                if result is None:
+                    continue
+                _, path_i = all_action_lists[sim_idx]
+                lv = result.get("terminal_value")
+                if lv is None:
+                    lv = float(root_value)
+                lv = float(np.clip(float(lv), -1.0, 1.0))
+                sim_values.append(lv)
+                sim_depths.append(float(result.get("depth_reached", 1)))
+                self._backpropagate(path_i, lv)
 
-                        term = self._terminal_value_from_info(info or {})
-                        current_obs = np.asarray(next_obs, dtype=np.float32)
-                        if term is not None or bool(done or trunc):
-                            leaf_value = float(term if term is not None else 0.0)
+            completed = sims
+
+        while completed < sims:
+            # Collect up to batch_eval_size leaf contexts before evaluating.
+            n_collect = min(batch_eval_size, sims - completed)
+            pending: list[dict] = []
+
+            for _ in range(n_collect):
+                # Progressive widening: add a new child if allowed
+                if progressive_widening_allowed(root.visit_count, len(root.children), pw_alpha, pw_beta):
+                    for action_tuple in candidates:
+                        if action_tuple not in root.children:
+                            self._expand_root_child(root, action_tuple, priors, legal_masks)
                             break
 
-                        if depth < (max_depth - 1):
-                            legal_dict_next = env_u.get_legal_action_masks_by_head(side="model")
-                            next_legal = [legal_dict_next[k] for k in ordered_keys]
-                            next_priors, _value_tmp = self._evaluate_net(
-                                obs=current_obs,
-                                legal_masks_by_head=next_legal,
+                # Ensure at least one child
+                if not root.children:
+                    for action_tuple in candidates[: max(1, int(self.cfg.top_k_per_head))]:
+                        self._expand_root_child(root, action_tuple, priors, legal_masks)
+
+                child = self._select_child_puct(root, c_puct)
+                if child is None or child.action_tuple is None:
+                    action_list = [int(np.argmax(priors[i])) for i in range(len(priors))]
+                else:
+                    action_list = list(child.action_tuple)
+
+                snapshot = env_u.snapshot_state() if hasattr(env_u, "snapshot_state") else None
+                current_obs = np.asarray(obs, dtype=np.float32)
+                leaf_value: Optional[float] = None
+                needs_net_eval = False
+                depth_reached = 0
+                path = [root]
+                if child is not None:
+                    path.append(child)
+                leaf_legal: list[np.ndarray] = []
+
+                sim_ctx = env_u.simulation_mode() if hasattr(env_u, "simulation_mode") else nullcontext(env_u)
+                with sim_ctx:
+                    try:
+                        current_action = list(action_list)
+                        for depth in range(max_depth):
+                            depth_reached = depth + 1
+                            action_dict = action_tensor_to_dict(
+                                torch.tensor([current_action], dtype=torch.long),
+                                len_model=int(len_model),
                             )
-                            next_action: list[int] = []
-                            for head_idx, prior_next in enumerate(next_priors):
-                                legal_next = np.asarray(next_legal[head_idx], dtype=bool)
-                                legal_topk_next = self._masked_topk(prior_next, legal_next)
-                                pi_next = _masked_normalize(prior_next, legal_topk_next)
-                                next_action.append(int(np.random.choice(np.arange(pi_next.size), p=pi_next)))
-                            current_action = next_action
+                            next_obs, _reward, done, trunc, info = env.step(action_dict)
+                            if not bool(done or trunc) and simulate_enemy:
+                                env_u.enemyTurn(trunc=False, policy_fn=enemy_policy_fn)
+                                done = bool(getattr(env_u, "game_over", False))
+                                info = env_u.get_info()
 
-                    if leaf_value is None:
-                        legal_dict_leaf = env_u.get_legal_action_masks_by_head(side="model")
-                        legal_leaf = [legal_dict_leaf[k] for k in ordered_keys]
-                        _leaf_priors, leaf_value = self._evaluate_net(
-                            obs=current_obs,
-                            legal_masks_by_head=legal_leaf,
-                        )
-                finally:
-                    restored = self._restore_env_safe(env_u, snapshot, reset_options=reset_options)
+                            term = self._terminal_value_from_info(info or {})
+                            current_obs = np.asarray(next_obs, dtype=np.float32)
+                            if term is not None or bool(done or trunc):
+                                leaf_value = float(term if term is not None else 0.0)
+                                break
 
-            if leaf_value is None:
-                leaf_value = float(root_value)
-            leaf_value = float(np.clip(float(leaf_value), -1.0, 1.0))
-            sim_values.append(leaf_value)
-            sim_depths.append(float(depth_reached))
-            self._backpropagate(path, leaf_value)
-            if snapshot is not None and not restored:
-                self.last_run_stats["snapshot_fallback"] = 1.0
+                            if depth < (max_depth - 1):
+                                legal_dict_next = env_u.get_legal_action_masks_by_head(side="model")
+                                next_legal = [legal_dict_next[k] for k in ordered_keys]
+                                next_priors, _value_tmp = self._evaluate_net(
+                                    obs=current_obs,
+                                    legal_masks_by_head=next_legal,
+                                )
+                                next_action: list[int] = []
+                                for head_idx, prior_next in enumerate(next_priors):
+                                    legal_next = np.asarray(next_legal[head_idx], dtype=bool)
+                                    legal_topk_next = self._masked_topk(prior_next, legal_next)
+                                    pi_next = _masked_normalize(prior_next, legal_topk_next)
+                                    next_action.append(int(np.random.choice(np.arange(pi_next.size), p=pi_next)))
+                                current_action = next_action
+
+                        if leaf_value is None:
+                            legal_dict_leaf = env_u.get_legal_action_masks_by_head(side="model")
+                            leaf_legal = [legal_dict_leaf[k] for k in ordered_keys]
+                            if batch_eval_size > 1:
+                                # Defer eval to batch below
+                                needs_net_eval = True
+                            else:
+                                _leaf_priors, leaf_value = self._evaluate_net(
+                                    obs=current_obs,
+                                    legal_masks_by_head=leaf_legal,
+                                )
+                    finally:
+                        restored = self._restore_env_safe(env_u, snapshot, reset_options=reset_options)
+                        if snapshot is not None and not restored:
+                            snapshot_fallback = True
+
+                pending.append({
+                    "obs": current_obs,
+                    "legal_masks": leaf_legal,
+                    "path": path,
+                    "terminal_value": leaf_value,
+                    "needs_net_eval": needs_net_eval,
+                    "depth_reached": depth_reached,
+                })
+
+            # --- Batch evaluate deferred leaves ---
+            deferred = [p for p in pending if p["needs_net_eval"]]
+            if deferred:
+                batch_values = self._evaluate_value_batch(deferred)
+                for leaf_ctx, val in zip(deferred, batch_values):
+                    leaf_ctx["terminal_value"] = val
+
+            # --- Backpropagate all leaves in this batch ---
+            for leaf_ctx in pending:
+                lv = leaf_ctx["terminal_value"]
+                if lv is None:
+                    lv = float(root_value)
+                lv = float(np.clip(float(lv), -1.0, 1.0))
+                sim_values.append(lv)
+                sim_depths.append(float(leaf_ctx["depth_reached"]))
+                self._backpropagate(leaf_ctx["path"], lv)
+
+            completed += n_collect
+
+        if snapshot_fallback:
+            self.last_run_stats["snapshot_fallback"] = 1.0
 
         move_count = int(getattr(self.cfg, "move_count", 0) or 0)
         policy_targets, selected_actions = self._final_policy_from_visits(

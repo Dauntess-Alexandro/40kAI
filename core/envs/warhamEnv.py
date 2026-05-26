@@ -1121,50 +1121,185 @@ class Warhammer40kEnv(gym.Env):
             )
 
     def snapshot_state(self) -> dict:
-        """Compact runtime snapshot for simulation rollouts (no I/O objects)."""
-        keys = [
-            "iter", "restarts", "playType", "_state_flush_last_ts", "_state_flush_pending",
-            "board",
-            "unit_coords", "enemy_coords", "unit_health", "enemy_health",
-            "unit_model_wounds", "enemy_model_wounds",
-            "unit_anchor_coords", "enemy_anchor_coords",
-            "unit_model_positions", "enemy_model_positions",
-            "model_used_advance", "enemy_used_advance", "model_advance_roll", "enemy_advance_roll",
-            "game_over", "unitInAttack", "enemyInAttack", "trunc",
-            "enemyCP", "modelCP", "enemyOverwatch", "modelStrat", "enemyStrat",
-            "unitFellBack", "enemyFellBack",
-            "modelVP", "enemyVP", "battle_round", "active_side", "phase", "numTurns", "turn_order",
-            "_round_banner_shown", "_fight_env_logged", "_phase_event_emitted", "_phase_unit_logged",
-            "_prev_vp_diff", "_objective_hold_streaks", "_target_cache_epoch",
-            "_distance_cache", "_shoot_target_cache", "_shoot_target_reject_cache",
-            "_terrain_shaping_shot_bonus_units",
-            "_last_action_signature", "_action_repeat_streak",
-            "last_end_reason", "last_winner", "current_action_index",
-            "viewer_step_seq", "viewer_activation", "viewer_awaiting_ack",
-            "unitCharged", "enemyCharged", "modelUpdates",
-        ]
-        snap = {
+        """Compact runtime snapshot for simulation rollouts (no I/O objects).
+
+        Optimised copy strategy (avoids generic deepcopy where possible):
+        - Scalar / immutable values: assigned directly (no copy needed).
+        - 1-D lists of scalars (health, flags, etc.): list() shallow copy.
+        - 2-D lists of 2-element coordinate pairs: list-of-list copy.
+        - unit_model_positions (3-D list): 3-level list comprehension.
+        - numpy board: .copy().
+        - Dicts of scalars (strats): dict() shallow copy.
+        - Sets (phase_unit_logged, terrain_bonus): set() copy.
+        - Cache dicts (_distance_cache, etc.): NOT stored — cleared on restore
+          via _invalidate_target_cache, which already fires on every step/turn.
+        """
+        _self = self
+        _ga = getattr
+
+        # --- scalar / immutable (no copy) ---
+        snap: dict = {
             "_random_state": random.getstate(),
             "_np_random_state": np.random.get_state(),
-            "_simulation_mode_depth": int(getattr(self, "_simulation_mode_depth", 0) or 0),
-            "_model_unit_coords": [list(u.showCoords()) for u in getattr(self, "model", [])],
-            "_enemy_unit_coords": [list(u.showCoords()) for u in getattr(self, "enemy", [])],
+            "_simulation_mode_depth": int(_ga(_self, "_simulation_mode_depth", 0) or 0),
+            "_model_unit_coords": [list(u.showCoords()) for u in _ga(_self, "model", [])],
+            "_enemy_unit_coords": [list(u.showCoords()) for u in _ga(_self, "enemy", [])],
+            # scalars
+            "iter": _ga(_self, "iter", 0),
+            "restarts": _ga(_self, "restarts", 0),
+            "playType": _ga(_self, "playType", False),
+            "_state_flush_last_ts": _ga(_self, "_state_flush_last_ts", 0.0),
+            "_state_flush_pending": _ga(_self, "_state_flush_pending", False),
+            "game_over": _ga(_self, "game_over", False),
+            "trunc": _ga(_self, "trunc", False),
+            "enemyCP": _ga(_self, "enemyCP", 0),
+            "modelCP": _ga(_self, "modelCP", 0),
+            "enemyOverwatch": _ga(_self, "enemyOverwatch", -1),
+            "modelVP": _ga(_self, "modelVP", 0),
+            "enemyVP": _ga(_self, "enemyVP", 0),
+            "battle_round": _ga(_self, "battle_round", 1),
+            "active_side": _ga(_self, "active_side", "enemy"),
+            "phase": _ga(_self, "phase", "command"),
+            "numTurns": _ga(_self, "numTurns", 1),
+            "_round_banner_shown": _ga(_self, "_round_banner_shown", False),
+            "_fight_env_logged": _ga(_self, "_fight_env_logged", False),
+            "_phase_event_emitted": _ga(_self, "_phase_event_emitted", False),
+            "_prev_vp_diff": _ga(_self, "_prev_vp_diff", 0),
+            "_target_cache_epoch": _ga(_self, "_target_cache_epoch", 0),
+            "_last_action_signature": _ga(_self, "_last_action_signature", None),
+            "_action_repeat_streak": _ga(_self, "_action_repeat_streak", 0),
+            "last_end_reason": _ga(_self, "last_end_reason", ""),
+            "last_winner": _ga(_self, "last_winner", ""),
+            "current_action_index": _ga(_self, "current_action_index", 0),
+            "viewer_step_seq": _ga(_self, "viewer_step_seq", 0),
+            "viewer_activation": _ga(_self, "viewer_activation", False),
+            "viewer_awaiting_ack": _ga(_self, "viewer_awaiting_ack", False),
+            "modelUpdates": _ga(_self, "modelUpdates", ""),
         }
-        for key in keys:
-            if hasattr(self, key):
-                snap[key] = copy.deepcopy(getattr(self, key))
+
+        # --- numpy array ---
+        board = _ga(_self, "board", None)
+        snap["board"] = board.copy() if isinstance(board, np.ndarray) else board
+
+        # --- 1-D lists of scalars ---
+        for _k in (
+            "unit_health", "enemy_health",
+            "model_used_advance", "enemy_used_advance",
+            "model_advance_roll", "enemy_advance_roll",
+            "unitFellBack", "enemyFellBack",
+            "unitCharged", "enemyCharged",
+            "_objective_hold_streaks",
+            "turn_order",
+        ):
+            v = _ga(_self, _k, None)
+            snap[_k] = list(v) if v is not None else []
+
+        # --- 2-D lists of [x, y] coordinate pairs ---
+        for _k in (
+            "unit_coords", "enemy_coords",
+            "unit_anchor_coords", "enemy_anchor_coords",
+            "unitInAttack", "enemyInAttack",
+        ):
+            v = _ga(_self, _k, None)
+            snap[_k] = [list(p) for p in v] if v is not None else []
+
+        # --- 2-D lists of wound vectors (list of lists of int) ---
+        for _k in ("unit_model_wounds", "enemy_model_wounds"):
+            v = _ga(_self, _k, None)
+            snap[_k] = [list(w) for w in v] if v is not None else []
+
+        # --- 3-D position data: list[unit][model_index][x,y] ---
+        for _k in ("unit_model_positions", "enemy_model_positions"):
+            v = _ga(_self, _k, None)
+            snap[_k] = [[list(pos) for pos in unit_pos] for unit_pos in v] if v is not None else []
+
+        # --- dicts of scalars ---
+        for _k in ("modelStrat", "enemyStrat"):
+            v = _ga(_self, _k, None)
+            snap[_k] = dict(v) if v is not None else {}
+
+        # --- sets ---
+        for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
+            v = _ga(_self, _k, None)
+            snap[_k] = set(v) if v is not None else set()
+
+        # Cache dicts are intentionally NOT stored: they are derived caches
+        # that get cleared by _invalidate_target_cache() on every step/turn.
+        # On restore we call it once to ensure clean state.
+
         return snap
 
     def restore_state(self, snapshot: dict) -> None:
         if not isinstance(snapshot, dict):
             return
-        for key, value in snapshot.items():
-            if key in {"_random_state", "_np_random_state", "_simulation_mode_depth", "_model_unit_coords", "_enemy_unit_coords"}:
-                continue
-            try:
-                setattr(self, key, copy.deepcopy(value))
-            except Exception:
-                pass
+
+        _self = self
+        _sa = object.__setattr__
+
+        # --- scalars / immutables: assign directly ---
+        _SCALAR_KEYS = (
+            "iter", "restarts", "playType", "_state_flush_last_ts", "_state_flush_pending",
+            "game_over", "trunc", "enemyCP", "modelCP", "enemyOverwatch",
+            "modelVP", "enemyVP", "battle_round", "active_side", "phase", "numTurns",
+            "_round_banner_shown", "_fight_env_logged", "_phase_event_emitted",
+            "_prev_vp_diff", "_target_cache_epoch",
+            "_last_action_signature", "_action_repeat_streak",
+            "last_end_reason", "last_winner", "current_action_index",
+            "viewer_step_seq", "viewer_activation", "viewer_awaiting_ack",
+            "modelUpdates",
+        )
+        for _k in _SCALAR_KEYS:
+            if _k in snapshot:
+                setattr(_self, _k, snapshot[_k])
+
+        # --- numpy board ---
+        if "board" in snapshot:
+            board = snapshot["board"]
+            setattr(_self, "board", board.copy() if isinstance(board, np.ndarray) else board)
+
+        # --- 1-D lists of scalars: shallow copy ---
+        for _k in (
+            "unit_health", "enemy_health",
+            "model_used_advance", "enemy_used_advance",
+            "model_advance_roll", "enemy_advance_roll",
+            "unitFellBack", "enemyFellBack",
+            "unitCharged", "enemyCharged",
+            "_objective_hold_streaks",
+            "turn_order",
+        ):
+            if _k in snapshot:
+                setattr(_self, _k, list(snapshot[_k]))
+
+        # --- 2-D coordinate lists ---
+        for _k in (
+            "unit_coords", "enemy_coords",
+            "unit_anchor_coords", "enemy_anchor_coords",
+            "unitInAttack", "enemyInAttack",
+        ):
+            if _k in snapshot:
+                setattr(_self, _k, [list(p) for p in snapshot[_k]])
+
+        # --- 2-D wound vectors ---
+        for _k in ("unit_model_wounds", "enemy_model_wounds"):
+            if _k in snapshot:
+                setattr(_self, _k, [list(w) for w in snapshot[_k]])
+
+        # --- 3-D position data ---
+        for _k in ("unit_model_positions", "enemy_model_positions"):
+            if _k in snapshot:
+                setattr(_self, _k, [[list(pos) for pos in unit_pos] for unit_pos in snapshot[_k]])
+
+        # --- dicts of scalars ---
+        for _k in ("modelStrat", "enemyStrat"):
+            if _k in snapshot:
+                setattr(_self, _k, dict(snapshot[_k]))
+
+        # --- sets ---
+        for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
+            if _k in snapshot:
+                setattr(_self, _k, set(snapshot[_k]))
+
+        # --- random state ---
         try:
             random.setstate(snapshot.get("_random_state", random.getstate()))
         except Exception:
@@ -1175,22 +1310,30 @@ class Warhammer40kEnv(gym.Env):
                 np.random.set_state(np_state)
         except Exception:
             pass
+
+        # --- Unit object coords ---
         try:
             model_coords = snapshot.get("_model_unit_coords", [])
             for i, coords in enumerate(model_coords):
-                if 0 <= i < len(self.model):
-                    self.model[i].set_anchor(int(coords[0]), int(coords[1]))
+                if 0 <= i < len(_self.model):
+                    _self.model[i].set_anchor(int(coords[0]), int(coords[1]))
             enemy_coords = snapshot.get("_enemy_unit_coords", [])
             for i, coords in enumerate(enemy_coords):
-                if 0 <= i < len(self.enemy):
-                    self.enemy[i].set_anchor(int(coords[0]), int(coords[1]))
+                if 0 <= i < len(_self.enemy):
+                    _self.enemy[i].set_anchor(int(coords[0]), int(coords[1]))
         except Exception:
             pass
         try:
-            self._sync_model_positions_to_anchors()
+            _self._sync_model_positions_to_anchors()
         except Exception:
             pass
-        self._simulation_mode_depth = int(snapshot.get("_simulation_mode_depth", 0) or 0)
+
+        # --- Caches: clear instead of restore (derived data, always rebuilt) ---
+        _self._distance_cache.clear()
+        _self._shoot_target_cache.clear()
+        _self._shoot_target_reject_cache.clear()
+
+        _self._simulation_mode_depth = int(snapshot.get("_simulation_mode_depth", 0) or 0)
 
     def simulate_step(
         self,
