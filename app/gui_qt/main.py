@@ -140,6 +140,7 @@ class GUIController(QtCore.QObject):
     opponentPreviewTextChanged = QtCore.Signal(str)
     trainingHyperparamsChanged = QtCore.Signal()
     hyperparamsBasicModeChanged = QtCore.Signal()
+    trainingDeviceInfoChanged = QtCore.Signal()
     settingsDirtyChanged = QtCore.Signal(bool)
     settingsSaveStateChanged = QtCore.Signal(str)
     trainingAlgoChanged = QtCore.Signal(str)
@@ -352,7 +353,12 @@ class GUIController(QtCore.QObject):
         self._az_proxy_selected_profile = "custom"
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
+        self._training_cuda_available = False
+        self._training_gpu_name = ""
+        self._training_device_summary = "Проверка устройства…"
+        self._training_device_detail = ""
         self._load_hyperparams_from_disk(log_errors=True)
+        self._refresh_training_device_info()
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -2758,6 +2764,80 @@ class GUIController(QtCore.QObject):
     def hyperparamsBasicMode(self) -> bool:
         return bool(self._hyperparams_basic_mode)
 
+    @QtCore.Property(bool, notify=trainingDeviceInfoChanged)
+    def trainingCudaAvailable(self) -> bool:
+        return bool(self._training_cuda_available)
+
+    @QtCore.Property(str, notify=trainingDeviceInfoChanged)
+    def trainingGpuName(self) -> str:
+        return str(self._training_gpu_name)
+
+    @QtCore.Property(str, notify=trainingDeviceInfoChanged)
+    def trainingDeviceSummary(self) -> str:
+        return str(self._training_device_summary)
+
+    @QtCore.Property(str, notify=trainingDeviceInfoChanged)
+    def trainingDeviceDetail(self) -> str:
+        return str(self._training_device_detail)
+
+    def _refresh_training_device_info(self) -> None:
+        cuda_ok = False
+        gpu_name = ""
+        summary = "CUDA недоступна · обучение на CPU"
+        detail = ""
+        try:
+            import torch
+
+            torch_ver = str(getattr(torch, "__version__", "?"))
+            cuda_ok = bool(torch.cuda.is_available())
+            if cuda_ok:
+                gpu_name = str(torch.cuda.get_device_name(0) or "GPU")
+                try:
+                    props = torch.cuda.get_device_properties(0)
+                    mem_gb = float(getattr(props, "total_memory", 0)) / (1024.0 ** 3)
+                    cc = torch.cuda.get_device_capability(0)
+                    summary = f"CUDA · {gpu_name} · VRAM ≈ {mem_gb:.1f} GB"
+                    detail = (
+                        f"PyTorch {torch_ver}\n"
+                        f"GPU: {gpu_name}\n"
+                        f"Compute capability {cc[0]}.{cc[1]}\n"
+                        f"Видеопамять ≈ {mem_gb:.1f} GB\n\n"
+                        "GMZ: actor_device=cuda и 2 GPU-актора поддерживаются."
+                    )
+                except Exception:
+                    summary = f"CUDA · {gpu_name}"
+                    detail = f"PyTorch {torch_ver}\nGPU: {gpu_name}"
+            else:
+                summary = "CPU · CUDA не обнаружена (torch.cuda.is_available = false)"
+                detail = (
+                    f"PyTorch {torch_ver}\n"
+                    "PyTorch не видит GPU с CUDA.\n\n"
+                    "При actor_device=cuda в hyperparams train автоматически переключится "
+                    "на CPU и 8 акторов (строка [GMZ][CONFIG][FALLBACK] в логе).\n\n"
+                    "Проверьте драйвер NVIDIA и сборку PyTorch+cu124/cu128."
+                )
+        except Exception as exc:
+            summary = "PyTorch не найден"
+            detail = f"Не удалось импортировать torch: {exc}"
+
+        changed = (
+            bool(self._training_cuda_available) != cuda_ok
+            or str(self._training_gpu_name) != gpu_name
+            or str(self._training_device_summary) != summary
+            or str(self._training_device_detail) != detail
+        )
+        self._training_cuda_available = cuda_ok
+        self._training_gpu_name = gpu_name
+        self._training_device_summary = summary
+        self._training_device_detail = detail
+        if changed:
+            self.trainingDeviceInfoChanged.emit()
+
+    @QtCore.Slot()
+    def refresh_training_device_info(self) -> None:
+        self._refresh_training_device_info()
+        self._emit_status("Статус CUDA/GPU обновлён.")
+
     @QtCore.Slot(bool)
     def set_hyperparams_basic_mode(self, enabled: bool) -> None:
         value = bool(enabled)
@@ -3127,6 +3207,7 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot()
     def reload_training_hyperparams(self) -> None:
         if self._load_hyperparams_from_disk(log_errors=True):
+            self._refresh_training_device_info()
             self.mark_settings_saved("✓ Сохранено")
             self._emit_status("Параметры тренировки перечитаны из hyperparams.json.")
 
@@ -3331,6 +3412,12 @@ class GUIController(QtCore.QObject):
             return "gumbel_muzero.num_simulations должен быть >= 1"
         if root_top_k < 1:
             return "gumbel_muzero.root_top_k должен быть >= 1"
+        actor_device = str(payload.get("actor_device", "cpu")).strip().lower()
+        if actor_device not in ("cpu", "cuda"):
+            return "gumbel_muzero.actor_device должен быть cpu или cuda"
+        actor_max_cuda = int(payload.get("actor_max_cuda", 2))
+        if actor_max_cuda < 1:
+            return "gumbel_muzero.actor_max_cuda должен быть >= 1"
         return None
 
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
@@ -4260,10 +4347,17 @@ class GUIController(QtCore.QObject):
             gmz_tree_reuse = int(self._gmz_hyperparams.get("tree_reuse", self._default_gmz_hyperparams.get("tree_reuse", 1)))
             gmz_reanalyze = float(self._gmz_hyperparams.get("reanalyze_fraction", self._default_gmz_hyperparams.get("reanalyze_fraction", 0.15)))
             gmz_batch_rec = int(self._gmz_hyperparams.get("batch_recurrent", self._default_gmz_hyperparams.get("batch_recurrent", 1)))
+            gmz_actor_dev = str(
+                self._gmz_hyperparams.get("actor_device", self._default_gmz_hyperparams.get("actor_device", "cpu"))
+            ).strip().lower()
+            gmz_actor_max_cuda = int(
+                self._gmz_hyperparams.get("actor_max_cuda", self._default_gmz_hyperparams.get("actor_max_cuda", 2))
+            )
             start_message = (
                 f"Старт {status_prefix.lower()}: GumbelMuZero="
                 f"on(sims={gmz_sims},root_top_k={gmz_top_k},unroll={gmz_unroll},"
                 f"replay={gmz_replay},batch={gmz_batch},actors={gmz_actors},"
+                f"actor_device={gmz_actor_dev},actor_max_cuda={gmz_actor_max_cuda},"
                 f"vtrace={gmz_vtrace},atom={gmz_atom},tree_reuse={gmz_tree_reuse},"
                 f"reanalyze={gmz_reanalyze},batch_rec={gmz_batch_rec})."
             )

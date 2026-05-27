@@ -2620,6 +2620,23 @@ GMZ_TREE_REUSE = str(os.getenv("GMZ_TREE_REUSE", str(GMZ_CFG.get("tree_reuse", 1
 GMZ_EMA_TAU = float(os.getenv("GMZ_EMA_TAU", str(GMZ_CFG.get("ema_tau", 0.005))))
 GMZ_ACTOR_COMPILE = str(os.getenv("GMZ_ACTOR_COMPILE", str(GMZ_CFG.get("actor_compile", 1)))).strip() == "1"
 GMZ_LEARNER_COMPILE = str(os.getenv("GMZ_LEARNER_COMPILE", str(GMZ_CFG.get("learner_compile", 1)))).strip() == "1"
+# Вариант A: GPU-акторы (inference на CUDA; env остаётся на CPU)
+GMZ_ACTOR_DEVICE_REQUESTED = str(os.getenv("GMZ_ACTOR_DEVICE", str(GMZ_CFG.get("actor_device", "cuda")))).strip().lower()
+if GMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda"):
+    GMZ_ACTOR_DEVICE_REQUESTED = "cuda"
+GMZ_ACTOR_MAX_CUDA = max(1, int(os.getenv("GMZ_ACTOR_MAX_CUDA", str(GMZ_CFG.get("actor_max_cuda", 2)))))
+GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS = 8  # прежний дефолт self-play на CPU
+GMZ_ACTOR_USING_CUDA_FALLBACK = (
+    GMZ_ACTOR_DEVICE_REQUESTED == "cuda" and not torch.cuda.is_available()
+)
+GMZ_ACTOR_DEVICE = "cpu" if GMZ_ACTOR_USING_CUDA_FALLBACK else GMZ_ACTOR_DEVICE_REQUESTED
+GMZ_ACTOR_DEVICE_CUDA = GMZ_ACTOR_DEVICE == "cuda" and torch.cuda.is_available()
+if GMZ_ACTOR_USING_CUDA_FALLBACK:
+    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS)
+elif GMZ_ACTOR_DEVICE_CUDA:
+    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = min(int(GMZ_NUM_ACTORS), int(GMZ_ACTOR_MAX_CUDA))
+else:
+    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_NUM_ACTORS)
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -3430,7 +3447,17 @@ def main():
             return
         if TRAIN_ALGO == "gumbel_muzero":
             if TRAIN_LOG_TO_CONSOLE:
-                print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (Gumbel MuZero actors CPU + learner GPU)")
+                _gmz_actor_mode = (
+                    f"CUDA (max {GMZ_ACTOR_MAX_CUDA})"
+                    if GMZ_ACTOR_DEVICE_CUDA
+                    else "CPU"
+                )
+                if GMZ_ACTOR_USING_CUDA_FALLBACK:
+                    _gmz_actor_mode = f"CPU fallback (запрошен cuda, num_actors={GMZ_ACTOR_EFFECTIVE_NUM_ACTORS})"
+                print(
+                    f"[TRAIN][MODE] PRO_ACTOR_LEARNER=1 "
+                    f"(Gumbel MuZero actors {_gmz_actor_mode} + learner GPU)"
+                )
             _main_actor_learner_gumbel_muzero(
                 roster_config=roster_config,
                 totLifeT=totLifeT,
@@ -8260,7 +8287,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
 ):
     """Top-level entrypoint for Windows spawn pickling (Gumbel MuZero actor)."""
     try:
-        cpu_device = torch.device("cpu")
+        actor_device = torch.device("cuda" if GMZ_ACTOR_DEVICE_CUDA else "cpu")
         gmz_net = GumbelMuZeroNet(
             obs_dim=int(n_observations),
             action_sizes=[int(x) for x in n_actions],
@@ -8268,13 +8295,12 @@ def _actor_learner_actor_entry_gumbel_muzero(
             hidden_dim=int(search_cfg_payload.get("hidden_dim", GMZ_HIDDEN_DIM)),
             num_layers=int(search_cfg_payload.get("num_layers", GMZ_NUM_LAYERS)),
             action_embed_dim=int(search_cfg_payload.get("action_embed_dim", GMZ_ACTION_EMBED_DIM)),
-        ).to(cpu_device)
+        ).to(actor_device)
         gmz_net.load_state_dict(normalize_state_dict(init_weights))
         gmz_net.eval()
 
-        # torch.compile for actors — reduces Python/operator overhead on CPU inference
-        # ~10-30% faster per forward pass; compilation costs ~5-15s but amortized over 1000s of calls
-        if GMZ_ACTOR_COMPILE and hasattr(torch, "compile"):
+        # torch.compile: только на CPU (на GPU overhead обычно не окупается)
+        if GMZ_ACTOR_COMPILE and not GMZ_ACTOR_DEVICE_CUDA and hasattr(torch, "compile"):
             try:
                 gmz_net = torch.compile(gmz_net, mode="default", fullgraph=False)
                 append_agent_log("[GMZ][ACTOR] torch.compile enabled for actor inference (mode=default)")
@@ -8293,7 +8319,13 @@ def _actor_learner_actor_entry_gumbel_muzero(
                 batch_recurrent=bool(int(search_cfg_payload.get("batch_recurrent", int(GMZ_BATCH_RECURRENT)))),
                 tree_reuse=bool(int(search_cfg_payload.get("tree_reuse", int(GMZ_TREE_REUSE)))),
             ),
-            device=cpu_device,
+            device=actor_device,
+        )
+        append_agent_log(
+            f"[GMZ][ACTOR] actor={int(actor_idx)} device={actor_device.type} "
+            f"latent={search_cfg_payload.get('latent_dim', GMZ_LATENT_DIM)} "
+            f"sims={search_cfg_payload.get('num_simulations', GMZ_MCTS_SIMS)} "
+            f"batch_rec={bool(int(search_cfg_payload.get('batch_recurrent', int(GMZ_BATCH_RECURRENT))))}"
         )
         sp_cfg = GumbelSelfPlayConfig(
             temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", GMZ_TEMP_OPENING_MOVES)),
@@ -8630,10 +8662,28 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         else:
             append_agent_log("[GMZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
 
+    effective_num_actors = int(GMZ_ACTOR_EFFECTIVE_NUM_ACTORS)
+    if GMZ_ACTOR_USING_CUDA_FALLBACK:
+        append_agent_log(
+            "[GMZ][CONFIG][FALLBACK] В hyperparams указан actor_device=cuda, но PyTorch не видит GPU с CUDA "
+            f"(torch.cuda.is_available()=False, device_count={int(torch.cuda.device_count()) if hasattr(torch.cuda, 'device_count') else 0}). "
+            f"Переключаемся на CPU: actor_device=cpu, num_actors={effective_num_actors} "
+            f"(вместо cuda + num_actors={GMZ_NUM_ACTORS} + actor_max_cuda={GMZ_ACTOR_MAX_CUDA}). "
+            "Чтобы включить GPU-акторов: установите драйвер NVIDIA и PyTorch с поддержкой CUDA (cu124/cu128)."
+        )
+    elif GMZ_ACTOR_DEVICE_CUDA:
+        append_agent_log(
+            f"[GMZ][CONFIG] GPU actors: {effective_num_actors} "
+            f"(capped from num_actors={GMZ_NUM_ACTORS}, actor_max_cuda={GMZ_ACTOR_MAX_CUDA})"
+        )
+
     append_agent_log(
         "[GMZ][CONFIG] "
         f"sims={GMZ_MCTS_SIMS} root_top_k={GMZ_ROOT_TOP_K} unroll={GMZ_UNROLL_STEPS} "
-        f"batch={GMZ_BATCH_SIZE} actors={GMZ_NUM_ACTORS} replay={GMZ_REPLAY_CAPACITY} "
+        f"batch={GMZ_BATCH_SIZE} actors={GMZ_NUM_ACTORS} effective_actors={effective_num_actors} "
+        f"replay={GMZ_REPLAY_CAPACITY} "
+        f"actor_device_req={GMZ_ACTOR_DEVICE_REQUESTED} actor_device={GMZ_ACTOR_DEVICE} "
+        f"actor_device_cuda={int(GMZ_ACTOR_DEVICE_CUDA)} cuda_fallback={int(GMZ_ACTOR_USING_CUDA_FALLBACK)} "
         f"vtrace_full={int(GMZ_VTRACE_FULL)} rho_clip={GMZ_VTRACE_RHO_CLIP} c_clip={GMZ_VTRACE_C_CLIP} "
         f"atom={GMZ_ATOM_RANGE} tree_reuse={int(GMZ_TREE_REUSE)} batch_rec={int(GMZ_BATCH_RECURRENT)} "
         f"reanalyze={GMZ_REANALYZE_FRACTION} consistency_w={GMZ_CONSISTENCY_W} "
@@ -8725,9 +8775,9 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     procs = []
 
     if remaining_episodes > 0:
-        for a_idx in range(int(GMZ_NUM_ACTORS)):
-            base = int(remaining_episodes) // int(GMZ_NUM_ACTORS)
-            rem = int(remaining_episodes) % int(GMZ_NUM_ACTORS)
+        for a_idx in range(int(effective_num_actors)):
+            base = int(remaining_episodes) // int(effective_num_actors)
+            rem = int(remaining_episodes) % int(effective_num_actors)
             actor_episodes = int(base + (1 if a_idx < rem else 0))
             if actor_episodes <= 0:
                 continue
@@ -8762,6 +8812,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                         "hidden_dim": GMZ_HIDDEN_DIM,
                         "num_layers": GMZ_NUM_LAYERS,
                         "action_embed_dim": GMZ_ACTION_EMBED_DIM,
+                        "batch_recurrent": int(GMZ_BATCH_RECURRENT),
+                        "tree_reuse": int(GMZ_TREE_REUSE),
                     },
                     {
                         "outcome_only": GMZ_OUTCOME_ONLY,

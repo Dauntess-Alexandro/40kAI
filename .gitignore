@@ -3,25 +3,43 @@ build/
 dist/
 installer/output/
 Install.exe
+
+# Python cache (любая вложенность)
 __pycache__/
+**/__pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+
 display/
+
+# Артефакты train/eval (results.txt в git оставляем — см. AGENTS.md)
 artifacts/models/
 artifacts/metrics/
+artifacts/models/actor_sync/
+
+# Runtime: логи, кэш, временный state (LOGS_FOR_AGENTS_*.md не коммитим)
 runtime/cache/
 runtime/state/build/
-runtime/logs/*.log
 runtime/logs/
+runtime/logs/*.log
 runtime/img/
-app/gui_qt/.icon_cache/
-gym_mod/build/
 runtime/state/img/*.png
 runtime/state/data.json
 runtime/state/response.txt
 runtime/state/units.txt
+
+# Qt GUI
+app/gui_qt/.icon_cache/
+
+gym_mod/build/
 trainRes.txt
 *.log
 *.core
+
 # Full-res Gauss FX sources (baked PNGs live in fx/; run tools/viewer/bake_gauss_fx_assets.py)
 app/viewer/assets/fx/_source/
+
+# IDE / agent worktrees (не часть репозитория)
 .worktrees/
+.claude/

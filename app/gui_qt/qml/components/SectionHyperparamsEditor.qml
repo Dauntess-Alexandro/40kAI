@@ -188,14 +188,15 @@ ColumnLayout {
 
     function isIntKey(key) {
         var k = String(key)
-        if (k === "lr_scheduler" || k === "c_puct_schedule" || k === "mcts_mode"
-                || k === "dist_type" || k === "eps_schedule") return false
+        if (isStringKey(k)) return false
         return k.indexOf("_size") >= 0 || k.indexOf("_steps") >= 0 || k.indexOf("_capacity") >= 0
             || k.indexOf("num_") === 0 || k.indexOf("mcts_simulations") >= 0 || k.indexOf("mcts_max_depth") >= 0
             || k.indexOf("mcts_top_k") >= 0 || k.indexOf("hidden_size") >= 0 || k.indexOf("hidden_dim") >= 0
             || k.indexOf("latent_dim") >= 0 || k.indexOf("num_layers") >= 0
             || k.indexOf("ensemble") >= 0 || k.indexOf("value_ensemble") >= 0
-            || k.indexOf("temperature_opening_moves") >= 0 || k.indexOf("actor_") === 0
+            || k.indexOf("temperature_opening_moves") >= 0
+            || k === "actor_batch_send" || k === "actor_queue_max" || k === "actor_max_cuda"
+            || k === "actor_compile" || k === "learner_compile"
             || k.indexOf("sync_") === 0 || k.indexOf("updates_per") >= 0 || k.indexOf("replay_min") >= 0
             || k.indexOf("max_policy") >= 0 || k.indexOf("outcome_only") >= 0
             || k.indexOf("double_dqn") >= 0 || k.indexOf("dueling") >= 0
@@ -214,6 +215,7 @@ ColumnLayout {
         var k = String(key)
         return k === "lr_scheduler" || k === "c_puct_schedule" || k === "mcts_mode"
             || k === "dist_type" || k === "eps_schedule"
+            || k === "actor_device" || k === "atom_range"
     }
 
     Label {

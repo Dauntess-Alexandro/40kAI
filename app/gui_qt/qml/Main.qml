@@ -4465,6 +4465,10 @@ ApplicationWindow {
                             Layout.fillWidth: true
                         }
 
+                        TrainingDeviceBanner {
+                            rootUi: root
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             radius: Math.round(10 * root.uiScale)
