@@ -59,6 +59,8 @@ from app.gui_qt.gmz_hyperparams_defaults import (
     GMZ_GROUPS,
     GMZ_HYPERPARAM_KEYS,
     GMZ_INFERENCE_SERVER_CHECKBOX_TOOLTIP,
+    GMZ_LAN_IS_GUI_TOOLTIP,
+    GMZ_LOCAL_IS_GUI_TOOLTIP,
     GMZ_PROFILE_DETECT_ORDER,
     GMZ_PROFILE_PRESETS,
     GMZ_VARIANT_A_BUNDLE,
@@ -68,6 +70,11 @@ from app.gui_qt.hyperparams_cuda_hints import (
     hyperparam_cuda_field_state,
     hyperparam_cuda_tooltip_suffix,
     would_gmz_hyperparam_violate_cuda,
+)
+from app.gui_qt.remote_is_store import (
+    DEFAULT_REMOTE_IS,
+    load_remote_is,
+    save_remote_is,
 )
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
@@ -372,7 +379,11 @@ class GUIController(QtCore.QObject):
         self._training_device_summary = "Проверка устройства…"
         self._training_device_detail = ""
         self._load_hyperparams_from_disk(log_errors=True)
+        self._remote_is: dict = load_remote_is(self._repo_root)
+        self._remote_is_status = "не проверено"
+        self._remote_is_latency_ms = -1.0
         self._refresh_training_device_info()
+        self._ensure_gmz_local_is_default()
 
         self._load_available_units()
         self._load_rosters_from_file()
@@ -1472,6 +1483,254 @@ class GUIController(QtCore.QObject):
     def gmzInferenceServerCheckboxTooltip(self) -> str:
         return GMZ_INFERENCE_SERVER_CHECKBOX_TOOLTIP
 
+    @QtCore.Property(str, constant=True)
+    def gmzLocalIsTooltip(self) -> str:
+        return GMZ_LOCAL_IS_GUI_TOOLTIP
+
+    @QtCore.Property(str, constant=True)
+    def gmzLanIsTooltip(self) -> str:
+        return GMZ_LAN_IS_GUI_TOOLTIP
+
+    remoteIsChanged = QtCore.Signal()
+
+    @QtCore.Property(bool, notify=remoteIsChanged)
+    def remoteIsEnabled(self) -> bool:
+        return bool(self._remote_is.get("user_enabled_lan", False))
+
+    @QtCore.Property(str, notify=remoteIsChanged)
+    def remoteIsHost(self) -> str:
+        return str(self._remote_is.get("host", DEFAULT_REMOTE_IS["host"]))
+
+    @QtCore.Property(int, notify=remoteIsChanged)
+    def remoteIsPort(self) -> int:
+        return int(self._remote_is.get("port", DEFAULT_REMOTE_IS["port"]))
+
+    @QtCore.Property(float, notify=remoteIsChanged)
+    def remoteIsTimeout(self) -> float:
+        return float(self._remote_is.get("timeout", DEFAULT_REMOTE_IS["timeout"]))
+
+    @QtCore.Property(str, notify=remoteIsChanged)
+    def remoteIsAuthToken(self) -> str:
+        return str(self._remote_is.get("auth_token", ""))
+
+    @QtCore.Property(str, notify=remoteIsChanged)
+    def remoteIsWeightsPath(self) -> str:
+        return str(self._remote_is.get("weights_share_path", ""))
+
+    @QtCore.Property(str, notify=remoteIsChanged)
+    def remoteIsSmbUncHint(self) -> str:
+        return str(self._remote_is.get("smb_unc_hint", ""))
+
+    @QtCore.Property(str, notify=remoteIsChanged)
+    def remoteIsStatusText(self) -> str:
+        return str(self._remote_is_status)
+
+    @QtCore.Property(str, notify=remoteIsChanged)
+    def remoteIsLatencyText(self) -> str:
+        ms = float(self._remote_is_latency_ms)
+        if ms < 0:
+            return "—"
+        return f"{ms:.0f} ms"
+
+    def _persist_remote_is(self) -> None:
+        try:
+            save_remote_is(self._repo_root, self._remote_is)
+        except OSError as exc:
+            self._emit_status(f"Не удалось сохранить remote_is.json: {exc}")
+
+    def _ensure_gmz_local_is_default(self) -> None:
+        """LAN выключен + CUDA: локальный IS (вариант B) включён по умолчанию."""
+        remote = getattr(self, "_remote_is", None)
+        if not isinstance(remote, dict):
+            return
+        if bool(remote.get("user_enabled_lan", False)):
+            return
+        if not self._training_cuda_available:
+            return
+        if int(self._gmz_hyperparams.get("inference_server_enabled", 0) or 0) == 1:
+            return
+        self._apply_gmz_variant_b_bundle(emit_status=False, mark_dirty=False)
+
+    def _apply_gmz_variant_b_bundle(self, *, emit_status: bool, mark_dirty: bool) -> None:
+        changed = False
+        for key, value in GMZ_VARIANT_B_BUNDLE.items():
+            if self._gmz_hyperparams.get(key) != value:
+                self._gmz_hyperparams[key] = value
+                changed = True
+        if not changed:
+            return
+        self._refresh_gmz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        if mark_dirty:
+            self.mark_settings_dirty()
+        if emit_status:
+            self._emit_status("GMZ: локальный Inference server (вариант B) включён.")
+
+    def _set_remote_is_lan_active(self, active: bool) -> None:
+        on = bool(active)
+        self._remote_is["user_enabled_lan"] = on
+        self._remote_is["enabled"] = on
+
+    @QtCore.Slot(bool)
+    def setRemoteIsEnabled(self, enabled: bool) -> None:
+        self._set_remote_is_lan_active(enabled)
+        if enabled:
+            if not self.gmzInferenceServerEnabled:
+                self._apply_gmz_variant_b_bundle(emit_status=False, mark_dirty=True)
+        else:
+            self._ensure_gmz_local_is_default()
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setRemoteIsHost(self, host: str) -> None:
+        self._remote_is["host"] = str(host or "").strip() or "127.0.0.1"
+        self._remote_is_status = "не проверено"
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot(int)
+    def setRemoteIsPort(self, port: int) -> None:
+        self._remote_is["port"] = max(1, int(port))
+        self._remote_is_status = "не проверено"
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot(float)
+    def setRemoteIsTimeout(self, timeout: float) -> None:
+        self._remote_is["timeout"] = max(0.5, float(timeout))
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setRemoteIsAuthToken(self, token: str) -> None:
+        self._remote_is["auth_token"] = str(token or "")
+        self._remote_is_status = "не проверено"
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setRemoteIsWeightsPath(self, path: str) -> None:
+        self._remote_is["weights_share_path"] = str(path or "")
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setRemoteIsSmbUncHint(self, hint: str) -> None:
+        self._remote_is["smb_unc_hint"] = str(hint or "")
+        self._persist_remote_is()
+        self.remoteIsChanged.emit()
+
+    @QtCore.Slot()
+    def checkRemoteIsConnection(self) -> None:
+        from core.models.gmz_inference_transport import remote_health_check
+
+        host = str(self._remote_is.get("host", "127.0.0.1"))
+        port = int(self._remote_is.get("port", 5555))
+        token = str(self._remote_is.get("auth_token", ""))
+        timeout = min(3.0, float(self._remote_is.get("timeout", 5.0)))
+        t0 = time.perf_counter()
+        try:
+            resp = remote_health_check(host=host, port=port, auth_token=token, timeout=timeout)
+            self._remote_is_latency_ms = (time.perf_counter() - t0) * 1000.0
+            gpu = str(resp.get("gpu_name", "?"))
+            pv = resp.get("policy_version", "?")
+            self._remote_is_status = f"OK • GPU: {gpu} • policy v{pv}"
+            self._emit_status(f"Remote IS: соединение OK ({self._remote_is_latency_ms:.0f} ms)")
+        except Exception as exc:
+            self._remote_is_latency_ms = -1.0
+            self._remote_is_status = f"Ошибка: {exc}"
+            self._emit_status(
+                "Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, 3) firewall (TCP 5555)."
+            )
+        self.remoteIsChanged.emit()
+
+    def _emit_gmz_lan_train_help(self, *, health_ok: bool | None, error: str = "") -> None:
+        """Подробная подсказка в лог train при включённом LAN (часто случайно на одном ПК)."""
+        host = str(self._remote_is.get("host", "127.0.0.1"))
+        port = int(self._remote_is.get("port", 5555))
+        weights = str(self._remote_is.get("weights_share_path", "") or "").strip()
+        level = "ERROR" if health_ok is False else "INFO"
+        lines = [
+            "[GUI][REMOTE_IS] ─── Включён LAN Inference server (два ПК) ───",
+            "Train GMZ пойдёт так: learner + env workers на ЭТОМ ПК, MCTS/инференс на ПК2 по сети.",
+            f"Сейчас в настройках: host={host}, port={port}, веса на ПК2={weights or '(не задан)'}",
+            "",
+            "Если у вас ОДИН компьютер (LAN включили случайно):",
+            "  1) Остановите train (если уже запущен).",
+            "  2) Настройки → Hyperparams → вкладка «Gumbel MuZero».",
+            "  3) Выключите ползунок «LAN Inference server».",
+            "  4) Включите «Local Inference server» (нужна CUDA на этом ПК).",
+            "  5) Сохраните hyperparams (кнопка сохранения настроек).",
+            "  6) Снова нажмите «Тренировка» на главной.",
+            "",
+            "Если у вас ДВА компьютера в LAN:",
+            "  1) На ПК2: tools\\pc2_remote_is.bat (сервер слушает порт 5555).",
+            "  2) В GUI укажите IP ПК2 в «Хост ПК2» (не 127.0.0.1 с ПК1, если ПК2 — другая машина).",
+            "  3) Общая SMB-папка: latest_gmz_policy.pth доступен на ПК2 (поле «Веса на ПК2»).",
+            "  4) «Проверить соединение» в настройках GMZ → должно быть OK.",
+            "  5) Документация: docs/remote-inference-server-gmz.md",
+        ]
+        if host.strip() in ("127.0.0.1", "localhost"):
+            lines.append(
+                "[GUI][REMOTE_IS] Подсказка: host=127.0.0.1 подходит только если сервер на ЭТОМ же ПК; "
+                "для второго ПК в сети укажите его LAN-IP (например 192.168.x.x)."
+            )
+        if health_ok is False:
+            lines.extend(
+                [
+                    "",
+                    "[GUI][REMOTE_IS] HealthCheck перед train НЕ ПРОШЁЛ — обучение не запущено.",
+                    f"Причина: {error or 'неизвестно'}",
+                    "Пока не OK: для одного ПК выключите LAN; для двух ПК поднимите сервер на ПК2 и проверьте IP/firewall (TCP 5555).",
+                ]
+            )
+        elif health_ok is True:
+            lines.append("[GUI][REMOTE_IS] HealthCheck OK — продолжаем train в режиме LAN.")
+        for line in lines:
+            self._emit_log(line, level=level)
+
+    def _validate_remote_is_for_train(self) -> bool:
+        if not self.remoteIsEnabled:
+            return True
+        algo = str(self._training_algo or "").strip().lower()
+        if algo != "gumbel_muzero":
+            self._emit_log(
+                "[GUI][REMOTE_IS] LAN Inference server включён в настройках, но выбран алгоритм "
+                f"«{algo}» — remote IS используется только для Gumbel MuZero. "
+                "Для обычного обучения на одном ПК выключите LAN в Настройки → Gumbel MuZero.",
+                level="WARN",
+            )
+            return True
+        from core.models.gmz_inference_transport import remote_health_check
+
+        self._emit_log(
+            "[GUI][REMOTE_IS] Режим LAN включён — проверка связи с ПК2 перед train… "
+            "(один ПК? выключите LAN и включите Local в Настройки → Gumbel MuZero)",
+            level="INFO",
+        )
+
+        host = str(self._remote_is.get("host", "127.0.0.1"))
+        port = int(self._remote_is.get("port", 5555))
+        token = str(self._remote_is.get("auth_token", ""))
+        timeout = min(3.0, float(self._remote_is.get("timeout", 5.0)))
+        try:
+            remote_health_check(host=host, port=port, auth_token=token, timeout=timeout)
+            self._emit_log(
+                f"[GUI][REMOTE_IS] HealthCheck OK ({host}:{port}) — train в режиме LAN (инференс на ПК2).",
+                level="INFO",
+            )
+            return True
+        except Exception as exc:
+            err = str(exc)
+            self._emit_gmz_lan_train_help(health_ok=False, error=err)
+            self._emit_status(
+                "LAN Inference server: соединение с ПК2 не установлено. "
+                "Один ПК? Выключите LAN, включите Local. Два ПК? См. подробности в логе train."
+            )
+            self._emit_log(f"[GUI][REMOTE_IS] health_check failed: {exc}", level="ERROR")
+            return False
+
     @QtCore.Slot(bool)
     def set_gmz_inference_server_mode(self, enabled: bool) -> None:
         if enabled and not self._training_cuda_available:
@@ -1481,6 +1740,10 @@ class GUIController(QtCore.QObject):
             )
             self.trainingHyperparamsChanged.emit()
             return
+        if enabled and self.remoteIsEnabled:
+            self._set_remote_is_lan_active(False)
+            self._persist_remote_is()
+            self.remoteIsChanged.emit()
         bundle = dict(GMZ_VARIANT_B_BUNDLE if enabled else GMZ_VARIANT_A_BUNDLE)
         changed = False
         for key, value in bundle.items():
@@ -2913,6 +3176,8 @@ class GUIController(QtCore.QObject):
         if changed:
             self.trainingDeviceInfoChanged.emit()
             self.trainingHyperparamsChanged.emit()
+            if cuda_ok:
+                self._ensure_gmz_local_is_default()
 
     @QtCore.Slot(str, str, str, result=int)
     def hyperparam_cuda_field_state(self, algo_section: str, key: str, value_str: str) -> int:
@@ -4210,6 +4475,8 @@ class GUIController(QtCore.QObject):
                 return
         if not self._prepare_training_data():
             return
+        if not self._validate_remote_is_for_train():
+            return
 
         train_label = "TRAIN"
         status_prefix = "Обучение"
@@ -4415,6 +4682,22 @@ class GUIController(QtCore.QObject):
             }
             for key, env_key in gmz_map.items():
                 env.insert(env_key, str(self._gmz_hyperparams.get(key, self._default_gmz_hyperparams.get(key))))
+            if self.remoteIsEnabled:
+                env.insert("GMZ_INFERENCE_SERVER_MODE", "remote")
+                env.insert("GMZ_INFERENCE_REMOTE_HOST", str(self._remote_is.get("host", "127.0.0.1")))
+                env.insert("GMZ_INFERENCE_REMOTE_PORT", str(int(self._remote_is.get("port", 5555))))
+                env.insert("GMZ_INFERENCE_REMOTE_AUTH_TOKEN", str(self._remote_is.get("auth_token", "")))
+                env.insert("GMZ_INFERENCE_SERVER", "1")
+                env.insert("GMZ_ACTOR_DEVICE", "inference_server")
+                env.insert(
+                    "GMZ_INFERENCE_TIMEOUT",
+                    str(float(self._remote_is.get("timeout", self._gmz_hyperparams.get("inference_timeout", 5.0)))),
+                )
+                self._emit_log(
+                    f"[GUI][REMOTE_IS] enabled host={self._remote_is.get('host')} "
+                    f"port={self._remote_is.get('port')}",
+                    level="INFO",
+                )
         if self._deployment_mode == "manual_player":
             self._emit_log(
                 "[GUI] [TRAIN] DEPLOYMENT_MODE=manual_player не поддерживается для неинтерактивного train.py; "

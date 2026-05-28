@@ -28,3 +28,5 @@ torch
 PySide6
 # torch ставится через install_deps.bat (CPU или CUDA); вручную: pip install torch
 numba
+pyzmq
+msgpack

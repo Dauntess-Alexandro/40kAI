@@ -4,11 +4,12 @@
 - README в этом репозитории может быть устаревшим — **не полагайся на README как на источник истины**.
 - Всегда сверяйся с **актуальным кодом** и реальными файлами в репо.
 
-## Логи для отладки (runtime/logs/LOGS_FOR_AGENTS_TRAIN.md / LOGS_FOR_AGENTS_PLAY.md / LOGS_FOR_AGENTS_EVAL.md)
-- В папке `runtime/logs/` есть три файла логов:
+## Логи для отладки (runtime/logs/LOGS_FOR_AGENTS_*.md)
+- В папке `runtime/logs/`:
   - **LOGS_FOR_AGENTS_TRAIN.md** — обучение (`train`),
   - **LOGS_FOR_AGENTS_PLAY.md** — игра/Viewer (`play`),
-  - **LOGS_FOR_AGENTS_EVAL.md** — оценка (`eval`).
+  - **LOGS_FOR_AGENTS_EVAL.md** — оценка (`eval`),
+  - **LOGS_FOR_AGENTS_REMOTE_IS.md** — standalone remote inference server на ПК2.
 - Все три файла — “источник правды” по тому, что реально происходило.
 - При любом баге/неожиданном поведении:
   1) **сначала прочитай свежие строки** из релевантного файла (и при необходимости соседних): `LOGS_FOR_AGENTS_TRAIN.md`, `LOGS_FOR_AGENTS_PLAY.md`, `LOGS_FOR_AGENTS_EVAL.md`,
@@ -43,6 +44,12 @@
   - обучение (`train`) и оценку (`eval`) запускать через **наш Qt GUI**.
 - Если есть выбор между терминальным и GUI-потоком, приоритет — GUI-вариант.
 
+
+## Remote Inference Server (GMZ)
+- Руководство (ПК1 + ПК2, установка, SMB, отладка): `docs/remote-inference-server-gmz.md`.
+- Запуск на ПК2 одной кнопкой: `tools/pc2_remote_is.bat` (конфиг: `runtime/state/pc2_remote_is_config.bat`).
+- Конфиг GUI (ПК1): `runtime/state/remote_is.json` (в `.gitignore`).
+- Логи сервера на ПК2: `runtime/logs/LOGS_FOR_AGENTS_REMOTE_IS.md`, `gmz_remote_is_*.log`.
 
 ## Результаты треинровки (общее)
 - **Можно смотреть `artifacts/results/results.txt`** для быстрой сверки итогов train/eval.

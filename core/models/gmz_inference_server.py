@@ -142,10 +142,26 @@ class GMZInferenceServer:
             batch = list(self._pending)
             self._pending = []
 
-        self._process_batch(batch)
+        responses = self.build_batch_responses(batch)
+        for resp in responses:
+            env_id = int(resp.get("env_id", 0))
+            try:
+                self.reply_queues[int(env_id)].put_nowait(resp)
+            except Exception:
+                pass
+        self._log_batch_stats(len(batch), responses)
 
-    def _process_batch(self, batch: list[dict[str, Any]]) -> None:
+    @property
+    def weight_version(self) -> int:
+        return int(self._weight_version)
+
+    @property
+    def requests_total(self) -> int:
+        return int(self._requests_total)
+
+    def build_batch_responses(self, batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
         t0 = time.perf_counter()
+        responses: list[dict[str, Any]] = []
         by_env: dict[int, list[dict[str, Any]]] = {}
         for req in batch:
             by_env.setdefault(int(req.get("env_id", 0)), []).append(req)
@@ -175,29 +191,37 @@ class GMZInferenceServer:
                             deterministic=False,
                         )
 
-                resp = {
-                    "env_id": int(env_id),
-                    "selected_actions": list(actions),
-                    "policy_targets": [np.asarray(p, dtype=np.float32) for p in pi_targets],
-                    "behavior_logits": [np.asarray(b, dtype=np.float32) for b in behavior_logits],
-                    "value_est": float(value_est),
-                    "policy_version": int(self._weight_version),
-                }
-                try:
-                    self.reply_queues[int(env_id)].put_nowait(resp)
-                except Exception:
-                    pass
+                responses.append(
+                    {
+                        "kind": "infer_response",
+                        "env_id": int(env_id),
+                        "selected_actions": list(actions),
+                        "policy_targets": [np.asarray(p, dtype=np.float32) for p in pi_targets],
+                        "behavior_logits": [
+                            np.asarray(b, dtype=np.float32) for b in behavior_logits
+                        ],
+                        "value_est": float(value_est),
+                        "policy_version": int(self._weight_version),
+                    }
+                )
                 self._requests_total += 1
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
         self._batches_total += 1
-        if len(batch) > 1 or elapsed_ms > 200.0:
+        self._last_batch_ms = float(elapsed_ms)
+        return responses
+
+    def _log_batch_stats(self, batch_size: int, responses: list[dict[str, Any]]) -> None:
+        elapsed_ms = float(getattr(self, "_last_batch_ms", 0.0))
+        if batch_size > 1 or elapsed_ms > 200.0:
             _append_log(
-                f"[GMZ][INF_SERVER] batch={len(batch)} inference_ms={elapsed_ms:.1f} "
+                f"[GMZ][INF_SERVER] batch={batch_size} inference_ms={elapsed_ms:.1f} "
                 f"total_reqs={self._requests_total}"
             )
         if elapsed_ms > 500.0:
-            _append_log(f"[GMZ][INF_SERVER] slow_batch ms={elapsed_ms:.1f} for n={len(batch)}")
+            _append_log(f"[GMZ][INF_SERVER] slow_batch ms={elapsed_ms:.1f} for n={batch_size}")
+        if not responses:
+            return
 
     def _get_or_create_tree(self, env_id: int) -> GumbelMuZeroSearch:
         if env_id not in self._tree_states:

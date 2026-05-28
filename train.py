@@ -2631,14 +2631,27 @@ if GMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda", "inference_server"):
     GMZ_ACTOR_DEVICE_REQUESTED = "cuda"
 GMZ_ACTOR_MAX_CUDA = max(1, int(os.getenv("GMZ_ACTOR_MAX_CUDA", str(GMZ_CFG.get("actor_max_cuda", 2)))))
 GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS = 8  # прежний дефолт self-play на CPU
+GMZ_INFERENCE_SERVER_MODE = str(
+    os.getenv("GMZ_INFERENCE_SERVER_MODE", str(GMZ_CFG.get("inference_server_mode", "local")))
+).strip().lower()
+if GMZ_INFERENCE_SERVER_MODE == "inference_server":
+    GMZ_INFERENCE_SERVER_MODE = "local"
+GMZ_INFERENCE_REMOTE = GMZ_INFERENCE_SERVER_MODE == "remote"
+GMZ_INFERENCE_REMOTE_HOST = str(os.getenv("GMZ_INFERENCE_REMOTE_HOST", "127.0.0.1")).strip() or "127.0.0.1"
+GMZ_INFERENCE_REMOTE_PORT = max(1, int(os.getenv("GMZ_INFERENCE_REMOTE_PORT", "5555")))
+GMZ_INFERENCE_REMOTE_AUTH_TOKEN = str(os.getenv("GMZ_INFERENCE_REMOTE_AUTH_TOKEN", "")).strip()
 GMZ_INFERENCE_SERVER_REQUESTED = (
-    str(os.getenv("GMZ_INFERENCE_SERVER", str(GMZ_CFG.get("inference_server_enabled", 0)))).strip() == "1"
+    GMZ_INFERENCE_REMOTE
+    or str(os.getenv("GMZ_INFERENCE_SERVER", str(GMZ_CFG.get("inference_server_enabled", 0)))).strip() == "1"
     or GMZ_ACTOR_DEVICE_REQUESTED == "inference_server"
 )
 GMZ_INFERENCE_SERVER_USING_FALLBACK = (
-    GMZ_INFERENCE_SERVER_REQUESTED and not torch.cuda.is_available()
+    GMZ_INFERENCE_SERVER_REQUESTED and not GMZ_INFERENCE_REMOTE and not torch.cuda.is_available()
 )
-GMZ_INFERENCE_SERVER_ENABLED = GMZ_INFERENCE_SERVER_REQUESTED and torch.cuda.is_available()
+GMZ_INFERENCE_SERVER_ENABLED = GMZ_INFERENCE_SERVER_REQUESTED and (
+    GMZ_INFERENCE_REMOTE or torch.cuda.is_available()
+)
+GMZ_INFERENCE_SERVER_LOCAL = bool(GMZ_INFERENCE_SERVER_ENABLED and not GMZ_INFERENCE_REMOTE)
 GMZ_NUM_ENV_WORKERS = max(
     1,
     int(
@@ -8357,6 +8370,10 @@ def _gmz_env_worker_entry(
     sp_cfg_payload: dict,
     outcome_payload: dict,
     inference_timeout: float,
+    inference_server_mode: str = "local",
+    remote_host: str = "",
+    remote_port: int = 5555,
+    remote_auth_token: str = "",
 ):
     """CPU env worker: env + opponent; inference через GPU inference server."""
     try:
@@ -8374,12 +8391,33 @@ def _gmz_env_worker_entry(
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
         len_model = int(len(model))
 
-        client = GMZInferenceClient(
-            int(worker_id),
-            request_q,
-            reply_q,
-            timeout=float(inference_timeout),
-        )
+        mode = str(inference_server_mode or "local").strip().lower()
+        if mode == "remote":
+            from core.models.gmz_inference_transport import RemoteInferenceTransport
+
+            transport = RemoteInferenceTransport(
+                worker_id=int(worker_id),
+                host=str(remote_host or "127.0.0.1"),
+                port=int(remote_port),
+                auth_token=str(remote_auth_token or ""),
+            )
+            client = GMZInferenceClient(
+                int(worker_id),
+                transport=transport,
+                timeout=float(inference_timeout),
+                auth_token=str(remote_auth_token or ""),
+            )
+            append_agent_log(
+                f"[GMZ][REMOTE_CLIENT][CONN] worker={int(worker_id)} "
+                f"tcp://{remote_host}:{int(remote_port)}"
+            )
+        else:
+            client = GMZInferenceClient(
+                int(worker_id),
+                request_q,
+                reply_q,
+                timeout=float(inference_timeout),
+            )
 
         opponent_policy_fn = None
         if int(self_play_enabled) == 1 and opponent_spec is not None:
@@ -8522,6 +8560,13 @@ def _gmz_env_worker_entry(
             data_q.put(("error", f"gmz_env_worker[{worker_id}] {exc}"))
         except Exception:
             pass
+    finally:
+        _client = locals().get("client")
+        if _client is not None:
+            try:
+                _client.close()
+            except Exception:
+                pass
 
 
 def _actor_learner_actor_entry_gumbel_muzero(
@@ -8933,10 +8978,16 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             f"Переключаемся на вариант A: actor_device=cpu, num_actors={GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS}."
         )
     elif GMZ_INFERENCE_SERVER_ENABLED:
-        append_agent_log(
-            f"[GMZ][CONFIG] Inference server (variant B): env_workers={effective_num_actors} "
-            f"batch={GMZ_INFERENCE_BATCH_SIZE} interval_ms={GMZ_INFERENCE_BATCH_INTERVAL_MS}"
-        )
+        if GMZ_INFERENCE_REMOTE:
+            append_agent_log(
+                f"[GMZ][CONFIG] Remote inference server (variant B-remote): env_workers={effective_num_actors} "
+                f"host={GMZ_INFERENCE_REMOTE_HOST} port={GMZ_INFERENCE_REMOTE_PORT}"
+            )
+        else:
+            append_agent_log(
+                f"[GMZ][CONFIG] Inference server (variant B-local): env_workers={effective_num_actors} "
+                f"batch={GMZ_INFERENCE_BATCH_SIZE} interval_ms={GMZ_INFERENCE_BATCH_INTERVAL_MS}"
+            )
     elif GMZ_ACTOR_USING_CUDA_FALLBACK:
         append_agent_log(
             "[GMZ][CONFIG][FALLBACK] В hyperparams указан actor_device=cuda, но PyTorch не видит GPU с CUDA "
@@ -8955,7 +9006,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         "[GMZ][CONFIG] "
         f"sims={GMZ_MCTS_SIMS} root_top_k={GMZ_ROOT_TOP_K} unroll={GMZ_UNROLL_STEPS} "
         f"batch={GMZ_BATCH_SIZE} actors={GMZ_NUM_ACTORS} effective_actors={effective_num_actors} "
-        f"inference_server={int(GMZ_INFERENCE_SERVER_ENABLED)} env_workers={GMZ_NUM_ENV_WORKERS} "
+        f"inference_server={int(GMZ_INFERENCE_SERVER_ENABLED)} "
+        f"inference_mode={GMZ_INFERENCE_SERVER_MODE} env_workers={GMZ_NUM_ENV_WORKERS} "
         f"replay={GMZ_REPLAY_CAPACITY} "
         f"actor_device_req={GMZ_ACTOR_DEVICE_REQUESTED} actor_device={GMZ_ACTOR_DEVICE} "
         f"actor_device_cuda={int(GMZ_ACTOR_DEVICE_CUDA)} cuda_fallback={int(GMZ_ACTOR_USING_CUDA_FALLBACK)} "
@@ -9084,7 +9136,33 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     }
 
     if remaining_episodes > 0:
-        if GMZ_INFERENCE_SERVER_ENABLED:
+        if GMZ_INFERENCE_SERVER_ENABLED and GMZ_INFERENCE_REMOTE:
+            from core.models.gmz_inference_transport import remote_health_check
+
+            try:
+                hc = remote_health_check(
+                    host=GMZ_INFERENCE_REMOTE_HOST,
+                    port=int(GMZ_INFERENCE_REMOTE_PORT),
+                    auth_token=GMZ_INFERENCE_REMOTE_AUTH_TOKEN,
+                    timeout=min(3.0, float(GMZ_INFERENCE_TIMEOUT)),
+                )
+                append_agent_log(
+                    f"[GMZ][REMOTE_CLIENT] health_check ok host={GMZ_INFERENCE_REMOTE_HOST} "
+                    f"port={GMZ_INFERENCE_REMOTE_PORT} policy_version={hc.get('policy_version', '?')} "
+                    f"gpu={hc.get('gpu_name', '?')}"
+                )
+            except Exception as exc:
+                append_agent_log(
+                    f"[GMZ][REMOTE_CLIENT] health_check failed host={GMZ_INFERENCE_REMOTE_HOST}: {exc}"
+                )
+                raise RuntimeError(
+                    "Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, "
+                    "3) firewall (TCP 5555)."
+                ) from exc
+            append_agent_log(
+                f"[GMZ][REMOTE_CLIENT] connecting to tcp://{GMZ_INFERENCE_REMOTE_HOST}:{GMZ_INFERENCE_REMOTE_PORT}"
+            )
+        elif GMZ_INFERENCE_SERVER_LOCAL:
             request_q = ctx.Queue(maxsize=int(GMZ_INFERENCE_REQUEST_QUEUE_MAX))
             reply_queues = [ctx.Queue(maxsize=8) for _ in range(int(effective_num_actors))]
             inf_proc = ctx.Process(
@@ -9113,26 +9191,31 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             if actor_episodes <= 0:
                 continue
             if GMZ_INFERENCE_SERVER_ENABLED:
+                worker_args = (
+                    int(a_idx),
+                    int(actor_episodes),
+                    roster_config,
+                    int(b_len),
+                    int(b_hei),
+                    int(n_observations),
+                    list(n_actions),
+                    int(GMZ_ACTOR_BATCH_SEND),
+                    data_q,
+                    request_q,
+                    reply_queues[int(a_idx)] if GMZ_INFERENCE_SERVER_LOCAL else None,
+                    int(1 if SELF_PLAY_ENABLED else 0),
+                    opponent_spec,
+                    sp_cfg_payload,
+                    outcome_payload,
+                    float(GMZ_INFERENCE_TIMEOUT),
+                    str(GMZ_INFERENCE_SERVER_MODE),
+                    str(GMZ_INFERENCE_REMOTE_HOST),
+                    int(GMZ_INFERENCE_REMOTE_PORT),
+                    str(GMZ_INFERENCE_REMOTE_AUTH_TOKEN),
+                )
                 p = ctx.Process(
                     target=_gmz_env_worker_entry,
-                    args=(
-                        int(a_idx),
-                        int(actor_episodes),
-                        roster_config,
-                        int(b_len),
-                        int(b_hei),
-                        int(n_observations),
-                        list(n_actions),
-                        int(GMZ_ACTOR_BATCH_SEND),
-                        data_q,
-                        request_q,
-                        reply_queues[int(a_idx)],
-                        int(1 if SELF_PLAY_ENABLED else 0),
-                        opponent_spec,
-                        sp_cfg_payload,
-                        outcome_payload,
-                        float(GMZ_INFERENCE_TIMEOUT),
-                    ),
+                    args=worker_args,
                     daemon=True,
                 )
             else:

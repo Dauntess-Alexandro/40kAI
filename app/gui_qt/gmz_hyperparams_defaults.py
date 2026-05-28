@@ -24,6 +24,33 @@ GMZ_INFERENCE_SERVER_CHECKBOX_TOOLTIP = (
     "Выключено: вариант A (до 2 GPU-акторов). Требуется CUDA."
 )
 
+GMZ_LOCAL_IS_GUI_TOOLTIP = (
+    "Локальный Inference Server (вариант B) на этом ПК.\n\n"
+    "• 6 CPU env workers симулируют партии\n"
+    "• 1 GPU-процесс на этом ПК делает MCTS/search (forward сети)\n"
+    "• Learner на GPU этого же ПК обучает сеть\n\n"
+    "Требуется CUDA. Выключено = вариант A (до 2 GPU-акторов без отдельного IS).\n"
+    "При включённом LAN Inference server эта опция недоступна."
+)
+
+GMZ_LAN_IS_GUI_TOOLTIP = (
+    "LAN Inference Server: инференс на втором ПК (ПК2) по сети.\n\n"
+    "• На ПК1: learner (GPU) + CPU env workers\n"
+    "• На ПК2: GPU inference server (tools\\pc2_remote_is.bat)\n"
+    "• Веса: общая SMB-папка, latest_gmz_policy.pth\n"
+    "• Связь: ZMQ (порт 5555), «Проверить соединение» перед train\n\n"
+    "При включении локальный IS на ПК1 не запускается. Вариант B включается автоматически."
+)
+
+# Remote IS — только runtime/state/remote_is.json + GUI (Настройки → GMZ), не в presets.
+GMZ_REMOTE_IS_KEYS: tuple[str, ...] = (
+    "inference_server_mode",
+    "inference_remote_host",
+    "inference_remote_port",
+    "inference_remote_timeout",
+    "inference_remote_auth_token",
+)
+
 GMZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "learning_rate",
     "batch_size",
