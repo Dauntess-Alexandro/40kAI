@@ -328,7 +328,9 @@ def select_action_with_epsilon_gumbel_muzero(env, state, policy_net, epsilon, le
         ),
         device=state.device,
     )
-    pi_targets, selected, _value = search.run(obs=obs_np, legal_masks_by_head=legal_masks, deterministic=True)
+    pi_targets, _behavior_logits, selected, _value = search.run(
+        obs=obs_np, legal_masks_by_head=legal_masks, deterministic=True
+    )
     action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
     if not action_list:
         action_list = [int(x) for x in selected]

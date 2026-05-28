@@ -1,5 +1,8 @@
 # play warhammer!
 import argparse
+import collections
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,15 +23,28 @@ from core.models.alphazero_model import alphazero_arch_from_payload, load_alphaz
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.utils import normalize_state_dict
-from core.models.utils import *
+from core.models.utils import (
+    build_action_masks_by_head,
+    build_shoot_action_mask,
+    convertToDict,
+    normalize_state_dict,
+    select_action,
+)
 from core.engine.game_io import ConsoleIO, set_active_io
 from core.engine.deployment import deploy_only_war, post_deploy_setup
+from core.engine.mission import normalize_mission_name
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from core.engine.game_controller import n_actions_from_env
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 from project_paths import ARTIFACTS_MODELS_DIR
+from eval import select_action_with_epsilon
+
+
+def to_np_state(s):
+    if isinstance(s, (dict, collections.OrderedDict)):
+        return np.array(list(s.values()), dtype=np.float32)
+    return np.array(s, dtype=np.float32)
 
 
 def load_trusted_checkpoint(path: str):
@@ -363,7 +379,7 @@ while isdone == False:
                 ),
                 device=state.device,
             )
-            pi_targets, _selected, _value = search.run(
+            pi_targets, _behavior_logits, _selected, _value = search.run(
                 obs=state.squeeze(0).detach().cpu().numpy(),
                 legal_masks_by_head=legal_masks,
                 deterministic=True,

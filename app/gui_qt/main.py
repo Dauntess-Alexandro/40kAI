@@ -58,7 +58,16 @@ from app.gui_qt.gmz_hyperparams_defaults import (
     GMZ_FIELD_TOOLTIPS,
     GMZ_GROUPS,
     GMZ_HYPERPARAM_KEYS,
+    GMZ_INFERENCE_SERVER_CHECKBOX_TOOLTIP,
+    GMZ_PROFILE_DETECT_ORDER,
     GMZ_PROFILE_PRESETS,
+    GMZ_VARIANT_A_BUNDLE,
+    GMZ_VARIANT_B_BUNDLE,
+)
+from app.gui_qt.hyperparams_cuda_hints import (
+    hyperparam_cuda_field_state,
+    hyperparam_cuda_tooltip_suffix,
+    would_gmz_hyperparam_violate_cuda,
 )
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
@@ -171,6 +180,11 @@ class GUIController(QtCore.QObject):
         self._training_samples = deque()
         self._training_start_time = 0.0
         self._training_last_ui_update = 0.0
+        self._progress_current_ep = 0
+        self._training_optimize_steps = 0
+        self._training_ui_timer = QtCore.QTimer(self)
+        self._training_ui_timer.setInterval(1000)
+        self._training_ui_timer.timeout.connect(self._on_training_ui_tick)
 
         self._available_units: list[UnitInfo] = []
         self._player_roster: list[RosterEntry] = []
@@ -1450,12 +1464,44 @@ class GUIController(QtCore.QObject):
     def hpGmzNumActors(self) -> int:
         return int(self._gmz_hyperparams.get("num_actors", self._default_gmz_hyperparams["num_actors"]))
 
+    @QtCore.Property(bool, notify=trainingHyperparamsChanged)
+    def gmzInferenceServerEnabled(self) -> bool:
+        return int(self._gmz_hyperparams.get("inference_server_enabled", 0) or 0) == 1
+
+    @QtCore.Property(str, constant=True)
+    def gmzInferenceServerCheckboxTooltip(self) -> str:
+        return GMZ_INFERENCE_SERVER_CHECKBOX_TOOLTIP
+
+    @QtCore.Slot(bool)
+    def set_gmz_inference_server_mode(self, enabled: bool) -> None:
+        if enabled and not self._training_cuda_available:
+            self._emit_status(
+                "Inference server (вариант B) требует CUDA. "
+                "Установите PyTorch+cu и драйвер NVIDIA, затем нажмите ↻ в баннере GPU."
+            )
+            self.trainingHyperparamsChanged.emit()
+            return
+        bundle = dict(GMZ_VARIANT_B_BUNDLE if enabled else GMZ_VARIANT_A_BUNDLE)
+        changed = False
+        for key, value in bundle.items():
+            if self._gmz_hyperparams.get(key) != value:
+                self._gmz_hyperparams[key] = value
+                changed = True
+        if not changed:
+            return
+        self._refresh_gmz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        mode = "B (inference server)" if enabled else "A (GPU-акторы)"
+        self._emit_status(f"GMZ: режим {mode}. Сохраните настройки.")
+
     @staticmethod
     def _profile_display_label(profile_key: str) -> str:
         labels = {
             "fast": "Fast",
             "balanced": "Balanced",
             "heavy": "Heavy",
+            "very_heavy": "Very Heavy",
             "custom": "Custom",
         }
         key = str(profile_key or "custom").strip().lower()
@@ -2582,6 +2628,14 @@ class GUIController(QtCore.QObject):
 
         if current == parsed:
             return
+        if would_gmz_hyperparam_violate_cuda(
+            normalized_key, parsed, self._training_cuda_available
+        ):
+            self._emit_status(
+                f"Параметр GMZ «{normalized_key}» в таком виде требует CUDA "
+                f"({parsed!r}). Смените на CPU-значение или подключите GPU."
+            )
+            return
         self._gmz_hyperparams[normalized_key] = parsed
         self._refresh_gmz_profile_label()
         self.trainingHyperparamsChanged.emit()
@@ -2598,8 +2652,21 @@ class GUIController(QtCore.QObject):
                 return profile_name
         return "custom"
 
+    @staticmethod
+    def _hyperparam_values_equal(a: object, b: object) -> bool:
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            return abs(float(a) - float(b)) < 1e-9
+        return a == b
+
     def _detect_gmz_profile(self) -> str:
-        return self._detect_profile(self._gmz_hyperparams, self._gmz_profile_presets)
+        for profile_name in GMZ_PROFILE_DETECT_ORDER:
+            expected = self._gmz_profile_presets.get(profile_name, {})
+            if expected and all(
+                self._hyperparam_values_equal(self._gmz_hyperparams.get(k), v)
+                for k, v in expected.items()
+            ):
+                return profile_name
+        return "custom"
 
     def _refresh_dqn_profile_label(self) -> None:
         self._dqn_selected_profile = self._detect_profile(self._dqn_hyperparams, self._dqn_profile_presets)
@@ -2630,10 +2697,19 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot(str)
     def apply_gmz_profile(self, profile: str) -> None:
         mode = str(profile or "").strip().lower()
-        if mode not in {"fast", "balanced", "heavy"}:
+        if mode not in set(GMZ_PROFILE_DETECT_ORDER):
             return
+        preset_patch = dict(self._gmz_profile_presets.get(mode, {}))
+        # Не затирать num_actors/num_env_workers из пресета старым bundle (было 6 вместо 8 в Heavy).
+        preserve_variant = {
+            k: self._gmz_hyperparams[k]
+            for k in GMZ_VARIANT_B_BUNDLE
+            if k in self._gmz_hyperparams and k not in preset_patch
+        }
         base = dict(self._default_gmz_hyperparams)
-        base.update(self._gmz_profile_presets.get(mode, {}))
+        base.update(preset_patch)
+        if preserve_variant:
+            base.update(preserve_variant)
         self._gmz_hyperparams.update(base)
         self._gmz_selected_profile = mode
         self.trainingHyperparamsChanged.emit()
@@ -2802,7 +2878,8 @@ class GUIController(QtCore.QObject):
                         f"GPU: {gpu_name}\n"
                         f"Compute capability {cc[0]}.{cc[1]}\n"
                         f"Видеопамять ≈ {mem_gb:.1f} GB\n\n"
-                        "GMZ: actor_device=cuda и 2 GPU-актора поддерживаются."
+                        "GMZ: вариант A (cuda, 2 GPU-актора) и вариант B (inference server) "
+                        "доступны. Поля CUDA в настройках подсвечены зелёным."
                     )
                 except Exception:
                     summary = f"CUDA · {gpu_name}"
@@ -2812,8 +2889,11 @@ class GUIController(QtCore.QObject):
                 detail = (
                     f"PyTorch {torch_ver}\n"
                     "PyTorch не видит GPU с CUDA.\n\n"
-                    "При actor_device=cuda в hyperparams train автоматически переключится "
-                    "на CPU и 8 акторов (строка [GMZ][CONFIG][FALLBACK] в логе).\n\n"
+                    "GMZ CPU fallback (как в train.py):\n"
+                    "· inference server / actor_device=cuda → вариант A, actor_device=cpu, "
+                    "8 акторов, actor_compile=1 на CPU;\n"
+                    "· поля CUDA в настройках GMZ подсвечены красным и не примут GPU-значения.\n\n"
+                    "DQN/PPO/AlphaZero: обучение на CPU (отдельных CUDA-полей в GUI нет).\n\n"
                     "Проверьте драйвер NVIDIA и сборку PyTorch+cu124/cu128."
                 )
         except Exception as exc:
@@ -2832,6 +2912,48 @@ class GUIController(QtCore.QObject):
         self._training_device_detail = detail
         if changed:
             self.trainingDeviceInfoChanged.emit()
+            self.trainingHyperparamsChanged.emit()
+
+    @QtCore.Slot(str, str, str, result=int)
+    def hyperparam_cuda_field_state(self, algo_section: str, key: str, value_str: str) -> int:
+        section = str(algo_section or "").strip().lower()
+        k = str(key or "").strip()
+        parsed = self._hyperparam_value_for_cuda_state(section, k, value_str)
+        return int(
+            hyperparam_cuda_field_state(section, k, parsed, self._training_cuda_available)
+        )
+
+    @QtCore.Slot(str, str, str, result=str)
+    def hyperparam_cuda_tooltip_suffix(
+        self, algo_section: str, key: str, value_str: str
+    ) -> str:
+        section = str(algo_section or "").strip().lower()
+        k = str(key or "").strip()
+        parsed = self._hyperparam_value_for_cuda_state(section, k, value_str)
+        return hyperparam_cuda_tooltip_suffix(
+            section, k, parsed, self._training_cuda_available
+        )
+
+    def _hyperparam_value_for_cuda_state(
+        self, algo_section: str, key: str, value_str: str
+    ):
+        section = str(algo_section or "").strip().lower()
+        k = str(key or "").strip()
+        raw = str(value_str if value_str is not None else "")
+        defaults = {
+            "dqn": self._default_dqn_hyperparams,
+            "ppo": self._default_ppo_hyperparams,
+            "tree": self._default_az_tree_hyperparams,
+            "proxy": self._default_az_proxy_hyperparams,
+            "gmz": self._default_gmz_hyperparams,
+        }.get(section, {})
+        default = defaults.get(k)
+        if default is None:
+            return raw
+        try:
+            return self._coerce_algo_hyperparam(k, raw, default)
+        except (TypeError, ValueError):
+            return raw
 
     @QtCore.Slot()
     def refresh_training_device_info(self) -> None:
@@ -2879,7 +3001,10 @@ class GUIController(QtCore.QObject):
         """Текст для ToolTip при наведении на Fast/Balanced/Heavy: что изменится после клика."""
         ctx = self._profile_algo_context(algo)
         mode = str(profile or "").strip().lower()
-        if not ctx or mode not in {"fast", "balanced", "heavy"}:
+        allowed_profiles = {"fast", "balanced", "heavy"}
+        if str(algo).strip().lower() == "gmz":
+            allowed_profiles = set(GMZ_PROFILE_DETECT_ORDER)
+        if not ctx or mode not in allowed_profiles:
             return ""
         defaults, current, presets = ctx
         preset_patch = presets.get(mode, {})
@@ -3413,10 +3538,19 @@ class GUIController(QtCore.QObject):
         if root_top_k < 1:
             return "gumbel_muzero.root_top_k должен быть >= 1"
         actor_device = str(payload.get("actor_device", "cpu")).strip().lower()
-        if actor_device not in ("cpu", "cuda"):
-            return "gumbel_muzero.actor_device должен быть cpu или cuda"
+        inference_server_enabled = int(payload.get("inference_server_enabled", 0) or 0)
+        if actor_device not in ("cpu", "cuda", "inference_server"):
+            return "gumbel_muzero.actor_device должен быть cpu, cuda или inference_server"
+        if inference_server_enabled not in {0, 1}:
+            return "gumbel_muzero.inference_server_enabled должен быть 0 или 1"
         actor_max_cuda = int(payload.get("actor_max_cuda", 2))
-        if actor_max_cuda < 1:
+        if actor_device == "inference_server" or inference_server_enabled == 1:
+            if actor_max_cuda < 0:
+                return "gumbel_muzero.actor_max_cuda должен быть >= 0 (0 для inference server)"
+            num_env_workers = int(payload.get("num_env_workers", payload.get("num_actors", 1)))
+            if num_env_workers < 1:
+                return "gumbel_muzero.num_env_workers должен быть >= 1"
+        elif actor_max_cuda < 1:
             return "gumbel_muzero.actor_max_cuda должен быть >= 1"
         return None
 
@@ -3998,6 +4132,7 @@ class GUIController(QtCore.QObject):
             self.runningChanged.emit(value)
 
     def _set_progress(self, current: int, total: int) -> None:
+        self._progress_current_ep = max(0, int(current))
         if total <= 0:
             self._progress_value = 0.0
             self._progress_text = "0%"
@@ -4011,6 +4146,14 @@ class GUIController(QtCore.QObject):
         self.progressValueChanged.emit(self._progress_value)
         self.progressTextChanged.emit(self._progress_text)
         self.progressLabelChanged.emit(self._progress_label)
+
+    def _on_training_ui_tick(self) -> None:
+        """Раз в секунду обновляет elapsed/it/s, пока train ждёт длинную партию или learner."""
+        if not self._running or self._active_process_kind != "train":
+            return
+        if self._training_start_time <= 0:
+            return
+        self._update_progress_stats(self._progress_current_ep)
 
     def _update_progress_stats(self, current_episode: int) -> None:
         now = time.time()
@@ -4039,7 +4182,12 @@ class GUIController(QtCore.QObject):
             eta_text = f" • ETA {self._format_duration(eta_seconds)}"
 
         rate_text = f"{it_per_sec:.1f} it/s" if it_per_sec > 0 else "— it/s"
-        self._progress_stats = f"{rate_text} • elapsed {self._format_duration(elapsed_total)}{eta_text}"
+        activity = ""
+        if self._training_optimize_steps > 0:
+            activity = f" • upd {self._training_optimize_steps}"
+        self._progress_stats = (
+            f"{rate_text} • elapsed {self._format_duration(elapsed_total)}{eta_text}{activity}"
+        )
         self.progressStatsChanged.emit(self._progress_stats)
 
     def _start_training(self, mode: str) -> None:
@@ -4301,6 +4449,7 @@ class GUIController(QtCore.QObject):
             )
         for key, value in env_overrides.items():
             env.insert(key, value)
+        env.insert("TRAIN_PROGRESS_HEARTBEAT_SEC", os.getenv("TRAIN_PROGRESS_HEARTBEAT_SEC", "2.0"))
         self._process.setProcessEnvironment(env)
 
         self._process.readyReadStandardOutput.connect(self._read_stdout)
@@ -4315,6 +4464,7 @@ class GUIController(QtCore.QObject):
         self._set_progress(0, self._train_total_episodes)
         self._progress_stats = "— it/s • elapsed 00:00"
         self.progressStatsChanged.emit(self._progress_stats)
+        self._training_ui_timer.start()
 
         if self._training_algo == "ppo":
             start_message = (
@@ -4534,6 +4684,7 @@ class GUIController(QtCore.QObject):
             return True
         allowed_prefixes = (
             "[EVAL]",
+            "[TRAIN][PROGRESS]",
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",
@@ -4576,12 +4727,26 @@ class GUIController(QtCore.QObject):
             return
         self._set_progress(current, total)
         now = time.time()
-        if now - self._training_last_ui_update >= 0.25:
+        is_heartbeat = "[TRAIN][PROGRESS]" in line
+        if is_heartbeat or now - self._training_last_ui_update >= 0.25:
             self._training_last_ui_update = now
             self._update_progress_stats(current)
 
     def _parse_training_progress(self, line: str, fallback_total: int) -> tuple[Optional[int], int]:
         normalized = line.strip()
+
+        hb_match = re.search(
+            r"\[TRAIN\]\[PROGRESS\]\s+ep=(\d+)/(\d+)(?:\s+updates=(\d+))?",
+            normalized,
+        )
+        if hb_match:
+            current = int(hb_match.group(1))
+            total = int(hb_match.group(2))
+            if hb_match.group(3) is not None:
+                self._training_optimize_steps = int(hb_match.group(3))
+            if fallback_total > 0:
+                total = max(total, fallback_total)
+            return current, total
 
         # Важно: парсим формат X/Y только для реальных tqdm-линий,
         # чтобы случайные "2/2" в других логах не ломали прогресс-бар.
@@ -4607,6 +4772,8 @@ class GUIController(QtCore.QObject):
 
     def _reset_training_stats(self) -> None:
         self._training_samples.clear()
+        self._progress_current_ep = 0
+        self._training_optimize_steps = 0
         now = time.time()
         self._training_start_time = now
         self._training_last_ui_update = now - 1
@@ -4645,6 +4812,7 @@ class GUIController(QtCore.QObject):
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
+        self._training_ui_timer.stop()
         if self._process is None:
             return
         self._process.deleteLater()

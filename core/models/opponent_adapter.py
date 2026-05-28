@@ -292,7 +292,7 @@ def build_policy_fn(
                     probs, _value = net.infer(obs_t, masks_by_head=[m.unsqueeze(0) for m in masks_cpu])
                 action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
             else:
-                pi_targets, selected, _value = search.run(
+                pi_targets, _behavior_logits, selected, _value = search.run(
                     obs=obs_np,
                     legal_masks_by_head=legal_masks,
                     deterministic=bool(deterministic),

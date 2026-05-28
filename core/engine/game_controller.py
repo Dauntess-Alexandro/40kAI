@@ -717,7 +717,7 @@ class GameController:
                             ),
                             device=state_tensor.device,
                         )
-                        pi_targets, _selected, _value = search.run(
+                        pi_targets, _behavior_logits, _selected, _value = search.run(
                             obs=state_tensor.squeeze(0).detach().cpu().numpy(),
                             legal_masks_by_head=legal_masks,
                             deterministic=True,

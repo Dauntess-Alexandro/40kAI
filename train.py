@@ -102,6 +102,8 @@ from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer, GMZTransition
 from core.models.gumbel_muzero_selfplay import play_episode_with_gumbel_muzero, GumbelSelfPlayConfig
+from core.models.gmz_inference_client import GMZInferenceClient
+from core.models.gmz_inference_server import gmz_inference_server_entry
 from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, train_gumbel_muzero_step, make_gmz_lr_scheduler
 from core.models.gumbel_muzero_reanalysis import GumbelMuZeroReanalyzer, GumbelMuZeroReanalysisConfig
 from core.models.action_contract import ordered_action_keys, action_sizes_from_env
@@ -238,6 +240,9 @@ TRAIN_LOG_TO_FILE = os.getenv("TRAIN_LOG_TO_FILE", "1") == "1"
 TRAIN_LOG_TO_CONSOLE = str(os.getenv("TRAIN_LOG_TO_CONSOLE", "0")).strip() == "1"
 TRAIN_DEBUG = os.getenv("TRAIN_DEBUG", "0") == "1"
 ACTOR_PROGRESS_STDOUT_EVERY = max(1, int(os.getenv("ACTOR_PROGRESS_STDOUT_EVERY", "1")))
+TRAIN_PROGRESS_HEARTBEAT_SEC = max(
+    0.5, float(os.getenv("TRAIN_PROGRESS_HEARTBEAT_SEC", "2.0"))
+)
 ACTOR_PBAR_MININTERVAL = max(0.0, float(os.getenv("ACTOR_PBAR_MININTERVAL", "0.05" if os.name == "nt" else "0.05")))
 ACTOR_PBAR_MINITERS = max(1, int(os.getenv("ACTOR_PBAR_MINITERS", "1")))
 LOG_EVERY = int(os.getenv("LOG_EVERY", "200"))
@@ -2620,23 +2625,67 @@ GMZ_TREE_REUSE = str(os.getenv("GMZ_TREE_REUSE", str(GMZ_CFG.get("tree_reuse", 1
 GMZ_EMA_TAU = float(os.getenv("GMZ_EMA_TAU", str(GMZ_CFG.get("ema_tau", 0.005))))
 GMZ_ACTOR_COMPILE = str(os.getenv("GMZ_ACTOR_COMPILE", str(GMZ_CFG.get("actor_compile", 1)))).strip() == "1"
 GMZ_LEARNER_COMPILE = str(os.getenv("GMZ_LEARNER_COMPILE", str(GMZ_CFG.get("learner_compile", 1)))).strip() == "1"
-# Вариант A: GPU-акторы (inference на CUDA; env остаётся на CPU)
+# Вариант A: GPU-акторы; вариант B: inference_server + CPU env workers
 GMZ_ACTOR_DEVICE_REQUESTED = str(os.getenv("GMZ_ACTOR_DEVICE", str(GMZ_CFG.get("actor_device", "cuda")))).strip().lower()
-if GMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda"):
+if GMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda", "inference_server"):
     GMZ_ACTOR_DEVICE_REQUESTED = "cuda"
 GMZ_ACTOR_MAX_CUDA = max(1, int(os.getenv("GMZ_ACTOR_MAX_CUDA", str(GMZ_CFG.get("actor_max_cuda", 2)))))
 GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS = 8  # прежний дефолт self-play на CPU
-GMZ_ACTOR_USING_CUDA_FALLBACK = (
-    GMZ_ACTOR_DEVICE_REQUESTED == "cuda" and not torch.cuda.is_available()
+GMZ_INFERENCE_SERVER_REQUESTED = (
+    str(os.getenv("GMZ_INFERENCE_SERVER", str(GMZ_CFG.get("inference_server_enabled", 0)))).strip() == "1"
+    or GMZ_ACTOR_DEVICE_REQUESTED == "inference_server"
 )
-GMZ_ACTOR_DEVICE = "cpu" if GMZ_ACTOR_USING_CUDA_FALLBACK else GMZ_ACTOR_DEVICE_REQUESTED
-GMZ_ACTOR_DEVICE_CUDA = GMZ_ACTOR_DEVICE == "cuda" and torch.cuda.is_available()
-if GMZ_ACTOR_USING_CUDA_FALLBACK:
+GMZ_INFERENCE_SERVER_USING_FALLBACK = (
+    GMZ_INFERENCE_SERVER_REQUESTED and not torch.cuda.is_available()
+)
+GMZ_INFERENCE_SERVER_ENABLED = GMZ_INFERENCE_SERVER_REQUESTED and torch.cuda.is_available()
+GMZ_NUM_ENV_WORKERS = max(
+    1,
+    int(
+        os.getenv(
+            "GMZ_NUM_ENV_WORKERS",
+            str(GMZ_CFG.get("num_env_workers", GMZ_CFG.get("num_actors", 6))),
+        )
+    ),
+)
+GMZ_INFERENCE_BATCH_SIZE = max(1, int(os.getenv("GMZ_INFERENCE_BATCH_SIZE", str(GMZ_CFG.get("inference_batch_size", 8)))))
+GMZ_INFERENCE_BATCH_INTERVAL_MS = float(
+    os.getenv("GMZ_INFERENCE_BATCH_INTERVAL_MS", str(GMZ_CFG.get("inference_batch_interval_ms", 20.0)))
+)
+GMZ_INFERENCE_TIMEOUT = float(os.getenv("GMZ_INFERENCE_TIMEOUT", str(GMZ_CFG.get("inference_timeout", 5.0))))
+GMZ_INFERENCE_REQUEST_QUEUE_MAX = max(
+    4, int(os.getenv("GMZ_INFERENCE_REQUEST_QUEUE_MAX", str(GMZ_CFG.get("inference_request_queue_max", 32))))
+)
+GMZ_INFERENCE_SERVER_COMPILE = str(
+    os.getenv("GMZ_INFERENCE_SERVER_COMPILE", str(GMZ_CFG.get("inference_server_compile", 1)))
+).strip() == "1"
+GMZ_CLEAR_TREE_ON_WEIGHT_SYNC = str(
+    os.getenv("GMZ_CLEAR_TREE_ON_WEIGHT_SYNC", str(GMZ_CFG.get("clear_tree_on_weight_sync", 0)))
+).strip() == "1"
+GMZ_ACTOR_USING_CUDA_FALLBACK = (
+    not GMZ_INFERENCE_SERVER_ENABLED
+    and GMZ_ACTOR_DEVICE_REQUESTED == "cuda"
+    and not torch.cuda.is_available()
+)
+if GMZ_INFERENCE_SERVER_ENABLED:
+    GMZ_ACTOR_DEVICE = "inference_server"
+    GMZ_ACTOR_DEVICE_CUDA = False
+    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_NUM_ENV_WORKERS)
+elif GMZ_INFERENCE_SERVER_USING_FALLBACK:
+    GMZ_ACTOR_DEVICE = "cpu"
+    GMZ_ACTOR_DEVICE_CUDA = False
     GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS)
-elif GMZ_ACTOR_DEVICE_CUDA:
-    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = min(int(GMZ_NUM_ACTORS), int(GMZ_ACTOR_MAX_CUDA))
+elif GMZ_ACTOR_USING_CUDA_FALLBACK:
+    GMZ_ACTOR_DEVICE = "cpu"
+    GMZ_ACTOR_DEVICE_CUDA = False
+    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS)
 else:
-    GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_NUM_ACTORS)
+    GMZ_ACTOR_DEVICE = GMZ_ACTOR_DEVICE_REQUESTED
+    GMZ_ACTOR_DEVICE_CUDA = GMZ_ACTOR_DEVICE == "cuda" and torch.cuda.is_available()
+    if GMZ_ACTOR_DEVICE_CUDA:
+        GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = min(int(GMZ_NUM_ACTORS), int(GMZ_ACTOR_MAX_CUDA))
+    else:
+        GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_NUM_ACTORS)
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -3447,16 +3496,23 @@ def main():
             return
         if TRAIN_ALGO == "gumbel_muzero":
             if TRAIN_LOG_TO_CONSOLE:
-                _gmz_actor_mode = (
-                    f"CUDA (max {GMZ_ACTOR_MAX_CUDA})"
-                    if GMZ_ACTOR_DEVICE_CUDA
-                    else "CPU"
-                )
+                if GMZ_INFERENCE_SERVER_ENABLED:
+                    _gmz_actor_mode = (
+                        f"inference_server + {GMZ_ACTOR_EFFECTIVE_NUM_ACTORS} env workers"
+                    )
+                elif GMZ_INFERENCE_SERVER_USING_FALLBACK:
+                    _gmz_actor_mode = (
+                        f"variant A CPU fallback (IS недоступен, actors={GMZ_ACTOR_EFFECTIVE_NUM_ACTORS})"
+                    )
+                elif GMZ_ACTOR_DEVICE_CUDA:
+                    _gmz_actor_mode = f"CUDA (max {GMZ_ACTOR_MAX_CUDA})"
+                else:
+                    _gmz_actor_mode = "CPU"
                 if GMZ_ACTOR_USING_CUDA_FALLBACK:
                     _gmz_actor_mode = f"CPU fallback (запрошен cuda, num_actors={GMZ_ACTOR_EFFECTIVE_NUM_ACTORS})"
                 print(
                     f"[TRAIN][MODE] PRO_ACTOR_LEARNER=1 "
-                    f"(Gumbel MuZero actors {_gmz_actor_mode} + learner GPU)"
+                    f"(Gumbel MuZero {_gmz_actor_mode} + learner GPU)"
                 )
             _main_actor_learner_gumbel_muzero(
                 roster_config=roster_config,
@@ -8268,6 +8324,206 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     )
 
 
+def _gmz_rollout_dict_from_transition(t: GMZTransition, policy_version: int) -> dict:
+    beh = getattr(t, "behavior_logits", None) or []
+    masks = getattr(t, "legal_masks_by_head", None) or []
+    return {
+        "state": np.asarray(t.state, dtype=np.float32),
+        "action": np.asarray(t.action, dtype=np.int64),
+        "reward": float(t.reward),
+        "done": bool(t.done),
+        "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
+        "behavior_logits": [np.asarray(b, dtype=np.float32) for b in beh],
+        "legal_masks_by_head": [np.asarray(m, dtype=np.float32) for m in masks],
+        "value_target": float(t.value_target),
+        "policy_version": int(getattr(t, "policy_version", policy_version) or policy_version),
+    }
+
+
+def _gmz_env_worker_entry(
+    worker_id: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    batch_send: int,
+    data_q,
+    request_q,
+    reply_q,
+    self_play_enabled: int,
+    opponent_spec,
+    sp_cfg_payload: dict,
+    outcome_payload: dict,
+    inference_timeout: float,
+):
+    """CPU env worker: env + opponent; inference через GPU inference server."""
+    try:
+        sp_cfg = GumbelSelfPlayConfig(
+            temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", GMZ_TEMP_OPENING_MOVES)),
+            temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", GMZ_TEMP_OPENING)),
+            temperature_late_value=float(sp_cfg_payload.get("temperature_late_value", GMZ_TEMP_LATE)),
+            outcome_only=bool(outcome_payload.get("outcome_only", GMZ_OUTCOME_ONLY)),
+            outcome_value_win=float(outcome_payload.get("outcome_value_win", GMZ_OUTCOME_VALUE_WIN)),
+            outcome_value_loss=float(outcome_payload.get("outcome_value_loss", GMZ_OUTCOME_VALUE_LOSS)),
+            outcome_value_draw=float(outcome_payload.get("outcome_value_draw", GMZ_OUTCOME_VALUE_DRAW)),
+        )
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        len_model = int(len(model))
+
+        client = GMZInferenceClient(
+            int(worker_id),
+            request_q,
+            reply_q,
+            timeout=float(inference_timeout),
+        )
+
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len_model,
+                    opponent=opponent_spec,
+                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                )
+            except Exception:
+                opponent_policy_fn = None
+
+        append_agent_log(f"[GMZ][ENV_WORKER] worker={int(worker_id)} started episodes={int(episodes)}")
+
+        def _inference_fn(
+            obs: np.ndarray,
+            legal_masks_by_head: list,
+            *,
+            is_new_episode: bool,
+            step_in_episode: int,
+            episode_id: int,
+        ):
+            resp = client.infer(
+                obs=obs,
+                legal_masks_by_head=legal_masks_by_head,
+                step_in_episode=step_in_episode,
+                episode_id=episode_id,
+                is_new_episode=is_new_episode,
+            )
+            return (
+                resp["policy_targets"],
+                resp["behavior_logits"],
+                resp["selected_actions"],
+                float(resp["value_est"]),
+                int(resp.get("policy_version", 0) or 0),
+            )
+
+        rollout_batch: list[dict] = []
+        for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=None,
+            )
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            ep_policy_version = 0
+            transitions, info = play_episode_with_gumbel_muzero(
+                env=env,
+                inference_fn=_inference_fn,
+                len_model=len_model,
+                config=sp_cfg,
+                enemy_policy_fn=opponent_policy_fn,
+                policy_version=0,
+                episode_id=int(_ep),
+            )
+            for t in transitions:
+                item = _gmz_rollout_dict_from_transition(t, ep_policy_version)
+                ep_policy_version = int(item.get("policy_version", ep_policy_version))
+                rollout_batch.append(item)
+            if len(rollout_batch) >= int(batch_send):
+                data_q.put(
+                    (
+                        "rollout",
+                        {
+                            "actor_idx": int(worker_id),
+                            "policy_version": int(ep_policy_version),
+                            "transitions": list(rollout_batch),
+                        },
+                    )
+                )
+                rollout_batch = []
+
+            info = dict(info or {})
+            end_reason = str(info.get("end reason", "") or "")
+            model_vp = int(info.get("model VP", 0) or 0)
+            player_vp = int(info.get("player VP", 0) or 0)
+            vp_diff = int(model_vp) - int(player_vp)
+            result = "loss"
+            if end_reason == "wipeout_enemy":
+                result = "win"
+            elif end_reason == "wipeout_model":
+                result = "loss"
+            elif str(end_reason).startswith("turn_limit"):
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff == 0:
+                    result = "draw"
+            elif vp_diff > 0:
+                result = "win"
+            elif vp_diff == 0:
+                result = "draw"
+            data_q.put(
+                (
+                    "ep",
+                    {
+                        "episode": None,
+                        "actor_idx": int(worker_id),
+                        "actor_ep": int(ep_idx_1based),
+                        "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                        "ep_len": int(info.get("turn", 0) or 0),
+                        "turn": int(info.get("turn", 0) or 0),
+                        "model_vp": int(model_vp),
+                        "player_vp": int(player_vp),
+                        "vp_diff": int(vp_diff),
+                        "result": str(result),
+                        "end_reason": str(end_reason),
+                        "end_code": int(info.get("res", 0) or 0),
+                        "policy_version": int(ep_policy_version),
+                    },
+                )
+            )
+
+        if rollout_batch:
+            data_q.put(
+                (
+                    "rollout",
+                    {
+                        "actor_idx": int(worker_id),
+                        "policy_version": int(ep_policy_version),
+                        "transitions": list(rollout_batch),
+                    },
+                )
+            )
+        data_q.put(("done", int(worker_id)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"gmz_env_worker[{worker_id}] {exc}"))
+        except Exception:
+            pass
+
+
 def _actor_learner_actor_entry_gumbel_muzero(
     actor_idx: int,
     episodes: int,
@@ -8406,15 +8662,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
             )
             for t in transitions:
                 rollout_batch.append(
-                    {
-                        "state": np.asarray(t.state, dtype=np.float32),
-                        "action": np.asarray(t.action, dtype=np.int64),
-                        "reward": float(t.reward),
-                        "done": bool(t.done),
-                        "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
-                        "value_target": float(t.value_target),
-                        "policy_version": int(getattr(t, "policy_version", current_policy_version)),
-                    }
+                    _gmz_rollout_dict_from_transition(t, int(current_policy_version))
                 )
             if len(rollout_batch) >= int(batch_send):
                 data_q.put(
@@ -8486,6 +8734,22 @@ def _actor_learner_actor_entry_gumbel_muzero(
             data_q.put(("error", f"gmz_actor[{actor_idx}] {exc}"))
         except Exception:
             pass
+
+
+def _emit_train_progress_heartbeat(
+    *,
+    ep_done: int,
+    ep_total: int,
+    updates: int = 0,
+    global_step: int = 0,
+    replay_size: int = 0,
+) -> None:
+    """Периодический stdout для GUI: плавный elapsed/it/s между завершёнными эпизодами."""
+    print(
+        f"[TRAIN][PROGRESS] ep={int(ep_done)}/{int(ep_total)} "
+        f"updates={int(updates)} steps={int(global_step)} replay={int(replay_size)}",
+        flush=True,
+    )
 
 
 def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
@@ -8663,7 +8927,17 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             append_agent_log("[GMZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
 
     effective_num_actors = int(GMZ_ACTOR_EFFECTIVE_NUM_ACTORS)
-    if GMZ_ACTOR_USING_CUDA_FALLBACK:
+    if GMZ_INFERENCE_SERVER_USING_FALLBACK:
+        append_agent_log(
+            "[GMZ][CONFIG][FALLBACK] Запрошен inference server (variant B), но CUDA недоступна. "
+            f"Переключаемся на вариант A: actor_device=cpu, num_actors={GMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS}."
+        )
+    elif GMZ_INFERENCE_SERVER_ENABLED:
+        append_agent_log(
+            f"[GMZ][CONFIG] Inference server (variant B): env_workers={effective_num_actors} "
+            f"batch={GMZ_INFERENCE_BATCH_SIZE} interval_ms={GMZ_INFERENCE_BATCH_INTERVAL_MS}"
+        )
+    elif GMZ_ACTOR_USING_CUDA_FALLBACK:
         append_agent_log(
             "[GMZ][CONFIG][FALLBACK] В hyperparams указан actor_device=cuda, но PyTorch не видит GPU с CUDA "
             f"(torch.cuda.is_available()=False, device_count={int(torch.cuda.device_count()) if hasattr(torch.cuda, 'device_count') else 0}). "
@@ -8681,6 +8955,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         "[GMZ][CONFIG] "
         f"sims={GMZ_MCTS_SIMS} root_top_k={GMZ_ROOT_TOP_K} unroll={GMZ_UNROLL_STEPS} "
         f"batch={GMZ_BATCH_SIZE} actors={GMZ_NUM_ACTORS} effective_actors={effective_num_actors} "
+        f"inference_server={int(GMZ_INFERENCE_SERVER_ENABLED)} env_workers={GMZ_NUM_ENV_WORKERS} "
         f"replay={GMZ_REPLAY_CAPACITY} "
         f"actor_device_req={GMZ_ACTOR_DEVICE_REQUESTED} actor_device={GMZ_ACTOR_DEVICE} "
         f"actor_device_cuda={int(GMZ_ACTOR_DEVICE_CUDA)} cuda_fallback={int(GMZ_ACTOR_USING_CUDA_FALLBACK)} "
@@ -8772,59 +9047,116 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(GMZ_ACTOR_QUEUE_MAX))
-    procs = []
+    procs: list = []
+    inf_proc = None
+    request_q = None
+
+    init_weights_cpu = {
+        k: v.detach().cpu() for k, v in normalize_state_dict(gmz_net.state_dict()).items()
+    }
+    sp_cfg_payload = {
+        "temperature_opening_moves": GMZ_TEMP_OPENING_MOVES,
+        "temperature_opening_value": GMZ_TEMP_OPENING,
+        "temperature_late_value": GMZ_TEMP_LATE,
+    }
+    search_cfg_payload = {
+        "num_simulations": GMZ_MCTS_SIMS,
+        "root_top_k": GMZ_ROOT_TOP_K,
+        "discount": GMZ_DISCOUNT,
+        "temperature": GMZ_SEARCH_TEMP,
+        "gumbel_scale": GMZ_GUMBEL_SCALE,
+        "prior_weight": GMZ_PRIOR_WEIGHT,
+        "latent_dim": GMZ_LATENT_DIM,
+        "hidden_dim": GMZ_HIDDEN_DIM,
+        "num_layers": GMZ_NUM_LAYERS,
+        "action_embed_dim": GMZ_ACTION_EMBED_DIM,
+        "batch_recurrent": int(GMZ_BATCH_RECURRENT),
+        "tree_reuse": int(GMZ_TREE_REUSE),
+        "obs_dim": int(n_observations),
+        "action_sizes": list(n_actions),
+    }
+    outcome_payload = {
+        "outcome_only": GMZ_OUTCOME_ONLY,
+        "outcome_value_win": GMZ_OUTCOME_VALUE_WIN,
+        "outcome_value_loss": GMZ_OUTCOME_VALUE_LOSS,
+        "outcome_value_draw": GMZ_OUTCOME_VALUE_DRAW,
+        "policy_version": int(policy_version),
+    }
 
     if remaining_episodes > 0:
+        if GMZ_INFERENCE_SERVER_ENABLED:
+            request_q = ctx.Queue(maxsize=int(GMZ_INFERENCE_REQUEST_QUEUE_MAX))
+            reply_queues = [ctx.Queue(maxsize=8) for _ in range(int(effective_num_actors))]
+            inf_proc = ctx.Process(
+                target=gmz_inference_server_entry,
+                args=(
+                    request_q,
+                    reply_queues,
+                    sync_path,
+                    init_weights_cpu,
+                    search_cfg_payload,
+                ),
+                kwargs={
+                    "inference_batch_size": int(GMZ_INFERENCE_BATCH_SIZE),
+                    "inference_batch_interval_ms": float(GMZ_INFERENCE_BATCH_INTERVAL_MS),
+                    "inference_server_compile": bool(GMZ_INFERENCE_SERVER_COMPILE),
+                    "clear_tree_on_weight_sync": bool(GMZ_CLEAR_TREE_ON_WEIGHT_SYNC),
+                },
+                daemon=True,
+            )
+            inf_proc.start()
+
         for a_idx in range(int(effective_num_actors)):
             base = int(remaining_episodes) // int(effective_num_actors)
             rem = int(remaining_episodes) % int(effective_num_actors)
             actor_episodes = int(base + (1 if a_idx < rem else 0))
             if actor_episodes <= 0:
                 continue
-            p = ctx.Process(
-                target=_actor_learner_actor_entry_gumbel_muzero,
-                args=(
-                    int(a_idx),
-                    int(actor_episodes),
-                    roster_config,
-                    int(b_len),
-                    int(b_hei),
-                    int(n_observations),
-                    list(n_actions),
-                    {k: v.detach().cpu() for k, v in normalize_state_dict(gmz_net.state_dict()).items()},
-                    int(GMZ_ACTOR_BATCH_SEND),
-                    data_q,
-                    int(1 if SELF_PLAY_ENABLED else 0),
-                    opponent_spec,
-                    {
-                        "temperature_opening_moves": GMZ_TEMP_OPENING_MOVES,
-                        "temperature_opening_value": GMZ_TEMP_OPENING,
-                        "temperature_late_value": GMZ_TEMP_LATE,
-                    },
-                    {
-                        "num_simulations": GMZ_MCTS_SIMS,
-                        "root_top_k": GMZ_ROOT_TOP_K,
-                        "discount": GMZ_DISCOUNT,
-                        "temperature": GMZ_SEARCH_TEMP,
-                        "gumbel_scale": GMZ_GUMBEL_SCALE,
-                        "prior_weight": GMZ_PRIOR_WEIGHT,
-                        "latent_dim": GMZ_LATENT_DIM,
-                        "hidden_dim": GMZ_HIDDEN_DIM,
-                        "num_layers": GMZ_NUM_LAYERS,
-                        "action_embed_dim": GMZ_ACTION_EMBED_DIM,
-                        "batch_recurrent": int(GMZ_BATCH_RECURRENT),
-                        "tree_reuse": int(GMZ_TREE_REUSE),
-                    },
-                    {
-                        "outcome_only": GMZ_OUTCOME_ONLY,
-                        "outcome_value_win": GMZ_OUTCOME_VALUE_WIN,
-                        "outcome_value_loss": GMZ_OUTCOME_VALUE_LOSS,
-                        "outcome_value_draw": GMZ_OUTCOME_VALUE_DRAW,
-                        "policy_version": int(policy_version),
-                    },
-                ),
-                daemon=True,
-            )
+            if GMZ_INFERENCE_SERVER_ENABLED:
+                p = ctx.Process(
+                    target=_gmz_env_worker_entry,
+                    args=(
+                        int(a_idx),
+                        int(actor_episodes),
+                        roster_config,
+                        int(b_len),
+                        int(b_hei),
+                        int(n_observations),
+                        list(n_actions),
+                        int(GMZ_ACTOR_BATCH_SEND),
+                        data_q,
+                        request_q,
+                        reply_queues[int(a_idx)],
+                        int(1 if SELF_PLAY_ENABLED else 0),
+                        opponent_spec,
+                        sp_cfg_payload,
+                        outcome_payload,
+                        float(GMZ_INFERENCE_TIMEOUT),
+                    ),
+                    daemon=True,
+                )
+            else:
+                p = ctx.Process(
+                    target=_actor_learner_actor_entry_gumbel_muzero,
+                    args=(
+                        int(a_idx),
+                        int(actor_episodes),
+                        roster_config,
+                        int(b_len),
+                        int(b_hei),
+                        int(n_observations),
+                        list(n_actions),
+                        init_weights_cpu,
+                        int(GMZ_ACTOR_BATCH_SEND),
+                        data_q,
+                        int(1 if SELF_PLAY_ENABLED else 0),
+                        opponent_spec,
+                        sp_cfg_payload,
+                        search_cfg_payload,
+                        outcome_payload,
+                    ),
+                    daemon=True,
+                )
             p.start()
             procs.append(p)
 
@@ -8832,11 +9164,28 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     active_actors = len(procs)
     last_sync_opt_steps = optimize_steps
     last_actor_det_eval_ep = 0
+    last_progress_heartbeat = time.time()
+
+    def _maybe_train_progress_heartbeat(*, force: bool = False) -> None:
+        nonlocal last_progress_heartbeat
+        now = time.time()
+        if not force and (now - last_progress_heartbeat) < TRAIN_PROGRESS_HEARTBEAT_SEC:
+            return
+        last_progress_heartbeat = now
+        _emit_train_progress_heartbeat(
+            ep_done=int(episodes_finished),
+            ep_total=int(totLifeT),
+            updates=int(optimize_steps),
+            global_step=int(global_step),
+            replay_size=int(len(replay)),
+        )
+
     pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
     while done_actors < active_actors:
         try:
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
+            _maybe_train_progress_heartbeat()
             continue
         if kind == "error":
             raise RuntimeError(payload)
@@ -8856,6 +9205,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 pbar.update(target_n - int(pbar.n))
             if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
                 print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+            _maybe_train_progress_heartbeat(force=True)
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
                 last_checkpoint = _save_checkpoint(episodes_finished)
                 append_agent_log(f"[GMZ][CHECKPOINT] ep={episodes_finished} path={last_checkpoint}")
@@ -8907,6 +9257,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             pi_raw = raw.get("policy_targets", [])
             if not isinstance(pi_raw, list):
                 continue
+            beh_raw = raw.get("behavior_logits", [])
+            masks_raw = raw.get("legal_masks_by_head", [])
             transitions.append(
                 GMZTransition(
                     state=np.asarray(raw.get("state", []), dtype=np.float32),
@@ -8914,6 +9266,14 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                     reward=float(raw.get("reward", 0.0) or 0.0),
                     done=bool(raw.get("done", False)),
                     policy_targets=[np.asarray(p, dtype=np.float32) for p in pi_raw],
+                    behavior_logits=[
+                        np.asarray(b, dtype=np.float32)
+                        for b in (beh_raw if isinstance(beh_raw, list) else [])
+                    ],
+                    legal_masks_by_head=[
+                        np.asarray(m, dtype=np.float32)
+                        for m in (masks_raw if isinstance(masks_raw, list) else [])
+                    ],
                     value_target=float(raw.get("value_target", 0.0) or 0.0),
                     policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
                 )
@@ -8962,12 +9322,23 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             if optimize_steps - last_sync_opt_steps >= int(GMZ_SYNC_EVERY_UPDATES):
                 _save_gmz_sync()
                 last_sync_opt_steps = int(optimize_steps)
+            _maybe_train_progress_heartbeat()
 
     pbar.close()
     _save_gmz_sync()
+    if request_q is not None:
+        try:
+            request_q.put(None)
+        except Exception:
+            pass
     for p in procs:
         try:
             p.join(timeout=2.0)
+        except Exception:
+            pass
+    if inf_proc is not None:
+        try:
+            inf_proc.join(timeout=3.0)
         except Exception:
             pass
 

@@ -644,7 +644,20 @@ ApplicationWindow {
                             ProgressBar {
                                 id: trainingProgress
                                 anchors.fill: parent
-                                value: controller.progressValue
+                                property real smoothValue: controller.progressValue
+                                value: smoothValue
+                                Behavior on smoothValue {
+                                    NumberAnimation {
+                                        duration: 600
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                                Connections {
+                                    target: controller
+                                    function onProgressValueChanged() {
+                                        trainingProgress.smoothValue = controller.progressValue
+                                    }
+                                }
                                 background: Rectangle {
                                     radius: 0
                                     color: "#1a2230"
@@ -4560,10 +4573,91 @@ ApplicationWindow {
                                     }
                                     ScrollView {
                                         clip: true
-                                        SectionHyperparamsEditor {
+                                        contentWidth: gmzHyperparamsColumn.width
+                                        ColumnLayout {
+                                            id: gmzHyperparamsColumn
                                             width: algoHyperparamsStack.width
-                                            algoSection: "gmz"
-                                            rootUi: root
+                                            spacing: root.spacingSm
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                radius: Math.round(8 * root.uiScale)
+                                                color: controller.trainingCudaAvailable
+                                                    ? Qt.rgba(0.22, 0.72, 0.45, 0.1)
+                                                    : (controller.gmzInferenceServerEnabled
+                                                        ? Qt.rgba(0.85, 0.28, 0.22, 0.14)
+                                                        : root.uiBgCard)
+                                                border.color: controller.trainingCudaAvailable
+                                                    ? Qt.rgba(0.35, 0.85, 0.55, 0.45)
+                                                    : (controller.gmzInferenceServerEnabled
+                                                        ? Qt.rgba(0.92, 0.35, 0.28, 0.65)
+                                                        : root.uiBorder)
+                                                border.width: 1
+                                                implicitHeight: gmzInfServerRow.implicitHeight + root.spacingSm * 2
+
+                                                ColumnLayout {
+                                                    id: gmzInfServerRow
+                                                    anchors.fill: parent
+                                                    anchors.margins: root.spacingSm
+                                                    spacing: root.spacingXs
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: root.spacingSm
+                                                        Switch {
+                                                            id: gmzInferenceServerSwitch
+                                                            checked: controller.gmzInferenceServerEnabled
+                                                            enabled: controller.trainingCudaAvailable
+                                                                || controller.gmzInferenceServerEnabled
+                                                            onToggled: {
+                                                                if (checked && !controller.trainingCudaAvailable)
+                                                                    return
+                                                                if (checked === controller.gmzInferenceServerEnabled)
+                                                                    return
+                                                                controller.set_gmz_inference_server_mode(checked)
+                                                            }
+                                                        }
+                                                        Label {
+                                                            text: "Inference server (вариант B)"
+                                                            font.bold: true
+                                                            color: controller.trainingCudaAvailable
+                                                                ? root.uiTextMain
+                                                                : (controller.gmzInferenceServerEnabled ? "#e07a52" : root.uiTextMain)
+                                                            Layout.fillWidth: true
+                                                            wrapMode: Text.WordWrap
+                                                        }
+                                                    }
+                                                    Label {
+                                                        visible: !controller.trainingCudaAvailable
+                                                        text: "Требуется CUDA. Без GPU включение варианта B заблокировано."
+                                                        color: "#e07a52"
+                                                        wrapMode: Text.WordWrap
+                                                        Layout.fillWidth: true
+                                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                                    }
+                                                    Label {
+                                                        text: controller.gmzInferenceServerCheckboxTooltip
+                                                        color: root.uiTextMuted
+                                                        wrapMode: Text.WordWrap
+                                                        Layout.fillWidth: true
+                                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                                    }
+                                                    Label {
+                                                        text: controller.gmzInferenceServerEnabled
+                                                            ? "6 CPU env workers + 1 GPU inference server"
+                                                            : "Вариант A: до 2 GPU-акторов (actor_device=cuda)"
+                                                        color: root.uiTextMuted
+                                                        Layout.fillWidth: true
+                                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                                    }
+                                                }
+                                            }
+
+                                            SectionHyperparamsEditor {
+                                                Layout.fillWidth: true
+                                                algoSection: "gmz"
+                                                rootUi: root
+                                            }
                                         }
                                     }
                                 }

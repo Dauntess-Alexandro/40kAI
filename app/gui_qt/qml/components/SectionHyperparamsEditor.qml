@@ -86,6 +86,7 @@ ColumnLayout {
         target: typeof controller !== "undefined" ? controller : null
         function onTrainingHyperparamsChanged() { hpEditor.refreshMaps() }
         function onHyperparamsBasicModeChanged() { hpEditor.refreshMaps() }
+        function onTrainingDeviceInfoChanged() { hpEditor.refreshMaps() }
     }
 
     function setKey(key, value) {
@@ -121,6 +122,7 @@ ColumnLayout {
         if (label === "Fast") return "fast"
         if (label === "Balanced") return "balanced"
         if (label === "Heavy") return "heavy"
+        if (label === "Very Heavy") return "very_heavy"
         return "custom"
     }
 
@@ -132,6 +134,7 @@ ColumnLayout {
         if (name === "fast") return "#2980b9"
         if (name === "balanced") return "#27ae60"
         if (name === "heavy") return "#e67e22"
+        if (name === "very_heavy") return "#c0392b"
         return "#7f8c8d"
     }
 
@@ -139,6 +142,7 @@ ColumnLayout {
         if (name === "fast") return "Fast"
         if (name === "balanced") return "Balanced"
         if (name === "heavy") return "Heavy"
+        if (name === "very_heavy") return "Very Heavy"
         return "Custom"
     }
 
@@ -160,7 +164,30 @@ ColumnLayout {
         else if (algoSection === "gmz") tips = controller.hpGmzFieldTooltips
         else return ""
         if (!tips) return ""
-        return String(tips[key] ?? "")
+        var base = String(tips[key] ?? "")
+        var raw = String(hpMap[key] ?? "")
+        var cudaSuffix = controller.hyperparam_cuda_tooltip_suffix(algoSection, key, raw)
+        return base + cudaSuffix
+    }
+
+    function cudaFieldState(key) {
+        if (typeof controller === "undefined" || !controller) return 0
+        return controller.hyperparam_cuda_field_state(
+            hpEditor.algoSection, key, String(hpMap[key] ?? ""))
+    }
+
+    function cudaRowColor(key) {
+        var st = cudaFieldState(key)
+        if (st === 1) return Qt.rgba(0.22, 0.72, 0.45, 0.14)
+        if (st === 2) return Qt.rgba(0.85, 0.28, 0.22, 0.16)
+        return "transparent"
+    }
+
+    function cudaRowBorderColor(key) {
+        var st = cudaFieldState(key)
+        if (st === 1) return Qt.rgba(0.35, 0.85, 0.55, 0.55)
+        if (st === 2) return Qt.rgba(0.92, 0.35, 0.28, 0.65)
+        return "transparent"
     }
 
     function valuesEqual(a, b) {
@@ -251,7 +278,9 @@ ColumnLayout {
                 spacing: 4
 
                 Repeater {
-                    model: ["fast", "balanced", "heavy"]
+                    model: hpEditor.algoSection === "gmz"
+                           ? ["fast", "balanced", "heavy", "very_heavy"]
+                           : ["fast", "balanced", "heavy"]
 
                     delegate: Button {
                         id: presetBtn
@@ -391,86 +420,101 @@ ColumnLayout {
                     Repeater {
                         model: modelData.keys
 
-                        delegate: RowLayout {
+                        delegate: Rectangle {
                             required property int index
                             required property var modelData
+                            property string fieldKey: typeof modelData === "string" ? modelData : String(modelData)
                             Layout.fillWidth: true
                             Layout.maximumWidth: groupFrame.width - 16
-
-                            property string fieldKey: typeof modelData === "string" ? modelData : String(modelData)
+                            implicitHeight: fieldRow.implicitHeight + 6
+                            radius: 4
+                            color: hpEditor.cudaRowColor(fieldKey)
+                            border.color: hpEditor.cudaRowBorderColor(fieldKey)
+                            border.width: hpEditor.cudaFieldState(fieldKey) === 0 ? 0 : 1
                             visible: hpEditor.keyMatchesSearch(fieldKey)
-                            spacing: rootUi ? rootUi.spacingSm : 8
 
-                            Label {
-                                text: fieldKey
-                                Layout.preferredWidth: Math.round(210 * (rootUi ? rootUi.uiScale : 1))
-                                Layout.maximumWidth: Layout.preferredWidth
-                                elide: Text.ElideRight
-                                color: mutedColor()
-                                font.pixelSize: rootUi ? Math.round(12 * rootUi.uiScale) : 12
-                            }
+                            RowLayout {
+                                id: fieldRow
+                                anchors.fill: parent
+                                anchors.margins: 3
+                                spacing: rootUi ? rootUi.spacingSm : 8
 
-                            Rectangle {
-                                width: 6
-                                height: 6
-                                radius: 3
-                                color: "#f0b400"
-                                visible: hpEditor.isModified(fieldKey)
-                                ToolTip.visible: modifiedDotArea.containsMouse
-                                ToolTip.text: "Отличается от дефолта"
-
-                                MouseArea {
-                                    id: modifiedDotArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true
+                                Label {
+                                    text: fieldKey
+                                    Layout.preferredWidth: Math.round(210 * (rootUi ? rootUi.uiScale : 1))
+                                    Layout.maximumWidth: Layout.preferredWidth
+                                    elide: Text.ElideRight
+                                    color: {
+                                        var st = hpEditor.cudaFieldState(fieldKey)
+                                        if (st === 1) return "#3ecf8e"
+                                        if (st === 2) return "#e07a52"
+                                        return mutedColor()
+                                    }
+                                    font.pixelSize: rootUi ? Math.round(12 * rootUi.uiScale) : 12
                                 }
-                            }
 
-                            TextField {
-                                visible: hpEditor.isStringKey(fieldKey)
-                                readOnly: fieldKey === "mcts_mode"
-                                text: String(hpEditor.hpMap[fieldKey] ?? "")
-                                Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))
-                                Layout.maximumWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
-                                horizontalAlignment: Text.AlignRight
-                                onEditingFinished: if (!readOnly) hpEditor.setKey(fieldKey, text)
-                                ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
-                                ToolTip.text: hpEditor.tooltipFor(fieldKey)
-                            }
+                                Rectangle {
+                                    width: 6
+                                    height: 6
+                                    radius: 3
+                                    color: "#f0b400"
+                                    visible: hpEditor.isModified(fieldKey)
+                                    ToolTip.visible: modifiedDotArea.containsMouse
+                                    ToolTip.text: "Отличается от дефолта"
 
-                            SpinBox {
-                                visible: !hpEditor.isStringKey(fieldKey) && hpEditor.isIntKey(fieldKey)
-                                from: 0
-                                to: 10000000
-                                stepSize: 1
-                                editable: true
-                                value: parseInt(hpEditor.hpMap[fieldKey] ?? 0)
-                                Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))
-                                Layout.maximumWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
-                                onValueModified: hpEditor.setKey(fieldKey, value.toString())
-                                ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
-                                ToolTip.text: hpEditor.tooltipFor(fieldKey)
-                            }
-
-                            SpinBox {
-                                visible: !hpEditor.isStringKey(fieldKey) && !hpEditor.isIntKey(fieldKey)
-                                from: 0
-                                to: 10000000
-                                stepSize: 1
-                                editable: true
-                                property real factor: 1000000
-                                value: Math.round(parseFloat(hpEditor.hpMap[fieldKey] ?? 0) * factor)
-                                Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))
-                                Layout.maximumWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
-                                textFromValue: function(v, locale) {
-                                    return Number(v / factor).toLocaleString(locale, "f", 6)
+                                    MouseArea {
+                                        id: modifiedDotArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                    }
                                 }
-                                valueFromText: function(t, locale) {
-                                    return Math.round(Number.fromLocaleString(locale, t) * factor)
+
+                                TextField {
+                                    visible: hpEditor.isStringKey(fieldKey)
+                                    readOnly: fieldKey === "mcts_mode"
+                                    text: String(hpEditor.hpMap[fieldKey] ?? "")
+                                    Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))
+                                    Layout.maximumWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
+                                    horizontalAlignment: Text.AlignRight
+                                    onEditingFinished: if (!readOnly) hpEditor.setKey(fieldKey, text)
+                                    ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
+                                    ToolTip.text: hpEditor.tooltipFor(fieldKey)
                                 }
-                                onValueModified: hpEditor.setKey(fieldKey, (value / factor).toString())
-                                ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
-                                ToolTip.text: hpEditor.tooltipFor(fieldKey)
+
+                                SpinBox {
+                                    visible: !hpEditor.isStringKey(fieldKey) && hpEditor.isIntKey(fieldKey)
+                                    from: 0
+                                    to: 10000000
+                                    stepSize: 1
+                                    editable: true
+                                    value: parseInt(hpEditor.hpMap[fieldKey] ?? 0)
+                                    Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))
+                                    Layout.maximumWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
+                                    onValueModified: hpEditor.setKey(fieldKey, value.toString())
+                                    ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
+                                    ToolTip.text: hpEditor.tooltipFor(fieldKey)
+                                }
+
+                                SpinBox {
+                                    visible: !hpEditor.isStringKey(fieldKey) && !hpEditor.isIntKey(fieldKey)
+                                    from: 0
+                                    to: 10000000
+                                    stepSize: 1
+                                    editable: true
+                                    property real factor: 1000000
+                                    value: Math.round(parseFloat(hpEditor.hpMap[fieldKey] ?? 0) * factor)
+                                    Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))
+                                    Layout.maximumWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
+                                    textFromValue: function(v, locale) {
+                                        return Number(v / factor).toLocaleString(locale, "f", 6)
+                                    }
+                                    valueFromText: function(t, locale) {
+                                        return Math.round(Number.fromLocaleString(locale, t) * factor)
+                                    }
+                                    onValueModified: hpEditor.setKey(fieldKey, (value / factor).toString())
+                                    ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
+                                    ToolTip.text: hpEditor.tooltipFor(fieldKey)
+                                }
                             }
                         }
                     }

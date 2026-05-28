@@ -2,6 +2,28 @@
 
 from __future__ import annotations
 
+# Вариант B (inference server) / A (GPU-акторы) — переключается одной галочкой в GUI.
+GMZ_VARIANT_B_BUNDLE: dict[str, int | float | str] = {
+    "inference_server_enabled": 1,
+    "actor_device": "inference_server",
+    "num_env_workers": 6,
+    "num_actors": 6,
+    "actor_max_cuda": 0,
+}
+
+GMZ_VARIANT_A_BUNDLE: dict[str, int | float | str] = {
+    "inference_server_enabled": 0,
+    "actor_device": "cuda",
+    "num_env_workers": 6,
+    "num_actors": 2,
+    "actor_max_cuda": 2,
+}
+
+GMZ_INFERENCE_SERVER_CHECKBOX_TOOLTIP = (
+    "Вариант B: 6 CPU env workers + 1 GPU inference server + learner. "
+    "Выключено: вариант A (до 2 GPU-акторов). Требуется CUDA."
+)
+
 GMZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "learning_rate",
     "batch_size",
@@ -13,6 +35,14 @@ GMZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "max_grad_norm",
     "discount",
     "replay_capacity",
+    "inference_server_enabled",
+    "num_env_workers",
+    "inference_batch_size",
+    "inference_batch_interval_ms",
+    "inference_timeout",
+    "inference_request_queue_max",
+    "inference_server_compile",
+    "clear_tree_on_weight_sync",
     "actor_device",
     "actor_max_cuda",
     "num_actors",
@@ -29,6 +59,7 @@ GMZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "num_simulations",
     "root_top_k",
     "gumbel_scale",
+    "prior_weight",
     "search_temperature",
     "batch_recurrent",
     "tree_reuse",
@@ -59,9 +90,13 @@ DEFAULT_GMZ_HYPERPARAMS: dict[str, int | float | str] = {
     "max_grad_norm": 0.5,
     "discount": 0.997,
     "replay_capacity": 250000,
-    "actor_device": "cuda",
-    "actor_max_cuda": 2,
-    "num_actors": 2,
+    **GMZ_VARIANT_B_BUNDLE,
+    "inference_batch_size": 8,
+    "inference_batch_interval_ms": 20.0,
+    "inference_timeout": 5.0,
+    "inference_request_queue_max": 32,
+    "inference_server_compile": 1,
+    "clear_tree_on_weight_sync": 0,
     "actor_batch_send": 64,
     "actor_queue_max": 256,
     "sync_every_updates": 2,
@@ -75,6 +110,7 @@ DEFAULT_GMZ_HYPERPARAMS: dict[str, int | float | str] = {
     "num_simulations": 32,
     "root_top_k": 8,
     "gumbel_scale": 1.0,
+    "prior_weight": 0.25,
     "search_temperature": 0.15,
     "batch_recurrent": 1,
     "tree_reuse": 1,
@@ -94,11 +130,12 @@ DEFAULT_GMZ_HYPERPARAMS: dict[str, int | float | str] = {
     "outcome_value_draw": -0.25,
 }
 
+# Порядок detect: very_heavy перед heavy (иначе частичное совпадение).
+GMZ_PROFILE_DETECT_ORDER: tuple[str, ...] = ("fast", "balanced", "very_heavy", "heavy")
+
 GMZ_PROFILE_PRESETS: dict[str, dict[str, int | float | str]] = {
     "fast": {
-        "actor_device": "cuda",
-        "actor_max_cuda": 2,
-        "num_actors": 2,
+        **GMZ_VARIANT_B_BUNDLE,
         "num_simulations": 16,
         "root_top_k": 4,
         "batch_size": 96,
@@ -112,9 +149,7 @@ GMZ_PROFILE_PRESETS: dict[str, dict[str, int | float | str]] = {
         "learner_compile": 1,
     },
     "balanced": {
-        "actor_device": "cuda",
-        "actor_max_cuda": 2,
-        "num_actors": 2,
+        **GMZ_VARIANT_B_BUNDLE,
         "num_simulations": 32,
         "root_top_k": 8,
         "batch_size": 128,
@@ -128,21 +163,50 @@ GMZ_PROFILE_PRESETS: dict[str, dict[str, int | float | str]] = {
         "learner_compile": 1,
     },
     "heavy": {
-        "actor_device": "cuda",
-        "actor_max_cuda": 2,
-        "num_actors": 2,
+        **GMZ_VARIANT_B_BUNDLE,
+        "num_env_workers": 8,
+        "num_actors": 8,
         "num_simulations": 48,
-        "root_top_k": 20,
+        "root_top_k": 12,
+        "inference_batch_size": 12,
         "batch_size": 160,
         "replay_capacity": 400000,
         "actor_queue_max": 512,
-        "reanalyze_fraction": 0.2,
+        "sync_every_updates": 2,
+        "reanalyze_fraction": 0.15,
         "consistency_loss_weight": 1.0,
         "vtrace_full": 1,
         "tree_reuse": 1,
         "atom_range": "tight",
         "actor_compile": 0,
-        "learner_compile": 0,
+        "learner_compile": 1,
+    },
+    "very_heavy": {
+        **GMZ_VARIANT_B_BUNDLE,
+        "num_env_workers": 8,
+        "num_actors": 8,
+        "num_simulations": 52,
+        "root_top_k": 12,
+        "search_temperature": 0.12,
+        "prior_weight": 0.2,
+        "inference_batch_size": 12,
+        "inference_batch_interval_ms": 12.0,
+        "inference_timeout": 6.0,
+        "inference_request_queue_max": 48,
+        "batch_size": 160,
+        "replay_capacity": 400000,
+        "actor_queue_max": 512,
+        "actor_batch_send": 48,
+        "sync_every_updates": 2,
+        "updates_per_rollout": 3,
+        "reanalyze_fraction": 0.15,
+        "consistency_loss_weight": 1.0,
+        "vtrace_full": 1,
+        "tree_reuse": 1,
+        "atom_range": "tight",
+        "actor_compile": 0,
+        "learner_compile": 1,
+        "inference_server_compile": 1,
     },
 }
 
@@ -182,6 +246,7 @@ GMZ_GROUPS: tuple[dict[str, object], ...] = (
             "num_simulations",
             "root_top_k",
             "gumbel_scale",
+            "prior_weight",
             "search_temperature",
             "batch_recurrent",
             "tree_reuse",
@@ -213,9 +278,10 @@ GMZ_GROUPS: tuple[dict[str, object], ...] = (
         "id": "actors_replay",
         "title": "Акторы и replay",
         "keys": (
-            "actor_device",
-            "actor_max_cuda",
-            "num_actors",
+            "inference_batch_size",
+            "inference_batch_interval_ms",
+            "inference_timeout",
+            "inference_request_queue_max",
             "actor_batch_send",
             "actor_queue_max",
             "sync_every_updates",
@@ -264,12 +330,26 @@ GMZ_FIELD_TOOLTIPS: dict[str, str] = {
     "discount": "Дисконт для n-step returns.",
     "reanalyze_fraction": "Доля обучающих шагов, на которых переоцениваются старые траектории (0=выкл, 0.15=15%).",
     "replay_capacity": "Ёмкость replay buffer.",
-    "actor_device": "cuda = inference на GPU (по умолчанию, 2 актора). cpu = только CPU. Без CUDA train сам переключит на cpu и 8 акторов (см. лог FALLBACK).",
+    "inference_server_enabled": "1 = вариант B: CPU env workers + 1 GPU inference server. 0 = вариант A (акторы).",
+    "num_env_workers": "Число CPU env workers при inference_server_enabled=1.",
+    "inference_batch_size": "Макс. запросов в одном batch inference server.",
+    "inference_batch_interval_ms": "Окно сбора batch (мс).",
+    "inference_timeout": "Таймаут ответа inference server (сек).",
+    "inference_request_queue_max": "Backpressure: maxsize очереди request_q.",
+    "inference_server_compile": "torch.compile на inference server (CUDA).",
+    "clear_tree_on_weight_sync": "1 = сброс tree_reuse при обновлении весов.",
+    "actor_device": "cuda/cpu = вариант A. inference_server = вариант B (нужна CUDA).",
     "actor_max_cuda": "Макс. GPU-акторов при actor_device=cuda. Ограничение VRAM: 2 актора + learner.",
     "num_actors": "Число параллельных акторов self-play (при cuda фактически min(num_actors, actor_max_cuda)).",
     "actor_batch_send": "Сколько переходов актор шлёт за раз.",
     "actor_queue_max": "Макс. размер очереди переходов.",
-    "sync_every_updates": "Синхронизация политики с акторами каждые N updates.",
+    "sync_every_updates": (
+        "Каждые N gradient updates learner сохраняет веса в latest_gmz_policy.pth; "
+        "inference server / GPU-акторы подхватывают их для self-play. "
+        "1 = максимально свежая политика у акторов, но чаще torch.save и reload (медленнее). "
+        "3–5 = меньше I/O и пауз pipeline, self-play чуть «старее» на 2–4 шага — "
+        "обычно почти не влияет на качество при max_policy_staleness_updates=600."
+    ),
     "updates_per_rollout": "Градиентных updates на один rollout.",
     "replay_min_size": "Мин. размер replay до старта обучения.",
     "max_policy_staleness_updates": "Макс. устаревание политики у акторов.",
@@ -279,6 +359,7 @@ GMZ_FIELD_TOOLTIPS: dict[str, str] = {
     "num_simulations": "Число MCTS-симуляций на ход.",
     "root_top_k": "Top-K в корне Gumbel-поиска.",
     "gumbel_scale": "Масштаб Gumbel-шума.",
+    "prior_weight": "Доля приора сети в корневой политике (0.2 = больше Q из sims, 0.3 = больше prior).",
     "search_temperature": "Температура в поиске.",
     "batch_recurrent": "1 = батчевый recurrent inference (быстрее на GPU). 0 = последовательный.",
     "tree_reuse": "1 = переиспользование дерева поиска (warm-start visits/Q) между ходами. Ускоряет сходимость.",
@@ -287,8 +368,11 @@ GMZ_FIELD_TOOLTIPS: dict[str, str] = {
     "vtrace_c_clip": "Ограничение c для trace decay в V-trace (рекомендуется 0.7-1.0).",
     "atom_range": "Диапазон атомов: 'tight' = [-1.05,1.05] (рекомендуется), 'legacy' = [-20,20].",
     "ema_tau": "Скорость обновления EMA-цели для consistency loss (Conservative Polyak). 0.005 = медленно.",
-    "actor_compile": "1 = torch.compile для актора (10-30% быстрее inference). 0 = выключить.",
-    "learner_compile": "1 = torch.compile для learner (15-30% быстрее обучения, нужен CUDA). 0 = выключить.",
+    "actor_compile": (
+        "1 = torch.compile только для варианта A на CPU-акторах (actor_device=cpu). "
+        "На GPU-акторах не применяется. При inference server (вариант B) не используется. 0 = выкл."
+    ),
+    "learner_compile": "1 = torch.compile для learner на CUDA (15-30% быстрее). 0 = выключить.",
     "temperature_opening_moves": "Ходов с повышенной температурой.",
     "temperature_opening_value": "Температура в дебюте.",
     "temperature_late_value": "Температура в эндшпиле.",

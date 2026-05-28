@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 
 import numpy as np
 import torch
@@ -23,6 +23,21 @@ class GumbelSelfPlayConfig:
     outcome_value_draw: float = -0.25
 
 
+class GMZInferenceFn(Protocol):
+    """(obs, masks, *, is_new_episode, step, episode_id) -> pi, beh, actions, value, policy_version."""
+
+    def __call__(
+        self,
+        obs: np.ndarray,
+        legal_masks_by_head: list[np.ndarray],
+        *,
+        is_new_episode: bool,
+        step_in_episode: int,
+        episode_id: int,
+    ) -> tuple[list[np.ndarray], list[np.ndarray], list[int], float, int]:
+        ...
+
+
 def _state_to_np(state: Any) -> np.ndarray:
     if isinstance(state, dict):
         return np.asarray(list(state.values()), dtype=np.float32)
@@ -32,11 +47,13 @@ def _state_to_np(state: Any) -> np.ndarray:
 def play_episode_with_gumbel_muzero(
     *,
     env,
-    search,
+    search=None,
+    inference_fn: Optional[GMZInferenceFn] = None,
     len_model: int,
     config: Optional[GumbelSelfPlayConfig] = None,
     enemy_policy_fn: Optional[Callable[[Any], dict]] = None,
     policy_version: int = 0,
+    episode_id: int = 0,
 ) -> tuple[list[GMZTransition], dict]:
     cfg = config or GumbelSelfPlayConfig()
     env_u = unwrap_env(env)
@@ -53,6 +70,9 @@ def play_episode_with_gumbel_muzero(
     records: list[dict] = []
     final_value = 0.0
 
+    if inference_fn is None and search is None:
+        raise ValueError("play_episode_with_gumbel_muzero: нужен search или inference_fn")
+
     while not done:
         obs_np = _state_to_np(state)
         legal_dict = env_u.get_legal_action_masks_by_head(side="model")
@@ -60,11 +80,21 @@ def play_episode_with_gumbel_muzero(
         legal_masks = [legal_dict[k] for k in ordered_keys]
         _temp = cfg.temperature_opening_value if steps < int(cfg.temperature_opening_moves) else cfg.temperature_late_value
 
-        pi_targets, behavior_logits, action_list, value_est = search.run(
-            obs=obs_np,
-            legal_masks_by_head=legal_masks,
-            deterministic=False,
-        )
+        step_policy_version = int(policy_version)
+        if inference_fn is not None:
+            pi_targets, behavior_logits, action_list, value_est, step_policy_version = inference_fn(
+                obs_np,
+                legal_masks,
+                is_new_episode=(steps == 0),
+                step_in_episode=steps,
+                episode_id=int(episode_id),
+            )
+        else:
+            pi_targets, behavior_logits, action_list, value_est = search.run(
+                obs=obs_np,
+                legal_masks_by_head=legal_masks,
+                deterministic=False,
+            )
 
         action_dict = action_tensor_to_dict(torch.tensor([action_list], dtype=torch.long), len_model=int(len_model))
         next_state, reward, done, trunc, info = env.step(action_dict)
@@ -128,7 +158,7 @@ def play_episode_with_gumbel_muzero(
                 behavior_logits=[np.asarray(x, dtype=np.float32) for x in rec["behavior_logits"]],
                 value_target=float(final_value),
                 legal_masks_by_head=rec.get("legal_masks_by_head", []),  # B2: for real-search reanalysis
-                policy_version=int(policy_version),
+                policy_version=int(step_policy_version),
             )
         )
 
