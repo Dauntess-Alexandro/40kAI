@@ -97,20 +97,25 @@ tools\pc2_remote_is.bat
 
 **Важно:** `obs_dim`, `action_sizes`, `num_simulations` и остальное должны **совпадать с ПК1** (тот же ростер, preset GMZ).
 
-Скопируйте с ПК1 или возьмите шаблон из [`remote-inference-server-gmz.md` §6](remote-inference-server-gmz.md#6-файл-search_cfgjson).
+Скопируйте готовый файл с ПК1 на ПК2 или создайте по образцу ниже.
 
-Пример (подставьте свои числа с ПК1):
+### Актуальные значения для этого репозитория (май 2026)
+
+Сверено с:
+
+- ростер: `runtime/state/data.json` + `runtime/state/units.txt` (4× Necron Warriors по 10, миссия `only_war`, поле 60×40);
+- GMZ hyperparams: `hyperparams.json` → секция `gumbel_muzero`.
 
 ```json
 {
-  "obs_dim": 512,
-  "action_sizes": [12, 8, 6],
+  "obs_dim": 17,
+  "action_sizes": [5, 2, 2, 2, 5, 2, 24, 24],
   "latent_dim": 256,
   "hidden_dim": 256,
   "num_layers": 2,
   "action_embed_dim": 64,
-  "num_simulations": 32,
-  "root_top_k": 8,
+  "num_simulations": 48,
+  "root_top_k": 12,
   "discount": 0.997,
   "temperature": 0.15,
   "gumbel_scale": 1.0,
@@ -119,6 +124,15 @@ tools\pc2_remote_is.bat
   "tree_reuse": 1
 }
 ```
+
+| Поле | Значение | Откуда |
+|------|----------|--------|
+| `obs_dim` | 17 | размер state env (зависит от ростера/миссии) |
+| `action_sizes` | 8 чисел | action space env (головы move/attack/shoot/…) |
+| `num_simulations` | 48 | hyperparams GMZ |
+| `root_top_k` | 12 | hyperparams GMZ |
+
+Если на ПК1 **смените ростер**, миссию или preset GMZ — пересчитайте `obs_dim` / `action_sizes` (и при необходимости sims) и обновите JSON на **обоих** ПК. Подробнее: [`remote-inference-server-gmz.md` §6](remote-inference-server-gmz.md#6-файл-search_cfgjson).
 
 ### Шаг 6. Установка зависимостей и запуск сервера
 
