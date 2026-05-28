@@ -3900,12 +3900,16 @@ class GUIController(QtCore.QObject):
         try:
             self._clear_cache_files()
             self._emit_status(
-                "Кэш моделей, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
-                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt очищены."
+                "Кэш моделей (папка artifacts/models/actor_sync сохранена, файлы в ней удалены), "
+                "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_PLAY.md, runtime/logs/LOGS_FOR_AGENTS_EVAL.md и "
+                "artifacts/results/results.txt очищены."
             )
             self._emit_log(
-                "[GUI] Кэш моделей, runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
-                "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt очищены."
+                "[GUI] Кэш моделей (папка artifacts/models/actor_sync сохранена, файлы в ней удалены), "
+                "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, "
+                "runtime/logs/LOGS_FOR_AGENTS_PLAY.md, runtime/logs/LOGS_FOR_AGENTS_EVAL.md и "
+                "artifacts/results/results.txt очищены."
             )
         except OSError as exc:
             message = (
@@ -7088,7 +7092,10 @@ class GUIController(QtCore.QObject):
         metrics_path = str(ARTIFACTS_METRICS_DIR)
         gui_img_path = os.path.join(str(RUNTIME_STATE_DIR), "img")
         # Полная очистка моделей/кеша (включая agents/registry).
-        self._remove_contents(models_path)
+        # actor_sync: папку оставляем (SMB share), файлы внутри — удаляем.
+        self._remove_contents(models_path, keep_dirs={"actor_sync"})
+        actor_sync_path = os.path.join(models_path, "actor_sync")
+        self._remove_contents(actor_sync_path)
         self._remove_contents(metrics_path)
         if os.path.isdir(gui_img_path):
             keep = {"epLen.png", "reward.png", "loss.png", "icon.png"}
