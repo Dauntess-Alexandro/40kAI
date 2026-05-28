@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>&1
 setlocal EnableExtensions EnableDelayedExpansion
 REM 40kAI — Remote Inference Server на ПК2 (одна кнопка).
 REM Запуск: tools\pc2_remote_is.bat  (или двойной клик)

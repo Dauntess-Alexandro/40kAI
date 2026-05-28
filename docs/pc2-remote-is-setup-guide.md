@@ -226,6 +226,7 @@ python -c "from core.models.gmz_inference_transport import remote_health_check; 
 
 | Симптом | Решение |
 |---------|---------|
+| Кракозябры в `install_deps.bat` (`╨Ъ╨╛╤А...`) | Нормально для старого **cmd.exe**: запустите `chcp 65001`, используйте **Windows Terminal**, или `installer\install_deps.bat -y` (меню на английском). На работу Python это не влияет. |
 | `Connection refused` | На ПК2 запущен bat? Firewall? Верный IP? |
 | `search_cfg не найден` | Создайте JSON, путь в конфиге |
 | `Нет файла весов` | SMB: `dir Z:\latest_gmz_policy.pth` с ПК2 |
