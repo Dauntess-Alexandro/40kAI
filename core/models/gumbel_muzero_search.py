@@ -539,3 +539,62 @@ def run_batched(
             }
         )
     return results
+
+
+class BatchedGumbelMuZeroSearch:
+    """Батч-поиск с tree-reuse по env_id. Обёртка над run_batched.
+
+    Хранит visits/q_sums/legal_masks по env_id между ходами и передаёт их
+    обратно в run_batched как warm_start. is_new_episode сбрасывает дерево
+    конкретной среды. tree_reuse=False отключает хранение состояния.
+    """
+
+    def __init__(self, *, net, config: GumbelMuZeroSearchConfig, device: torch.device):
+        self.net = net
+        self.cfg = config
+        self.device = device
+        self._tree_reuse = bool(getattr(config, "tree_reuse", True))
+        self._tree_state: dict[int, dict] = {}
+
+    def clear_tree_state(self, env_id: int | None = None) -> None:
+        if env_id is None:
+            self._tree_state.clear()
+        else:
+            self._tree_state.pop(int(env_id), None)
+
+    def run_batched_stateful(
+        self, requests: list[dict], deterministic: bool = False
+    ) -> list[dict]:
+        for r in requests:
+            if bool(r.get("is_new_episode", False)):
+                self.clear_tree_state(int(r.get("env_id", 0)))
+
+        warm = None
+        if self._tree_reuse and self._tree_state:
+            warm = {
+                eid: {
+                    "visits": st["visits"],
+                    "q_sums": st["q_sums"],
+                    "legal_masks": st["legal_masks"],
+                }
+                for eid, st in self._tree_state.items()
+            }
+
+        results = run_batched(
+            net=self.net,
+            cfg=self.cfg,
+            device=self.device,
+            requests=requests,
+            deterministic=deterministic,
+            warm_start=warm,
+        )
+
+        if self._tree_reuse:
+            for r in results:
+                eid = int(r["env_id"])
+                self._tree_state[eid] = {
+                    "visits": {h: v.copy() for h, v in r["_visits_by_head"].items()},
+                    "q_sums": {h: v.copy() for h, v in r["_q_sums_by_head"].items()},
+                    "legal_masks": [m.copy() for m in r["_legal_masks"]],
+                }
+        return results

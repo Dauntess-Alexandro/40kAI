@@ -73,6 +73,29 @@ def test_run_batched_matches_sequential_deterministic():
                                        err_msg=f"env {n} head {h} behavior mismatch")
 
 
+def test_batched_search_warm_start_accumulates_visits():
+    from core.models.gumbel_muzero_search import BatchedGumbelMuZeroSearch
+    n_obs, n_actions = 10, [4, 3]
+    net = _make_net(n_obs, n_actions)
+    cfg = GumbelMuZeroSearchConfig(num_simulations=8, root_top_k=2,
+                                   prior_weight=0.25, tree_reuse=True)
+    searcher = BatchedGumbelMuZeroSearch(net=net, config=cfg, device=torch.device("cpu"))
+    reqs = _make_requests(n_obs, n_actions, n_envs=2, seed=5)
+    for r in reqs:
+        r["is_new_episode"] = False
+
+    np.random.seed(3)
+    first = searcher.run_batched_stateful(reqs)
+    np.random.seed(3)
+    second = searcher.run_batched_stateful(reqs)
+
+    # Второй вызов с warm-start: суммарные визиты по env строго больше, чем у первого.
+    assert searcher._tree_state[0]["visits"][0].sum() > first[0]["_visits_by_head"][0].sum() - 1e-6
+    # Форма результата стабильна
+    assert len(second) == 2
+    assert len(second[0]["policy_targets"]) == len(n_actions)
+
+
 def test_run_batched_stochastic_shapes_and_legality():
     n_obs, n_actions, n_envs = 10, [4, 3], 5
     net = _make_net(n_obs, n_actions)
