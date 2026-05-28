@@ -6,7 +6,7 @@ REM Запуск: tools\pc2_remote_is.bat  (или двойной клик)
 REM   tools\pc2_remote_is.bat setup   — только установка + firewall + конфиг
 REM   tools\pc2_remote_is.bat start   — запуск (по умолчанию)
 REM   tools\pc2_remote_is.bat check   — проверка без сервера
-REM Batch на ПК2: GMZ_REMOTE_BATCH_SIZE=20, GMZ_REMOTE_BATCH_INTERVAL_MS=5 (как Heavy/Very Heavy на ПК1)
+REM Batch на ПК2: GMZ_REMOTE_BATCH_SIZE=10 (=num_env_workers на ПК1), GMZ_REMOTE_BATCH_INTERVAL_MS=8 (окно сбора батча; по LAN 5мс часто мало)
 
 cd /d "%~dp0\.."
 set "ROOT=%cd%"

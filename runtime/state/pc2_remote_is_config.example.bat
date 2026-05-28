@@ -18,9 +18,13 @@ set "GMZ_REMOTE_HOST=0.0.0.0"
 set "GMZ_REMOTE_PORT=5555"
 set "GMZ_REMOTE_DEVICE=cuda:0"
 
-REM --- Производительность (синхрон с Heavy / Very Heavy на ПК1) ---
-set "GMZ_REMOTE_BATCH_SIZE=20"
-set "GMZ_REMOTE_BATCH_INTERVAL_MS=5"
+REM --- Производительность ---
+REM BATCH_SIZE = число env-воркеров на ПК1 (больше не доедет по сети, воркеры блокируются по ходу).
+REM INTERVAL_MS = окно сбора батча: батч-поиск собирает запросы и гонит одним forward'ом.
+REM   По LAN запросы прилетают вразнобой — окно ~8-10мс даёт им «слететься» (5мс часто мало).
+REM   Смотри средний batch= в runtime\logs\gmz_remote_is_*.log: должен быть близок к BATCH_SIZE, не к 1.
+set "GMZ_REMOTE_BATCH_SIZE=10"
+set "GMZ_REMOTE_BATCH_INTERVAL_MS=8"
 set "GMZ_REMOTE_SYNC_INTERVAL=0.5"
 REM Windows: triton often missing; 0 = no torch.compile warning, still uses GPU
 set "GMZ_REMOTE_COMPILE=0"
