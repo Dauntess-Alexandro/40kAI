@@ -12,7 +12,10 @@ import numpy as np
 import torch
 
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
-from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
+from core.models.gumbel_muzero_search import (
+    BatchedGumbelMuZeroSearch,
+    GumbelMuZeroSearchConfig,
+)
 from core.models.utils import normalize_state_dict
 
 
@@ -62,7 +65,7 @@ class GMZInferenceServer:
         self.max_batch_size = max(1, int(inference_batch_size))
         self._batch_interval = float(inference_batch_interval_s)
 
-        self._tree_states: dict[int, GumbelMuZeroSearch] = {}
+        self._batched_search: BatchedGumbelMuZeroSearch | None = None
         self._pending: list[dict[str, Any]] = []
         self._pending_lock = threading.Lock()
         self._running = True
@@ -88,6 +91,11 @@ class GMZInferenceServer:
                     _append_log("[GMZ][INF_SERVER] torch.compile enabled (mode=reduce-overhead)")
                 except Exception as exc:
                     _append_log(f"[GMZ][INF_SERVER] torch.compile skipped: {exc}")
+
+        # Батч-поиск по средам: создаём ПОСЛЕ compile, чтобы получить скомпилированную сеть.
+        self._batched_search = BatchedGumbelMuZeroSearch(
+            net=self.net, config=self.search_cfg, device=self.device
+        )
 
         self._weight_thread = threading.Thread(target=self._poll_weights, daemon=True)
         self._weight_thread.start()
@@ -116,11 +124,10 @@ class GMZInferenceServer:
                                 self.net.load_state_dict(normalize_state_dict(sd), strict=False)
                                 self.net.eval()
                                 self._weight_version = new_ver
-                                for search in self._tree_states.values():
-                                    search.net = self.net
-                                if self._clear_tree_on_weight_sync:
-                                    for search in self._tree_states.values():
-                                        search.clear_tree_state()
+                                if self._batched_search is not None:
+                                    self._batched_search.net = self.net
+                                    if self._clear_tree_on_weight_sync:
+                                        self._batched_search.clear_tree_state()
                             last_mtime = float(mtime)
                             _append_log(f"[GMZ][INF_SERVER] weight_updated version={new_ver}")
             except Exception as exc:
@@ -176,49 +183,57 @@ class GMZInferenceServer:
 
     def build_batch_responses(self, batch: list[dict[str, Any]]) -> list[dict[str, Any]]:
         t0 = time.perf_counter()
-        responses: list[dict[str, Any]] = []
-        by_env: dict[int, list[dict[str, Any]]] = {}
+        if not batch:
+            return []
+
+        # Один запрос на среду в этом батче (последний выигрывает, как было раньше).
+        by_env: dict[int, dict[str, Any]] = {}
         for req in batch:
-            by_env.setdefault(int(req.get("env_id", 0)), []).append(req)
+            by_env[int(req.get("env_id", 0))] = req
 
-        for env_id, env_batch in by_env.items():
-            search = self._get_or_create_tree(env_id)
-            for req in env_batch:
-                if bool(req.get("is_new_episode", False)):
-                    search.clear_tree_state()
+        requests: list[dict[str, Any]] = []
+        for env_id, req in by_env.items():
+            requests.append(
+                {
+                    "env_id": int(env_id),
+                    "obs": np.asarray(req.get("obs"), dtype=np.float32),
+                    "legal_masks_by_head": [
+                        np.asarray(m) for m in (req.get("legal_masks_by_head") or [])
+                    ],
+                    "is_new_episode": bool(req.get("is_new_episode", False)),
+                }
+            )
 
-                obs = np.asarray(req.get("obs"), dtype=np.float32)
-                masks_raw = req.get("legal_masks_by_head") or []
-                legal_masks = [np.asarray(m) for m in masks_raw]
-
-                with torch.no_grad():
-                    if self._inference_stream is not None:
-                        with torch.cuda.stream(self._inference_stream):
-                            pi_targets, behavior_logits, actions, value_est = search.run(
-                                obs=obs,
-                                legal_masks_by_head=legal_masks,
-                                deterministic=False,
-                            )
-                    else:
-                        pi_targets, behavior_logits, actions, value_est = search.run(
-                            obs=obs,
-                            legal_masks_by_head=legal_masks,
-                            deterministic=False,
-                        )
-
-                responses.append(
-                    {
-                        "kind": "infer_response",
-                        "env_id": int(env_id),
-                        "selected_actions": list(actions),
-                        "policy_targets": [np.asarray(p, dtype=np.float32) for p in pi_targets],
-                        "behavior_logits": [
-                            np.asarray(b, dtype=np.float32) for b in behavior_logits
-                        ],
-                        "value_est": float(value_est),
-                        "policy_version": int(self._weight_version),
-                    }
+        with self._weight_lock:
+            if self._inference_stream is not None:
+                with torch.cuda.stream(self._inference_stream):
+                    batched = self._batched_search.run_batched_stateful(
+                        requests, deterministic=False
+                    )
+            else:
+                batched = self._batched_search.run_batched_stateful(
+                    requests, deterministic=False
                 )
+
+        out_by_env: dict[int, dict[str, Any]] = {}
+        for r in batched:
+            out_by_env[int(r["env_id"])] = {
+                "kind": "infer_response",
+                "env_id": int(r["env_id"]),
+                "selected_actions": list(r["selected_actions"]),
+                "policy_targets": [np.asarray(p, dtype=np.float32) for p in r["policy_targets"]],
+                "behavior_logits": [np.asarray(b, dtype=np.float32) for b in r["behavior_logits"]],
+                "value_est": float(r["value_est"]),
+                "policy_version": int(self._weight_version),
+            }
+
+        # По одному ответу на каждый исходный запрос (несколько запросов одной среды → копии).
+        responses: list[dict[str, Any]] = []
+        for req in batch:
+            env_id = int(req.get("env_id", 0))
+            resp = out_by_env.get(env_id)
+            if resp is not None:
+                responses.append(dict(resp))
                 self._requests_total += 1
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
@@ -237,16 +252,6 @@ class GMZInferenceServer:
             _append_log(f"[GMZ][INF_SERVER] slow_batch ms={elapsed_ms:.1f} for n={batch_size}")
         if not responses:
             return
-
-    def _get_or_create_tree(self, env_id: int) -> GumbelMuZeroSearch:
-        if env_id not in self._tree_states:
-            with self._weight_lock:
-                self._tree_states[env_id] = GumbelMuZeroSearch(
-                    net=self.net,
-                    config=self.search_cfg,
-                    device=self.device,
-                )
-        return self._tree_states[env_id]
 
 
 def gmz_inference_server_entry(
