@@ -326,3 +326,216 @@ class GumbelMuZeroSearch:
         self._last_selected_actions = selected_actions.copy()
 
         return policy_targets, behavior_logits, selected_actions, value_out
+
+
+# ---------------------------------------------------------------------------
+# Batched search (variant B throughput): one forward over N environments
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def run_batched(
+    *,
+    net,
+    cfg: GumbelMuZeroSearchConfig,
+    device: torch.device,
+    requests: list[dict],
+    deterministic: bool = False,
+    warm_start: dict[int, dict] | None = None,
+) -> list[dict]:
+    """Батч-вариант GumbelMuZeroSearch.run по средам.
+
+    requests: список dict с ключами env_id, obs (np.ndarray), legal_masks_by_head (list[np.ndarray]).
+    Возвращает список dict (в порядке requests): env_id, selected_actions, policy_targets,
+    behavior_logits, value_est, _visits_by_head, _q_sums_by_head, _legal_masks
+    (последние три — для tree-reuse в BatchedGumbelMuZeroSearch).
+
+    warm_start: optional {env_id: {"visits": {h: arr}, "q_sums": {h: arr},
+    "legal_masks": [arr]}} — пред-заполнение visits/q_sums.
+
+    Числовая логика повторяет GumbelMuZeroSearch.run, но recurrent_inference батчится
+    по средам внутри каждого head'а: один forward на N*sims строк вместо N форвардов.
+    Для эквивалентности sequential-пути розыгрыш Gumbel идёт env-major, head-minor,
+    и head'ы без легальных действий не тянут RNG.
+    """
+    N = len(requests)
+    if N == 0:
+        return []
+
+    sims = max(1, int(cfg.num_simulations))
+    root_top_k = max(1, int(cfg.root_top_k))
+    discount = float(cfg.discount)
+    temp = float(cfg.temperature)
+    gumbel_scale = float(cfg.gumbel_scale)
+    prior_weight = float(cfg.prior_weight)
+
+    num_heads = len(requests[0]["legal_masks_by_head"])
+
+    # --- Батч-инференс корня ---
+    obs_batch = torch.tensor(
+        np.stack([np.asarray(r["obs"], dtype=np.float32) for r in requests], axis=0),
+        device=device,
+    )
+    masks_batch = []
+    for h in range(num_heads):
+        mh = np.stack(
+            [np.asarray(requests[n]["legal_masks_by_head"][h], dtype=bool) for n in range(N)],
+            axis=0,
+        )
+        masks_batch.append(torch.as_tensor(mh, dtype=torch.bool, device=device))
+
+    root_logits, root_value, _root_reward, latent = net.initial_inference(
+        obs_batch, masks_by_head=masks_batch
+    )
+    root_logits_np = [
+        root_logits[h].detach().cpu().numpy().astype(np.float32) for h in range(num_heads)
+    ]
+    root_value_np = root_value.detach().cpu().numpy().reshape(-1).astype(np.float32)
+    base_action = np.stack([rl.argmax(axis=1) for rl in root_logits_np], axis=1)  # [N, num_heads]
+
+    # --- Candidate-выборка (RNG-порядок: env-major, head-minor — как sequential) ---
+    candidates: list[list] = [[None] * num_heads for _ in range(N)]
+    legal_np: list[list] = [[None] * num_heads for _ in range(N)]
+    behavior_logits: list[list] = [[None] * num_heads for _ in range(N)]
+    for n in range(N):
+        for h in range(num_heads):
+            logits_np = root_logits_np[h][n]
+            legal = np.asarray(requests[n]["legal_masks_by_head"][h], dtype=bool)
+            legal_np[n][h] = legal
+            behavior_logits[n][h] = logits_np.copy()
+            legal_idx = np.where(legal)[0]
+            if legal_idx.size == 0:
+                candidates[n][h] = np.empty(0, dtype=np.int64)
+                continue
+            local_logits = logits_np[legal_idx]
+            gumbel = np.random.gumbel(
+                loc=0.0, scale=max(1e-6, gumbel_scale), size=legal_idx.size
+            ).astype(np.float32)
+            ranking = np.argsort(local_logits + gumbel)[::-1]
+            top_local = ranking[: min(root_top_k, ranking.size)]
+            candidates[n][h] = legal_idx[top_local].astype(np.int64)
+
+    # --- Аккумуляторы visits/q_sums (+ warm-start) ---
+    visits = [
+        [np.zeros(root_logits_np[h].shape[1], dtype=np.float32) for h in range(num_heads)]
+        for _ in range(N)
+    ]
+    q_sums = [
+        [np.zeros(root_logits_np[h].shape[1], dtype=np.float32) for h in range(num_heads)]
+        for _ in range(N)
+    ]
+    value_samples: list[list[float]] = [[] for _ in range(N)]
+
+    if warm_start:
+        for n in range(N):
+            env_id = int(requests[n].get("env_id", n))
+            ws = warm_start.get(env_id)
+            if not ws:
+                continue
+            prev_masks = ws.get("legal_masks")
+            if prev_masks is None or len(prev_masks) != num_heads:
+                continue
+            if any(prev_masks[h].shape != legal_np[n][h].shape for h in range(num_heads)):
+                continue
+            for h in range(num_heads):
+                pv = ws["visits"].get(h)
+                pq = ws["q_sums"].get(h)
+                if pv is None or pq is None:
+                    continue
+                clen = min(len(visits[n][h]), len(pv))
+                if clen > 0:
+                    visits[n][h][:clen] = pv[:clen]
+                    q_sums[n][h][:clen] = pq[:clen]
+
+    # --- Батч-recurrent по head'ам: один forward на N*sims строк ---
+    for h in range(num_heads):
+        active = [n for n in range(N) if candidates[n][h].size > 0]
+        if not active:
+            continue
+        rows_action: list[np.ndarray] = []
+        env_of_row: list[int] = []
+        cand_of_row: list[int] = []
+        for n in active:
+            cand = candidates[n][h]
+            for s in range(sims):
+                c = int(cand[s % cand.size])
+                av = base_action[n].copy()
+                av[h] = c
+                rows_action.append(av)
+                env_of_row.append(n)
+                cand_of_row.append(c)
+        idx_t = torch.tensor(env_of_row, dtype=torch.long, device=device)
+        latent_rep = latent.index_select(0, idx_t)
+        action_t = torch.tensor(np.asarray(rows_action), dtype=torch.long, device=device)
+        masks_rep = [masks_batch[h2].index_select(0, idx_t) for h2 in range(num_heads)]
+        _p, val_b, rew_b, _nl = net.recurrent_inference(
+            latent_rep, action_t, masks_by_head=masks_rep
+        )
+        val_b = val_b.detach().cpu().numpy().reshape(-1).astype(np.float32)
+        rew_b = rew_b.detach().cpu().numpy().reshape(-1).astype(np.float32)
+        for row in range(len(env_of_row)):
+            n = env_of_row[row]
+            c = cand_of_row[row]
+            q = float(rew_b[row]) + discount * float(val_b[row])
+            visits[n][h][c] += 1.0
+            q_sums[n][h][c] += q
+            value_samples[n].append(q)
+
+    # --- Пост-обработка (numpy, как sequential): UCB → softmax → prior-mix → select ---
+    results: list[dict] = []
+    for n in range(N):
+        policy_targets: list[np.ndarray] = []
+        selected: list[int] = []
+        v_by_head: dict[int, np.ndarray] = {}
+        q_by_head: dict[int, np.ndarray] = {}
+        for h in range(num_heads):
+            logits_np = root_logits_np[h][n]
+            legal = legal_np[n][h]
+            legal_idx = np.where(legal)[0]
+            v_by_head[h] = visits[n][h].copy()
+            q_by_head[h] = q_sums[n][h].copy()
+            if legal_idx.size == 0:
+                policy_targets.append(
+                    np.ones_like(logits_np, dtype=np.float32) / float(max(1, logits_np.size))
+                )
+                selected.append(0)
+                continue
+            prior_np = np.full_like(logits_np, -1e9)
+            prior_np[legal_idx] = logits_np[legal_idx]
+            prior_np -= prior_np[legal_idx].max()
+            prior_exp = np.exp(prior_np)
+            prior_exp[~legal] = 0.0
+            prior_probs = prior_exp / max(prior_exp.sum(), 1e-12)
+
+            vv = visits[n][h]
+            qq = q_sums[n][h]
+            q_values = np.where(vv > 0, qq / np.maximum(vv, 1.0), logits_np)
+            q_values[~legal] = -1e9
+            total_visits = vv.sum() + 1.0
+            ucb_bonus = np.sqrt(np.log(total_visits + 1.0) / (vv + 1.0))
+            ucb_q = np.where(legal, q_values + 0.3 * ucb_bonus, -1e9)
+            q_soft = _masked_softmax(ucb_q, legal_mask=legal, temperature=temp)
+            mixed = (1.0 - prior_weight) * q_soft + prior_weight * prior_probs
+            mixed[~legal] = 0.0
+            ms = mixed.sum()
+            mixed = mixed / ms if ms > 1e-12 else legal.astype(np.float32) / float(legal.sum())
+            action = (
+                int(np.argmax(mixed))
+                if deterministic
+                else int(np.random.choice(np.arange(mixed.size), p=mixed))
+            )
+            policy_targets.append(mixed.astype(np.float32))
+            selected.append(action)
+        value_out = float(np.mean(value_samples[n]) if value_samples[n] else root_value_np[n])
+        results.append(
+            {
+                "env_id": int(requests[n].get("env_id", n)),
+                "selected_actions": selected,
+                "policy_targets": policy_targets,
+                "behavior_logits": behavior_logits[n],
+                "value_est": value_out,
+                "_visits_by_head": v_by_head,
+                "_q_sums_by_head": q_by_head,
+                "_legal_masks": [m.copy() for m in legal_np[n]],
+            }
+        )
+    return results
