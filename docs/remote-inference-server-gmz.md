@@ -3,6 +3,8 @@
 **Версия:** v1  
 **Сценарий:** два ПК в одной LAN — learner + env workers на **ПК1**, GPU-инференс (MCTS/search) на **ПК2**.
 
+**Пошаговый гайд (с нуля на ПК2):** [`pc2-remote-is-setup-guide.md`](pc2-remote-is-setup-guide.md).
+
 Связанный дизайн B-local: `docs/inference-server-gmz-design.md` (§15 Remote).
 
 ---

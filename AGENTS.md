@@ -46,6 +46,7 @@
 
 
 ## Remote Inference Server (GMZ)
+- **Пошаговый гайд (поставить сервер на ПК2):** `docs/pc2-remote-is-setup-guide.md`.
 - Руководство (ПК1 + ПК2, установка, SMB, отладка): `docs/remote-inference-server-gmz.md`.
 - Запуск на ПК2 одной кнопкой: `tools/pc2_remote_is.bat` (конфиг: `runtime/state/pc2_remote_is_config.bat`).
 - Конфиг GUI (ПК1): `runtime/state/remote_is.json` (в `.gitignore`).

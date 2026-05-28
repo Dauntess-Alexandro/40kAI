@@ -396,8 +396,9 @@ GMZ_FIELD_TOOLTIPS: dict[str, str] = {
     "atom_range": "Диапазон атомов: 'tight' = [-1.05,1.05] (рекомендуется), 'legacy' = [-20,20].",
     "ema_tau": "Скорость обновления EMA-цели для consistency loss (Conservative Polyak). 0.005 = медленно.",
     "actor_compile": (
-        "1 = torch.compile только для варианта A на CPU-акторах (actor_device=cpu). "
-        "На GPU-акторах не применяется. При inference server (вариант B) не используется. 0 = выкл."
+        "torch.compile для варианта A на CPU-акторах. При CUDA в GUI ставится 0 автоматически "
+        "(ускорение learner — learner_compile). Без CUDA ставится 1 автоматически. "
+        "При inference server (вариант B) на акторов не влияет."
     ),
     "learner_compile": "1 = torch.compile для learner на CUDA (15-30% быстрее). 0 = выключить.",
     "temperature_opening_moves": "Ходов с повышенной температурой.",

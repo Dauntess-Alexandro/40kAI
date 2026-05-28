@@ -1538,6 +1538,15 @@ class GUIController(QtCore.QObject):
         except OSError as exc:
             self._emit_status(f"Не удалось сохранить remote_is.json: {exc}")
 
+    def _apply_gmz_actor_compile_for_cuda(self) -> None:
+        """CUDA есть → actor_compile=0 (есть learner_compile); нет CUDA → actor_compile=1."""
+        target = 0 if self._training_cuda_available else 1
+        current = int(self._gmz_hyperparams.get("actor_compile", target) or 0)
+        if current == target:
+            return
+        self._gmz_hyperparams["actor_compile"] = target
+        self.trainingHyperparamsChanged.emit()
+
     def _ensure_gmz_local_is_default(self) -> None:
         """LAN выключен + CUDA: локальный IS (вариант B) включён по умолчанию."""
         remote = getattr(self, "_remote_is", None)
@@ -3178,6 +3187,7 @@ class GUIController(QtCore.QObject):
             self.trainingHyperparamsChanged.emit()
             if cuda_ok:
                 self._ensure_gmz_local_is_default()
+        self._apply_gmz_actor_compile_for_cuda()
 
     @QtCore.Slot(str, str, str, result=int)
     def hyperparam_cuda_field_state(self, algo_section: str, key: str, value_str: str) -> int:

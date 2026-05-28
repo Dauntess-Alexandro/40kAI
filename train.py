@@ -2623,7 +2623,11 @@ GMZ_REANALYZE_FRACTION = float(os.getenv("GMZ_REANALYZE_FRACTION", str(GMZ_CFG.g
 GMZ_TREE_REUSE = str(os.getenv("GMZ_TREE_REUSE", str(GMZ_CFG.get("tree_reuse", 1)))).strip() == "1"
 # B4: EMA tau for consistency target + torch.compile flags
 GMZ_EMA_TAU = float(os.getenv("GMZ_EMA_TAU", str(GMZ_CFG.get("ema_tau", 0.005))))
-GMZ_ACTOR_COMPILE = str(os.getenv("GMZ_ACTOR_COMPILE", str(GMZ_CFG.get("actor_compile", 1)))).strip() == "1"
+if "GMZ_ACTOR_COMPILE" in os.environ:
+    GMZ_ACTOR_COMPILE = str(os.getenv("GMZ_ACTOR_COMPILE", "1")).strip() == "1"
+else:
+    # С CUDA — learner_compile; без CUDA — compile на CPU-акторах (вариант A).
+    GMZ_ACTOR_COMPILE = not bool(torch.cuda.is_available())
 GMZ_LEARNER_COMPILE = str(os.getenv("GMZ_LEARNER_COMPILE", str(GMZ_CFG.get("learner_compile", 1)))).strip() == "1"
 # Вариант A: GPU-акторы; вариант B: inference_server + CPU env workers
 GMZ_ACTOR_DEVICE_REQUESTED = str(os.getenv("GMZ_ACTOR_DEVICE", str(GMZ_CFG.get("actor_device", "cuda")))).strip().lower()
