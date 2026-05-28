@@ -25,6 +25,15 @@ def _append_log(msg: str) -> None:
         pass
 
 
+def _triton_available() -> bool:
+    try:
+        import triton  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
 class GMZInferenceServer:
     """Батчит запросы env workers, выполняет GumbelMuZeroSearch.run на GPU."""
 
@@ -68,11 +77,17 @@ class GMZInferenceServer:
             self._inference_stream = torch.cuda.Stream()
 
         if compile_mode and device.type == "cuda" and hasattr(torch, "compile"):
-            try:
-                self.net = torch.compile(self.net, mode="reduce-overhead", fullgraph=False)
-                _append_log("[GMZ][INF_SERVER] torch.compile enabled (mode=reduce-overhead)")
-            except Exception as exc:
-                _append_log(f"[GMZ][INF_SERVER] torch.compile skipped: {exc}")
+            if not _triton_available():
+                _append_log(
+                    "[GMZ][INF_SERVER] torch.compile skipped: triton not installed "
+                    "(normal on Windows; set GMZ_REMOTE_COMPILE=0 to hide this)"
+                )
+            else:
+                try:
+                    self.net = torch.compile(self.net, mode="reduce-overhead", fullgraph=False)
+                    _append_log("[GMZ][INF_SERVER] torch.compile enabled (mode=reduce-overhead)")
+                except Exception as exc:
+                    _append_log(f"[GMZ][INF_SERVER] torch.compile skipped: {exc}")
 
         self._weight_thread = threading.Thread(target=self._poll_weights, daemon=True)
         self._weight_thread.start()

@@ -18,11 +18,12 @@ set "GMZ_REMOTE_HOST=0.0.0.0"
 set "GMZ_REMOTE_PORT=5555"
 set "GMZ_REMOTE_DEVICE=cuda:0"
 
-REM --- Производительность ---
-set "GMZ_REMOTE_BATCH_SIZE=10"
-set "GMZ_REMOTE_BATCH_INTERVAL_MS=20"
+REM --- Производительность (синхрон с Heavy / Very Heavy на ПК1) ---
+set "GMZ_REMOTE_BATCH_SIZE=20"
+set "GMZ_REMOTE_BATCH_INTERVAL_MS=5"
 set "GMZ_REMOTE_SYNC_INTERVAL=0.5"
-set "GMZ_REMOTE_COMPILE=1"
+REM Windows: triton often missing; 0 = no torch.compile warning, still uses GPU
+set "GMZ_REMOTE_COMPILE=0"
 
 REM --- Опционально: общий секрет (должен совпадать с GUI на ПК1) ---
 set "GMZ_REMOTE_AUTH_TOKEN="

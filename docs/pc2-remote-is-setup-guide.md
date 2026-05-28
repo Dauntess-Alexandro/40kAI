@@ -74,7 +74,7 @@ tools\pc2_remote_is.bat config
 | `GMZ_REMOTE_AUTH_TOKEN` | Если включили токен в GUI на ПК1 |
 | `GMZ_REMOTE_WEIGHTS_PATH` / `SEARCH_CONFIG` | Если буква диска не `Z:` |
 
-Для **RTX 2060 Super (8 GB)** в шаблоне уже: `GMZ_REMOTE_BATCH_SIZE=10`, `GMZ_REMOTE_COMPILE=1`.
+Для **RTX 2060 Super (8 GB)** в шаблоне (как Heavy / Very Heavy на ПК1): `GMZ_REMOTE_BATCH_SIZE=20`, `GMZ_REMOTE_BATCH_INTERVAL_MS=5`, `GMZ_REMOTE_COMPILE=0`.
 
 ### Шаг 4. Общая папка (SMB) с весами
 
@@ -347,6 +347,8 @@ python -c "from core.models.gmz_inference_transport import remote_health_check; 
 | `Connection refused` | На ПК2 запущен bat? Firewall? Верный IP? |
 | `search_cfg не найден` | Создайте JSON, путь в конфиге |
 | `Нет файла весов` | SMB: `dir Z:\latest_gmz_policy.pth` с ПК2 |
+| Пустой пароль / запрещён вход | На **ПК1** задать пароль учётки; на **ПК2** `net use Z: \\USER-PC\actor_sync /user:USER-PC\Professional пароль_ПК1` |
+| `triton` not installed | Не ошибка: на Windows поставьте `GMZ_REMOTE_COMPILE=0` в конфиге или обновите код (compile пропускается сам) |
 | HealthCheck OK, train падает | Одна версия кода на ПК1 и ПК2 (`git pull`) |
 | Один ПК, случайно LAN | Выключите LAN, включите Local |
 
