@@ -7095,7 +7095,7 @@ class GUIController(QtCore.QObject):
         # actor_sync: папку оставляем (SMB share), файлы внутри — удаляем.
         self._remove_contents(models_path, keep_dirs={"actor_sync"})
         actor_sync_path = os.path.join(models_path, "actor_sync")
-        self._remove_contents(actor_sync_path)
+        self._remove_contents(actor_sync_path, keep_files={"gmz_remote_search_cfg.json"})
         self._remove_contents(metrics_path)
         if os.path.isdir(gui_img_path):
             keep = {"epLen.png", "reward.png", "loss.png", "icon.png"}

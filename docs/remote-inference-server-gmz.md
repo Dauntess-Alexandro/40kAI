@@ -68,7 +68,7 @@
 | 2 | Скопировать на ПК2 **тот же репозиторий 40kAI**, что на ПК1 (git clone или копия папки) |
 | 3 | Установить **драйвер NVIDIA**, проверить `nvidia-smi` |
 | 4 | На ПК1 расшарить папку с весами; на ПК2 подключить сетевой диск (например `Z:`) — см. [§5](#5-сеть-и-smb) |
-| 5 | Создать **`search_cfg.json`** (как на ПК1) — см. [§6](#6-файл-search_cfgjson) |
+| 5 | На ПК1: `tools\write_gmz_remote_search_cfg.bat` → push; на ПК2: pull — см. [§6](#6-файл-search_cfgjson) |
 | 6 | При необходимости скопировать с ПК1 **checkpoint** для первого старта (`checkpoint_ep*.pth`) |
 
 ### Первый запуск (настройка)
@@ -80,7 +80,7 @@
 
 3. В блокноте укажите (минимум):
    - `GMZ_REMOTE_WEIGHTS_PATH` — путь к SMB-файлу, например `Z:\latest_gmz_policy.pth`
-   - `GMZ_REMOTE_SEARCH_CONFIG` — путь к JSON, например `C:\40kAI\runtime\state\gmz_remote_search_cfg.json`
+   - `GMZ_REMOTE_SEARCH_CONFIG` — путь к JSON, например `Z:\gmz_remote_search_cfg.json` (SMB)
    - `GMZ_REMOTE_INIT_WEIGHTS` — локальный checkpoint, если на `Z:` ещё нет файла
 
 4. **Сохраните** конфиг и закройте блокнот.
@@ -171,7 +171,7 @@ python -c "import zmq, msgpack; print('OK')"
 |------------|--------|----------|
 | `GMZ_REMOTE_WEIGHTS_PATH` | `Z:\latest_gmz_policy.pth` | SMB-путь к файлу, который learner обновляет на ПК1 |
 | `GMZ_REMOTE_INIT_WEIGHTS` | `C:\40kAI\artifacts\models\gumbel_muzero\checkpoint_ep1.pth` | Стартовый checkpoint, если на SMB файла ещё нет. Можно оставить пустым, если SMB-файл уже есть |
-| `GMZ_REMOTE_SEARCH_CONFIG` | `C:\40kAI\runtime\state\gmz_remote_search_cfg.json` | JSON с `obs_dim`, `action_sizes`, MCTS — **должен совпадать с ПК1** |
+| `GMZ_REMOTE_SEARCH_CONFIG` | `Z:\gmz_remote_search_cfg.json` | JSON с `obs_dim`, `action_sizes`, MCTS (копия в SMB из `write_gmz_remote_search_cfg.bat` на ПК1) |
 | `GMZ_REMOTE_HOST` | `0.0.0.0` | На каком интерфейсе слушать (обычно все) |
 | `GMZ_REMOTE_PORT` | `5555` | TCP-порт (тот же, что в GUI на ПК1) |
 | `GMZ_REMOTE_DEVICE` | `cuda:0` | GPU для инференса |
@@ -218,28 +218,19 @@ netsh advfirewall firewall add rule name="40kAI Remote IS" dir=in action=allow p
 
 Обязателен. Поля должны **совпадать с ПК1** (ростер, миссия, preset GMZ).
 
-Пример `runtime\state\gmz_remote_search_cfg.json`:
+**На ПК1** (автоматически, как при train):
 
-```json
-{
-  "obs_dim": 512,
-  "action_sizes": [12, 8, 6],
-  "latent_dim": 256,
-  "hidden_dim": 256,
-  "num_layers": 2,
-  "action_embed_dim": 64,
-  "num_simulations": 32,
-  "root_top_k": 8,
-  "discount": 0.997,
-  "temperature": 0.15,
-  "gumbel_scale": 1.0,
-  "prior_weight": 0.25,
-  "batch_recurrent": 1,
-  "tree_reuse": 1
-}
+```bat
+tools\write_gmz_remote_search_cfg.bat
 ```
 
-**Откуда взять:** настройки GMZ на ПК1 (Heavy/Balanced). `obs_dim` / `action_sizes` — из контракта среды; при ошибках infer сверьте с рабочим B-local на одном ПК.
+→ `runtime\state\gmz_remote_search_cfg.json` и копия в `artifacts\models\actor_sync\` (SMB).
+
+На **ПК2**: `GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json` (после `write_gmz_remote_search_cfg.bat` на ПК1 и подключения `Z:`).
+
+Поля `_generated_utc` и `_sources` служебные; remote IS их не использует.
+
+**Откуда берутся значения:** `runtime/state/data.json` (ростер GUI) + `hyperparams.json` → `gumbel_muzero`. После смены ростера или GMZ — перегенерируйте bat на ПК1.
 
 ---
 

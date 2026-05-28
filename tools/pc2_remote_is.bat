@@ -35,17 +35,23 @@ set "SERVER_PY=%TOOLS%\gmz_remote_inference_server.py"
 
 if not exist "%ROOT%\runtime\state" mkdir "%ROOT%\runtime\state" 2>nul
 
+if /i "%MODE%"=="config" (
+  if not exist "%CONFIG_BAT%" if exist "%CONFIG_EXAMPLE%" copy /Y "%CONFIG_EXAMPLE%" "%CONFIG_BAT%" >nul
+  if not exist "%CONFIG_BAT%" (
+    echo [ERROR] Config not found: %CONFIG_BAT%
+    pause
+    exit /b 1
+  )
+  notepad "%CONFIG_BAT%"
+  pause
+  exit /b 0
+)
+
 if not exist "%CONFIG_BAT%" (
   if exist "%CONFIG_EXAMPLE%" (
     copy /Y "%CONFIG_EXAMPLE%" "%CONFIG_BAT%" >nul
-    echo [КОНФИГ] Создан %CONFIG_BAT%
-    echo Откройте файл, укажите пути к весам SMB и search_cfg.json, сохраните.
-    echo.
-    notepad "%CONFIG_BAT%"
-    echo.
-    echo После сохранения конфига запустите tools\pc2_remote_is.bat снова.
-    pause
-    exit /b 0
+    echo [CONFIG] Created %CONFIG_BAT% with defaults Z:\ ...
+    echo         Edit manually: tools\pc2_remote_is.bat config
   ) else (
     echo [ОШИБКА] Нет шаблона %CONFIG_EXAMPLE%
     pause
@@ -60,6 +66,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" set "GMZ_REMOTE_WEIGHTS_PATH=Z:\latest_gmz_policy.pth"
+if "%GMZ_REMOTE_SEARCH_CONFIG%"=="" set "GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json"
 if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" (
   echo [ОШИБКА] В конфиге не задан GMZ_REMOTE_WEIGHTS_PATH
   notepad "%CONFIG_BAT%"
@@ -94,7 +102,7 @@ goto :unknown_mode
 
 :unknown_mode
 echo [ОШИБКА] Неизвестный режим: %MODE%
-echo Использование: tools\pc2_remote_is.bat [setup^|start^|check]
+echo Использование: tools\pc2_remote_is.bat [setup^|start^|check^|config]
 pause
 exit /b 1
 

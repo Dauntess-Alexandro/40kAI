@@ -1,0 +1,31 @@
+{
+  "obs_dim": 17,
+  "action_sizes": [
+    5,
+    2,
+    2,
+    2,
+    5,
+    2,
+    24,
+    24
+  ],
+  "latent_dim": 256,
+  "hidden_dim": 256,
+  "num_layers": 2,
+  "action_embed_dim": 64,
+  "num_simulations": 48,
+  "root_top_k": 12,
+  "discount": 0.997,
+  "temperature": 0.15,
+  "gumbel_scale": 1.0,
+  "prior_weight": 0.25,
+  "batch_recurrent": 1,
+  "tree_reuse": 1,
+  "_generated_utc": "2026-05-28T13:13:55Z",
+  "_sources": {
+    "roster": "C:\\40kAI\\runtime\\state\\data.json",
+    "hyperparams": "hyperparams.json → gumbel_muzero",
+    "mission": "only_war"
+  }
+}

@@ -6,12 +6,12 @@ REM Отредактируйте пути под свой ПК и сохрани
 REM --- SMB: файл весов с ПК1 (learner пишет, сервер читает) ---
 set "GMZ_REMOTE_WEIGHTS_PATH=Z:\latest_gmz_policy.pth"
 
-REM --- Стартовый checkpoint, если на SMB ещё нет latest_gmz_policy.pth ---
-REM Оставьте пустым, если weights-path уже существует:
-set "GMZ_REMOTE_INIT_WEIGHTS=C:\40kAI\artifacts\models\gumbel_muzero\checkpoint_ep1.pth"
+REM --- Стартовый checkpoint, если на Z: ещё нет latest_gmz_policy.pth (иначе пусто) ---
+set "GMZ_REMOTE_INIT_WEIGHTS="
 
 REM --- JSON: obs_dim, action_sizes, num_simulations (как на ПК1) ---
-set "GMZ_REMOTE_SEARCH_CONFIG=C:\40kAI\runtime\state\gmz_remote_search_cfg.json"
+REM С ПК1: tools\write_gmz_remote_search_cfg.bat кладёт копию в actor_sync (SMB Z:)
+set "GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json"
 
 REM --- Сеть / GPU ---
 set "GMZ_REMOTE_HOST=0.0.0.0"
