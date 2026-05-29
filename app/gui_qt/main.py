@@ -4860,6 +4860,9 @@ class GUIController(QtCore.QObject):
         self._telemetry.start()
 
     def _gmz_remote_cfg_for_telemetry(self):
+        # Remote IS (и карточка ПК2) существует только для Gumbel MuZero.
+        if str(self._training_algo) != "gumbel_muzero":
+            return None
         try:
             from app.gui_qt.remote_is_store import load_remote_is, remote_is_lan_active
         except Exception:
