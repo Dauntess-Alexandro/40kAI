@@ -193,6 +193,10 @@ class GUIController(QtCore.QObject):
         self._training_ui_timer.setInterval(1000)
         self._training_ui_timer.timeout.connect(self._on_training_ui_tick)
 
+        from app.gui_qt.telemetry.controller import TelemetryController
+
+        self._telemetry = TelemetryController(self)
+
         self._available_units: list[UnitInfo] = []
         self._player_roster: list[RosterEntry] = []
         self._model_roster: list[RosterEntry] = []
@@ -4846,6 +4850,42 @@ class GUIController(QtCore.QObject):
             return
 
         self._set_running(True)
+        self._telemetry.set_context(
+            pid=self._process.processId() or None,
+            algo=str(self._training_algo),
+            active=True,
+            remote_cfg=self._gmz_remote_cfg_for_telemetry(),
+            batch_size_hint=self._gmz_batch_size_hint(),
+        )
+        self._telemetry.start()
+
+    def _gmz_remote_cfg_for_telemetry(self):
+        try:
+            from app.gui_qt.remote_is_store import load_remote_is, remote_is_lan_active
+        except Exception:
+            return None
+        try:
+            data = load_remote_is(self._repo_root)
+            if not remote_is_lan_active(data):
+                return None
+            return {
+                "host": data.get("host", "127.0.0.1"),
+                "port": int(data.get("port", 5555)),
+                "auth_token": data.get("auth_token", ""),
+            }
+        except Exception:
+            return None
+
+    def _gmz_batch_size_hint(self):
+        try:
+            return int(
+                self._gmz_hyperparams.get(
+                    "inference_batch_size",
+                    self._default_gmz_hyperparams.get("inference_batch_size", 10),
+                )
+            )
+        except Exception:
+            return None
 
     def _refresh_train_data_json_from_rosters(self, *, expected_num_life: Optional[int] = None) -> bool:
         """Пересобрать runtime/state/data.json из runtime/state/units.txt (data.bat → initFile.py)."""
@@ -4932,6 +4972,7 @@ class GUIController(QtCore.QObject):
                 if self._should_show_train_log(line):
                     self._emit_log(line)
                 self._handle_progress_line(line)
+                self._telemetry.feed_log_line(line)
 
     def _read_stderr(self) -> None:
         if self._process is None:
@@ -5110,6 +5151,11 @@ class GUIController(QtCore.QObject):
 
     def _cleanup_process(self) -> None:
         self._training_ui_timer.stop()
+        self._telemetry.set_context(
+            pid=None, algo=str(getattr(self, "_training_algo", "dqn")),
+            active=False, remote_cfg=None,
+        )
+        self._telemetry.stop()
         if self._process is None:
             return
         self._process.deleteLater()
@@ -7210,6 +7256,7 @@ def main() -> int:
     app._controller_ref = _GUI_CONTROLLER_REF
     engine._controller_ref = _GUI_CONTROLLER_REF
     engine.rootContext().setContextProperty("controller", _GUI_CONTROLLER_REF)
+    engine.rootContext().setContextProperty("telemetry", _GUI_CONTROLLER_REF._telemetry)
     if theme_flat is not None:
         engine.rootContext().setContextProperty("themeTokens", theme_flat)
 

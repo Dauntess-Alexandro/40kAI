@@ -59,6 +59,8 @@ class TelemetryController(QtCore.QObject):
 
     def stop(self) -> None:
         self._timer.stop()
+        # финальный пересбор карточек под idle (прочерки), пока не приехал новый тик
+        self._refresh_sync()
 
     def feed_log_line(self, line: str) -> None:
         self._batch.feed_line(line)

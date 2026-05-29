@@ -681,6 +681,10 @@ ApplicationWindow {
                             }
                         }
 
+                        TelemetryStrip {
+                            Layout.fillWidth: true
+                        }
+
                         ChamferPanel {
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0

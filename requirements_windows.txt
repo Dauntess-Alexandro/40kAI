@@ -30,3 +30,5 @@ PySide6
 numba
 pyzmq
 msgpack
+psutil
+nvidia-ml-py

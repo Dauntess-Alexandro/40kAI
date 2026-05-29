@@ -43,7 +43,7 @@ class ProcessMeter:
             return {"cpu_pct": 0.0, "ram_pct": 0.0, "ram_gb": 0.0, "ok": False}
 
         samples: list[dict[str, Any]] = []
-        live_pids = set()
+        live_pids: set[int] = set()
         for p in procs:
             live_pids.add(p.pid)
             cached = self._cache.get(p.pid)
@@ -64,4 +64,6 @@ class ProcessMeter:
         for dead in [k for k in self._cache if k not in live_pids]:
             self._cache.pop(dead, None)
 
-        return aggregate_tree(samples, ncpu=ps.cpu_count() or 1, total_ram=ps.virtual_memory().total)
+        result = aggregate_tree(samples, ncpu=ps.cpu_count() or 1, total_ram=ps.virtual_memory().total)
+        result["pids"] = live_pids
+        return result

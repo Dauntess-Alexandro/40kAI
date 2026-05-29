@@ -14,7 +14,10 @@ class LocalTelemetryProbe:
     def sample(self, pid: Optional[int], child_pids: Optional[set[int]] = None) -> dict[str, Any]:
         cpu_ram = self._proc.sample(pid)
         gpus_raw = self._gpu.read_devices()
-        proc_mem = self._gpu.process_memory_mb(child_pids or ({int(pid)} if pid else set()))
+        # PID процесса train — это cmd.exe; реальные GPU-процессы это его дети,
+        # поэтому для NVML-сопоставления берём весь набор живых PID дерева.
+        match_pids = child_pids or cpu_ram.get("pids") or ({int(pid)} if pid else set())
+        proc_mem = self._gpu.process_memory_mb(match_pids)
         gpus = []
         for g in gpus_raw:
             gpus.append(
