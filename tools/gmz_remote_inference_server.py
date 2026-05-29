@@ -165,6 +165,13 @@ class GMZRemoteInferenceServer:
             else "cpu"
         )
 
+        from collections import deque as _deque
+        from core.telemetry.gpu_backend import GpuBackend
+
+        self._batch_window: _deque = _deque(maxlen=30)
+        self._gpu_backend = GpuBackend()
+        self._gpu_index = int(torch_device.index or 0) if torch_device.type == "cuda" else 0
+
         self._ctx = zmq.Context.instance()
         self._router = self._ctx.socket(zmq.ROUTER)
         self._router.setsockopt(zmq.LINGER, 0)
@@ -214,15 +221,27 @@ class GMZRemoteInferenceServer:
         if err:
             self._send_error(identity, err)
             return
-        resp = {
-            "kind": "health_check",
-            "status": "ok",
-            "protocol_version": PROTOCOL_VERSION,
-            "policy_version": int(self._engine.weight_version),
-            "gpu_name": str(self._gpu_name),
-            "queue_depth": int(self._queue_depth),
-            "uptime_s": int(time.time() - self._started_at),
-        }
+        avg_batch = (sum(self._batch_window) / len(self._batch_window)) if self._batch_window else None
+        gpu_util = gpu_used = gpu_total = gpu_temp = None
+        try:
+            for d in self._gpu_backend.read_devices():
+                if d.index == self._gpu_index:
+                    gpu_util, gpu_used, gpu_total, gpu_temp = (
+                        d.util, d.mem_used_mb, d.mem_total_mb, d.temp_c
+                    )
+                    break
+        except Exception:
+            pass
+        resp = build_health_payload(
+            protocol_version=PROTOCOL_VERSION,
+            policy_version=int(self._engine.weight_version),
+            gpu_name=str(self._gpu_name),
+            queue_depth=int(self._queue_depth),
+            uptime_s=int(time.time() - self._started_at),
+            avg_batch=avg_batch,
+            gpu_util=gpu_util, gpu_mem_used_mb=gpu_used,
+            gpu_mem_total_mb=gpu_total, gpu_temp_c=gpu_temp,
+        )
         self._router_send(self._router, identity, encode_message(resp))
 
     def _enqueue(self, identity: bytes, request: dict[str, Any]) -> None:
@@ -283,6 +302,7 @@ class GMZRemoteInferenceServer:
     def _process_and_reply(self, batch: list[_PendingRequest]) -> None:
         if not batch:
             return
+        self._batch_window.append(len(batch))
         req_dicts = [item.request for item in batch]
         try:
             responses = self._engine.build_batch_responses(req_dicts)
@@ -318,6 +338,35 @@ class GMZRemoteInferenceServer:
                 _log(f"[GMZ][REMOTE_IS] loop_error: {exc}", self.log_path)
                 time.sleep(0.05)
         _log("[GMZ][REMOTE_IS] shutdown complete", self.log_path)
+
+
+def build_health_payload(
+    *,
+    protocol_version: int,
+    policy_version: int,
+    gpu_name: str,
+    queue_depth: int,
+    uptime_s: int,
+    avg_batch,
+    gpu_util,
+    gpu_mem_used_mb,
+    gpu_mem_total_mb,
+    gpu_temp_c,
+) -> dict:
+    return {
+        "kind": "health_check",
+        "status": "ok",
+        "protocol_version": int(protocol_version),
+        "policy_version": int(policy_version),
+        "gpu_name": str(gpu_name),
+        "queue_depth": int(queue_depth),
+        "uptime_s": int(uptime_s),
+        "avg_batch": (None if avg_batch is None else float(avg_batch)),
+        "gpu_util": gpu_util,
+        "gpu_mem_used_mb": gpu_mem_used_mb,
+        "gpu_mem_total_mb": gpu_mem_total_mb,
+        "gpu_temp_c": gpu_temp_c,
+    }
 
 
 def _load_search_config(path: str | None) -> dict[str, Any]:
