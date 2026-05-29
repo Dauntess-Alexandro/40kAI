@@ -5,7 +5,6 @@ RowLayout {
     id: strip
     spacing: 8
     Layout.fillWidth: true
-    visible: telemetry.cards.length > 0
 
     property color cardBg: "#0d1521"
     property color cardBorder: "#243650"
@@ -15,14 +14,14 @@ RowLayout {
     property color textMuted: "#7d8ba0"
 
     Repeater {
-        model: telemetry.cards
+        model: telemetry.cardsModel
         delegate: Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 64
             radius: 6
             color: strip.cardBg
             border.width: 1
-            border.color: modelData.variant === "remote" ? strip.pc2Border : strip.cardBorder
+            border.color: model.variant === "remote" ? strip.pc2Border : strip.cardBorder
 
             ColumnLayout {
                 anchors.fill: parent
@@ -34,18 +33,18 @@ RowLayout {
                     spacing: 6
                     Rectangle {
                         width: 10; height: 10; radius: 5
-                        color: modelData.color
+                        color: model.barColor
                         Layout.alignment: Qt.AlignVCenter
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: modelData.label
+                        text: model.label
                         color: strip.textMuted
                         font.pixelSize: 11
                         elide: Text.ElideRight
                     }
                     Text {
-                        text: modelData.valueText
+                        text: model.valueText
                         color: strip.textMain
                         font.pixelSize: 16
                         font.bold: true
@@ -53,7 +52,7 @@ RowLayout {
                 }
 
                 Text {
-                    text: modelData.sub
+                    text: model.sub
                     color: strip.textMuted
                     font.pixelSize: 10
                     elide: Text.ElideRight
@@ -61,6 +60,7 @@ RowLayout {
                 }
 
                 Rectangle {
+                    id: track
                     Layout.fillWidth: true
                     height: 5
                     radius: 2.5
@@ -68,8 +68,8 @@ RowLayout {
                     Rectangle {
                         height: parent.height
                         radius: 2.5
-                        width: parent.width * Math.max(0, Math.min(100, modelData.pct)) / 100.0
-                        color: modelData.color
+                        width: track.width * Math.max(0, Math.min(100, model.pct)) / 100.0
+                        color: model.barColor
                         Behavior on width { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
                     }
                 }
