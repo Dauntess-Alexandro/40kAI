@@ -30,6 +30,8 @@ runtime/state/response.txt
 runtime/state/units.txt
 runtime/state/remote_is.json
 runtime/state/pc2_remote_is_config.bat
+runtime/state/pc2_remote_is_config.rev
+runtime/state/pc2_remote_is_config.bat.bak
 
 # Qt GUI
 app/gui_qt/.icon_cache/

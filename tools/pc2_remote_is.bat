@@ -6,7 +6,7 @@ REM Запуск: tools\pc2_remote_is.bat  (или двойной клик)
 REM   tools\pc2_remote_is.bat setup   — только установка + firewall + конфиг
 REM   tools\pc2_remote_is.bat start   — запуск (по умолчанию)
 REM   tools\pc2_remote_is.bat check   — проверка без сервера
-REM Batch на ПК2: GMZ_REMOTE_BATCH_SIZE=10 (=num_env_workers на ПК1), GMZ_REMOTE_BATCH_INTERVAL_MS=8 (окно сбора батча; по LAN 5мс часто мало)
+REM Batch на ПК2 (дефолт из example = Very Heavy): GMZ_REMOTE_BATCH_SIZE=24, GMZ_REMOTE_BATCH_INTERVAL_MS=20
 
 cd /d "%~dp0\.."
 set "ROOT=%cd%"
@@ -32,12 +32,14 @@ if errorlevel 1 (
 
 set "CONFIG_BAT=%ROOT%\runtime\state\pc2_remote_is_config.bat"
 set "CONFIG_EXAMPLE=%ROOT%\runtime\state\pc2_remote_is_config.example.bat"
+set "CONFIG_EXAMPLE_REV=%ROOT%\runtime\state\pc2_remote_is_config.example.rev"
+set "CONFIG_LOCAL_REV=%ROOT%\runtime\state\pc2_remote_is_config.rev"
 set "SERVER_PY=%TOOLS%\gmz_remote_inference_server.py"
 
 if not exist "%ROOT%\runtime\state" mkdir "%ROOT%\runtime\state" 2>nul
 
 if /i "%MODE%"=="config" (
-  if not exist "%CONFIG_BAT%" if exist "%CONFIG_EXAMPLE%" copy /Y "%CONFIG_EXAMPLE%" "%CONFIG_BAT%" >nul
+  call :sync_config_from_example
   if not exist "%CONFIG_BAT%" (
     echo [ERROR] Config not found: %CONFIG_BAT%
     pause
@@ -48,17 +50,39 @@ if /i "%MODE%"=="config" (
   exit /b 0
 )
 
+call :sync_config_from_example
 if not exist "%CONFIG_BAT%" (
-  if exist "%CONFIG_EXAMPLE%" (
-    copy /Y "%CONFIG_EXAMPLE%" "%CONFIG_BAT%" >nul
-    echo [CONFIG] Created %CONFIG_BAT% with defaults Z:\ ...
-    echo         Edit manually: tools\pc2_remote_is.bat config
-  ) else (
-    echo [ОШИБКА] Нет шаблона %CONFIG_EXAMPLE%
-    pause
-    exit /b 1
-  )
+  echo [ОШИБКА] Нет шаблона %CONFIG_EXAMPLE%
+  pause
+  exit /b 1
 )
+
+goto :after_config_sync
+
+:sync_config_from_example
+if not exist "%CONFIG_EXAMPLE%" exit /b 0
+set "EX_REV=0"
+set "CFG_REV=0"
+if exist "%CONFIG_EXAMPLE_REV%" set /p EX_REV=<"%CONFIG_EXAMPLE_REV%"
+if exist "%CONFIG_LOCAL_REV%" set /p CFG_REV=<"%CONFIG_LOCAL_REV%"
+if not defined EX_REV set "EX_REV=0"
+if not defined CFG_REV set "CFG_REV=0"
+if not exist "%CONFIG_BAT%" goto :do_copy_example_config
+if %CFG_REV% LSS %EX_REV% goto :do_copy_example_config
+exit /b 0
+
+:do_copy_example_config
+if exist "%CONFIG_BAT%" (
+  copy /Y "%CONFIG_BAT%" "%CONFIG_BAT%.bak" >nul
+  echo [CONFIG] Backup: %CONFIG_BAT%.bak
+)
+copy /Y "%CONFIG_EXAMPLE%" "%CONFIG_BAT%" >nul
+echo %EX_REV%>"%CONFIG_LOCAL_REV%"
+echo [CONFIG] Synced %CONFIG_BAT% from example rev %EX_REV%
+if not exist "%CONFIG_BAT%.bak" echo         Edit paths if needed: tools\pc2_remote_is.bat config
+exit /b 0
+
+:after_config_sync
 
 call "%CONFIG_BAT%"
 if errorlevel 1 (

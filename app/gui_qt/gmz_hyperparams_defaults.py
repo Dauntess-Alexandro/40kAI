@@ -211,22 +211,23 @@ GMZ_PROFILE_PRESETS: dict[str, dict[str, int | float | str]] = {
     },
     "very_heavy": {
         **GMZ_VARIANT_B_BUNDLE,
-        "num_env_workers": 10,
-        "num_actors": 10,
-        "num_simulations": 52,
+        # Качество поиска — как heavy (sims/top_k/temp/prior не трогаем)
+        "num_simulations": 48,
         "root_top_k": 12,
-        "search_temperature": 0.12,
-        "prior_weight": 0.2,
-        "inference_batch_size": 10,
-        "inference_batch_interval_ms": 8.0,
+        # Throughput: 2× env workers + широкое окно батча (LAN / 2 ПК)
+        # ПК2 pc2_remote_is_config: GMZ_REMOTE_BATCH_SIZE=24, INTERVAL_MS=20
+        "num_env_workers": 20,
+        "num_actors": 20,
+        "inference_batch_size": 20,
+        "inference_batch_interval_ms": 20.0,
         "inference_timeout": 6.0,
-        "inference_request_queue_max": 48,
+        "inference_request_queue_max": 64,
+        "updates_per_rollout": 3,
+        # Обучение / replay — как heavy
         "batch_size": 160,
         "replay_capacity": 400000,
         "actor_queue_max": 512,
-        "actor_batch_send": 48,
         "sync_every_updates": 2,
-        "updates_per_rollout": 3,
         "reanalyze_fraction": 0.15,
         "consistency_loss_weight": 1.0,
         "vtrace_full": 1,
@@ -234,7 +235,6 @@ GMZ_PROFILE_PRESETS: dict[str, dict[str, int | float | str]] = {
         "atom_range": "tight",
         "actor_compile": 0,
         "learner_compile": 1,
-        "inference_server_compile": 1,
     },
 }
 
