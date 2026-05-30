@@ -166,6 +166,48 @@ def _vtrace_targets(
     return corrected_values
 
 
+def _vtrace_targets_batched(
+    *,
+    pi_cur_steps: list[list[torch.Tensor]],   # [t][h] -> (B, A_h) detached softmax probs
+    beh_logits_steps: list[torch.Tensor],      # [h] -> (B, T, A_h) raw logits (0 where unavailable)
+    beh_avail: torch.Tensor,                    # (B, T) bool — step usable (all heads present)
+    actions: torch.Tensor,                      # (B, T, K) long
+    value_base: torch.Tensor,                   # (B, T) float — base (target) values, detached
+    rewards: torch.Tensor,                      # (B, T) float — replay reward at step t
+    valid: torch.Tensor,                        # (B, T) bool
+    rho_clip: float,
+    c_clip: float,
+    gamma: float,
+) -> torch.Tensor:
+    """Batched Retrace-style value-target correction.
+
+    Mirrors :func:`_vtrace_targets` step-for-step but operates on the whole batch
+    at once. IS ratios use detached current-policy probs (these are *targets*).
+    """
+    B, T = value_base.shape
+    K = actions.shape[-1]
+    device = value_base.device
+    corrected = value_base.clone()
+    for t in range(T - 1):
+        valid_t = valid[:, t] & valid[:, t + 1]
+        usable = (valid_t & beh_avail[:, t]).float()       # (B,)
+        log_ratio = torch.zeros(B, device=device)
+        for h in range(K):
+            cur = pi_cur_steps[t][h]                        # (B, A_h)
+            a = actions[:, t, h].clamp(0, cur.shape[1] - 1)
+            cur_p = cur.gather(1, a.unsqueeze(1)).squeeze(1).clamp_min(1e-8)
+            beh_p = F.softmax(beh_logits_steps[h][:, t, :], dim=1)
+            beh_p = beh_p.gather(1, a.unsqueeze(1)).squeeze(1).clamp_min(1e-8)
+            log_ratio = log_ratio + (torch.log(cur_p) - torch.log(beh_p))
+        rho = torch.exp(log_ratio).clamp(min=0.0, max=rho_clip)
+        c_t = torch.exp(log_ratio).clamp(min=0.0, max=c_clip)
+        delta = rewards[:, t] + gamma * value_base[:, t + 1] - value_base[:, t]
+        corrected[:, t] = value_base[:, t] + rho * delta * usable
+        if t + 1 < T:
+            corrected[:, t + 1] = corrected[:, t + 1] + gamma * c_t * delta * usable
+    return corrected
+
+
 def make_gmz_lr_scheduler(optimizer, config: GumbelMuZeroTrainConfig):
     name = str(config.lr_scheduler).lower()
     if name == "cosine" and int(config.lr_total_steps) > 0:
@@ -207,165 +249,143 @@ def train_gumbel_muzero_step(
 
     tbptt_k = max(1, int(getattr(config, "tbptt_truncate", config.unroll_steps)))
 
-    total_policy_loss = torch.tensor(0.0, device=device)
-    total_value_loss = torch.tensor(0.0, device=device)
-    total_reward_loss = torch.tensor(0.0, device=device)
-    total_consistency_loss = torch.tensor(0.0, device=device)
-    samples_count = 0
-
     _consistency_w = float(getattr(config, "consistency_loss_weight", 0.0))
     _target_enc = (ema_target.target if ema_target is not None else net) if _consistency_w > 0.0 else None
 
-    for sample in batch:
-        states = sample["states"]
-        actions = sample["actions"]
-        rewards = sample["rewards"]
-        policies = sample["policy_targets"]
-        values = sample["value_targets"]
-        behavior_logits_seq = sample.get("behavior_logits", []) or []
-        if not states:
-            continue
-        samples_count += 1
-
-        # B1: V-trace full unroll — collect all values/actions/rewards through unroll
-        # Then apply Retrace correction across all timesteps t=0..T-1
-        vtrace_full = bool(getattr(config, "vtrace_full", True))
-
-        values_BT_list: list[float] = []
-        actions_BT_list: list[list[int]] = []
-        # pi_cur_all_steps[h] = (T, A_h) per head
-        pi_cur_all_steps: list[list[torch.Tensor]] = []
-        behavior_logits_seq = sample.get("behavior_logits", []) or []
-
-        # --- t=0 ---
-        obs0 = torch.as_tensor(states[0], dtype=torch.float32, device=device).unsqueeze(0)
-        logits0, value0, reward0, latent = net.initial_inference(obs0, masks_by_head=None)
-        pi_cur0 = [F.softmax(l, dim=1).squeeze(0) for l in logits0]  # (B, A_h) → squeeze → (A_h,)
-        pi_cur_all_steps = [list(step) for step in zip(*[[F.softmax(l, dim=1).squeeze(0) for l in logits0]])]
-        pi_cur_all_steps = [[pi_cur0[h]] for h in range(len(pi_cur0))]
-
-        values_BT_list.append(float(values[0]))
-        actions_BT_list.append(actions[0])
-        total_reward_loss = total_reward_loss + F.mse_loss(
-            reward0, torch.tensor([0.0], device=device)
-        )
-
-        # --- t=1..T-1 ---
-        for t in range(1, min(len(states), max(1, int(config.unroll_steps)))):
-            # TBPTT: detach latent after tbptt_k steps to truncate gradients
-            if t > tbptt_k:
-                latent = latent.detach()
-
-            action_t = torch.as_tensor(actions[t - 1], dtype=torch.long, device=device).unsqueeze(0)
-            logits_t, value_t, reward_t, latent = net.recurrent_inference(
-                latent, action_t, masks_by_head=None
-            )
-            pi_cur_t = [F.softmax(l, dim=1).squeeze(0) for l in logits_t]
-            for h in range(len(pi_cur_t)):
-                pi_cur_all_steps[h].append(pi_cur_t[h])
-
-            values_BT_list.append(float(value_t.item()))
-            actions_BT_list.append(actions[t] if t < len(actions) else actions[-1])
-            total_reward_loss = total_reward_loss + F.mse_loss(
-                reward_t, torch.tensor([float(rewards[t - 1])], device=device)
-            )
-
-            # Consistency loss: predicted latent vs EMA-target encoding of next obs
-            if _target_enc is not None and t < len(states):
-                obs_t = torch.as_tensor(states[t], dtype=torch.float32, device=device).unsqueeze(0)
-                with torch.no_grad():
-                    _enc = _target_enc
-                    target_proj = _enc.project_latent(_enc.encode(obs_t)).detach()
-                pred_proj = net.project_latent(latent)
-                total_consistency_loss = total_consistency_loss + (
-                    1.0 - (pred_proj * target_proj).sum(dim=1).mean()
-                )
-
-        # Build tensors for V-trace
-        T = len(values_BT_list)
-        K = len(actions[0]) if actions else 1
-
-        values_BT = torch.tensor([values_BT_list], dtype=torch.float32, device=device)
-        actions_np = np.array(actions_BT_list, dtype=np.int64)  # (T, K)
-        actions_BT = torch.tensor(actions_np, dtype=torch.long, device=device).unsqueeze(0)  # (1, T, K)
-        rewards_np = np.array([float(r) for r in rewards], dtype=np.float32)[:T - 1] if T > 1 else np.zeros(0, dtype=np.float32)
-        rewards_BT = torch.tensor([rewards_np], dtype=torch.float32, device=device) if rewards_np.size > 0 else torch.zeros((1, max(0, T - 1)), dtype=torch.float32, device=device)
-        valid_BT = torch.ones((1, T), dtype=torch.bool, device=device)
-
-        # V-trace correction across full unroll
-        if vtrace_full and len(behavior_logits_seq) >= 1:
-            rho_clip = float(getattr(config, "vtrace_rho_clip", 0.7))
-            c_clip = float(getattr(config, "vtrace_c_clip", 0.7))
-            gamma = float(getattr(config, "discount", 0.997) if hasattr(config, "discount") else 0.997)
-
-            # Build pi_beh_list: list[list[np.ndarray]] — per-step, per-head raw logits
-            # Each pi_beh_list[t][h] is a 1-D np.ndarray of shape (A_h,)
-            # Heads can have different action-space sizes (factorized actions)
-            pi_beh_list: list[list[np.ndarray]] = []
-            for step_idx in range(min(T, len(behavior_logits_seq))):
-                beh = behavior_logits_seq[step_idx]
-                if isinstance(beh, (list, tuple)):
-                    # Already a list of per-head arrays — keep as-is
-                    pi_beh_list.append([np.asarray(x, dtype=np.float32) for x in beh])
-                elif isinstance(beh, np.ndarray) and beh.ndim == 0:
-                    pi_beh_list.append([])
-                else:
-                    # Unexpected format — skip
-                    pi_beh_list.append([])
-
-            # pi_cur_list[h] = (T, A_h) — stack across timesteps for each head
-            pi_cur_list = [
-                torch.stack(pi_cur_all_steps[h], dim=0)  # (T, A_h)
-                for h in range(K)
-            ]
-
-            corrected_values = _vtrace_targets(
-                pi_cur_list=pi_cur_list,
-                pi_beh_list=pi_beh_list,
-                actions_BT=actions_BT,
-                values_BT=values_BT,
-                rewards_BT=rewards_BT,
-                valid_BT=valid_BT,
-                rho_clip=rho_clip,
-                c_clip=c_clip,
-                gamma=gamma,
-            )
-        else:
-            corrected_values = values_BT
-
-        # Policy loss: simple IS weight at t=0 (backward compat)
-        logits_for_policy = [l.squeeze(0) for l in logits0]
-        beh0 = behavior_logits_seq[0] if behavior_logits_seq else []
-        is_weight_scalar = 1.0
-        if beh0:
-            log_rho = torch.tensor(0.0, device=device)
-            for h in range(len(logits_for_policy)):
-                pi_cur_h = F.softmax(logits_for_policy[h], dim=0)
-                beh_h = torch.as_tensor(
-                    np.asarray(beh0[h] if isinstance(beh0[h], np.ndarray) else beh0[h], dtype=np.float32),
-                    device=device
-                )
-                pi_beh_h = F.softmax(beh_h, dim=0)
-                a_h = actions[0][h] if h < len(actions[0]) else 0
-                log_rho = log_rho + (torch.log(pi_cur_h[a_h].clamp_min(1e-8)) - torch.log(pi_beh_h[a_h].clamp_min(1e-8)))
-            is_weight_scalar = float(torch.exp(log_rho.detach()).clamp(max=1.0))
-        total_policy_loss = total_policy_loss + _policy_ce_loss(logits0, policies[0], device=device) * is_weight_scalar
-
-        # Value loss: use V-trace corrected targets
-        for t in range(T):
-            target_v = corrected_values[0, t].item()
-            total_value_loss = total_value_loss + F.mse_loss(
-                torch.tensor([values_BT_list[t]], device=device),
-                torch.tensor([target_v], device=device)
-            )
-
-    if samples_count <= 0:
+    # -------------------------------------------------------------------
+    # Vectorised batch assembly: all samples padded to a common unroll
+    # length T_max with a validity mask. One batched forward per unroll
+    # step instead of (batch_size × unroll) tiny B=1 forwards.
+    # -------------------------------------------------------------------
+    samples = [s for s in batch if s.get("states")]
+    B = len(samples)
+    if B == 0:
         return None
 
-    policy_loss = total_policy_loss / float(samples_count)
-    value_loss = total_value_loss / float(samples_count)
-    reward_loss = total_reward_loss / float(samples_count)
-    consistency_loss = total_consistency_loss / float(samples_count)
+    unroll = max(1, int(config.unroll_steps))
+    vtrace_full = bool(getattr(config, "vtrace_full", True))
+    obs_dim = int(np.asarray(samples[0]["states"][0], dtype=np.float32).reshape(-1).shape[0])
+    K = int(len(samples[0]["actions"][0]))
+    A_sizes = [int(net.action_sizes[h]) for h in range(K)]
+    T_b = [min(len(s["states"]), unroll) for s in samples]
+    T_max = max(T_b)
+
+    states_np = np.zeros((B, T_max, obs_dim), dtype=np.float32)
+    actions_np = np.zeros((B, T_max, K), dtype=np.int64)
+    value_tg_np = np.zeros((B, T_max), dtype=np.float32)
+    rewards_np = np.zeros((B, T_max), dtype=np.float32)
+    valid_np = np.zeros((B, T_max), dtype=bool)
+    target0_np = [np.zeros((B, A_sizes[h]), dtype=np.float32) for h in range(K)]
+    beh_np = [np.zeros((B, T_max, A_sizes[h]), dtype=np.float32) for h in range(K)]
+    beh_avail_np = np.zeros((B, T_max), dtype=bool)
+
+    for b, s in enumerate(samples):
+        n = T_b[b]
+        s_states = s["states"]
+        s_actions = s["actions"]
+        s_rewards = s["rewards"]
+        s_values = s["value_targets"]
+        s_policies = s["policy_targets"]
+        beh_seq = s.get("behavior_logits") or []
+        for t in range(n):
+            states_np[b, t] = np.asarray(s_states[t], dtype=np.float32).reshape(-1)[:obs_dim]
+            actions_np[b, t] = np.asarray(s_actions[t], dtype=np.int64).reshape(-1)[:K]
+            value_tg_np[b, t] = float(s_values[t])
+            rewards_np[b, t] = float(s_rewards[t]) if t < len(s_rewards) else 0.0
+            valid_np[b, t] = True
+        for h in range(K):
+            target0_np[h][b] = np.asarray(s_policies[0][h], dtype=np.float32).reshape(-1)[:A_sizes[h]]
+        if vtrace_full and len(beh_seq) >= 1:
+            for t in range(min(n, len(beh_seq))):
+                beh = beh_seq[t]
+                if not isinstance(beh, (list, tuple)) or len(beh) < K:
+                    continue
+                heads = [np.asarray(beh[h], dtype=np.float32).reshape(-1) for h in range(K)]
+                if any(heads[h].size != A_sizes[h] for h in range(K)):
+                    continue
+                for h in range(K):
+                    beh_np[h][b, t] = heads[h]
+                beh_avail_np[b, t] = True
+
+    states_t = torch.as_tensor(states_np, device=device)
+    actions_t = torch.as_tensor(actions_np, device=device)
+    value_tg_t = torch.as_tensor(value_tg_np, device=device)
+    rewards_t = torch.as_tensor(rewards_np, device=device)
+    valid_t = torch.as_tensor(valid_np, device=device)
+    valid_f = valid_t.float()
+    target0_t = [torch.as_tensor(target0_np[h], device=device) for h in range(K)]
+    beh_t = [torch.as_tensor(beh_np[h], device=device) for h in range(K)]
+    beh_avail_t = torch.as_tensor(beh_avail_np, device=device)
+
+    # --- batched unroll: 1 forward per step ---
+    obs0 = states_t[:, 0, :]
+    logits0, value0, reward0, latent = net.initial_inference(obs0, masks_by_head=None)
+    v_pred_steps = [value0]
+    r_pred_steps = [reward0]
+    pi_cur_steps: list[list[torch.Tensor]] = [
+        [F.softmax(logits0[h], dim=1).detach() for h in range(K)]
+    ]
+    cons_per_sample = torch.zeros(B, device=device)
+
+    for t in range(1, T_max):
+        if t > tbptt_k:
+            latent = latent.detach()
+        act = actions_t[:, t - 1, :]
+        logits_t, value_t, reward_t, latent = net.recurrent_inference(latent, act, masks_by_head=None)
+        v_pred_steps.append(value_t)
+        r_pred_steps.append(reward_t)
+        pi_cur_steps.append([F.softmax(logits_t[h], dim=1).detach() for h in range(K)])
+        if _target_enc is not None:
+            obs_t = states_t[:, t, :]
+            with torch.no_grad():
+                target_proj = _target_enc.project_latent(_target_enc.encode(obs_t)).detach()
+            pred_proj = net.project_latent(latent)
+            cos = (pred_proj * target_proj).sum(dim=1)
+            cons_per_sample = cons_per_sample + (1.0 - cos) * valid_f[:, t]
+
+    V_pred = torch.stack(v_pred_steps, dim=1)   # (B, T_max) — carries grad (the value-loss fix)
+    R_pred = torch.stack(r_pred_steps, dim=1)   # (B, T_max)
+
+    # --- value loss (FIXED): regress network value preds onto V-trace targets ---
+    gamma = float(getattr(config, "discount", 0.997) if hasattr(config, "discount") else 0.997)
+    if vtrace_full:
+        corrected = _vtrace_targets_batched(
+            pi_cur_steps=pi_cur_steps, beh_logits_steps=beh_t, beh_avail=beh_avail_t,
+            actions=actions_t, value_base=value_tg_t, rewards=rewards_t, valid=valid_t,
+            rho_clip=float(getattr(config, "vtrace_rho_clip", 0.7)),
+            c_clip=float(getattr(config, "vtrace_c_clip", 0.7)), gamma=gamma,
+        )
+    else:
+        corrected = value_tg_t
+    value_targets = corrected.detach()
+    value_loss = (((V_pred - value_targets) ** 2) * valid_f).sum() / float(B)
+
+    # --- reward loss: predicted reward at step t (t>=1) vs replay reward[t-1] ---
+    reward_target = torch.zeros_like(R_pred)
+    if T_max > 1:
+        reward_target[:, 1:] = rewards_t[:, : T_max - 1]
+    reward_loss = (((R_pred - reward_target) ** 2) * valid_f).sum() / float(B)
+
+    # --- consistency loss (mean over samples of summed per-step 1-cos) ---
+    consistency_loss = cons_per_sample.sum() / float(B)
+
+    # --- policy loss: cross-entropy at t=0 with detached IS weight (as before) ---
+    ce_b = torch.zeros(B, device=device)
+    for h in range(K):
+        tgt = target0_t[h]
+        tgt = tgt / tgt.sum(dim=1, keepdim=True).clamp_min(1e-8)
+        logp = F.log_softmax(logits0[h], dim=1)
+        ce_b = ce_b + (-(tgt * logp).sum(dim=1))
+    log_rho = torch.zeros(B, device=device)
+    for h in range(K):
+        a0 = actions_t[:, 0, h].clamp(0, logits0[h].shape[1] - 1)
+        cur_p = F.softmax(logits0[h], dim=1).gather(1, a0.unsqueeze(1)).squeeze(1).clamp_min(1e-8)
+        beh_p = F.softmax(beh_t[h][:, 0, :], dim=1).gather(1, a0.unsqueeze(1)).squeeze(1).clamp_min(1e-8)
+        log_rho = log_rho + (torch.log(cur_p) - torch.log(beh_p))
+    is_weight = torch.where(
+        beh_avail_t[:, 0], torch.exp(log_rho).clamp(max=1.0), torch.ones(B, device=device)
+    ).detach()
+    policy_loss = (is_weight * ce_b).sum() / float(B)
     l2 = torch.tensor(0.0, device=device)
     for p in net.parameters():
         l2 = l2 + torch.sum(p * p)
