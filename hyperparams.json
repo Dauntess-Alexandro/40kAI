@@ -226,7 +226,7 @@
         "clear_tree_on_weight_sync": 0,
         "actor_batch_send": 64,
         "actor_queue_max": 512,
-        "sync_every_updates": 2,
+        "sync_every_updates": 20,
         "updates_per_rollout": 3,
         "replay_min_size": 512,
         "max_policy_staleness_updates": 600,
