@@ -1658,6 +1658,189 @@ def _gmz_build_actor_det_payload(
     return payload
 
 
+def _az_det_payload_from_rows(
+    rows_slice: list[dict],
+    *,
+    episode_idx: int,
+    train_loss: float,
+    train_algo: str,
+    mcts_mode: str,
+    eval_tag: str = "actor_learner_search_eval",
+) -> dict:
+    rows = rows_slice if rows_slice else []
+    n_eval = max(1, len(rows))
+    wins = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "win")
+    draws = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "draw")
+    turn_limit = sum(1 for r in rows if str(r.get("end_reason", "")).startswith("turn_limit"))
+    wipe_enemy = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_enemy")
+    wipe_model = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_model")
+    vp_diff_mean = float(sum(float(r.get("vp_diff", 0) or 0) for r in rows) / n_eval)
+    model_vp_mean = float(sum(float(r.get("model_vp", 0) or 0) for r in rows) / n_eval)
+    enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows) / n_eval)
+    ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows) / n_eval)
+    reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows) / n_eval)
+    return {
+        "eval_episodes": int(n_eval),
+        "win_rate": float(wins / n_eval),
+        "draw_rate": float(draws / n_eval),
+        "turn_limit_rate": float(turn_limit / n_eval),
+        "wipeout_enemy_rate": float(wipe_enemy / n_eval),
+        "wipeout_model_rate": float(wipe_model / n_eval),
+        "vp_diff_mean": vp_diff_mean,
+        "model_vp_mean": model_vp_mean,
+        "enemy_vp_mean": enemy_vp_mean,
+        "hp_diff_mean": 0.0,
+        "kill_diff_mean": 0.0,
+        "reward_mean": reward_mean,
+        "ep_len_mean": ep_len_mean,
+        "opponent_epsilon": 0.0,
+        "episode": int(max(episode_idx, 1)),
+        "algo": str(train_algo),
+        "mcts_mode": str(mcts_mode),
+        "eval_tag": str(eval_tag),
+        "training_loss": float(train_loss),
+    }
+
+
+def _run_az_honest_eval(
+    *,
+    az_net,
+    device: torch.device,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_eval: int,
+    mcts_mode: str,
+    self_play_enabled: bool,
+    opponent_spec: OpponentSpec | None,
+    outcome_only: bool = True,
+    outcome_value_win: float = 1.0,
+    outcome_value_loss: float = -1.0,
+    outcome_value_draw: float = -0.25,
+) -> list[dict]:
+    was_training = bool(getattr(az_net, "training", False))
+    az_net.eval()
+    eval_rows: list[dict] = []
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    try:
+        with torch.no_grad():
+            for _ in range(max(1, int(n_eval))):
+                enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+                attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+                deploy_for_mission(
+                    mission_name,
+                    model_units=model_e,
+                    enemy_units=enemy_e,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    attacker_side=attacker_side,
+                    log_fn=None,
+                )
+                post_deploy_setup(log_fn=None)
+                env_e = gym.make(
+                    "40kAI-v0",
+                    disable_env_checker=True,
+                    enemy=enemy_e,
+                    model=model_e,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                )
+                env_e.attacker_side = attacker_side
+                env_e.defender_side = defender_side
+                opponent_policy_fn = None
+                if bool(self_play_enabled) and opponent_spec is not None:
+                    try:
+                        opponent_policy_fn = build_policy_fn(
+                            env=env_e,
+                            len_model=len(model_e),
+                            opponent=opponent_spec,
+                            deterministic=True,
+                        )
+                    except Exception:
+                        opponent_policy_fn = None
+                mcts = AlphaZeroFactorizedMCTS(
+                    az_net,
+                    config=_az_honest_eval_mcts_config(mcts_mode=str(mcts_mode)),
+                    device=device,
+                )
+                _transitions, info = play_episode_with_mcts(
+                    env=env_e,
+                    mcts=mcts,
+                    len_model=int(len(model_e)),
+                    enemy_policy_fn=opponent_policy_fn,
+                    outcome_only=bool(outcome_only),
+                    outcome_value_win=float(outcome_value_win),
+                    outcome_value_loss=float(outcome_value_loss),
+                    outcome_value_draw=float(outcome_value_draw),
+                    fixed_temperature=float(AZ_HONEST_EVAL_TEMPERATURE),
+                    policy_argmax=True,
+                    heartbeat_moves=0,
+                )
+                info = dict(info or {})
+                ep_len = int(info.get("turn", 0) or 0)
+                ep_reward = float(info.get("reward", 0.0) or 0.0)
+                eval_rows.append(
+                    _gmz_episode_result_row(info=info, ep_reward=ep_reward, ep_len=ep_len)
+                )
+                try:
+                    env_e.close()
+                except Exception:
+                    pass
+    finally:
+        if was_training:
+            az_net.train()
+    return eval_rows
+
+
+def _az_build_actor_det_payload(
+    *,
+    az_net,
+    device: torch.device,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    episodes_finished: int,
+    last_loss: float,
+    train_algo: str,
+    mcts_mode: str,
+    self_play_enabled: bool,
+    opponent_spec: OpponentSpec | None,
+) -> dict:
+    append_agent_log(
+        f"[AZ][HONEST_EVAL] start ep={int(episodes_finished)} n={int(AZ_HONEST_EVAL_EPISODES)} "
+        f"mode={str(mcts_mode)} sims={int(AZ_HONEST_EVAL_SIMS)} temp={float(AZ_HONEST_EVAL_TEMPERATURE):.3f}"
+    )
+    eval_rows = _run_az_honest_eval(
+        az_net=az_net,
+        device=device,
+        roster_config=roster_config,
+        b_len=b_len,
+        b_hei=b_hei,
+        n_eval=int(AZ_HONEST_EVAL_EPISODES),
+        mcts_mode=str(mcts_mode),
+        self_play_enabled=bool(self_play_enabled),
+        opponent_spec=opponent_spec,
+        outcome_only=bool(AZ_OUTCOME_ONLY),
+        outcome_value_win=float(AZ_OUTCOME_VALUE_WIN),
+        outcome_value_loss=float(AZ_OUTCOME_VALUE_LOSS),
+        outcome_value_draw=float(AZ_OUTCOME_VALUE_DRAW),
+    )
+    payload = _az_det_payload_from_rows(
+        eval_rows,
+        episode_idx=int(episodes_finished),
+        train_loss=float(last_loss),
+        train_algo=str(train_algo),
+        mcts_mode=str(mcts_mode),
+        eval_tag="actor_learner_search_eval",
+    )
+    append_agent_log(
+        f"[AZ][HONEST_EVAL] done ep={int(episodes_finished)} "
+        f"win_rate={float(payload.get('win_rate', 0.0)):.3f} "
+        f"n={int(payload.get('eval_episodes', 0))}"
+    )
+    return payload
+
+
 def _run_actor_det_eval_ppo(
     *,
     actor_critic,
@@ -2734,6 +2917,10 @@ AZ_DET_EVAL_GATE_TURN_LIMIT_MAX = float(
 AZ_DET_EVAL_GATE_DRAW_MAX = float(
     os.getenv("AZ_DET_EVAL_GATE_DRAW_MAX", str(AZ_CFG.get("det_eval_gate_draw_max", 0.70)))
 )
+AZ_HONEST_EVAL_EPISODES = max(1, int(os.getenv("AZ_HONEST_EVAL_EPISODES", "20")))
+AZ_HONEST_EVAL_SIMS = max(1, int(os.getenv("AZ_HONEST_EVAL_SIMS", str(AZ_MCTS_SIMS))))
+AZ_HONEST_EVAL_TEMPERATURE = float(os.getenv("AZ_HONEST_EVAL_TEMPERATURE", "0.06"))
+AZ_HONEST_EVAL_DIR_EPS = float(os.getenv("AZ_HONEST_EVAL_DIR_EPS", "0.0"))
 AZ_HIDDEN_SIZE = int(os.getenv("AZ_HIDDEN_SIZE", str(AZ_CFG.get("hidden_size", 256))))
 AZ_NUM_LAYERS = int(os.getenv("AZ_NUM_LAYERS", str(AZ_CFG.get("num_layers", 2))))
 AZ_VALUE_ENSEMBLE = int(os.getenv("AZ_VALUE_ENSEMBLE", str(AZ_CFG.get("value_ensemble", 1))))
@@ -2785,6 +2972,30 @@ def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig
         prior_weight_early=float(AZ_PRIOR_WEIGHT_EARLY),
         progress=float(progress),
         move_count=int(move_count),
+        temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
+        batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
+        parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
+    )
+
+
+def _az_honest_eval_mcts_config(*, mcts_mode: str) -> MCTSConfig:
+    """MCTS config for inline AZ DET-eval (no train Dirichlet noise, eval sims/temp)."""
+    return MCTSConfig(
+        simulations=int(AZ_HONEST_EVAL_SIMS),
+        c_puct=float(AZ_C_PUCT),
+        c_puct_min=float(AZ_C_PUCT_MIN),
+        c_puct_max=float(AZ_C_PUCT_MAX),
+        c_puct_schedule=str(AZ_C_PUCT_SCHEDULE),
+        dirichlet_alpha=float(AZ_DIR_ALPHA),
+        dirichlet_eps=float(AZ_HONEST_EVAL_DIR_EPS),
+        top_k_per_head=int(AZ_MCTS_TOP_K_PER_HEAD),
+        max_depth=int(AZ_MCTS_MAX_DEPTH),
+        mode=str(mcts_mode),
+        root_dirichlet_only=bool(AZ_MCTS_ROOT_DIRICHLET_ONLY),
+        eval_cache_size=int(AZ_MCTS_EVAL_CACHE_SIZE),
+        pw_alpha=float(AZ_PW_ALPHA),
+        pw_beta=float(AZ_PW_BETA),
+        prior_weight_early=float(AZ_PRIOR_WEIGHT_EARLY),
         temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
         batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
         parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
@@ -8148,7 +8359,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
         f"lr_scheduler={AZ_LR_SCHEDULER} c_puct_schedule={AZ_C_PUCT_SCHEDULE} "
         f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label} "
-        f"batch_eval={AZ_MCTS_BATCH_EVAL_SIZE} parallel_sims={AZ_MCTS_PARALLEL_SIMS}"
+        f"batch_eval={AZ_MCTS_BATCH_EVAL_SIZE} parallel_sims={AZ_MCTS_PARALLEL_SIMS} "
+        f"det_eval_n={int(AZ_HONEST_EVAL_EPISODES)} det_eval_temp={float(AZ_HONEST_EVAL_TEMPERATURE):.3f}"
     )
 
     ep_rows: list[dict] = []
@@ -8197,40 +8409,6 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             payload["lr_scheduler"] = az_lr_scheduler.state_dict()
         torch.save(payload, ckpt_path)
         return ckpt_path
-
-    def _az_det_payload_from_rows(rows_slice: list[dict], episode_idx: int, train_loss: float) -> dict:
-        n_eval = max(1, len(rows_slice))
-        wins = sum(1 for r in rows_slice if str(r.get("result", "")).strip().lower() == "win")
-        draws = sum(1 for r in rows_slice if str(r.get("result", "")).strip().lower() == "draw")
-        turn_limit = sum(1 for r in rows_slice if str(r.get("end_reason", "")).startswith("turn_limit"))
-        wipe_enemy = sum(1 for r in rows_slice if str(r.get("end_reason", "")) == "wipeout_enemy")
-        wipe_model = sum(1 for r in rows_slice if str(r.get("end_reason", "")) == "wipeout_model")
-        vp_diff_mean = float(sum(float(r.get("vp_diff", 0) or 0) for r in rows_slice) / n_eval)
-        model_vp_mean = float(sum(float(r.get("model_vp", 0) or 0) for r in rows_slice) / n_eval)
-        enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows_slice) / n_eval)
-        ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows_slice) / n_eval)
-        reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows_slice) / n_eval)
-        return {
-            "eval_episodes": int(n_eval),
-            "win_rate": float(wins / n_eval),
-            "draw_rate": float(draws / n_eval),
-            "turn_limit_rate": float(turn_limit / n_eval),
-            "wipeout_enemy_rate": float(wipe_enemy / n_eval),
-            "wipeout_model_rate": float(wipe_model / n_eval),
-            "vp_diff_mean": vp_diff_mean,
-            "model_vp_mean": model_vp_mean,
-            "enemy_vp_mean": enemy_vp_mean,
-            "hp_diff_mean": 0.0,
-            "kill_diff_mean": 0.0,
-            "reward_mean": reward_mean,
-            "ep_len_mean": ep_len_mean,
-            "opponent_epsilon": 0.0,
-            "episode": int(episode_idx),
-            "algo": TRAIN_ALGO,
-            "mcts_mode": AZ_MCTS_MODE,
-            "eval_tag": "actor_learner_policy_fn" if opponent_spec is not None else "actor_learner_heuristic",
-            "training_loss": float(train_loss),
-        }
 
     _save_az_sync()
 
@@ -8361,8 +8539,19 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
             ):
                 last_actor_det_eval_ep = int(episodes_finished)
-                det_window = ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):]
-                det_payload = _az_det_payload_from_rows(det_window, episode_idx=int(episodes_finished), train_loss=float(last_loss))
+                det_payload = _az_build_actor_det_payload(
+                    az_net=az_net,
+                    device=device,
+                    roster_config=roster_config,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    episodes_finished=int(episodes_finished),
+                    last_loss=float(last_loss),
+                    train_algo=str(TRAIN_ALGO),
+                    mcts_mode=str(AZ_MCTS_MODE),
+                    self_play_enabled=bool(int(SELF_PLAY_ENABLED) == 1),
+                    opponent_spec=opponent_spec,
+                )
                 _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
                 gate_pass = (
                     float(det_payload.get("win_rate", 0.0)) >= float(AZ_DET_EVAL_GATE_WIN_MIN)

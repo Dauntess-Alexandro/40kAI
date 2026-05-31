@@ -39,6 +39,8 @@ def play_episode_with_mcts(
     policy_version: int = 0,
     actor_idx: int = -1,
     heartbeat_moves: int = 5,
+    fixed_temperature: float | None = None,
+    policy_argmax: bool = False,
 ) -> tuple[list[AZTransition], dict]:
     cfg = config or SelfPlayConfig()
     env_u = unwrap_env(env)
@@ -59,7 +61,15 @@ def play_episode_with_mcts(
         legal_dict = env_u.get_legal_action_masks_by_head(side="model")
         ordered_keys = ordered_action_keys(int(len_model))
         legal_masks = [legal_dict[k] for k in ordered_keys]
-        temp = cfg.temperature_opening_value if steps < int(cfg.temperature_opening_moves) else cfg.temperature_late_value
+        temp = (
+            float(fixed_temperature)
+            if fixed_temperature is not None
+            else (
+                cfg.temperature_opening_value
+                if steps < int(cfg.temperature_opening_moves)
+                else cfg.temperature_late_value
+            )
+        )
         if heartbeat_moves > 0 and steps > 0 and (steps % int(heartbeat_moves) == 0):
             print(
                 f"[AZ][ACTOR] actor={int(actor_idx)} move={int(steps)} mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')}",
@@ -75,6 +85,8 @@ def play_episode_with_mcts(
             move_count=int(steps),
             reset_options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode},
         )
+        if bool(policy_argmax):
+            action_list = [int(np.argmax(pi)) for pi in pi_targets]
 
         action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
         next_state, reward, done, trunc, info = env.step(action_dict)
