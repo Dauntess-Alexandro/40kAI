@@ -2938,6 +2938,56 @@ AZ_BALANCED_FACTION_SAMPLING = str(os.getenv("AZ_BALANCED_FACTION_SAMPLING", "0"
 AZ_MCTS_BATCH_EVAL_SIZE = int(os.getenv("AZ_MCTS_BATCH_EVAL_SIZE", str(AZ_CFG.get("mcts_batch_eval_size", 16))))
 AZ_MCTS_PARALLEL_SIMS = int(os.getenv("AZ_MCTS_PARALLEL_SIMS", str(AZ_CFG.get("mcts_parallel_sims", 8))))
 
+# --- Inference Server (variant B) ---
+AZ_INFERENCE_SERVER_REQUESTED = (
+    str(os.getenv("AZ_INFERENCE_SERVER", str(AZ_CFG.get("inference_server_enabled", 0)))).strip() == "1"
+)
+AZ_INFERENCE_SERVER_MODE = str(
+    os.getenv("AZ_INFERENCE_SERVER_MODE", str(AZ_CFG.get("inference_server_mode", "local")))
+).strip().lower() or "local"
+AZ_INFERENCE_REMOTE = AZ_INFERENCE_SERVER_MODE == "remote"
+AZ_INFERENCE_SERVER_USING_FALLBACK = (
+    AZ_INFERENCE_SERVER_REQUESTED and not AZ_INFERENCE_REMOTE and not torch.cuda.is_available()
+)
+AZ_INFERENCE_SERVER_ENABLED = AZ_INFERENCE_SERVER_REQUESTED and (
+    AZ_INFERENCE_REMOTE or torch.cuda.is_available()
+)
+AZ_INFERENCE_SERVER_LOCAL = bool(AZ_INFERENCE_SERVER_ENABLED and not AZ_INFERENCE_REMOTE)
+AZ_NUM_ENV_WORKERS = max(
+    1,
+    int(os.getenv("AZ_NUM_ENV_WORKERS", str(AZ_CFG.get("num_env_workers", AZ_NUM_ACTORS)))),
+)
+AZ_INFERENCE_BATCH_SIZE = max(
+    1,
+    int(os.getenv("AZ_INFERENCE_BATCH_SIZE", str(AZ_CFG.get("inference_batch_size", 32)))),
+)
+AZ_INFERENCE_BATCH_INTERVAL_MS = float(
+    os.getenv("AZ_INFERENCE_BATCH_INTERVAL_MS", str(AZ_CFG.get("inference_batch_interval_ms", 10.0)))
+)
+AZ_INFERENCE_TIMEOUT = float(
+    os.getenv("AZ_INFERENCE_TIMEOUT", str(AZ_CFG.get("inference_timeout", 5.0)))
+)
+AZ_INFERENCE_SYNC_INTERVAL = float(os.getenv("AZ_INFERENCE_SYNC_INTERVAL", "0.5"))
+AZ_INFERENCE_REQUEST_QUEUE_MAX = max(
+    8, int(os.getenv("AZ_INFERENCE_REQUEST_QUEUE_MAX", str(AZ_NUM_ENV_WORKERS * 4)))
+)
+AZ_INFERENCE_REMOTE_HOST = str(os.getenv("AZ_INFERENCE_REMOTE_HOST", AZ_CFG.get("inference_remote_host", "127.0.0.1")))
+AZ_INFERENCE_REMOTE_PORT = int(os.getenv("AZ_INFERENCE_REMOTE_PORT", str(AZ_CFG.get("inference_remote_port", 5556))))
+AZ_INFERENCE_REMOTE_AUTH_TOKEN = str(os.getenv("AZ_INFERENCE_REMOTE_AUTH_TOKEN", AZ_CFG.get("inference_remote_auth_token", "")))
+
+if AZ_INFERENCE_SERVER_USING_FALLBACK:
+    append_agent_log(
+        "[AZ][CONFIG][FALLBACK] AZ_INFERENCE_SERVER=1 запрошен, но CUDA недоступна. "
+        "Откат на вариант A (CPU акторы). Где: train.py (AZ constants). "
+        "Что делать: установить CUDA-драйвер или использовать вариант A (inference_server_enabled=0)."
+    )
+elif AZ_INFERENCE_SERVER_ENABLED:
+    append_agent_log(
+        f"[AZ][CONFIG] inference_server={int(AZ_INFERENCE_SERVER_ENABLED)} "
+        f"mode={AZ_INFERENCE_SERVER_MODE} env_workers={AZ_NUM_ENV_WORKERS} "
+        f"batch={AZ_INFERENCE_BATCH_SIZE} interval_ms={AZ_INFERENCE_BATCH_INTERVAL_MS}"
+    )
+
 
 def _make_alphazero(n_observations, n_actions, **overrides):
     return make_alphazero_net(n_observations, n_actions, **overrides)
@@ -8210,6 +8260,208 @@ def _actor_learner_actor_entry_alphazero(
             pass
 
 
+def _az_env_worker_entry(
+    worker_id: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    batch_send: int,
+    data_q,
+    request_q,
+    reply_q,
+    self_play_enabled: int,
+    opponent_spec,
+    sp_cfg_payload: dict,
+    mcts_cfg_payload: dict,
+    outcome_payload: dict,
+    inference_timeout: float,
+    inference_server_mode: str = "local",
+    remote_host: str = "",
+    remote_port: int = 5556,
+    remote_auth_token: str = "",
+):
+    """CPU env worker для AZ IS (variant B): env + MCTS + RemoteEvaluator → data_q."""
+    try:
+        from core.models.az_inference_client import RemoteEvaluator
+        from core.models.az_inference_transport import make_az_transport
+
+        mode = str(inference_server_mode or "local").strip().lower()
+        transport = make_az_transport(
+            mode,
+            request_q=request_q,
+            reply_q=reply_q,
+            worker_id=int(worker_id),
+            host=str(remote_host or "127.0.0.1"),
+            port=int(remote_port),
+            auth_token=str(remote_auth_token or ""),
+        )
+        evaluator = RemoteEvaluator(
+            worker_id=int(worker_id),
+            transport=transport,
+            timeout=float(inference_timeout),
+            auth_token=str(remote_auth_token or ""),
+        )
+        if mode == "remote":
+            append_agent_log(
+                f"[AZ][REMOTE_CLIENT][CONN] worker={int(worker_id)} "
+                f"tcp://{remote_host}:{int(remote_port)}"
+            )
+
+        mcts = AlphaZeroFactorizedMCTS(
+            None,  # net не используется — всё через evaluator
+            config=MCTSConfig(
+                simulations=int(mcts_cfg_payload.get("simulations", AZ_MCTS_SIMS)),
+                c_puct=float(mcts_cfg_payload.get("c_puct", AZ_C_PUCT)),
+                c_puct_min=float(mcts_cfg_payload.get("c_puct_min", AZ_C_PUCT_MIN)),
+                c_puct_max=float(mcts_cfg_payload.get("c_puct_max", AZ_C_PUCT_MAX)),
+                c_puct_schedule=str(mcts_cfg_payload.get("c_puct_schedule", AZ_C_PUCT_SCHEDULE)),
+                dirichlet_alpha=float(mcts_cfg_payload.get("dirichlet_alpha", AZ_DIR_ALPHA)),
+                dirichlet_eps=float(mcts_cfg_payload.get("dirichlet_eps", AZ_DIR_EPS)),
+                top_k_per_head=int(mcts_cfg_payload.get("top_k_per_head", AZ_MCTS_TOP_K_PER_HEAD)),
+                max_depth=int(mcts_cfg_payload.get("max_depth", AZ_MCTS_MAX_DEPTH)),
+                mode=str(mcts_cfg_payload.get("mode", AZ_MCTS_MODE)),
+                root_dirichlet_only=bool(mcts_cfg_payload.get("root_dirichlet_only", AZ_MCTS_ROOT_DIRICHLET_ONLY)),
+                eval_cache_size=int(mcts_cfg_payload.get("eval_cache_size", AZ_MCTS_EVAL_CACHE_SIZE)),
+                pw_alpha=float(mcts_cfg_payload.get("pw_alpha", AZ_PW_ALPHA)),
+                pw_beta=float(mcts_cfg_payload.get("pw_beta", AZ_PW_BETA)),
+                prior_weight_early=float(mcts_cfg_payload.get("prior_weight_early", AZ_PRIOR_WEIGHT_EARLY)),
+                temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
+                batch_eval_size=int(mcts_cfg_payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
+                parallel_simulations=int(mcts_cfg_payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
+            ),
+            device=torch.device("cpu"),
+            evaluator=evaluator,
+        )
+        sp_cfg = SelfPlayConfig(
+            temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
+            temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", AZ_TEMP_OPENING)),
+            temperature_late_value=float(sp_cfg_payload.get("temperature_late_value", AZ_TEMP_LATE)),
+        )
+
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        len_model = int(len(model))
+
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len_model,
+                    opponent=opponent_spec,
+                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                )
+            except Exception:
+                opponent_policy_fn = None
+
+        current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
+        rollout_batch: list[dict] = []
+        heartbeat_moves = max(1, int(os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5") or 5))
+
+        append_agent_log(f"[AZ][ENV_WORKER] worker={int(worker_id)} started episodes={int(episodes)}")
+
+        for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            print(
+                f"[AZ][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{int(episodes)} starting",
+                flush=True,
+            )
+            attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+            deploy_for_mission(
+                mission_name, model_units=model, enemy_units=enemy,
+                b_len=b_len, b_hei=b_hei,
+                attacker_side=attacker_side, log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            transitions, info = play_episode_with_mcts(
+                env=env,
+                mcts=mcts,
+                len_model=len_model,
+                config=sp_cfg,
+                enemy_policy_fn=opponent_policy_fn,
+                outcome_only=bool(outcome_payload.get("outcome_only", AZ_OUTCOME_ONLY)),
+                outcome_value_win=float(outcome_payload.get("outcome_value_win", AZ_OUTCOME_VALUE_WIN)),
+                outcome_value_loss=float(outcome_payload.get("outcome_value_loss", AZ_OUTCOME_VALUE_LOSS)),
+                outcome_value_draw=float(outcome_payload.get("outcome_value_draw", AZ_OUTCOME_VALUE_DRAW)),
+                policy_version=int(current_policy_version),
+                actor_idx=int(worker_id),
+                heartbeat_moves=heartbeat_moves,
+            )
+
+            # Подхватываем policy_version из последнего ответа IS (через evaluator)
+            if hasattr(evaluator, "_last_policy_version"):
+                current_policy_version = int(evaluator._last_policy_version)
+
+            for t in transitions:
+                rollout_batch.append({
+                    "state": np.asarray(t.state, dtype=np.float32),
+                    "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
+                    "value_target": float(t.value_target),
+                    "policy_version": int(getattr(t, "policy_version", current_policy_version)),
+                })
+            if len(rollout_batch) >= int(batch_send):
+                data_q.put((
+                    "rollout",
+                    {
+                        "actor_idx": int(worker_id),
+                        "policy_version": int(current_policy_version),
+                        "transitions": list(rollout_batch),
+                    },
+                ))
+                rollout_batch = []
+
+            info = dict(info or {})
+            end_reason = str(info.get("end reason", "") or "")
+            model_vp = int(info.get("model VP", 0) or 0)
+            player_vp = int(info.get("player VP", 0) or 0)
+            vp_diff = int(model_vp) - int(player_vp)
+            result = "loss"
+            if end_reason == "wipeout_enemy":
+                result = "win"
+            elif end_reason == "wipeout_model":
+                result = "loss"
+            elif str(end_reason).startswith("turn_limit"):
+                result = "win" if vp_diff > 0 else ("draw" if vp_diff == 0 else "loss")
+            elif vp_diff > 0:
+                result = "win"
+            elif vp_diff == 0:
+                result = "draw"
+            data_q.put(("ep", {
+                "episode": None,
+                "actor_idx": int(worker_id),
+                "actor_ep": int(ep_idx_1based),
+                "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                "ep_len": int(info.get("turn", 0) or 0),
+                "turn": int(info.get("turn", 0) or 0),
+                "model_vp": int(model_vp),
+                "player_vp": int(player_vp),
+                "vp_diff": int(vp_diff),
+                "result": str(result),
+                "end_reason": str(end_reason),
+                "end_code": int(info.get("res", 0) or 0),
+                "policy_version": int(current_policy_version),
+            }))
+
+        if rollout_batch:
+            data_q.put(("rollout", {
+                "actor_idx": int(worker_id),
+                "policy_version": int(current_policy_version),
+                "transitions": list(rollout_batch),
+            }))
+        data_q.put(("done", int(worker_id)))
+        evaluator.close()
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"az_env_worker[{worker_id}] {exc}"))
+        except Exception:
+            pass
+
+
 def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
     """
     AlphaZero actor-learner (quality-first):
@@ -8424,63 +8676,145 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(AZ_ACTOR_QUEUE_MAX))
     procs = []
+    inf_proc = None  # inference server process (variant B only)
+
+    _mcts_cfg_payload = {
+        "simulations": AZ_MCTS_SIMS,
+        "c_puct": AZ_C_PUCT,
+        "dirichlet_alpha": AZ_DIR_ALPHA,
+        "dirichlet_eps": AZ_DIR_EPS,
+        "top_k_per_head": AZ_MCTS_TOP_K_PER_HEAD,
+        "max_depth": AZ_MCTS_MAX_DEPTH,
+        "mode": AZ_MCTS_MODE,
+        "root_dirichlet_only": AZ_MCTS_ROOT_DIRICHLET_ONLY,
+        "eval_cache_size": AZ_MCTS_EVAL_CACHE_SIZE,
+        "c_puct_min": AZ_C_PUCT_MIN,
+        "c_puct_max": AZ_C_PUCT_MAX,
+        "c_puct_schedule": AZ_C_PUCT_SCHEDULE,
+        "pw_alpha": AZ_PW_ALPHA,
+        "pw_beta": AZ_PW_BETA,
+        "prior_weight_early": AZ_PRIOR_WEIGHT_EARLY,
+        "batch_eval_size": AZ_MCTS_BATCH_EVAL_SIZE,
+        "parallel_simulations": AZ_MCTS_PARALLEL_SIMS,
+    }
+    _sp_cfg_payload = {
+        "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,
+        "temperature_opening_value": AZ_TEMP_OPENING,
+        "temperature_late_value": AZ_TEMP_LATE,
+    }
+    _outcome_payload = {
+        "outcome_only": AZ_OUTCOME_ONLY,
+        "outcome_value_win": AZ_OUTCOME_VALUE_WIN,
+        "outcome_value_loss": AZ_OUTCOME_VALUE_LOSS,
+        "outcome_value_draw": AZ_OUTCOME_VALUE_DRAW,
+        "policy_version": int(policy_version),
+    }
+    _init_weights_cpu = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
 
     if remaining_episodes > 0:
-        for a_idx in range(int(AZ_NUM_ACTORS)):
-            base = int(remaining_episodes) // int(AZ_NUM_ACTORS)
-            rem = int(remaining_episodes) % int(AZ_NUM_ACTORS)
-            actor_episodes = int(base + (1 if a_idx < rem else 0))
-            if actor_episodes <= 0:
-                continue
-            p = ctx.Process(
-                target=_actor_learner_actor_entry_alphazero,
-                args=(
-                    int(a_idx),
-                    int(actor_episodes),
-                    roster_config,
-                    int(b_len),
-                    int(b_hei),
-                    int(n_observations),
-                    list(n_actions),
-                    {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()},
-                    int(AZ_ACTOR_BATCH_SEND),
-                    data_q,
-                    int(1 if SELF_PLAY_ENABLED else 0),
-                    opponent_spec,
-                    {
-                        "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,
-                        "temperature_opening_value": AZ_TEMP_OPENING,
-                        "temperature_late_value": AZ_TEMP_LATE,
+        if AZ_INFERENCE_SERVER_ENABLED:
+            # --- Variant B: GPU inference server + CPU env workers ---
+            effective_num_workers = int(AZ_NUM_ENV_WORKERS)
+
+            if AZ_INFERENCE_SERVER_LOCAL:
+                # Запускаем локальный IS-процесс
+                request_q = ctx.Queue(maxsize=int(AZ_INFERENCE_REQUEST_QUEUE_MAX))
+                reply_queues = [ctx.Queue(maxsize=8) for _ in range(effective_num_workers)]
+                _net_cfg = {
+                    "obs_dim": int(n_observations),
+                    "action_sizes": list(n_actions),
+                    "hidden_size": int(az_kw.get("hidden_size", AZ_HIDDEN_SIZE)),
+                    "num_layers": int(az_kw.get("num_layers", AZ_NUM_LAYERS)),
+                    "n_value_ensemble": int(az_kw.get("n_value_ensemble", AZ_VALUE_ENSEMBLE)),
+                }
+                from core.models.az_inference_server import az_inference_server_entry
+                inf_proc = ctx.Process(
+                    target=az_inference_server_entry,
+                    args=(
+                        request_q,
+                        reply_queues,
+                        sync_path,
+                        _init_weights_cpu,
+                        _net_cfg,
+                    ),
+                    kwargs={
+                        "inference_batch_size": int(AZ_INFERENCE_BATCH_SIZE),
+                        "inference_batch_interval_ms": float(AZ_INFERENCE_BATCH_INTERVAL_MS),
+                        "sync_check_interval": float(AZ_INFERENCE_SYNC_INTERVAL),
                     },
-                    {
-                        "simulations": AZ_MCTS_SIMS,
-                        "c_puct": AZ_C_PUCT,
-                        "dirichlet_alpha": AZ_DIR_ALPHA,
-                        "dirichlet_eps": AZ_DIR_EPS,
-                        "top_k_per_head": AZ_MCTS_TOP_K_PER_HEAD,
-                        "max_depth": AZ_MCTS_MAX_DEPTH,
-                        "mode": AZ_MCTS_MODE,
-                        "root_dirichlet_only": AZ_MCTS_ROOT_DIRICHLET_ONLY,
-                        "eval_cache_size": AZ_MCTS_EVAL_CACHE_SIZE,
-                        "c_puct_min": AZ_C_PUCT_MIN,
-                        "c_puct_max": AZ_C_PUCT_MAX,
-                        "c_puct_schedule": AZ_C_PUCT_SCHEDULE,
-                        "pw_alpha": AZ_PW_ALPHA,
-                        "pw_beta": AZ_PW_BETA,
-                        "prior_weight_early": AZ_PRIOR_WEIGHT_EARLY,
-                    },
-                    {
-                        "outcome_only": AZ_OUTCOME_ONLY,
-                        "outcome_value_win": AZ_OUTCOME_VALUE_WIN,
-                        "outcome_value_loss": AZ_OUTCOME_VALUE_LOSS,
-                        "outcome_value_draw": AZ_OUTCOME_VALUE_DRAW,
-                        "policy_version": int(policy_version),
-                    },
-                ),
-                daemon=True,
-            )
-            p.start()
-            procs.append(p)
+                    daemon=True,
+                )
+                inf_proc.start()
+                append_agent_log(
+                    f"[AZ][INF_SERVER] process spawned pid={inf_proc.pid} "
+                    f"workers={effective_num_workers}"
+                )
+
+            for w_idx in range(effective_num_workers):
+                base = int(remaining_episodes) // effective_num_workers
+                rem = int(remaining_episodes) % effective_num_workers
+                worker_episodes = int(base + (1 if w_idx < rem else 0))
+                if worker_episodes <= 0:
+                    continue
+                p = ctx.Process(
+                    target=_az_env_worker_entry,
+                    args=(
+                        int(w_idx),
+                        int(worker_episodes),
+                        roster_config,
+                        int(b_len),
+                        int(b_hei),
+                        int(AZ_ACTOR_BATCH_SEND),
+                        data_q,
+                        request_q if AZ_INFERENCE_SERVER_LOCAL else None,
+                        reply_queues[w_idx] if AZ_INFERENCE_SERVER_LOCAL else None,
+                        int(1 if SELF_PLAY_ENABLED else 0),
+                        opponent_spec,
+                        _sp_cfg_payload,
+                        _mcts_cfg_payload,
+                        _outcome_payload,
+                        float(AZ_INFERENCE_TIMEOUT),
+                        str(AZ_INFERENCE_SERVER_MODE),
+                        str(AZ_INFERENCE_REMOTE_HOST),
+                        int(AZ_INFERENCE_REMOTE_PORT),
+                        str(AZ_INFERENCE_REMOTE_AUTH_TOKEN),
+                    ),
+                    daemon=True,
+                )
+                p.start()
+                procs.append(p)
+
+        else:
+            # --- Variant A: CPU actors (текущее поведение, fallback) ---
+            for a_idx in range(int(AZ_NUM_ACTORS)):
+                base = int(remaining_episodes) // int(AZ_NUM_ACTORS)
+                rem = int(remaining_episodes) % int(AZ_NUM_ACTORS)
+                actor_episodes = int(base + (1 if a_idx < rem else 0))
+                if actor_episodes <= 0:
+                    continue
+                p = ctx.Process(
+                    target=_actor_learner_actor_entry_alphazero,
+                    args=(
+                        int(a_idx),
+                        int(actor_episodes),
+                        roster_config,
+                        int(b_len),
+                        int(b_hei),
+                        int(n_observations),
+                        list(n_actions),
+                        _init_weights_cpu,
+                        int(AZ_ACTOR_BATCH_SEND),
+                        data_q,
+                        int(1 if SELF_PLAY_ENABLED else 0),
+                        opponent_spec,
+                        _sp_cfg_payload,
+                        _mcts_cfg_payload,
+                        _outcome_payload,
+                    ),
+                    daemon=True,
+                )
+                p.start()
+                procs.append(p)
 
     done_actors = 0
     active_actors = len(procs)
@@ -8700,6 +9034,16 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             p.join(timeout=2.0)
         except Exception:
             pass
+    if inf_proc is not None and inf_proc.is_alive():
+        try:
+            # Sentinel → inference server выходит из run-loop
+            request_q.put_nowait(None)
+        except Exception:
+            pass
+        inf_proc.join(timeout=3.0)
+        if inf_proc.is_alive():
+            append_agent_log("[AZ][INF_SERVER] process не завершился за 3с, terminate.")
+            inf_proc.terminate()
 
     if not last_checkpoint:
         last_checkpoint = _save_checkpoint(int(episodes_finished or resume_episode_base or totLifeT))
