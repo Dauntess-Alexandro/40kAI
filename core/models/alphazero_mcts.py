@@ -189,15 +189,27 @@ class AlphaZeroFactorizedMCTS:
     Factorized AlphaZero-style search:
     - proxy: network priors + Dirichlet + temperature (fast),
     - tree: PUCT MCTS with MCTSNode, eval cache, env rollout.
+
+    evaluator: опциональный Evaluator (LocalNetEvaluator / RemoteEvaluator).
+      None (default) → текущее поведение: self.net.infer на self.device + внутренний EvalCache.
+      Задан → _evaluate_net / _evaluate_value_batch делегируют evaluator.evaluate_one / evaluate_batch.
     """
 
-    def __init__(self, policy_value_net, config: MCTSConfig | None = None, device: torch.device | None = None):
+    def __init__(
+        self,
+        policy_value_net,
+        config: MCTSConfig | None = None,
+        device: torch.device | None = None,
+        *,
+        evaluator=None,
+    ):
         self.net = policy_value_net
         self.cfg = config or MCTSConfig()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.last_run_stats: dict[str, float] = {}
         cache_size = int(getattr(self.cfg, "eval_cache_size", 10000) or 10000)
         self._eval_cache = EvalCache(max_size=cache_size)
+        self._evaluator = evaluator  # Optional[Evaluator]
 
     def _masked_topk(self, prior: np.ndarray, legal: np.ndarray) -> np.ndarray:
         legal = np.asarray(legal, dtype=bool)
@@ -212,6 +224,8 @@ class AlphaZeroFactorizedMCTS:
         return out
 
     def _evaluate_net(self, obs: np.ndarray, legal_masks_by_head: list[np.ndarray]) -> tuple[list[np.ndarray], float]:
+        if self._evaluator is not None:
+            return self._evaluator.evaluate_one(obs, legal_masks_by_head)
         cached = self._eval_cache.get(obs, legal_masks_by_head)
         if cached is not None:
             return cached
@@ -235,6 +249,8 @@ class AlphaZeroFactorizedMCTS:
 
         Returns a list of float values aligned with the input list.
         """
+        if self._evaluator is not None:
+            return self._evaluator.evaluate_batch(leaves)
         n = len(leaves)
         if n == 0:
             return []

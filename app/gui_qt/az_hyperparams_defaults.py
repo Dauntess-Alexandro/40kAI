@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
+    "inference_server_enabled",
+    "inference_server_mode",
+    "num_env_workers",
+    "inference_batch_size",
+    "inference_batch_interval_ms",
+    "inference_timeout",
     "learning_rate",
     "batch_size",
     "value_loss_weight",
@@ -53,6 +59,13 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
 )
 
 _AZ_BASE: dict[str, int | float | str] = {
+    # Inference server (variant B) — по умолчанию выключен до smoke-теста
+    "inference_server_enabled": 0,
+    "inference_server_mode": "local",
+    "num_env_workers": 8,
+    "inference_batch_size": 32,
+    "inference_batch_interval_ms": 10,
+    "inference_timeout": 5.0,
     "learning_rate": 0.0003,
     "batch_size": 128,
     "value_loss_weight": 1.0,
@@ -193,6 +206,19 @@ AZ_PROXY_BASIC_KEYS: tuple[str, ...] = (
 
 AZ_GROUPS: tuple[dict[str, object], ...] = (
     {
+        "id": "inference_server",
+        "title": "Inference Server (вариант B)",
+        "keys": (
+            "inference_server_enabled",
+            "inference_server_mode",
+            "num_env_workers",
+            "inference_batch_size",
+            "inference_batch_interval_ms",
+            "inference_timeout",
+        ),
+        "default_collapsed": True,
+    },
+    {
         "id": "training",
         "title": "Обучение",
         "keys": (
@@ -287,6 +313,12 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
 )
 
 AZ_FIELD_TOOLTIPS: dict[str, str] = {
+    "inference_server_enabled": "1 = вынести net.infer на GPU inference server (вариант B). 0 = текущие CPU акторы (вариант A, по умолчанию).",
+    "inference_server_mode": "local = тот же ПК; remote = GPU на ПК2 (ZMQ :5556).",
+    "num_env_workers": "Число CPU env-воркеров при inference_server_enabled=1. Рекомендуется = num_actors.",
+    "inference_batch_size": "Макс. размер батча запросов к IS (рекомендуется ≥ num_env_workers × parallel_sims).",
+    "inference_batch_interval_ms": "Окно сбора батча мс (10–20). Меньше = меньше задержка, хуже батчинг.",
+    "inference_timeout": "Таймаут ожидания ответа IS (сек). При превышении — retry + лог.",
     "learning_rate": "Скорость обучения policy-value сети.",
     "batch_size": "Размер батча learner.",
     "value_loss_weight": "Вес value loss.",
