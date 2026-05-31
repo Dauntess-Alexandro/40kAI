@@ -1434,6 +1434,230 @@ def _run_actor_det_eval(
     }
 
 
+def _gmz_episode_result_row(*, info: dict, ep_reward: float, ep_len: int) -> dict:
+    info = dict(info or {})
+    end_reason = str(info.get("end reason", "") or "")
+    model_vp = int(info.get("model VP", 0) or 0)
+    player_vp = int(info.get("player VP", 0) or 0)
+    vp_diff = int(model_vp) - int(player_vp)
+    result = "loss"
+    if end_reason == "wipeout_enemy":
+        result = "win"
+    elif end_reason == "wipeout_model":
+        result = "loss"
+    elif str(end_reason).startswith("turn_limit"):
+        if vp_diff > 0:
+            result = "win"
+        elif vp_diff == 0:
+            result = "draw"
+    elif vp_diff > 0:
+        result = "win"
+    elif vp_diff == 0:
+        result = "draw"
+    return {
+        "ep_reward": float(ep_reward),
+        "ep_len": int(ep_len),
+        "turn": int(ep_len),
+        "model_vp": int(model_vp),
+        "player_vp": int(player_vp),
+        "vp_diff": int(vp_diff),
+        "result": str(result),
+        "end_reason": str(end_reason),
+        "end_code": int(info.get("res", 0) or 0),
+    }
+
+
+def _gmz_det_payload_from_rows(
+    rows_slice: list[dict],
+    *,
+    episode_idx: int,
+    train_loss: float,
+    eval_tag: str = "actor_learner_search_eval",
+) -> dict:
+    rows = rows_slice if rows_slice else []
+    n_eval = max(1, len(rows))
+    wins = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "win")
+    draws = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "draw")
+    turn_limit = sum(1 for r in rows if str(r.get("end_reason", "")).startswith("turn_limit"))
+    wipe_enemy = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_enemy")
+    wipe_model = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_model")
+    vp_diff_mean = float(sum(float(r.get("vp_diff", 0) or 0) for r in rows) / n_eval)
+    model_vp_mean = float(sum(float(r.get("model_vp", 0) or 0) for r in rows) / n_eval)
+    enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows) / n_eval)
+    ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows) / n_eval)
+    reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows) / n_eval)
+    return {
+        "eval_episodes": int(n_eval),
+        "win_rate": float(wins / n_eval),
+        "draw_rate": float(draws / n_eval),
+        "turn_limit_rate": float(turn_limit / n_eval),
+        "wipeout_enemy_rate": float(wipe_enemy / n_eval),
+        "wipeout_model_rate": float(wipe_model / n_eval),
+        "vp_diff_mean": vp_diff_mean,
+        "model_vp_mean": model_vp_mean,
+        "enemy_vp_mean": enemy_vp_mean,
+        "hp_diff_mean": 0.0,
+        "kill_diff_mean": 0.0,
+        "reward_mean": reward_mean,
+        "ep_len_mean": ep_len_mean,
+        "opponent_epsilon": 0.0,
+        "episode": int(max(episode_idx, 1)),
+        "algo": "gumbel_muzero",
+        "eval_tag": str(eval_tag),
+        "training_loss": float(train_loss),
+    }
+
+
+def _run_gmz_honest_eval(
+    *,
+    gmz_net,
+    device: torch.device,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_eval: int,
+    sims: int,
+    root_top_k: int,
+    eval_temperature: float,
+    gumbel_scale: float,
+    prior_weight: float,
+    discount: float,
+    batch_recurrent: bool,
+    tree_reuse: bool,
+    self_play_enabled: bool,
+    opponent_spec: OpponentSpec | None,
+    sp_cfg: GumbelSelfPlayConfig | None = None,
+) -> list[dict]:
+    """Play n_eval games with local search (deterministic=True). Returns per-episode rows."""
+    was_training = bool(getattr(gmz_net, "training", False))
+    gmz_net.eval()
+    eval_rows: list[dict] = []
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    cfg_sp = sp_cfg or GumbelSelfPlayConfig()
+    try:
+        with torch.no_grad():
+            for _ in range(max(1, int(n_eval))):
+                enemy_e, model_e = _build_units_from_config(roster_config, b_len, b_hei)
+                attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+                deploy_for_mission(
+                    mission_name,
+                    model_units=model_e,
+                    enemy_units=enemy_e,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    attacker_side=attacker_side,
+                    log_fn=None,
+                )
+                post_deploy_setup(log_fn=None)
+                env_e = gym.make(
+                    "40kAI-v0",
+                    disable_env_checker=True,
+                    enemy=enemy_e,
+                    model=model_e,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                )
+                env_e.attacker_side = attacker_side
+                env_e.defender_side = defender_side
+                opponent_policy_fn = None
+                if bool(self_play_enabled) and opponent_spec is not None:
+                    try:
+                        opponent_policy_fn = build_policy_fn(
+                            env=env_e,
+                            len_model=len(model_e),
+                            opponent=opponent_spec,
+                            deterministic=True,
+                        )
+                    except Exception:
+                        opponent_policy_fn = None
+                search = GumbelMuZeroSearch(
+                    gmz_net,
+                    config=GumbelMuZeroSearchConfig(
+                        num_simulations=int(sims),
+                        root_top_k=int(root_top_k),
+                        discount=float(discount),
+                        temperature=float(eval_temperature),
+                        gumbel_scale=float(gumbel_scale),
+                        prior_weight=float(prior_weight),
+                        batch_recurrent=bool(batch_recurrent),
+                        tree_reuse=bool(tree_reuse),
+                    ),
+                    device=device,
+                )
+                _transitions, info = play_episode_with_gumbel_muzero(
+                    env=env_e,
+                    search=search,
+                    len_model=int(len(model_e)),
+                    config=cfg_sp,
+                    enemy_policy_fn=opponent_policy_fn,
+                    deterministic=True,
+                )
+                info = dict(info or {})
+                ep_len = int(info.get("turn", 0) or 0)
+                ep_reward = float(info.get("reward", 0.0) or 0.0)
+                eval_rows.append(
+                    _gmz_episode_result_row(info=info, ep_reward=ep_reward, ep_len=ep_len)
+                )
+                try:
+                    env_e.close()
+                except Exception:
+                    pass
+    finally:
+        if was_training:
+            gmz_net.train()
+    return eval_rows
+
+
+def _gmz_build_actor_det_payload(
+    *,
+    gmz_net,
+    device: torch.device,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    episodes_finished: int,
+    last_loss: float,
+    self_play_enabled: bool,
+    opponent_spec: OpponentSpec | None,
+    sp_cfg: GumbelSelfPlayConfig | None = None,
+) -> dict:
+    append_agent_log(
+        f"[GMZ][HONEST_EVAL] start ep={int(episodes_finished)} n={int(GMZ_HONEST_EVAL_EPISODES)} "
+        f"sims={int(GMZ_HONEST_EVAL_SIMS)} temp={float(GMZ_HONEST_EVAL_TEMPERATURE):.2f}"
+    )
+    eval_rows = _run_gmz_honest_eval(
+        gmz_net=gmz_net,
+        device=device,
+        roster_config=roster_config,
+        b_len=b_len,
+        b_hei=b_hei,
+        n_eval=int(GMZ_HONEST_EVAL_EPISODES),
+        sims=int(GMZ_HONEST_EVAL_SIMS),
+        root_top_k=int(GMZ_HONEST_EVAL_TOP_K),
+        eval_temperature=float(GMZ_HONEST_EVAL_TEMPERATURE),
+        gumbel_scale=float(GMZ_GUMBEL_SCALE),
+        prior_weight=float(GMZ_PRIOR_WEIGHT),
+        discount=float(GMZ_DISCOUNT),
+        batch_recurrent=bool(GMZ_BATCH_RECURRENT),
+        tree_reuse=bool(GMZ_TREE_REUSE),
+        self_play_enabled=bool(self_play_enabled),
+        opponent_spec=opponent_spec,
+        sp_cfg=sp_cfg,
+    )
+    payload = _gmz_det_payload_from_rows(
+        eval_rows,
+        episode_idx=int(episodes_finished),
+        train_loss=float(last_loss),
+        eval_tag="actor_learner_search_eval",
+    )
+    append_agent_log(
+        f"[GMZ][HONEST_EVAL] done ep={int(episodes_finished)} "
+        f"win_rate={float(payload.get('win_rate', 0.0)):.3f} "
+        f"n={int(payload.get('eval_episodes', 0))}"
+    )
+    return payload
+
+
 def _run_actor_det_eval_ppo(
     *,
     actor_critic,
@@ -2621,6 +2845,10 @@ GMZ_VTRACE_C_CLIP = float(os.getenv("GMZ_VTRACE_C_CLIP", str(GMZ_CFG.get("vtrace
 GMZ_REANALYZE_FRACTION = float(os.getenv("GMZ_REANALYZE_FRACTION", str(GMZ_CFG.get("reanalyze_fraction", 0.15))))
 # B3: tree reuse across moves
 GMZ_TREE_REUSE = str(os.getenv("GMZ_TREE_REUSE", str(GMZ_CFG.get("tree_reuse", 1)))).strip() == "1"
+GMZ_HONEST_EVAL_EPISODES = max(1, int(os.getenv("GMZ_HONEST_EVAL_EPISODES", "20")))
+GMZ_HONEST_EVAL_SIMS = max(1, int(os.getenv("GMZ_HONEST_EVAL_SIMS", str(GMZ_MCTS_SIMS))))
+GMZ_HONEST_EVAL_TOP_K = max(1, int(os.getenv("GMZ_HONEST_EVAL_TOP_K", str(GMZ_ROOT_TOP_K))))
+GMZ_HONEST_EVAL_TEMPERATURE = float(os.getenv("GMZ_HONEST_EVAL_TEMPERATURE", "0.10"))
 # B4: EMA tau for consistency target + torch.compile flags
 GMZ_EMA_TAU = float(os.getenv("GMZ_EMA_TAU", str(GMZ_CFG.get("ema_tau", 0.005))))
 if "GMZ_ACTOR_COMPILE" in os.environ:
@@ -9020,7 +9248,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         f"reanalyze={GMZ_REANALYZE_FRACTION} consistency_w={GMZ_CONSISTENCY_W} "
         f"ema_tau={GMZ_EMA_TAU} max_grad_norm={GMZ_MAX_GRAD_NORM} "
         f"actor_compile={int(GMZ_ACTOR_COMPILE)} learner_compile={int(GMZ_LEARNER_COMPILE)} "
-        f"outcome_only={int(GMZ_OUTCOME_ONLY)} opponent={opponent_source_label}/{opponent_algo_label}"
+        f"outcome_only={int(GMZ_OUTCOME_ONLY)} opponent={opponent_source_label}/{opponent_algo_label} "
+        f"det_eval_n={int(GMZ_HONEST_EVAL_EPISODES)} det_eval_temp={float(GMZ_HONEST_EVAL_TEMPERATURE):.2f}"
     )
 
     ep_rows: list[dict] = []
@@ -9065,39 +9294,15 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         )
         return ckpt_path
 
-    def _gmz_det_payload_from_rows(rows_slice: list[dict], episode_idx: int, train_loss: float) -> dict:
-        rows = rows_slice if rows_slice else []
-        n_eval = max(1, len(rows))
-        wins = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "win")
-        draws = sum(1 for r in rows if str(r.get("result", "")).strip().lower() == "draw")
-        turn_limit = sum(1 for r in rows if str(r.get("end_reason", "")).startswith("turn_limit"))
-        wipe_enemy = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_enemy")
-        wipe_model = sum(1 for r in rows if str(r.get("end_reason", "")) == "wipeout_model")
-        vp_diff_mean = float(sum(float(r.get("vp_diff", 0) or 0) for r in rows) / n_eval)
-        model_vp_mean = float(sum(float(r.get("model_vp", 0) or 0) for r in rows) / n_eval)
-        enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows) / n_eval)
-        ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows) / n_eval)
-        reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows) / n_eval)
-        return {
-            "eval_episodes": int(n_eval),
-            "win_rate": float(wins / n_eval),
-            "draw_rate": float(draws / n_eval),
-            "turn_limit_rate": float(turn_limit / n_eval),
-            "wipeout_enemy_rate": float(wipe_enemy / n_eval),
-            "wipeout_model_rate": float(wipe_model / n_eval),
-            "vp_diff_mean": vp_diff_mean,
-            "model_vp_mean": model_vp_mean,
-            "enemy_vp_mean": enemy_vp_mean,
-            "hp_diff_mean": 0.0,
-            "kill_diff_mean": 0.0,
-            "reward_mean": reward_mean,
-            "ep_len_mean": ep_len_mean,
-            "opponent_epsilon": 0.0,
-            "episode": int(max(episode_idx, 1)),
-            "algo": "gumbel_muzero",
-            "eval_tag": "actor_learner_summary",
-            "training_loss": float(train_loss),
-        }
+    gmz_sp_cfg = GumbelSelfPlayConfig(
+        temperature_opening_moves=int(GMZ_TEMP_OPENING_MOVES),
+        temperature_opening_value=float(GMZ_TEMP_OPENING),
+        temperature_late_value=float(GMZ_TEMP_LATE),
+        outcome_only=bool(GMZ_OUTCOME_ONLY),
+        outcome_value_win=float(GMZ_OUTCOME_VALUE_WIN),
+        outcome_value_loss=float(GMZ_OUTCOME_VALUE_LOSS),
+        outcome_value_draw=float(GMZ_OUTCOME_VALUE_DRAW),
+    )
 
     _save_gmz_sync()
     remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
@@ -9302,11 +9507,17 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
             ):
                 last_actor_det_eval_ep = int(episodes_finished)
-                det_window = ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):]
-                det_payload = _gmz_det_payload_from_rows(
-                    det_window,
-                    episode_idx=int(episodes_finished),
-                    train_loss=float(last_loss),
+                det_payload = _gmz_build_actor_det_payload(
+                    gmz_net=gmz_net,
+                    device=device,
+                    roster_config=roster_config,
+                    b_len=b_len,
+                    b_hei=b_hei,
+                    episodes_finished=int(episodes_finished),
+                    last_loss=float(last_loss),
+                    self_play_enabled=bool(int(SELF_PLAY_ENABLED) == 1),
+                    opponent_spec=opponent_spec,
+                    sp_cfg=gmz_sp_cfg,
                 )
                 _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
                 det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
@@ -9442,10 +9653,17 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         )
         save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
         # Финальный DET-снапшот для надёжной привязки GUI к текущему run_id.
-        det_payload = _gmz_det_payload_from_rows(
-            ep_rows[-max(1, int(ACTOR_DET_EVAL_EPISODES)):],
-            episode_idx=int(max(episodes_finished, 1)),
-            train_loss=float(last_loss),
+        det_payload = _gmz_build_actor_det_payload(
+            gmz_net=gmz_net,
+            device=device,
+            roster_config=roster_config,
+            b_len=b_len,
+            b_hei=b_hei,
+            episodes_finished=int(max(episodes_finished, 1)),
+            last_loss=float(last_loss),
+            self_play_enabled=bool(int(SELF_PLAY_ENABLED) == 1),
+            opponent_spec=opponent_spec,
+            sp_cfg=gmz_sp_cfg,
         )
         _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
         det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)

@@ -54,6 +54,7 @@ def play_episode_with_gumbel_muzero(
     enemy_policy_fn: Optional[Callable[[Any], dict]] = None,
     policy_version: int = 0,
     episode_id: int = 0,
+    deterministic: bool = False,
 ) -> tuple[list[GMZTransition], dict]:
     cfg = config or GumbelSelfPlayConfig()
     env_u = unwrap_env(env)
@@ -93,7 +94,7 @@ def play_episode_with_gumbel_muzero(
             pi_targets, behavior_logits, action_list, value_est = search.run(
                 obs=obs_np,
                 legal_masks_by_head=legal_masks,
-                deterministic=False,
+                deterministic=bool(deterministic),
             )
 
         action_dict = action_tensor_to_dict(torch.tensor([action_list], dtype=torch.long), len_model=int(len_model))
