@@ -8048,7 +8048,11 @@ def _actor_learner_actor_entry_alphazero(
         len_model = int(len(model))
 
         sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
-        sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_az_policy.pth")
+        # Путь sync должен совпадать с тем, что пишет learner (_save_az_sync, train.py ~8377):
+        # learner использует тег tree/proxy по TRAIN_ALGO. Раньше актор читал untagged
+        # "latest_az_policy.pth" → файл не находился, ACTOR_SYNC молча no-op (веса не обновлялись).
+        _az_sync_tag = "tree" if TRAIN_ALGO == "alphazero_tree" else "proxy"
+        sync_path = os.path.join(MODELS_DIR, "actor_sync", f"latest_az_{_az_sync_tag}_policy.pth")
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
         last_sync_mtime = -1.0
         current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
@@ -8087,6 +8091,10 @@ def _actor_learner_actor_entry_alphazero(
                                 mcts.net = az_net
                                 last_sync_mtime = float(mtime)
                                 current_policy_version = int(payload.get("policy_version", current_policy_version) or current_policy_version)
+                                append_agent_log(
+                                    f"[AZ][ACTOR] weight_sync actor={int(actor_idx)} "
+                                    f"version={current_policy_version} file={os.path.basename(sync_path)}"
+                                )
                 except Exception:
                     pass
 
