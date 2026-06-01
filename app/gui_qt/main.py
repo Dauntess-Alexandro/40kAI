@@ -1748,6 +1748,10 @@ class GUIController(QtCore.QObject):
         if not self.remoteIsEnabled:
             return True
         algo = str(self._training_algo or "").strip().lower()
+        if algo in {"alphazero_tree", "alphazero_proxy"}:
+            # У AlphaZero свой Inference Server (вкладка AlphaZero Tree, поля inference_* в
+            # hyperparams). GMZ-флаг remote_is к нему не относится — молча игнорируем, без шума.
+            return True
         if algo != "gumbel_muzero":
             self._emit_log(
                 "[GUI][REMOTE_IS] LAN Inference server включён в настройках, но выбран алгоритм "
