@@ -106,16 +106,43 @@ class EvalCache:
             self._cache[key] = (priors, float(value))
 
 
+_MASKED_NORMALIZE_WARNED = False
+
+
 def _masked_normalize(prior: np.ndarray, legal_mask: np.ndarray) -> np.ndarray:
+    """Вернуть валидное распределение (неотрицательное, сумма=1) по легальным действиям.
+
+    Устойчиво к NaN/inf в priors (например, не-конечный obs → LayerNorm → NaN сети)
+    и к голове без легальных действий — иначе np.random.choice роняет весь эпизод
+    ('probabilities are not non-negative' / 'do not sum to 1').
+    """
+    global _MASKED_NORMALIZE_WARNED
     p = np.asarray(prior, dtype=np.float32).copy()
     m = np.asarray(legal_mask, dtype=bool)
     if p.shape != m.shape:
         return np.ones_like(p, dtype=np.float32) / float(max(1, p.size))
+    # Защита от NaN/inf в priors сети
+    if not np.all(np.isfinite(p)):
+        if not _MASKED_NORMALIZE_WARNED:
+            _MASKED_NORMALIZE_WARNED = True
+            import sys
+            print(
+                "[AZ][MCTS][WARN] priors содержат NaN/inf — заменены на uniform по легальным. "
+                "Где: alphazero_mcts._masked_normalize. Вероятная причина: не-конечный obs или веса сети. "
+                "Что делать: проверить obs/веса; поиск продолжается на uniform.",
+                file=sys.stderr, flush=True,
+            )
+        p = np.where(np.isfinite(p), p, 0.0).astype(np.float32)
     p[~m] = 0.0
+    p[p < 0.0] = 0.0
     s = float(p.sum())
     if s <= 1e-12:
+        # Нет массы на легальных → uniform по легальным; если легальных нет — uniform по всем
         p = m.astype(np.float32)
         s = float(p.sum())
+        if s <= 1e-12:
+            p = np.ones_like(p, dtype=np.float32)
+            s = float(p.sum())
     return p / max(1e-12, s)
 
 
