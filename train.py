@@ -8716,6 +8716,33 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             # --- Variant B: GPU inference server + CPU env workers ---
             effective_num_workers = int(AZ_NUM_ENV_WORKERS)
 
+            if AZ_INFERENCE_REMOTE:
+                # Pre-train health_check: train не стартует если ПК2 недоступен (v1)
+                from core.models.az_inference_transport import az_remote_health_check
+
+                try:
+                    hc = az_remote_health_check(
+                        host=AZ_INFERENCE_REMOTE_HOST,
+                        port=int(AZ_INFERENCE_REMOTE_PORT),
+                        auth_token=AZ_INFERENCE_REMOTE_AUTH_TOKEN,
+                        timeout=min(3.0, float(AZ_INFERENCE_TIMEOUT)),
+                    )
+                    append_agent_log(
+                        f"[AZ][REMOTE_CLIENT] health_check ok host={AZ_INFERENCE_REMOTE_HOST} "
+                        f"port={AZ_INFERENCE_REMOTE_PORT} policy_version={hc.get('policy_version', '?')} "
+                        f"gpu={hc.get('gpu_name', '?')}"
+                    )
+                except Exception as exc:
+                    append_agent_log(
+                        f"[AZ][REMOTE_CLIENT] health_check failed host={AZ_INFERENCE_REMOTE_HOST}: {exc}"
+                    )
+                    raise RuntimeError(
+                        "Remote AZ inference server недоступен. Проверьте: 1) сервер на ПК2 "
+                        "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5556)."
+                    ) from exc
+                request_q = None
+                reply_queues = None
+
             if AZ_INFERENCE_SERVER_LOCAL:
                 # Запускаем локальный IS-процесс
                 request_q = ctx.Queue(maxsize=int(AZ_INFERENCE_REQUEST_QUEUE_MAX))
