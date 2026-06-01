@@ -386,6 +386,9 @@ class GUIController(QtCore.QObject):
         self._remote_is: dict = load_remote_is(self._repo_root)
         self._remote_is_status = "не проверено"
         self._remote_is_latency_ms = -1.0
+        # AZ inference server (вариант B) — LAN-чек статус (host/port берём из AZ hyperparams)
+        self._az_inference_status = "не проверено"
+        self._az_inference_latency_ms = -1.0
         self._refresh_training_device_info()
         self._ensure_gmz_local_is_default()
 
@@ -1657,6 +1660,44 @@ class GUIController(QtCore.QObject):
                 "Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, 3) firewall (TCP 5555)."
             )
         self.remoteIsChanged.emit()
+
+    # --- AZ inference server (variant B) LAN health check ---
+    azInferenceChanged = QtCore.Signal()
+
+    @QtCore.Property(str, notify=azInferenceChanged)
+    def azInferenceStatusText(self) -> str:
+        return str(self._az_inference_status)
+
+    @QtCore.Property(str, notify=azInferenceChanged)
+    def azInferenceLatencyText(self) -> str:
+        ms = float(self._az_inference_latency_ms)
+        return "—" if ms < 0 else f"{ms:.0f} ms"
+
+    @QtCore.Slot()
+    def checkAzInferenceConnection(self) -> None:
+        from core.models.az_inference_transport import az_remote_health_check
+
+        hp = self._az_tree_hyperparams
+        host = str(hp.get("inference_remote_host", "127.0.0.1") or "127.0.0.1")
+        port = int(hp.get("inference_remote_port", 5556) or 5556)
+        token = str(hp.get("inference_remote_auth_token", "") or "")
+        timeout = min(3.0, float(hp.get("inference_timeout", 5.0) or 5.0))
+        t0 = time.perf_counter()
+        try:
+            resp = az_remote_health_check(host=host, port=port, auth_token=token, timeout=timeout)
+            self._az_inference_latency_ms = (time.perf_counter() - t0) * 1000.0
+            gpu = str(resp.get("gpu_name", "?"))
+            pv = resp.get("policy_version", "?")
+            self._az_inference_status = f"OK • GPU: {gpu} • policy v{pv}"
+            self._emit_status(f"AZ Remote IS: соединение OK ({self._az_inference_latency_ms:.0f} ms)")
+        except Exception as exc:
+            self._az_inference_latency_ms = -1.0
+            self._az_inference_status = f"Ошибка: {exc}"
+            self._emit_status(
+                "AZ Remote IS недоступен. Проверьте: 1) сервер на ПК2 "
+                "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5556)."
+            )
+        self.azInferenceChanged.emit()
 
     def _emit_gmz_lan_train_help(self, *, health_ok: bool | None, error: str = "") -> None:
         """Подробная подсказка в лог train при включённом LAN (часто случайно на одном ПК)."""
@@ -2993,9 +3034,12 @@ class GUIController(QtCore.QObject):
         self._emit_status(f"Применен профиль Gumbel MuZero: {mode}. Сохраните настройки.")
 
     def _coerce_az_hyperparam(self, key: str, value: str, default: int | float | str) -> int | float | str:
-        if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode"}:
+        if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "inference_server_mode"}:
             parsed = str(value or "").strip().lower()
             return parsed or str(default)
+        if key in {"inference_remote_host", "inference_remote_auth_token"}:
+            # Сохраняем как есть (host/token регистрозависимы)
+            return str(value if value is not None else default)
         if isinstance(default, int):
             return int(float(str(value).strip()))
         return float(str(value).strip())

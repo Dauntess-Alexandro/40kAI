@@ -106,7 +106,10 @@
     "num_env_workers": 8,
     "inference_batch_size": 32,
     "inference_batch_interval_ms": 10,
-    "inference_timeout": 5.0
+    "inference_timeout": 5.0,
+    "inference_remote_host": "127.0.0.1",
+    "inference_remote_port": 5556,
+    "inference_remote_auth_token": ""
   },
   "alphazero_proxy": {
     "learning_rate": 0.0003,

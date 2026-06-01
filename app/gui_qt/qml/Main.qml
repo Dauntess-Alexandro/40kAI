@@ -4561,10 +4561,21 @@ ApplicationWindow {
                                     }
                                     ScrollView {
                                         clip: true
-                                        SectionHyperparamsEditor {
+                                        contentWidth: azTreeHyperparamsColumn.width
+                                        ColumnLayout {
+                                            id: azTreeHyperparamsColumn
                                             width: algoHyperparamsStack.width
-                                            algoSection: "tree"
-                                            rootUi: root
+                                            spacing: root.spacingSm
+
+                                            AzInferenceServerPanel {
+                                                rootUi: root
+                                            }
+
+                                            SectionHyperparamsEditor {
+                                                Layout.fillWidth: true
+                                                algoSection: "tree"
+                                                rootUi: root
+                                            }
                                         }
                                     }
                                     ScrollView {

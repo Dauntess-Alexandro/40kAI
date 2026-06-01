@@ -9,6 +9,9 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "inference_batch_size",
     "inference_batch_interval_ms",
     "inference_timeout",
+    "inference_remote_host",
+    "inference_remote_port",
+    "inference_remote_auth_token",
     "learning_rate",
     "batch_size",
     "value_loss_weight",
@@ -66,6 +69,9 @@ _AZ_BASE: dict[str, int | float | str] = {
     "inference_batch_size": 32,
     "inference_batch_interval_ms": 10,
     "inference_timeout": 5.0,
+    "inference_remote_host": "127.0.0.1",
+    "inference_remote_port": 5556,
+    "inference_remote_auth_token": "",
     "learning_rate": 0.0003,
     "batch_size": 128,
     "value_loss_weight": 1.0,
@@ -205,19 +211,8 @@ AZ_PROXY_BASIC_KEYS: tuple[str, ...] = (
 )
 
 AZ_GROUPS: tuple[dict[str, object], ...] = (
-    {
-        "id": "inference_server",
-        "title": "Inference Server (вариант B)",
-        "keys": (
-            "inference_server_enabled",
-            "inference_server_mode",
-            "num_env_workers",
-            "inference_batch_size",
-            "inference_batch_interval_ms",
-            "inference_timeout",
-        ),
-        "default_collapsed": True,
-    },
+    # Inference Server (вариант B) рендерится отдельной панелью AzInferenceServerPanel.qml,
+    # поэтому в generic-редакторе группы нет (иначе enabled/mode рисуются спинбоксами).
     {
         "id": "training",
         "title": "Обучение",
@@ -319,6 +314,9 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "inference_batch_size": "Макс. размер батча запросов к IS (рекомендуется ≥ num_env_workers × parallel_sims).",
     "inference_batch_interval_ms": "Окно сбора батча мс (10–20). Меньше = меньше задержка, хуже батчинг.",
     "inference_timeout": "Таймаут ожидания ответа IS (сек). При превышении — retry + лог.",
+    "inference_remote_host": "LAN: IP ПК2 с GPU inference server (например 192.168.1.100).",
+    "inference_remote_port": "LAN: TCP-порт ПК2 (по умолчанию 5556).",
+    "inference_remote_auth_token": "LAN: общий секрет (опционально, должен совпадать с ПК2).",
     "learning_rate": "Скорость обучения policy-value сети.",
     "batch_size": "Размер батча learner.",
     "value_loss_weight": "Вес value loss.",
