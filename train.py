@@ -2972,7 +2972,7 @@ AZ_INFERENCE_REQUEST_QUEUE_MAX = max(
     8, int(os.getenv("AZ_INFERENCE_REQUEST_QUEUE_MAX", str(AZ_NUM_ENV_WORKERS * 4)))
 )
 AZ_INFERENCE_REMOTE_HOST = str(os.getenv("AZ_INFERENCE_REMOTE_HOST", AZ_CFG.get("inference_remote_host", "127.0.0.1")))
-AZ_INFERENCE_REMOTE_PORT = int(os.getenv("AZ_INFERENCE_REMOTE_PORT", str(AZ_CFG.get("inference_remote_port", 5556))))
+AZ_INFERENCE_REMOTE_PORT = int(os.getenv("AZ_INFERENCE_REMOTE_PORT", str(AZ_CFG.get("inference_remote_port", 5555))))
 AZ_INFERENCE_REMOTE_AUTH_TOKEN = str(os.getenv("AZ_INFERENCE_REMOTE_AUTH_TOKEN", AZ_CFG.get("inference_remote_auth_token", "")))
 
 if AZ_INFERENCE_SERVER_USING_FALLBACK:
@@ -8278,7 +8278,7 @@ def _az_env_worker_entry(
     inference_timeout: float,
     inference_server_mode: str = "local",
     remote_host: str = "",
-    remote_port: int = 5556,
+    remote_port: int = 5555,
     remote_auth_token: str = "",
 ):
     """CPU env worker для AZ IS (variant B): env + MCTS + RemoteEvaluator → data_q."""
@@ -8738,7 +8738,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     )
                     raise RuntimeError(
                         "Remote AZ inference server недоступен. Проверьте: 1) сервер на ПК2 "
-                        "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5556)."
+                        "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5555)."
                     ) from exc
                 request_q = None
                 reply_queues = None

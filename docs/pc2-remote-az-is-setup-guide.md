@@ -40,12 +40,12 @@ tools\pc2_remote_az_is.bat
 
 ### 5. ПК2: установка + старт
 ```bat
-tools\pc2_remote_az_is.bat setup    REM venv + firewall :5556 (один раз)
+tools\pc2_remote_az_is.bat setup    REM venv + firewall :5555 (один раз)
 tools\pc2_remote_az_is.bat          REM запуск сервера
 ```
 Ожидаемо в консоли:
 ```text
-[AZ][REMOTE_IS] listening on 0.0.0.0:5556 device=cuda:0
+[AZ][REMOTE_IS] listening on 0.0.0.0:5555 device=cuda:0
 ```
 Окно не закрывать. Остановка — Ctrl+C.
 
@@ -56,7 +56,7 @@ set TRAIN_ALGO=alphazero_tree
 set AZ_INFERENCE_SERVER=1
 set AZ_INFERENCE_SERVER_MODE=remote
 set AZ_INFERENCE_REMOTE_HOST=192.168.1.100
-set AZ_INFERENCE_REMOTE_PORT=5556
+set AZ_INFERENCE_REMOTE_PORT=5555
 set AZ_MCTS_MAX_DEPTH=1
 python train.py ...
 ```
@@ -68,7 +68,7 @@ python train.py ...
 - [ ] `pc2_remote_az_is_config.bat` заполнен
 - [ ] `Z:\latest_az_tree_policy.pth` или `AZ_REMOTE_INIT_WEIGHTS`
 - [ ] `Z:\az_remote_search_cfg.json` есть
-- [ ] `listening on 0.0.0.0:5556`
+- [ ] `listening on 0.0.0.0:5555`
 
 **ПК1**
 - [ ] `az_remote_health_check` OK (или train стартует без ошибки health_check)

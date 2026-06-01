@@ -27,7 +27,7 @@ call "%CFG%"
 
 REM --- Дефолты, если в конфиге пусто ---
 if "%AZ_REMOTE_HOST%"=="" set "AZ_REMOTE_HOST=0.0.0.0"
-if "%AZ_REMOTE_PORT%"=="" set "AZ_REMOTE_PORT=5556"
+if "%AZ_REMOTE_PORT%"=="" set "AZ_REMOTE_PORT=5555"
 if "%AZ_REMOTE_DEVICE%"=="" set "AZ_REMOTE_DEVICE=cuda:0"
 if "%AZ_REMOTE_BATCH_SIZE%"=="" set "AZ_REMOTE_BATCH_SIZE=32"
 if "%AZ_REMOTE_BATCH_INTERVAL_MS%"=="" set "AZ_REMOTE_BATCH_INTERVAL_MS=10"

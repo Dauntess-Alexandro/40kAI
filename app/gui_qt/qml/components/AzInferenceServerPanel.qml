@@ -134,7 +134,7 @@ ChamferPanel {
                     Layout.fillWidth: true
                     rootUi: panel.rootUi
                     title: "LAN Inference server"
-                    tooltipText: "Инференс на GPU второго ПК (ПК2). MCTS+env остаются на этом ПК. Порт 5556."
+                    tooltipText: "Инференс на GPU второго ПК (ПК2). MCTS+env остаются на этом ПК. Порт 5555."
                     active: true
                     switchChecked: panel.lanOn
                     switchEnabled: !controller.running
@@ -173,7 +173,7 @@ ChamferPanel {
                         Text { text: "Порт"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
                         SpinBox {
                             from: 1; to: 65535
-                            value: panel.azNum("inference_remote_port", 5556)
+                            value: panel.azNum("inference_remote_port", 5555)
                             onValueModified: panel.setKey("inference_remote_port", value)
                         }
 

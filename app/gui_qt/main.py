@@ -1679,7 +1679,7 @@ class GUIController(QtCore.QObject):
 
         hp = self._az_tree_hyperparams
         host = str(hp.get("inference_remote_host", "127.0.0.1") or "127.0.0.1")
-        port = int(hp.get("inference_remote_port", 5556) or 5556)
+        port = int(hp.get("inference_remote_port", 5555) or 5555)
         token = str(hp.get("inference_remote_auth_token", "") or "")
         timeout = min(3.0, float(hp.get("inference_timeout", 5.0) or 5.0))
         t0 = time.perf_counter()
@@ -1695,7 +1695,7 @@ class GUIController(QtCore.QObject):
             self._az_inference_status = f"Ошибка: {exc}"
             self._emit_status(
                 "AZ Remote IS недоступен. Проверьте: 1) сервер на ПК2 "
-                "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5556)."
+                "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5555)."
             )
         self.azInferenceChanged.emit()
 

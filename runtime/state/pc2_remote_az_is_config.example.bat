@@ -14,7 +14,7 @@ set "AZ_REMOTE_SEARCH_CONFIG=Z:\az_remote_search_cfg.json"
 
 REM --- Сеть / GPU ---
 set "AZ_REMOTE_HOST=0.0.0.0"
-set "AZ_REMOTE_PORT=5556"
+set "AZ_REMOTE_PORT=5555"
 set "AZ_REMOTE_DEVICE=cuda:0"
 
 REM --- Производительность ---

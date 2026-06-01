@@ -56,7 +56,7 @@
 - **Дизайн:** `docs/inference-server-az-design.md` (план: `plans/az-tree-inference-server.md`).
 - **LAN-руководство (ПК1+ПК2):** `docs/remote-inference-server-az.md`; пошагово на ПК2: `docs/pc2-remote-az-is-setup-guide.md`.
 - Net-only offload: дерево MCTS + env-rollout'ы на CPU-воркере; на GPU-сервер уходит только `net.infer`. Сервер stateless.
-- Запуск на ПК2: `tools/pc2_remote_az_is.bat` (конфиг: `runtime/state/pc2_remote_az_is_config.bat`). Порт по умолчанию **5556** (GMZ — 5555).
+- Запуск на ПК2: `tools/pc2_remote_az_is.bat` (конфиг: `runtime/state/pc2_remote_az_is_config.bat`). Порт по умолчанию **5555** (тот же, что у GMZ — не запускать оба remote-сервера на одном ПК2 одновременно; нужны оба — задать разные порты).
 - Конфиг GUI (ПК1): LAN-настройки AZ (host/port/auth/mode) хранятся в `hyperparams.json` → `alphazero_tree` (поля `inference_*`); панель «Inference Server» во вкладке AlphaZero Tree.
 - Флаг: `inference_server_enabled` (hyperparams `alphazero_tree`) / env `AZ_INFERENCE_SERVER=1`. По умолчанию выключен (вариант A — CPU акторы).
 - Для LAN рекомендуется `mcts_max_depth=1` (иначе round-trip шторм на intermediate-evals).

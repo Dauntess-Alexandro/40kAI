@@ -15,7 +15,7 @@ from core.models.az_inference_protocol import (
     encode_message,
 )
 
-AZ_DEFAULT_REMOTE_PORT = 5556
+AZ_DEFAULT_REMOTE_PORT = 5555
 
 
 class AZInferenceTransport(ABC):

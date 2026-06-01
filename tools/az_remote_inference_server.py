@@ -334,7 +334,7 @@ def _load_cfg(path: str | None) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="40kAI AZ Remote Inference Server")
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=5556)
+    parser.add_argument("--port", type=int, default=5555)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--weights-path", required=True)
     parser.add_argument("--sync-method", choices=["smb"], default="smb")

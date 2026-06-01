@@ -19,7 +19,7 @@ inference server уходят только `net.infer` (root/intermediate) и б
 | Файл | Роль |
 |------|------|
 | `core/models/az_inference_protocol.py` | msgpack+numpy, `AZ_PROTOCOL_VERSION=1`, унифицированный `infer` (obs `[B, obs_dim]`) |
-| `core/models/az_inference_transport.py` | `LocalAZInferenceTransport` (mp.Queue) / `RemoteAZInferenceTransport` (ZMQ DEALER :5556) + `az_remote_health_check` |
+| `core/models/az_inference_transport.py` | `LocalAZInferenceTransport` (mp.Queue) / `RemoteAZInferenceTransport` (ZMQ DEALER :5555) + `az_remote_health_check` |
 | `core/models/az_inference_server.py` | `AZInferenceEngine` (batched `net.infer` + server-side EvalCache + weight polling), `AZInferenceServer` (батч-коллектор), `az_inference_server_entry` (spawn) |
 | `core/models/az_inference_client.py` | `Evaluator` protocol, `LocalNetEvaluator`, `RemoteEvaluator` (thread-safe Lock + request_id) |
 | `core/models/alphazero_mcts.py` | `AlphaZeroFactorizedMCTS(evaluator=...)` — инъекция; `evaluator=None` = текущее поведение |
@@ -36,7 +36,7 @@ inference server уходят только `net.infer` (root/intermediate) и б
 | `inference_batch_size` | `AZ_INFERENCE_BATCH_SIZE` | 32 | max батч |
 | `inference_batch_interval_ms` | `AZ_INFERENCE_BATCH_INTERVAL_MS` | 10 | окно сбора |
 | `inference_timeout` | `AZ_INFERENCE_TIMEOUT` | 5.0 | таймаут ответа |
-| — | `AZ_INFERENCE_REMOTE_HOST/PORT` | `127.0.0.1`/`5556` | ПК2 |
+| — | `AZ_INFERENCE_REMOTE_HOST/PORT` | `127.0.0.1`/`5555` | ПК2 |
 
 **Fallback:** `inference_server_enabled=1` + нет CUDA → лог `[AZ][CONFIG][FALLBACK]`, откат на вариант A (CPU акторы).
 
