@@ -52,6 +52,16 @@
 - Конфиг GUI (ПК1): `runtime/state/remote_is.json` (в `.gitignore`).
 - Логи сервера на ПК2: `runtime/logs/LOGS_FOR_AGENTS_REMOTE_IS.md`, `gmz_remote_is_*.log`.
 
+## Inference Server (AlphaZero tree)
+- **Дизайн:** `docs/inference-server-az-design.md` (план: `plans/az-tree-inference-server.md`).
+- **LAN-руководство (ПК1+ПК2):** `docs/remote-inference-server-az.md`; пошагово на ПК2: `docs/pc2-remote-az-is-setup-guide.md`.
+- Net-only offload: дерево MCTS + env-rollout'ы на CPU-воркере; на GPU-сервер уходит только `net.infer`. Сервер stateless.
+- Запуск на ПК2: `tools/pc2_remote_az_is.bat` (конфиг: `runtime/state/pc2_remote_az_is_config.bat`). Порт по умолчанию **5556** (GMZ — 5555).
+- Конфиг GUI (ПК1): `runtime/state/remote_is_az.json` (в `.gitignore`).
+- Флаг: `inference_server_enabled` (hyperparams `alphazero_tree`) / env `AZ_INFERENCE_SERVER=1`. По умолчанию выключен (вариант A — CPU акторы).
+- Для LAN рекомендуется `mcts_max_depth=1` (иначе round-trip шторм на intermediate-evals).
+- Логи: `[AZ][INF_SERVER]`, `[AZ][ENV_WORKER]`, `[AZ][REMOTE_IS]`, `[AZ][REMOTE_CLIENT]`.
+
 ## Результаты треинровки (общее)
 - **Можно смотреть `artifacts/results/results.txt`** для быстрой сверки итогов train/eval.
 

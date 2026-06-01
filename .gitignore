@@ -32,6 +32,9 @@ runtime/state/remote_is.json
 runtime/state/pc2_remote_is_config.bat
 runtime/state/pc2_remote_is_config.rev
 runtime/state/pc2_remote_is_config.bat.bak
+runtime/state/remote_is_az.json
+runtime/state/pc2_remote_az_is_config.bat
+runtime/state/az_remote_search_cfg.json
 
 # Qt GUI
 app/gui_qt/.icon_cache/
