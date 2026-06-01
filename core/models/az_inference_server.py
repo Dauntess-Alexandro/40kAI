@@ -11,6 +11,7 @@ from typing import Any, Optional
 import numpy as np
 import torch
 
+from core.models.alphazero_mcts import EvalCache
 from core.models.alphazero_model import AlphaZeroPolicyValueNet, load_alphazero_state_dict
 from core.models.utils import normalize_state_dict
 
@@ -37,6 +38,7 @@ class AZInferenceEngine:
         device: torch.device,
         sync_path: str,
         sync_check_interval: float = 0.5,
+        eval_cache_size: int = 20000,
     ) -> None:
         self.net = net
         self.device = device
@@ -45,6 +47,10 @@ class AZInferenceEngine:
         self._weight_version = 0
         self._weight_lock = threading.Lock()
         self._running = True
+
+        # Server-side кэш: дедуп идентичных позиций между воркерами/потоками.
+        # Очищается при смене policy_version (см. _poll_weights) → когерентность весов.
+        self._cache = EvalCache(max_size=int(eval_cache_size))
 
         self._inference_stream: Optional[Any] = None
         if device.type == "cuda":
@@ -83,6 +89,8 @@ class AZInferenceEngine:
                                 )
                                 self.net.eval()
                                 self._weight_version = new_ver
+                                # Кэш привязан к версии весов — инвалидируем при смене
+                                self._cache = EvalCache(max_size=self._cache.max_size)
                             last_mtime = float(mtime)
                             _append_log(
                                 f"[AZ][INF_SERVER] weight_updated version={new_ver} "
@@ -99,35 +107,70 @@ class AZInferenceEngine:
         *,
         want_priors: bool = True,
     ) -> tuple[list[np.ndarray], np.ndarray, int]:
-        """Batched forward pass.
+        """Batched forward pass с server-side кэшем (дедуп по obs+masks).
 
         obs_np: float32 [B, obs_dim]
         masks_np_by_head: list num_heads × [B, head_size] bool
+
+        Сеть всегда вычисляет priors+value (net.infer возвращает оба), кэш хранит оба;
+        want_priors управляет только тем, что вернуть наружу.
 
         Returns:
             priors: list num_heads × [B, head_size] float32 (пусто если want_priors=False)
             values: [B] float32
             policy_version: int
         """
-        obs_t = torch.tensor(obs_np, dtype=torch.float32, device=self.device)
-        masks_t = [
-            torch.as_tensor(m, dtype=torch.bool, device=self.device)
-            for m in masks_np_by_head
-        ]
+        b = int(obs_np.shape[0])
+        num_heads = len(masks_np_by_head)
 
-        ctx = (
-            torch.cuda.stream(self._inference_stream)
-            if self._inference_stream is not None
-            else _null_context()
-        )
+        # 1) Per-row cache lookup
+        row_priors: list[Optional[list[np.ndarray]]] = [None] * b
+        row_values: list[Optional[float]] = [None] * b
+        uncached: list[int] = []
+        for i in range(b):
+            row_masks = [masks_np_by_head[h][i] for h in range(num_heads)]
+            c = self._cache.get(obs_np[i], row_masks)
+            if c is not None:
+                row_priors[i], row_values[i] = c[0], float(c[1])
+            else:
+                uncached.append(i)
 
-        with torch.no_grad(), self._weight_lock, ctx:
-            priors_t, values_t = self.net.infer(obs_t, masks_by_head=masks_t)
-            version = int(self._weight_version)
+        # 2) Forward только для uncached строк
+        version = int(self._weight_version)
+        if uncached:
+            obs_u = np.stack([obs_np[i] for i in uncached])
+            masks_u = [
+                np.stack([masks_np_by_head[h][i] for i in uncached])
+                for h in range(num_heads)
+            ]
+            obs_t = torch.tensor(obs_u, dtype=torch.float32, device=self.device)
+            masks_t = [torch.as_tensor(m, dtype=torch.bool, device=self.device) for m in masks_u]
 
-        values = values_t.detach().cpu().numpy().astype(np.float32)
+            ctx = (
+                torch.cuda.stream(self._inference_stream)
+                if self._inference_stream is not None
+                else _null_context()
+            )
+            with torch.no_grad(), self._weight_lock, ctx:
+                priors_t, values_t = self.net.infer(obs_t, masks_by_head=masks_t)
+                version = int(self._weight_version)
+            values_u = values_t.detach().cpu().numpy().astype(np.float32)
+            priors_u = [p.detach().cpu().numpy().astype(np.float32) for p in priors_t]
+
+            for j, i in enumerate(uncached):
+                p_row = [priors_u[h][j] for h in range(num_heads)]
+                v_row = float(values_u[j])
+                row_masks = [masks_np_by_head[h][i] for h in range(num_heads)]
+                self._cache.set(obs_np[i], row_masks, p_row, v_row)
+                row_priors[i] = p_row
+                row_values[i] = v_row
+
+        values = np.asarray([float(v) for v in row_values], dtype=np.float32)
         if want_priors:
-            priors = [p.detach().cpu().numpy().astype(np.float32) for p in priors_t]
+            priors = [
+                np.stack([row_priors[i][h] for i in range(b)]).astype(np.float32)  # type: ignore[index]
+                for h in range(num_heads)
+            ]
         else:
             priors = []
         return priors, values, version
