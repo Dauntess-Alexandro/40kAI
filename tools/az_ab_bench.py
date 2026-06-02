@@ -51,22 +51,18 @@ _EP_RE = re.compile(r"\bep=(\d+)/(\d+)")
 _AGENT_LOG = _REPO / "runtime" / "logs" / "LOGS_FOR_AGENTS_TRAIN.md"
 
 
-def _parse_winrate_from_agent_log(start_offset: int) -> tuple[float | None, int | None]:
+def _parse_winrates_from_agent_log(start_offset: int) -> list[tuple[int, float, int]]:
     """Honest-eval winrate пишется в agent-лог (не в stdout). Читаем только хвост,
-    добавленный за этот прогон (с start_offset), берём последний HONEST_EVAL."""
+    добавленный за этот прогон (с start_offset), собираем ВСЕ HONEST_EVAL (траектория)."""
     if not _AGENT_LOG.is_file():
-        return None, None
+        return []
     try:
         with _AGENT_LOG.open("r", encoding="utf-8", errors="ignore") as fh:
             fh.seek(start_offset)
             tail = fh.read()
     except OSError:
-        return None, None
-    wr = n = None
-    for m in _WR_RE.finditer(tail):
-        wr = float(m.group(2))
-        n = int(m.group(3))
-    return wr, n
+        return []
+    return [(int(m.group(1)), float(m.group(2)), int(m.group(3))) for m in _WR_RE.finditer(tail)]
 
 
 def run_one(name: str, overrides: dict[str, str], episodes: int, timeout: float, logdir: Path) -> dict:
@@ -97,20 +93,23 @@ def run_one(name: str, overrides: dict[str, str], episodes: int, timeout: float,
     eps_done = 0
     for m in _EP_RE.finditer(text):
         eps_done = max(eps_done, int(m.group(1)))
-    # winrate пишется в agent-лог, не в stdout сабпроцесса → читаем хвост agent-лога
-    wr, n_eval = _parse_winrate_from_agent_log(agent_log_offset)
+    # winrate пишется в agent-лог, не в stdout сабпроцесса → читаем хвост agent-лога (вся траектория)
+    wr_traj = _parse_winrates_from_agent_log(agent_log_offset)
+    wr = wr_traj[-1][1] if wr_traj else None
+    n_eval = wr_traj[-1][2] if wr_traj else None
     eph = (eps_done / (elapsed / 3600.0)) if (elapsed > 0 and eps_done > 0) else 0.0
     sec_per_ep = (elapsed / eps_done) if eps_done > 0 else float("nan")
 
     res = {
         "name": name, "overrides": overrides, "elapsed_s": elapsed,
         "episodes": eps_done, "ep_per_h": eph, "sec_per_ep": sec_per_ep,
-        "win_rate": wr, "eval_n": n_eval, "rc": rc, "timed_out": timed_out,
-        "log": str(log_path),
+        "win_rate": wr, "eval_n": n_eval, "wr_traj": wr_traj,
+        "rc": rc, "timed_out": timed_out, "log": str(log_path),
     }
+    traj_s = " ".join(f"ep{ep}={w:.2f}" for ep, w, _ in wr_traj) or "—"
     print(
         f"=== [{name}] done: ep={eps_done} elapsed={elapsed:.0f}s "
-        f"ep/h={eph:.1f} sec/ep={sec_per_ep:.1f} winrate={wr} "
+        f"ep/h={eph:.1f} sec/ep={sec_per_ep:.1f} winrate[{traj_s}] "
         f"{'(TIMEOUT)' if timed_out else ''} rc={rc} ===",
         flush=True,
     )
@@ -127,8 +126,8 @@ def write_report(results: list[dict], episodes: int, report_path: Path) -> None:
         "⚠️ ep/h — надёжно. winrate при малом N — ШУМ (сеть едва обучена); "
         "для качества нужен длинный прогон или старт с checkpoint.",
         "",
-        "| Конфиг | overrides | эп | сек/эп | ep/h | Δ скорости | winrate | n | статус |",
-        "|--------|-----------|----|--------|------|-----------|---------|---|--------|",
+        "| Конфиг | overrides | эп | сек/эп | ep/h | Δ скорости | winrate (траектория) | n | статус |",
+        "|--------|-----------|----|--------|------|-----------|----------------------|---|--------|",
     ]
     for r in results:
         delta = ""
@@ -136,7 +135,8 @@ def write_report(results: list[dict], episodes: int, report_path: Path) -> None:
             delta = f"{(r['ep_per_h'] / base['ep_per_h'] - 1.0) * 100:+.0f}%"
         ov = ", ".join(f"{k}={v}" for k, v in r["overrides"].items()) or "—"
         status = "TIMEOUT" if r["timed_out"] else (f"rc={r['rc']}" if r["rc"] else "ok")
-        wr = "—" if r["win_rate"] is None else f"{r['win_rate']:.3f}"
+        traj = r.get("wr_traj") or []
+        wr = " ".join(f"{ep}:{w:.2f}" for ep, w, _ in traj) or "—"
         lines.append(
             f"| {r['name']} | {ov} | {r['episodes']} | {r['sec_per_ep']:.1f} | "
             f"{r['ep_per_h']:.1f} | {delta} | {wr} | {r['eval_n'] or '—'} | {status} |"
