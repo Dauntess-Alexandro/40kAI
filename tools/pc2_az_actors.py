@@ -198,6 +198,16 @@ def main() -> int:
     opp_id = _resolve_opponent_agent_id()
     if opp_id:
         os.environ["OPPONENT_AGENT_ID"] = opp_id
+    models_dir = str(os.getenv("MODELS_DIR", "") or os.getenv("40KAI_MODELS_DIR", "")).strip()
+    if models_dir:
+        os.environ["MODELS_DIR"] = models_dir
+        os.environ["40KAI_MODELS_DIR"] = models_dir
+    from core.engine.agent_registry import agents_meta_root
+
+    print(
+        f"[AZ][DIST][PC2] MODELS_DIR={models_dir or '(local artifacts/models)'} agents={agents_meta_root()}",
+        flush=True,
+    )
 
     print(
         f"[AZ][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "

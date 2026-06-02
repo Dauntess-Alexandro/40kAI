@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 import os
 
-from core.engine.agent_registry import collect_registered_agents_meta, resolve_latest_opponent_agent_id
+from core.engine.agent_registry import (
+    _remap_models_path,
+    agents_meta_root,
+    collect_registered_agents_meta,
+    models_dir,
+    resolve_latest_opponent_agent_id,
+)
 from core.models.az_rollout_sink import (
     az_dist_context_path,
     read_az_dist_train_context,
@@ -44,3 +50,16 @@ def test_resolve_latest_opponent(tmp_path, monkeypatch):
     assert records[0]["agent_id"] == "snap_new"
     assert resolve_latest_opponent_agent_id(learner_side="P1") == "snap_new"
     assert resolve_latest_opponent_agent_id(learner_side="P2") == ""
+
+
+def test_remap_models_path_pc1_to_smb(tmp_path, monkeypatch):
+    smb = tmp_path / "models"
+    agents = smb / "agents" / "P2" / "Necrons" / "agent1"
+    agents.mkdir(parents=True)
+    policy = agents / "policy.pth"
+    policy.write_text("x", encoding="utf-8")
+    monkeypatch.setenv("MODELS_DIR", str(smb))
+    pc1_path = r"C:\40kAI\artifacts\models\agents\P2\Necrons\agent1\policy.pth"
+    assert _remap_models_path(pc1_path) == str(policy)
+    assert agents_meta_root() == str(smb / "agents")
+    assert models_dir() == str(smb)

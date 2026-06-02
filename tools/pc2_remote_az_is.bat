@@ -74,6 +74,7 @@ if not exist "%AZ_REMOTE_WEIGHTS_PATH%" (
 )
 if "%MODELS_DIR%"=="" set "MODELS_DIR=Z:\"
 if /i "%MODELS_DIR%"=="Z:\actor_sync" if exist "Z:\agents\" set "MODELS_DIR=Z:\"
+if not "%MODELS_DIR%"=="" set "40KAI_MODELS_DIR=%MODELS_DIR%"
 exit /b 0
 
 :sync_config_from_example

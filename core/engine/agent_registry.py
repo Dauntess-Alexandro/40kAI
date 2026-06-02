@@ -57,28 +57,85 @@ def _write_json(path: str, payload: Any) -> None:
         handle.write("\n")
 
 
-def _resolve_legacy_models_path(path: Any) -> str:
+def models_dir() -> str:
+    """Корень artifacts/models (локально или SMB: MODELS_DIR / 40KAI_MODELS_DIR)."""
+    custom = str(os.getenv("40KAI_MODELS_DIR", os.getenv("MODELS_DIR", "")) or "").strip()
+    if custom:
+        base = custom.rstrip("\\/")
+        name = os.path.basename(base).lower()
+        if name == "agents":
+            parent = os.path.dirname(base)
+            return parent if parent else base
+        if name == "actor_sync":
+            parent = os.path.dirname(base)
+            return parent if parent else base
+        return base
+    return str(ARTIFACTS_MODELS_DIR)
+
+
+def agents_registry_path() -> str:
+    return os.path.join(models_dir(), "agents_registry.json")
+
+
+def _remap_models_path(path: str) -> str:
+    """Пути из meta с ПК1 (C:\\...\\artifacts\\models\\...) → MODELS_DIR на ПК2 (Z:\\)."""
     raw = str(path or "").strip()
     if not raw:
         return ""
     if os.path.exists(raw):
         return raw
     normalized = raw.replace("\\", "/")
+    lowered = normalized.lower()
+    for marker in ("/artifacts/models/", "artifacts/models/"):
+        idx = lowered.find(marker)
+        if idx >= 0:
+            suffix = normalized[idx + len(marker) :].lstrip("/")
+            candidate = os.path.join(models_dir(), suffix.replace("/", os.sep))
+            if os.path.exists(candidate):
+                return candidate
     if normalized.startswith("models/"):
-        candidate = str(ARTIFACTS_MODELS_DIR / normalized[len("models/"):])
+        candidate = os.path.join(models_dir(), normalized[len("models/") :].replace("/", os.sep))
         if os.path.exists(candidate):
             return candidate
+    candidate = str(ARTIFACTS_MODELS_DIR / normalized.replace("/", os.sep).lstrip(os.sep))
+    if os.path.exists(candidate):
+        return candidate
     candidate = os.path.join(str(PROJECT_ROOT), raw)
     if os.path.exists(candidate):
         return candidate
     return raw
 
 
+def _resolve_legacy_models_path(path: Any) -> str:
+    raw = str(path or "").strip()
+    if not raw:
+        return ""
+    remapped = _remap_models_path(raw)
+    if remapped and os.path.exists(remapped):
+        return remapped
+    return raw
+
+
+def _resolve_agent_artifact_path(path: Any, artifact_dir: str, fallback_name: str) -> str:
+    raw = _resolve_legacy_models_path(path)
+    if raw and os.path.exists(raw):
+        return raw
+    root = str(artifact_dir or "").strip()
+    if root:
+        remapped_root = _remap_models_path(root)
+        if remapped_root and os.path.isdir(remapped_root):
+            candidate = os.path.join(remapped_root, fallback_name)
+            if os.path.exists(candidate):
+                return candidate
+    return raw
+
+
 def _find_agent_entry_on_disk(agent_id: str) -> Optional[dict[str, Any]]:
     target = str(agent_id or "").strip()
-    if not target or not os.path.isdir(AGENTS_ROOT):
+    root_agents = agents_meta_root()
+    if not target or not os.path.isdir(root_agents):
         return None
-    for root, _dirs, files in os.walk(AGENTS_ROOT):
+    for root, _dirs, files in os.walk(root_agents):
         if "meta.json" not in files:
             continue
         meta_path = os.path.join(root, "meta.json")
@@ -227,17 +284,7 @@ def save_agent_artifact(
 
 def agents_meta_root() -> str:
     """Корень agents/ (локальный repo или SMB через MODELS_DIR / 40KAI_MODELS_DIR)."""
-    custom = str(os.getenv("40KAI_MODELS_DIR", os.getenv("MODELS_DIR", "")) or "").strip()
-    if custom:
-        base = custom.rstrip("\\/")
-        name = os.path.basename(base).lower()
-        if name == "agents":
-            return base
-        if name == "actor_sync":
-            parent = os.path.dirname(base)
-            return os.path.join(parent, "agents") if parent else os.path.join(base, "agents")
-        return os.path.join(base, "agents")
-    return AGENTS_ROOT
+    return os.path.join(models_dir(), "agents")
 
 
 def collect_registered_agents_meta(*, agents_root: str | None = None) -> list[dict[str, str]]:
@@ -297,7 +344,7 @@ def resolve_latest_opponent_agent_id(*, learner_side: str = "P1", agents_root: s
 
 
 def list_agents(*, side: Optional[str] = None, faction: Optional[str] = None) -> list[dict[str, Any]]:
-    registry = _load_json(AGENTS_REGISTRY_PATH, {"agents": []})
+    registry = _load_json(agents_registry_path(), {"agents": []})
     agents = registry.get("agents", []) if isinstance(registry, dict) else []
     if not isinstance(agents, list):
         return []
@@ -325,13 +372,16 @@ def load_agent_by_id(agent_id: str) -> dict[str, Any]:
     if selected is None:
         raise FileNotFoundError(f"Agent '{agent_id}' not found in registry or artifacts/models/agents.")
 
-    contract_path = _resolve_legacy_models_path(selected.get("contract_path"))
-    meta_path = _resolve_legacy_models_path(selected.get("meta_path"))
+    artifact_dir = str(selected.get("artifact_dir", "") or "")
+    contract_path = _resolve_agent_artifact_path(selected.get("contract_path"), artifact_dir, "env_contract.json")
+    meta_path = _resolve_agent_artifact_path(selected.get("meta_path"), artifact_dir, "meta.json")
     contract = _load_json(contract_path, {})
     meta = _load_json(meta_path, {})
-    policy_path = _resolve_legacy_models_path((meta.get("paths") or {}).get("policy"))
-    target_path = _resolve_legacy_models_path((meta.get("paths") or {}).get("target"))
-    optimizer_path = _resolve_legacy_models_path((meta.get("paths") or {}).get("optimizer"))
+    paths = meta.get("paths") if isinstance(meta, dict) else {}
+    paths = paths if isinstance(paths, dict) else {}
+    policy_path = _resolve_agent_artifact_path(paths.get("policy"), artifact_dir, "policy.pth")
+    target_path = _resolve_agent_artifact_path(paths.get("target"), artifact_dir, "target.pth")
+    optimizer_path = _resolve_agent_artifact_path(paths.get("optimizer"), artifact_dir, "optimizer.pth")
     if not policy_path or not os.path.exists(policy_path):
         raise FileNotFoundError(f"Policy file missing for agent '{agent_id}'.")
 
