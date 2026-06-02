@@ -1,10 +1,11 @@
 # План: Distributed self-play для AlphaZero TREE (PC1 learner + PC2 actors)
 
-**Статус:** черновик дизайна (код не написан). AZ Inference Server (variant B) **уже в коде** — distributed self-play это **следующий слой**, переиспользует `az_inference_protocol`/transport и SMB-sync, но **не заменяет** IS.
+**Статус:** фазы **5.0–5.2** в коде (protocol/sink/receiver, learner, `pc2_az_actors`). GUI-тоггл и docs — 5.3. AZ Inference Server (variant B) **уже в коде** — distributed self-play переиспользует transport/SMB-sync, **не заменяет** IS.
 **Scope:** `TRAIN_ALGO=alphazero_tree`. Learner на PC1, env-воркеры на PC1+PC2.
+**Целевой деплой:** **IS LAN** — `AZ_INFERENCE_SERVER=1`, `AZ_INFERENCE_SERVER_MODE=remote`, AZ IS на PC2 (`:5555`); self-play-воркеры = `_az_env_worker_entry` (variant B). Distributed self-play **добавляет** канал rollout'ов `:5557`, **не заменяет** IS.
 **Родственные планы:** `plans/az-tree-inference-server.md` (переиспользуем транспорт/протокол/SMB-sync).
 
-> Имена функций/файлов сверены с кодом на `main`. Где утверждается поведение — указан файл.
+> Имена функций/файлов сверены с кодом на `main`. Где утверждается поведение — указан файл. В коде есть fallback **variant A** (`_actor_learner_actor_entry_alphazero`, CPU-net без IS) — в плане §6.2; боевой путь — variant B + IS.
 
 ---
 
@@ -14,7 +15,7 @@
 
 **Почему это правильный рычаг для AZ tree (в отличие от LAN inference server).** Узкое место AZ tree — **CPU env-rollout'ы** (`env.step` + `enemyTurn`), а не GPU. LAN-IS переносит на PC2 только `net.infer` (не bottleneck) и страдает от per-move round-trip. Distributed self-play добавляет на PC2 ровно то, чего не хватает — **CPU под симуляции**, и при этом:
 - **латентность сети не важна** — rollout'ы шлются пачками (`actor_batch_send`) асинхронно, fire-and-forget (нет per-move round-trip);
-- **graceful degradation** — отвал PC2 не роняет train, PC1 продолжает локально (у LAN-IS наоборот — IS критичен);
+- **graceful degradation (dist)** — отвал **dist-акторов** на PC2 не роняет train (PC1-воркеры + learner продолжают). **IS на PC2** для variant B по-прежнему критичен для всех `_az_env_worker_entry` — это не лечит distributed self-play;
 - **качество не теряется** — это просто больше данных тем же поиском.
 
 **Ожидаемый выигрыш.** PC2 = Ryzen 5 1600 (слабее 7600 по IPC и старше) → реалистично **+40–70% эпизодов/час**, не ×2. Зависит от доли PC2-данных, отбракованных как stale (см. §7).
@@ -25,14 +26,15 @@
 |--|--------|---------------------|
 | Self-play CPU | только 7600 | 7600 **+ 1600** |
 | Learner | PC1 GPU | PC1 GPU (без изменений) |
-| Источник rollout'ов | локальные процессы → `data_q` | локальные + PC2 (ZMQ→`data_q`) |
-| Отказ PC2 | — | train продолжается на PC1 |
+| `net.infer` | PC1-воркеры → IS PC2 `:5555` | без изменений |
+| Источник rollout'ов | локальные → `data_q` | локальные + PC2 (ZMQ `:5557`→`data_q`) |
+| Отказ dist на PC2 | — | train + IS LAN на PC1 продолжают |
 
 ---
 
 ## 2. Scope & Non-goals
 
-**In scope:** `alphazero_tree`, self-play на 2 ПК, learner на PC1. Совместимость с honest DET-eval, actor sync, resume, IS Local на PC1 (можно совмещать: PC1 = IS Local + воркеры, PC2 = воркеры со своей сетью или своим IS — см. open Q).
+**In scope:** `alphazero_tree`, self-play на 2 ПК, learner на PC1. Совместимость с honest DET-eval, actor sync, resume, **IS LAN** (PC1-воркеры → IS на PC2) + distributed actors на PC2 (те же `_az_env_worker_entry`, infer → **localhost** IS на PC2, rollout → PC1). Опционально: IS Local только на PC1 (без dist) или dist + variant A на PC2 без IS (§6.2).
 
 **Non-goals:** распределённый learner (один learner, PC1); `alphazero_proxy` (тривиально добавится — тот же путь); >2 ПК (схема обобщается, но тестим на 2); отказоустойчивый learner.
 
@@ -40,41 +42,55 @@
 
 ## 3. As-Is vs To-Be
 
-### 3.1. As-Is (только PC1)
+Два worker-entry в коде: **variant B** `_az_env_worker_entry` (IS, `net=None`) — **целевой**; **variant A** `_actor_learner_actor_entry_alphazero` (локальная CPU-сеть) — fallback при `AZ_INFERENCE_SERVER=0`.
+
+### 3.1. As-Is (только PC1, профиль IS LAN)
+
+Сейчас при `AZ_INFERENCE_SERVER_ENABLED` + `mode=remote` на PC1 крутятся env-воркеры variant B; `net.infer` уходит на PC2, rollout/ep — в локальный `data_q`.
+
 ```mermaid
 flowchart TB
     subgraph PC1["PC1"]
         L["learner (GPU)\n_main_actor_learner_alphazero"]
-        DQ["data_q (mp.Queue)"]
-        W0["env-воркер 0..N\n_az_env_worker_entry"]
-        F["latest_az_tree_policy.pth"]
-        W0 -->|rollout/ep/done| DQ --> L
-        L -->|_save_az_sync| F
-        F -->|ACTOR_SYNC poll| W0
+        DQ["data_q"]
+        W["_az_env_worker_entry × N"]
+        W -->|rollout/ep/done| DQ --> L
     end
+    subgraph PC2["PC2"]
+        IS["AZ Inference Server\nTCP :5555"]
+    end
+    W -->|net.infer LAN| IS
+    L -->|_save_az_sync SMB| IS
 ```
 
-### 3.2. To-Be (PC1 + PC2)
+### 3.2. To-Be (PC1 + PC2, IS LAN + distributed)
+
+**Два независимых канала:** (1) IS `:5555` — как сейчас; (2) rollout `:5557` — новый fan-in на learner.
+
+- **PC1:** те же `_az_env_worker_entry` + `LocalSink` → `data_q`; infer → **LAN → PC2 IS**.
+- **PC2:** доп. воркеры `_az_env_worker_entry` + `RemoteSink` → ZMQ на PC1; infer → **`127.0.0.1:5555`** (тот же IS на PC2, без LAN round-trip). IS-процесс на PC2 **один** (уже поднимается `pc2_remote_az_is.bat`).
+
 ```mermaid
 flowchart LR
     subgraph PC1["PC1 (learner)"]
         L["learner (GPU)"]
-        DQ["data_q (mp.Queue)"]
-        WL["local env-воркеры (7600)"]
-        RX["RolloutReceiver\n(ZMQ PULL :5557)"]
-        F["latest_az_tree_policy.pth"]
-        SF["stop.flag"]
-        WL -->|rollout/ep/done| DQ
+        DQ["data_q"]
+        RX["RolloutReceiver\nPULL :5557"]
+        W1["_az_env_worker_entry\nLocalSink"]
+        SF["az_dist_stop.flag"]
+        W1 -->|rollout/ep| DQ
         RX -->|rollout/ep| DQ --> L
-        L --> F
         L --> SF
     end
-    subgraph PC2["PC2 (actors, 1600)"]
-        WR["env-воркеры\n_az_env_worker_entry(sink=Remote)"]
+    subgraph PC2["PC2"]
+        IS["AZ IS :5555"]
+        W2["_az_env_worker_entry\nRemoteSink"]
+        W2 -->|infer localhost| IS
     end
-    WR -->|"ZMQ PUSH rollout/ep (msgpack)"| RX
-    F -.->|SMB poll Z:| WR
-    SF -.->|SMB poll| WR
+    W1 -->|infer LAN| IS
+    W2 -->|rollout PUSH| RX
+    L -.->|SMB веса| IS
+    SF -.->|SMB poll| W2
 ```
 
 ---
@@ -89,8 +105,8 @@ flowchart LR
 
 | kind | payload | заметка |
 |------|---------|---------|
-| `rollout` | `actor_idx`, `policy_version`, `transitions: [{state, policy_targets[], value_target, policy_version}]`, `env_contract_hash` | то же, что кладёт `_az_env_worker_entry` в `data_q` сейчас |
-| `ep` | метрики эпизода (result/vp_diff/turn/…) | как сейчас |
+| `rollout` | `actor_idx`, `policy_version`, `source` (`local`\|`remote`), `transitions: [...]`, `env_contract_hash` | та же схема, что `_az_env_worker_entry` → `data_q`; `source` для `stale_drop %` и логов |
+| `ep` | метрики эпизода + `source`, `actor_idx` | как сейчас; после `totLifeT` новые `ep` с `source=remote` не увеличивают счётчик (§5) |
 | `done` | `worker_id` | удалённые «done» не блокируют терминацию (см. §5) |
 | `hello` | `worker_id`, `env_contract_hash`, `protocol_version` | при коннекте; receiver валидирует контракт |
 | (heartbeat) | `worker_id`, `ts` | для детекта «PC2 молчит» |
@@ -116,9 +132,9 @@ flowchart LR
 1. завершать по `episodes_finished >= totLifeT` (а не по `done_actors`);
 2. **после достижения totLifeT** — перестать учитывать новые `ep` (cap счётчика/метрик), чтобы не было лишних эпизодов и работы;
 3. записать `stop.flag` (SMB) → PC2 выходит;
-4. дать `RolloutReceiver` **дренировать** остаток очереди (короткий таймаут);
+4. дать `RolloutReceiver` **дренировать** остаток (короткий таймаут): **rollout'ы ещё кладём в replay** (уже сгенерированные переходы не выбрасываем), новые `ep` после cap — игнорируем;
 5. затем `join` локальных procs + receiver-поток.
-Локальные «done» учитываем как раньше (чтобы не висеть, если локальные кончились раньше плана).
+Локальные «done» учитываем как раньше (чтобы не висеть, если локальные кончились раньше плана). PC2-воркеры — **open-ended** до `stop.flag` (§13).
 
 **RolloutSink в воркере** (абстракция, как `Evaluator` для IS). ⚠️ **Два worker-entry на PC1**, sink нужен в ОБА (или вынести общий helper эмиссии rollout/ep/done):
 - `_actor_learner_actor_entry_alphazero` (`train.py:8049`) — variant A, **локальная CPU-сеть** + SMB-sync;
@@ -131,12 +147,22 @@ flowchart LR
 
 ## 6. PC2: лаунчер и окружение
 
-- **MVP-entry на PC2 = `_actor_learner_actor_entry_alphazero` + `RemoteSink`** (НЕ `_az_env_worker_entry`!). Причина: `_az_env_worker_entry` имеет `net=None` и работает только через IS (`RemoteEvaluator`), локальную CPU-сеть не умеет. А по open Q #5 на PC2 для MVP — **своя CPU-сеть** (net не bottleneck), что ровно и делает variant-A actor (грузит сеть + SMB-sync весов). Если позже захотим IS на PC2 — отдельная фаза.
-- `tools/pc2_az_actors.py` — спавнит N variant-A акторов с `RemoteSink`, веса по SMB (`AZ_DIST_WEIGHTS_PATH=Z:\latest_az_tree_policy.pth`).
-- **Опонент: через `OPPONENT_AGENT_ID` + загрузка из SMB-реестра** (`artifacts/models/agents`), как делает train (`load_agent_opponent`), **а не pickle `opponent_spec` через spawn** — кросс-машинный pickle опонента ненадёжен. PC2 грузит агента по id с того же контракта.
-- **Ростер/контракт**: переиспользовать готовый паттерн `tools/write_az_remote_search_cfg.py` (он уже кладёт `search_cfg.json` с obs_dim/action_sizes/контрактом в SMB-папку) — PC2 читает оттуда.
-- **PC2 нужен весь env + ростер + опонент** (в отличие от IS, где нужна только сеть): репозиторий + `search_cfg.json` по SMB + агент-опонент по SMB.
-- Seeds: PC2-воркерам оффсет `worker_id` (напр. 100+), иначе совпадут траектории с PC1.
+**Предпосылка:** на PC2 уже запущен AZ IS (`tools/pc2_remote_az_is.bat`, порт **5555**). Distributed-лаунчер **не подменяет** IS, а добавляет env-воркеры.
+
+### 6.1. Основной путь (IS LAN — целевой)
+
+- **Entry на PC2:** `_az_env_worker_entry` + `RemoteSink` (rollout → PC1) + `RemoteEvaluator` → **`127.0.0.1:5555`** (localhost к тому же IS). Веса политики IS подтягивает learner по SMB (`latest_az_tree_policy.pth`) — как сейчас.
+- `tools/pc2_az_actors.py` — N процессов `_az_env_worker_entry` с `inference_server_mode=remote`, `remote_host=127.0.0.1`, `remote_port=5555`, `sink=RemoteSink`, `rollout_host=<PC1 LAN IP>`, `rollout_port=5557`.
+- **Не делать:** PC2-воркеры с infer обратно на PC1 по LAN — лишний RTT; IS уже на PC2.
+- **Опонент:** `OPPONENT_AGENT_ID` + загрузка из SMB-реестра (`artifacts/models/agents`), как train (`load_agent_opponent`), **не pickle `opponent_spec`**.
+- **Ростер/контракт:** `tools/write_az_remote_search_cfg.py` → `search_cfg.json` на SMB; PC2 читает obs_dim/action_sizes/контракт.
+- **PC2 нужен:** репозиторий + env + `search_cfg.json` + агент-опонент по SMB (тяжелее, чем «только IS», но env-rollout на CPU PC2).
+- **Seeds:** `worker_id` с оффсетом (напр. 100+), в rollout/ep `source=remote`.
+- **Порядок запуска:** 1) IS на PC2, 2) train на PC1 (IS LAN + `AZ_DISTRIBUTED_ACTORS=1`), 3) `pc2_az_actors.bat`.
+
+### 6.2. Fallback (без IS на PC2)
+
+Если IS на PC2 недоступен, но нужны только dist-акторы: `_actor_learner_actor_entry_alphazero` + `RemoteSink` + SMB-sync весов (`latest_az_tree_policy.pth`). Своя CPU-сеть в процессе (net не bottleneck). Отдельный smoke, не смешивать с §6.1 в одном прогоне.
 
 ---
 
@@ -147,7 +173,7 @@ PC2 читает веса по SMB с задержкой (poll-интервал 
 - У AZ уже есть guard: `train_alphazero_step` дропает переходы с `policy_version < current - max_policy_staleness_updates` (`alphazero_trainer.py`).
 - Риск: при редком SMB-sync / быстром learner много PC2-данных **отбракуется как stale** → выигрыш съест.
 - **Рычаги:** (1) чаще sync на PC2 (`ACTOR_SYNC_CHECK_EVERY_EP` меньше), (2) поднять `max_policy_staleness_updates` для distributed, (3) логировать % дропнутых PC2-переходов.
-- **Замерять обязательно:** `[AZ][DIST] stale_drop pc2=X%`. Если высоко — крутить (1)/(2).
+- **Замерять обязательно:** `[AZ][DIST] stale_drop remote=X%` (по `source=remote` в rollout / policy_version при push в replay). Если высоко — крутить (1)/(2).
 
 ---
 
@@ -160,7 +186,7 @@ PC2 читает веса по SMB с задержкой (poll-интервал 
 | `train.py` `_az_env_worker_entry` **и** `_actor_learner_actor_entry_alphazero` | принять `sink=`; все `data_q.put` → `sink.put` в ОБОИХ (или общий helper); zero-diff при LocalSink | **P0** |
 | `train.py` `_main_actor_learner_alphazero` | флаг `AZ_DISTRIBUTED_ACTORS`; спавн `RolloutReceiver`; терминация по эпизодам + cap после totLifeT + drain; запись `stop.flag` | **P0** |
 | `core/models/az_rollout_receiver.py` (нов.) | ZMQ PULL → `data_q`, валидация контракта, heartbeat-лог | **P0** |
-| `tools/pc2_az_actors.py` (нов.) | лаунчер PC2: N воркеров + RemoteSink + SMB-веса + опонент | **P1** |
+| `tools/pc2_az_actors.py` (нов.) | лаунчер PC2: N `_az_env_worker_entry` (localhost IS) + RemoteSink + опонент по SMB | **P1** |
 | `tools/pc2_az_actors.bat` + `runtime/state/pc2_az_actors_config.example.bat` (нов.) | одна кнопка PC2 | **P1** |
 | `app/gui_qt/*` | тоггл «Distributed actors (PC2)» + host/port (опц., вкладка AZ Tree) | **P2** |
 | `tests/engine/test_az_rollout_protocol.py` (нов.) | encode/decode roundtrip rollout-сообщений | **P0** |
@@ -172,9 +198,9 @@ PC2 читает веса по SMB с задержкой (poll-интервал 
 
 ## 9. Phased Implementation
 
-- **5.0** — `az_rollout_protocol` + `RolloutSink` (Local/Remote) + рефактор `_az_env_worker_entry(sink=)`. Unit-тесты сериализации. **Zero-diff** при LocalSink (все текущие тесты зелёные).
-- **5.1** — `RolloutReceiver` на PC1 + флаг `AZ_DISTRIBUTED_ACTORS` + терминация по эпизодам + `stop.flag`. **Localhost-smoke** (PC1 шлёт сам себе через 127.0.0.1, learner получает данные от «удалённого» воркера).
-- **5.2** — `pc2_az_actors.py` + `.bat` + SMB-веса + опонент. **LAN-smoke** на реальном PC2; замер ep/h vs только-PC1 и `stale_drop %`.
+- **5.0** — `az_rollout_protocol` + `RolloutSink` (Local/Remote) + рефактор **обоих** entry (`_az_env_worker_entry` и `_actor_learner_actor_entry_alphazero`, общий helper эмиссии). Unit-тесты. **Zero-diff** при LocalSink.
+- **5.1** — `RolloutReceiver` + `AZ_DISTRIBUTED_ACTORS` + терминация/cap/drain + `stop.flag`. **Localhost-smoke:** dist-sink на 127.0.0.1:5557 при обычном IS LAN train.
+- **5.2** — `pc2_az_actors.py` + `.bat` (§6.1: env workers + localhost IS). **LAN-smoke:** IS уже на PC2 + dist actors; ep/h и `stale_drop remote %`.
 - **5.3** — heartbeat/reconnect, seeds-оффсет, GUI-тоггл, docs, тюнинг staleness.
 
 Для каждой фазы: критерий готовности + smoke + лог-маркеры (`[AZ][DIST][RECEIVER]`, `[AZ][DIST][SINK]`, `[AZ][DIST] stale_drop`).
@@ -203,7 +229,7 @@ PC2 читает веса по SMB с задержкой (poll-интервал 
 | Windows spawn pickling | top-level entry; dict-сообщения, не dataclass; **опонент по `OPPONENT_AGENT_ID`**, не pickle `opponent_spec` |
 | Переполнение `data_q` (быстрый PC2, медленный learner) | bounded `data_q` + ZMQ HWM; drop-policy с warn-логом `[AZ][DIST] queue_full` |
 | Auth на PUSH (LAN) | тот же `auth_token`, что у IS; иначе любой в LAN шлёт rollout'ы |
-| Совмещение с IS | PC1: IS Local + dist receiver; PC2: CPU-акторы (variant A). PC2+remote-IS-на-PC1 — отдельный smoke, в MVP не смешивать |
+| Совмещение с IS | **Штатно:** IS LAN + dist (§3.2). PC2 infer → localhost IS. **Не штатно:** PC2 dist + infer на PC1 по LAN; variant A на PC2 без IS (§6.2) — отдельный smoke |
 | Firewall/порт 5557 | правило в `pc2_az_actors.bat` |
 | Rollback | `AZ_DISTRIBUTED_ACTORS=0` → текущий одиночный путь |
 
@@ -223,21 +249,27 @@ PC2 читает веса по SMB с задержкой (poll-интервал 
 
 ---
 
-## 13. Open Questions (решить до кода)
+## 13. Решения и open questions
 
-1. **Терминация по `episodes_finished`** вместо `done_actors` — ок? (нужно для distributed, затронет и локальный путь).
-2. **PC2 open-ended до `stop.flag`** vs фиксированный сплит `totLifeT`? (open-ended проще/надёжнее).
-3. **Опонент/ростер на PC2** — расшарить `artifacts/models/agents` по SMB или копировать скриптом?
-4. **Staleness:** поднимать `max_policy_staleness_updates` для distributed или агрессивнее синкать PC2? (нужен замер `stale_drop %`).
-5. **Сеть PC2 для net-eval:** ✅ **решено** — MVP: PC2 = `_actor_learner_actor_entry_alphazero` (variant A, своя CPU-сеть + SMB-sync) + `RemoteSink`. НЕ `_az_env_worker_entry` (он net=None/IS-only). IS на PC2 — опционально позже.
-6. **Порт** 5557 (IS = 5555/5556) — ок?
-7. **GUI:** отдельный тоггл «Distributed actors» или только env/bat в v1?
+### Решено
+
+1. **Терминация** — по `episodes_finished >= totLifeT`, cap новых `ep`, drain rollout'ов в replay (§5).
+2. **PC2** — open-ended до `stop.flag`; PC1 делит `remaining_episodes` между локальными воркерами.
+3. **Опонент/ростер** — SMB: `artifacts/models/agents` + `search_cfg.json` (`write_az_remote_search_cfg.py`).
+4. **Сеть PC2 (IS LAN):** `_az_env_worker_entry` + infer **localhost → IS :5555** + `RemoteSink` → PC1. Fallback без IS: variant A (§6.2).
+5. **Совмещение dist + IS** — штатный профиль §3.2 (IS не выключаем).
+
+### Open (до/во время реализации)
+
+1. **Staleness:** поднимать `max_policy_staleness_updates` или чаще sync IS/политики на PC2? Замер `stale_drop remote %` после 5.2.
+2. **Порт** 5557 (IS = 5555) — ок?
+3. **GUI:** тоггл «Distributed actors» или только env/bat в v1?
 
 ---
 
 ## Recommended approach
 
-Pluggable `RolloutSink` в воркере + `RolloutReceiver`-мост, кладущий сообщения в существующий `data_q` — learner не меняется по сути, локальный путь zero-diff. Транспорт — ZMQ **PUSH/PULL** (fan-in, без round-trip), веса и stop-flag — по **SMB** (механизм уже есть). PC2 запускает `_az_env_worker_entry` со своей CPU-сетью (net не bottleneck), seeds со сдвигом. Завершение — по счётчику эпизодов + `stop.flag`. Latency сети не критична (батч-rollout'ы async), отказ PC2 не роняет train — поэтому это надёжнее и полезнее для AZ tree, чем LAN inference server.
+`RolloutSink` + `RolloutReceiver` → тот же `data_q`; learner-loop без смены семантики. **Целевой стек:** train на PC1 с **IS LAN** (`_az_env_worker_entry` → PC2 IS) + на PC2 доп. `_az_env_worker_entry` с **localhost IS** и **RemoteSink** (rollout ZMQ :5557). Два канала: infer (5555) и rollout (5557). Веса политики и `stop.flag` — SMB. Завершение по эпизодам + drain. Отказ dist-акторов на PC2 не роняет train (PC1 + IS LAN продолжают); отказ IS по-прежнему критичен для variant B — это отдельно от distributed self-play.
 
 ## Top 3 risks
 1. **Staleness PC2-данных** (SMB-лаг → отбраковка как off-policy) — может съесть выигрыш; тюнить sync-интервал / `max_policy_staleness_updates`, обязательно мерить `stale_drop %`.

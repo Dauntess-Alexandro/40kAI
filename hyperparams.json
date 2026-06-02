@@ -110,7 +110,13 @@
     "mcts_batch_eval_size": 16,
     "mcts_parallel_sims": 1,
     "mcts_mode": "tree",
-    "mcts_simulate_enemy": 1
+    "mcts_simulate_enemy": 1,
+    "distributed_actors_enabled": 0,
+    "distributed_actors_port": 5557,
+    "distributed_actors_bind_host": "0.0.0.0",
+    "distributed_actors_auth_token": "",
+    "distributed_actors_drain_sec": 30.0,
+    "distributed_actors_zmq_hwm": 256
   },
   "alphazero_proxy": {
     "inference_server_enabled": 0,

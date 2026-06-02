@@ -92,6 +92,8 @@ from core.models.alphazero_model import (
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
 from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
+from core.models.az_rollout_receiver import RolloutReceiver
+from core.models.az_rollout_sink import az_dist_stop_flag_path, az_dist_stop_requested, make_rollout_sink
 from core.models.alphazero_trainer import (
     AlphaZeroTrainConfig,
     alphazero_train_config_from_env,
@@ -2979,6 +2981,54 @@ AZ_INFERENCE_REQUEST_QUEUE_MAX = max(
 AZ_INFERENCE_REMOTE_HOST = str(os.getenv("AZ_INFERENCE_REMOTE_HOST", AZ_CFG.get("inference_remote_host", "127.0.0.1")))
 AZ_INFERENCE_REMOTE_PORT = int(os.getenv("AZ_INFERENCE_REMOTE_PORT", str(AZ_CFG.get("inference_remote_port", 5555))))
 AZ_INFERENCE_REMOTE_AUTH_TOKEN = str(os.getenv("AZ_INFERENCE_REMOTE_AUTH_TOKEN", AZ_CFG.get("inference_remote_auth_token", "")))
+
+# --- Distributed self-play (PC2 env workers → rollout ZMQ → learner data_q) ---
+AZ_DISTRIBUTED_ACTORS = str(
+    os.getenv("AZ_DISTRIBUTED_ACTORS", str(AZ_CFG.get("distributed_actors_enabled", 0)))
+).strip() == "1"
+AZ_DIST_ROLLOUT_BIND = str(
+    os.getenv("AZ_DIST_ROLLOUT_BIND", str(AZ_CFG.get("distributed_actors_bind_host", "0.0.0.0")))
+).strip() or "0.0.0.0"
+AZ_DIST_ROLLOUT_PORT = max(
+    1, int(os.getenv("AZ_DIST_ROLLOUT_PORT", str(AZ_CFG.get("distributed_actors_port", 5557))))
+)
+AZ_DIST_AUTH_TOKEN = str(
+    os.getenv("AZ_DIST_AUTH_TOKEN", str(AZ_CFG.get("distributed_actors_auth_token", "")))
+).strip() or str(AZ_INFERENCE_REMOTE_AUTH_TOKEN or "")
+AZ_DIST_DRAIN_SEC = max(
+    1.0, float(os.getenv("AZ_DIST_DRAIN_SEC", str(AZ_CFG.get("distributed_actors_drain_sec", 30.0))))
+)
+AZ_DIST_ZMQ_HWM = max(8, int(os.getenv("AZ_DIST_ZMQ_HWM", str(AZ_CFG.get("distributed_actors_zmq_hwm", 256)))))
+
+
+def _clear_az_dist_stop_flag() -> None:
+    path = az_dist_stop_flag_path()
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception as exc:
+        append_agent_log(f"[AZ][DIST][WARN] не удалось удалить stop.flag: {path} exc={exc}")
+
+
+def _touch_az_dist_stop_flag() -> None:
+    path = az_dist_stop_flag_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("1\n")
+        append_agent_log(f"[AZ][DIST] stop.flag записан: {path}")
+    except Exception as exc:
+        append_agent_log(
+            f"[AZ][DIST][WARN] не удалось записать stop.flag: {path} exc={exc}. "
+            "Где: train._touch_az_dist_stop_flag. Что делать: проверьте SMB actor_sync."
+        )
+
+
+if AZ_DISTRIBUTED_ACTORS:
+    append_agent_log(
+        f"[AZ][DIST][CONFIG] enabled=1 bind={AZ_DIST_ROLLOUT_BIND}:{AZ_DIST_ROLLOUT_PORT} "
+        f"drain_sec={AZ_DIST_DRAIN_SEC}"
+    )
 
 if AZ_INFERENCE_SERVER_USING_FALLBACK:
     append_agent_log(
@@ -8062,9 +8112,28 @@ def _actor_learner_actor_entry_alphazero(
     sp_cfg_payload: dict,
     mcts_cfg_payload: dict,
     outcome_payload: dict,
+    rollout_sink_mode: str = "local",
+    rollout_source: str = "local",
+    rollout_remote_host: str = "",
+    rollout_remote_port: int = 5557,
+    rollout_remote_auth_token: str = "",
+    env_contract_hash: str = "",
+    dist_stop_flag_path: str = "",
 ):
     """Top-level entrypoint for Windows spawn pickling (AlphaZero actor)."""
+    import itertools
+
     try:
+        sink = make_rollout_sink(
+            mode=rollout_sink_mode,
+            data_q=data_q,
+            source=rollout_source,
+            remote_host=rollout_remote_host,
+            remote_port=int(rollout_remote_port),
+            auth_token=rollout_remote_auth_token,
+            worker_id=int(actor_idx),
+            env_contract_hash=str(env_contract_hash or ""),
+        )
         cpu_device = torch.device("cpu")
         az_kw = alphazero_kwargs_from_env()
         az_net = make_alphazero_net(n_observations=n_observations, n_actions=n_actions, **az_kw).to(cpu_device)
@@ -8130,10 +8199,16 @@ def _actor_learner_actor_entry_alphazero(
 
         rollout_batch: list[dict] = []
         heartbeat_moves = max(1, int(os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5") or 5))
-        for _ep in range(int(episodes)):
-            ep_idx_1based = int(_ep) + 1
+        ep_limit = int(episodes)
+        ep_iter = range(ep_limit) if ep_limit > 0 else itertools.count()
+        for _ep in ep_iter:
+            if dist_stop_flag_path and az_dist_stop_requested(dist_stop_flag_path):
+                append_agent_log(f"[AZ][ACTOR] actor={int(actor_idx)} stop.flag — выход")
+                break
+            ep_idx_1based = int(_ep) + 1 if ep_limit > 0 else int(_ep) + 1
+            ep_total_label = str(ep_limit) if ep_limit > 0 else "open"
             print(
-                f"[AZ][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{int(episodes)} starting "
+                f"[AZ][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{ep_total_label} starting "
                 f"mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')} sims={getattr(mcts.cfg, 'simulations', 0)}",
                 flush=True,
             )
@@ -8198,15 +8273,14 @@ def _actor_learner_actor_entry_alphazero(
                     }
                 )
             if len(rollout_batch) >= int(batch_send):
-                data_q.put(
-                    (
-                        "rollout",
-                        {
-                            "actor_idx": int(actor_idx),
-                            "policy_version": int(current_policy_version),
-                            "transitions": list(rollout_batch),
-                        },
-                    )
+                sink.put(
+                    "rollout",
+                    {
+                        "actor_idx": int(actor_idx),
+                        "policy_version": int(current_policy_version),
+                        "env_contract_hash": str(env_contract_hash or ""),
+                        "transitions": list(rollout_batch),
+                    },
                 )
                 rollout_batch = []
 
@@ -8229,42 +8303,49 @@ def _actor_learner_actor_entry_alphazero(
                 result = "win"
             elif vp_diff == 0:
                 result = "draw"
-            data_q.put(
-                (
-                    "ep",
-                    {
-                        "episode": None,
-                        "actor_idx": int(actor_idx),
-                        "actor_ep": int(ep_idx_1based),
-                        "ep_reward": float(info.get("reward", 0.0) or 0.0),
-                        "ep_len": int(info.get("turn", 0) or 0),
-                        "turn": int(info.get("turn", 0) or 0),
-                        "model_vp": int(model_vp),
-                        "player_vp": int(player_vp),
-                        "vp_diff": int(vp_diff),
-                        "result": str(result),
-                        "end_reason": str(end_reason),
-                        "end_code": int(info.get("res", 0) or 0),
-                        "policy_version": int(current_policy_version),
-                    },
-                )
+            sink.put(
+                "ep",
+                {
+                    "episode": None,
+                    "actor_idx": int(actor_idx),
+                    "actor_ep": int(ep_idx_1based),
+                    "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                    "ep_len": int(info.get("turn", 0) or 0),
+                    "turn": int(info.get("turn", 0) or 0),
+                    "model_vp": int(model_vp),
+                    "player_vp": int(player_vp),
+                    "vp_diff": int(vp_diff),
+                    "result": str(result),
+                    "end_reason": str(end_reason),
+                    "end_code": int(info.get("res", 0) or 0),
+                    "policy_version": int(current_policy_version),
+                },
             )
 
         if rollout_batch:
-            data_q.put(
-                (
-                    "rollout",
-                    {
-                        "actor_idx": int(actor_idx),
-                        "policy_version": int(current_policy_version),
-                        "transitions": list(rollout_batch),
-                    },
-                )
+            sink.put(
+                "rollout",
+                {
+                    "actor_idx": int(actor_idx),
+                    "policy_version": int(current_policy_version),
+                    "env_contract_hash": str(env_contract_hash or ""),
+                    "transitions": list(rollout_batch),
+                },
             )
-        data_q.put(("done", int(actor_idx)))
+        if str(rollout_sink_mode or "local").strip().lower() != "remote":
+            data_q.put(("done", int(actor_idx)))
     except Exception as exc:
         try:
-            data_q.put(("error", f"az_actor[{actor_idx}] {exc}"))
+            if "sink" in locals():
+                sink.put("error", f"az_actor[{actor_idx}] {exc}")
+            else:
+                data_q.put(("error", f"az_actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
+    finally:
+        try:
+            if "sink" in locals():
+                sink.close()
         except Exception:
             pass
 
@@ -8289,9 +8370,28 @@ def _az_env_worker_entry(
     remote_host: str = "",
     remote_port: int = 5555,
     remote_auth_token: str = "",
+    rollout_sink_mode: str = "local",
+    rollout_source: str = "local",
+    rollout_remote_host: str = "",
+    rollout_remote_port: int = 5557,
+    rollout_remote_auth_token: str = "",
+    env_contract_hash: str = "",
+    dist_stop_flag_path: str = "",
 ):
     """CPU env worker для AZ IS (variant B): env + MCTS + RemoteEvaluator → data_q."""
+    import itertools
+
     try:
+        sink = make_rollout_sink(
+            mode=rollout_sink_mode,
+            data_q=data_q,
+            source=rollout_source,
+            remote_host=rollout_remote_host,
+            remote_port=int(rollout_remote_port),
+            auth_token=rollout_remote_auth_token,
+            worker_id=int(worker_id),
+            env_contract_hash=str(env_contract_hash or ""),
+        )
         from core.models.az_inference_client import RemoteEvaluator
         from core.models.az_inference_transport import make_az_transport
 
@@ -8370,12 +8470,20 @@ def _az_env_worker_entry(
         rollout_batch: list[dict] = []
         heartbeat_moves = max(1, int(os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5") or 5))
 
-        append_agent_log(f"[AZ][ENV_WORKER] worker={int(worker_id)} started episodes={int(episodes)}")
-
-        for _ep in range(int(episodes)):
+        ep_limit = int(episodes)
+        ep_total_label = str(ep_limit) if ep_limit > 0 else "open"
+        append_agent_log(
+            f"[AZ][ENV_WORKER] worker={int(worker_id)} started episodes={ep_total_label} "
+            f"rollout_sink={rollout_sink_mode}"
+        )
+        ep_iter = range(ep_limit) if ep_limit > 0 else itertools.count()
+        for _ep in ep_iter:
+            if dist_stop_flag_path and az_dist_stop_requested(dist_stop_flag_path):
+                append_agent_log(f"[AZ][ENV_WORKER] worker={int(worker_id)} stop.flag — выход")
+                break
             ep_idx_1based = int(_ep) + 1
             print(
-                f"[AZ][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{int(episodes)} starting",
+                f"[AZ][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{ep_total_label} starting",
                 flush=True,
             )
             attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
@@ -8415,14 +8523,15 @@ def _az_env_worker_entry(
                     "policy_version": int(getattr(t, "policy_version", current_policy_version)),
                 })
             if len(rollout_batch) >= int(batch_send):
-                data_q.put((
+                sink.put(
                     "rollout",
                     {
                         "actor_idx": int(worker_id),
                         "policy_version": int(current_policy_version),
+                        "env_contract_hash": str(env_contract_hash or ""),
                         "transitions": list(rollout_batch),
                     },
-                ))
+                )
                 rollout_batch = []
 
             info = dict(info or {})
@@ -8441,33 +8550,50 @@ def _az_env_worker_entry(
                 result = "win"
             elif vp_diff == 0:
                 result = "draw"
-            data_q.put(("ep", {
-                "episode": None,
-                "actor_idx": int(worker_id),
-                "actor_ep": int(ep_idx_1based),
-                "ep_reward": float(info.get("reward", 0.0) or 0.0),
-                "ep_len": int(info.get("turn", 0) or 0),
-                "turn": int(info.get("turn", 0) or 0),
-                "model_vp": int(model_vp),
-                "player_vp": int(player_vp),
-                "vp_diff": int(vp_diff),
-                "result": str(result),
-                "end_reason": str(end_reason),
-                "end_code": int(info.get("res", 0) or 0),
-                "policy_version": int(current_policy_version),
-            }))
+            sink.put(
+                "ep",
+                {
+                    "episode": None,
+                    "actor_idx": int(worker_id),
+                    "actor_ep": int(ep_idx_1based),
+                    "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                    "ep_len": int(info.get("turn", 0) or 0),
+                    "turn": int(info.get("turn", 0) or 0),
+                    "model_vp": int(model_vp),
+                    "player_vp": int(player_vp),
+                    "vp_diff": int(vp_diff),
+                    "result": str(result),
+                    "end_reason": str(end_reason),
+                    "end_code": int(info.get("res", 0) or 0),
+                    "policy_version": int(current_policy_version),
+                },
+            )
 
         if rollout_batch:
-            data_q.put(("rollout", {
-                "actor_idx": int(worker_id),
-                "policy_version": int(current_policy_version),
-                "transitions": list(rollout_batch),
-            }))
-        data_q.put(("done", int(worker_id)))
+            sink.put(
+                "rollout",
+                {
+                    "actor_idx": int(worker_id),
+                    "policy_version": int(current_policy_version),
+                    "env_contract_hash": str(env_contract_hash or ""),
+                    "transitions": list(rollout_batch),
+                },
+            )
+        if str(rollout_sink_mode or "local").strip().lower() != "remote":
+            data_q.put(("done", int(worker_id)))
         evaluator.close()
     except Exception as exc:
         try:
-            data_q.put(("error", f"az_env_worker[{worker_id}] {exc}"))
+            if "sink" in locals():
+                sink.put("error", f"az_env_worker[{worker_id}] {exc}")
+            else:
+                data_q.put(("error", f"az_env_worker[{worker_id}] {exc}"))
+        except Exception:
+            pass
+    finally:
+        try:
+            if "sink" in locals():
+                sink.close()
         except Exception:
             pass
 
@@ -8721,6 +8847,20 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         "policy_version": int(policy_version),
     }
     _init_weights_cpu = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
+    _az_contract_hash = str(env_contract.get("contract_hash", "") or "")
+    rollout_receiver = None
+    if AZ_DISTRIBUTED_ACTORS:
+        _clear_az_dist_stop_flag()
+        rollout_receiver = RolloutReceiver(
+            data_q,
+            bind_host=AZ_DIST_ROLLOUT_BIND,
+            bind_port=int(AZ_DIST_ROLLOUT_PORT),
+            expected_contract_hash=_az_contract_hash,
+            auth_token=AZ_DIST_AUTH_TOKEN,
+            zmq_hwm=int(AZ_DIST_ZMQ_HWM),
+            log_fn=append_agent_log,
+        )
+        rollout_receiver.start()
 
     if remaining_episodes > 0:
         if AZ_INFERENCE_SERVER_ENABLED:
@@ -8816,6 +8956,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         str(AZ_INFERENCE_REMOTE_HOST),
                         int(AZ_INFERENCE_REMOTE_PORT),
                         str(AZ_INFERENCE_REMOTE_AUTH_TOKEN),
+                        "local",
+                        "local",
+                        "",
+                        int(AZ_DIST_ROLLOUT_PORT),
+                        str(AZ_DIST_AUTH_TOKEN),
+                        str(_az_contract_hash),
+                        "",
                     ),
                     daemon=True,
                 )
@@ -8848,6 +8995,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         _sp_cfg_payload,
                         _mcts_cfg_payload,
                         _outcome_payload,
+                        "local",
+                        "local",
+                        "",
+                        int(AZ_DIST_ROLLOUT_PORT),
+                        str(AZ_DIST_AUTH_TOKEN),
+                        str(_az_contract_hash),
+                        "",
                     ),
                     daemon=True,
                 )
@@ -8862,8 +9016,26 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     wait_started = time.time()
     last_heartbeat = wait_started
     az_heartbeat_sec = max(5.0, float(os.getenv("AZ_HEARTBEAT_SEC", "20") or 20))
+    dist_draining = False
+    dist_drain_until = 0.0
+    dist_remote_transitions_total = 0
+    dist_remote_stale_total = 0
 
-    while done_actors < active_actors:
+    while True:
+        if not AZ_DISTRIBUTED_ACTORS:
+            if done_actors >= active_actors:
+                break
+        else:
+            if int(episodes_finished) >= int(totLifeT):
+                if not dist_draining:
+                    dist_draining = True
+                    dist_drain_until = time.monotonic() + float(AZ_DIST_DRAIN_SEC)
+                    _touch_az_dist_stop_flag()
+                if dist_draining and time.monotonic() >= dist_drain_until and done_actors >= active_actors:
+                    break
+            elif active_actors > 0 and done_actors >= active_actors:
+                # Локальные воркеры закончили, ждём эпизоды с PC2 до totLifeT.
+                pass
         try:
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
@@ -8890,6 +9062,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
 
         if kind == "ep":
             if not isinstance(payload, dict):
+                continue
+            if AZ_DISTRIBUTED_ACTORS and int(episodes_finished) >= int(totLifeT):
                 continue
             episodes_finished += 1
             payload["episode"] = int(episodes_finished)
@@ -9013,6 +9187,10 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         raw_transitions = payload.get("transitions")
         if not isinstance(raw_transitions, list) or not raw_transitions:
             continue
+        rollout_source = str(payload.get("source", "local") or "local")
+        min_policy_ver = -1
+        if int(AZ_MAX_POLICY_STALENESS_UPDATES) >= 0:
+            min_policy_ver = int(policy_version) - int(AZ_MAX_POLICY_STALENESS_UPDATES)
         transitions: list[AZTransition] = []
         for raw in raw_transitions:
             if not isinstance(raw, dict):
@@ -9022,16 +9200,29 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             if not isinstance(pi_raw, list):
                 continue
             pi = [np.asarray(p, dtype=np.float32) for p in pi_raw]
+            tr_pv = int(raw.get("policy_version", payload.get("policy_version", 0)) or 0)
+            if rollout_source == "remote":
+                dist_remote_transitions_total += 1
+                if min_policy_ver >= 0 and tr_pv < min_policy_ver:
+                    dist_remote_stale_total += 1
+                    continue
             transitions.append(
                 AZTransition(
                     state=state_np,
                     policy_targets=pi,
                     value_target=float(raw.get("value_target", 0.0) or 0.0),
-                    policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
+                    policy_version=tr_pv,
                 )
             )
         if not transitions:
             continue
+        if rollout_source == "remote" and dist_remote_transitions_total > 0:
+            if dist_remote_transitions_total % 200 == 0 or dist_remote_stale_total > 0 and dist_remote_stale_total % 50 == 0:
+                stale_pct = 100.0 * float(dist_remote_stale_total) / max(1.0, float(dist_remote_transitions_total))
+                append_agent_log(
+                    f"[AZ][DIST] stale_drop remote={stale_pct:.1f}% "
+                    f"({dist_remote_stale_total}/{dist_remote_transitions_total})"
+                )
 
         replay.push_many(transitions)
         global_step += len(transitions)
@@ -9064,6 +9255,15 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             if optimize_steps - last_sync_opt_steps >= int(AZ_SYNC_EVERY_UPDATES):
                 _save_az_sync()
                 last_sync_opt_steps = int(optimize_steps)
+
+    if rollout_receiver is not None:
+        rollout_receiver.stop()
+    if dist_remote_transitions_total > 0:
+        stale_pct = 100.0 * float(dist_remote_stale_total) / max(1.0, float(dist_remote_transitions_total))
+        append_agent_log(
+            f"[AZ][DIST] final stale_drop remote={stale_pct:.1f}% "
+            f"({dist_remote_stale_total}/{dist_remote_transitions_total})"
+        )
 
     pbar.close()
     _save_az_sync()
