@@ -68,12 +68,11 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "prior_weight_early",
 )
 
-# Не сбрасывать при смене профиля Fast/Balanced/Heavy (пользователь настраивает LAN один раз).
+# Не сбрасывать при смене профиля Fast/Balanced/Heavy (LAN / dist; batch size — из пресета).
 AZ_INFERENCE_PRESERVE_KEYS: tuple[str, ...] = (
     "inference_server_enabled",
     "inference_server_mode",
     "num_env_workers",
-    "inference_batch_size",
     "inference_batch_interval_ms",
     "inference_timeout",
     "inference_remote_host",
@@ -174,6 +173,7 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "mcts_eval_cache_size": 5000,
         "mcts_batch_eval_size": 8,
         "mcts_parallel_sims": 1,
+        "inference_batch_size": 16,
         "mcts_simulate_enemy": 0,
         "num_actors": 8,
         "actor_batch_send": 16,
@@ -191,7 +191,8 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "mcts_top_k_per_head": 10,
         "mcts_eval_cache_size": 10000,
         "mcts_batch_eval_size": 16,
-        "mcts_parallel_sims": 1,
+        "mcts_parallel_sims": 4,
+        "inference_batch_size": 32,
         "num_actors": 8,
         "actor_batch_send": 32,
         "actor_queue_max": 128,
@@ -208,7 +209,8 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "mcts_top_k_per_head": 12,
         "mcts_eval_cache_size": 15000,
         "mcts_batch_eval_size": 32,
-        "mcts_parallel_sims": 1,
+        "mcts_parallel_sims": 8,
+        "inference_batch_size": 64,
         "num_actors": 10,
         "actor_batch_send": 64,
         "actor_queue_max": 256,
@@ -348,7 +350,7 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "inference_server_enabled": "1 = вынести net.infer на GPU inference server (вариант B). 0 = текущие CPU акторы (вариант A, по умолчанию).",
     "inference_server_mode": "local = тот же ПК; remote = GPU на ПК2 (ZMQ :5555).",
     "num_env_workers": "Число CPU env-воркеров при inference_server_enabled=1. Рекомендуется = num_actors.",
-    "inference_batch_size": "Макс. размер батча запросов к IS (рекомендуется ≥ num_env_workers × parallel_sims).",
+    "inference_batch_size": "Макс. батч infer-запросов (ПК1). Рекомендуется ≥ num_env_workers × mcts_parallel_sims; balanced≈32, heavy≈64. Remote IS: AZ_REMOTE_BATCH_SIZE на ПК2 ≥ этого значения.",
     "inference_batch_interval_ms": "Окно сбора батча мс (10–20). Меньше = меньше задержка, хуже батчинг.",
     "inference_timeout": "Таймаут ожидания ответа IS (сек). При превышении — retry + лог.",
     "inference_remote_host": "LAN: IP ПК2 с GPU inference server (например 192.168.1.100).",

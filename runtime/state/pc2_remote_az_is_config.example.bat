@@ -20,7 +20,7 @@ set "AZ_REMOTE_PORT=5555"
 set "AZ_REMOTE_DEVICE=cuda:0"
 
 REM --- Производительность ---
-REM BATCH_SIZE = max batch на ПК2 (>= num_env_workers * parallel_sims на ПК1).
+REM BATCH_SIZE = max batch на ПК2 (>= inference batch size на ПК1; heavy ≈ 64, balanced ≈ 32).
 REM INTERVAL_MS = окно сбора батча (мс). Меньше = меньше задержка, хуже батчинг.
 set "AZ_REMOTE_BATCH_SIZE=32"
 set "AZ_REMOTE_BATCH_INTERVAL_MS=10"
@@ -37,7 +37,7 @@ REM 1 = pc2_remote_az_is.bat поднимает IS + actors одной кноп�
 REM Train на ПК1 должен быть уже запущен (receiver :5557). На ПК1 открыть inbound TCP 5557.
 set "AZ_REMOTE_DIST_ACTORS_ENABLED=1"
 set "AZ_REMOTE_DIST_ACTORS_DELAY_SEC=12"
-REM Сек: ждать az_dist_train_context.json с ПК1 (если ПК2 стартуют до train)
+REM Сек: ждать az_dist_train_context.json с ПК1 (opponent + az_hyperparams с ПК1, без git pull)
 set "AZ_DIST_WAIT_CONTEXT_SEC=90"
 REM IP ПК1 (learner), не ПК2:
 set "AZ_DIST_PC1_HOST=192.168.0.100"
@@ -46,7 +46,7 @@ set "AZ_DIST_PC2_IS_HOST=127.0.0.1"
 set "AZ_DIST_PC2_IS_PORT=5555"
 set "AZ_DIST_STOP_FLAG_PATH=Z:\actor_sync\az_dist_stop.flag"
 set "MODELS_DIR=Z:\"
-set "AZ_DIST_PC2_NUM_WORKERS=4"
+set "AZ_DIST_PC2_NUM_WORKERS=8"
 set "AZ_DIST_PC2_WORKER_ID_BASE=100"
 REM Пусто = авто из train (SMB az_dist_train_context.json) или latest_snapshot на Z:\agents
 set "OPPONENT_AGENT_ID="

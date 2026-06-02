@@ -248,6 +248,8 @@ class GUIController(QtCore.QObject):
         self._play_gmz_mode = "greedy"
         self._play_az_temperature = 0.06
         self._play_gmz_temperature = 0.10
+        self._play_az_mcts_sims = 32
+        self._play_gmz_search_sims = 32
         self._play_viewer_player_role_label = "Ты: —"
         self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
@@ -279,6 +281,10 @@ class GUIController(QtCore.QObject):
         self._eval_p2_az_temperature = 0.06
         self._eval_p1_gmz_temperature = 0.10
         self._eval_p2_gmz_temperature = 0.10
+        self._eval_p1_az_mcts_sims = 32
+        self._eval_p2_az_mcts_sims = 32
+        self._eval_p1_gmz_search_sims = 32
+        self._eval_p2_gmz_search_sims = 32
         self._eval_p1_icon_text = "AI"
         self._eval_p2_icon_text = "HR"
         self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
@@ -961,6 +967,26 @@ class GUIController(QtCore.QObject):
             return f"{float(self._play_gmz_temperature):.2f}"
         return "0.10"
 
+    @QtCore.Property(bool, notify=playModelMetaChanged)
+    def playInferenceSearchSimsVisible(self) -> bool:
+        return bool(self.playInferenceTemperatureVisible)
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playInferenceSearchSimsLabel(self) -> str:
+        if is_az_algo(self._play_model_algo_key):
+            return "MCTS sims:"
+        if self._play_model_algo_key == "gumbel_muzero":
+            return "Search sims:"
+        return "Sims:"
+
+    @QtCore.Property(str, notify=playModelMetaChanged)
+    def playInferenceSearchSims(self) -> str:
+        if is_az_algo(self._play_model_algo_key):
+            return str(int(self._play_az_mcts_sims))
+        if self._play_model_algo_key == "gumbel_muzero":
+            return str(int(self._play_gmz_search_sims))
+        return "32"
+
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playModelCheckpointLabel(self) -> str:
         return self._play_model_checkpoint_label
@@ -1082,6 +1108,39 @@ class GUIController(QtCore.QObject):
             return float(default)
         return float(max(0.001, min(2.0, value)))
 
+    def _sanitize_mcts_sims(self, raw: str, default: int) -> int:
+        try:
+            value = int(str(raw).strip())
+        except Exception:
+            return int(default)
+        return int(max(1, min(512, value)))
+
+    def _eval_side_search_sims_visible(self, side: str) -> bool:
+        return self._eval_side_temp_visible(side)
+
+    def _eval_side_search_sims(self, side: str) -> int:
+        side_key = str(side).upper()
+        algo = self._eval_side_algo_key(side_key)
+        if side_key == "P1":
+            if is_az_algo(algo):
+                return int(self._eval_p1_az_mcts_sims)
+            if algo == "gumbel_muzero":
+                return int(self._eval_p1_gmz_search_sims)
+        else:
+            if is_az_algo(algo):
+                return int(self._eval_p2_az_mcts_sims)
+            if algo == "gumbel_muzero":
+                return int(self._eval_p2_gmz_search_sims)
+        return 32
+
+    def _eval_side_search_sims_label(self, side: str) -> str:
+        algo = self._eval_side_algo_key(side)
+        if is_az_algo(algo):
+            return "MCTS sims:"
+        if algo == "gumbel_muzero":
+            return "Search sims:"
+        return "Sims:"
+
     def _eval_side_temperature(self, side: str) -> float:
         side_key = str(side).upper()
         algo = self._eval_side_algo_key(side_key)
@@ -1112,6 +1171,30 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP2InferenceTemperature(self) -> str:
         return f"{self._eval_side_temperature('P2'):.2f}"
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalP1InferenceSearchSimsVisible(self) -> bool:
+        return self._eval_side_search_sims_visible("P1")
+
+    @QtCore.Property(bool, notify=evalSetupChanged)
+    def evalP2InferenceSearchSimsVisible(self) -> bool:
+        return self._eval_side_search_sims_visible("P2")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1InferenceSearchSimsLabel(self) -> str:
+        return self._eval_side_search_sims_label("P1")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2InferenceSearchSimsLabel(self) -> str:
+        return self._eval_side_search_sims_label("P2")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1InferenceSearchSims(self) -> str:
+        return str(self._eval_side_search_sims("P1"))
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2InferenceSearchSims(self) -> str:
+        return str(self._eval_side_search_sims("P2"))
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1SelectedAgentLabel(self) -> str:
@@ -2123,6 +2206,20 @@ class GUIController(QtCore.QObject):
             self.evalSetupChanged.emit()
 
     @QtCore.Slot(str)
+    def set_eval_p1_inference_search_sims(self, value: str) -> None:
+        algo = self._eval_side_algo_key("P1")
+        parsed = self._sanitize_mcts_sims(value, self._eval_side_search_sims("P1"))
+        changed = False
+        if is_az_algo(algo):
+            changed = int(parsed) != int(self._eval_p1_az_mcts_sims)
+            self._eval_p1_az_mcts_sims = int(parsed)
+        elif algo == "gumbel_muzero":
+            changed = int(parsed) != int(self._eval_p1_gmz_search_sims)
+            self._eval_p1_gmz_search_sims = int(parsed)
+        if changed:
+            self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
     def set_eval_p2_inference_temperature(self, value: str) -> None:
         algo = self._eval_side_algo_key("P2")
         parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
@@ -2133,6 +2230,20 @@ class GUIController(QtCore.QObject):
         elif algo == "gumbel_muzero":
             changed = abs(parsed - float(self._eval_p2_gmz_temperature)) > 1e-9
             self._eval_p2_gmz_temperature = parsed
+        if changed:
+            self.evalSetupChanged.emit()
+
+    @QtCore.Slot(str)
+    def set_eval_p2_inference_search_sims(self, value: str) -> None:
+        algo = self._eval_side_algo_key("P2")
+        parsed = self._sanitize_mcts_sims(value, self._eval_side_search_sims("P2"))
+        changed = False
+        if is_az_algo(algo):
+            changed = int(parsed) != int(self._eval_p2_az_mcts_sims)
+            self._eval_p2_az_mcts_sims = int(parsed)
+        elif algo == "gumbel_muzero":
+            changed = int(parsed) != int(self._eval_p2_gmz_search_sims)
+            self._eval_p2_gmz_search_sims = int(parsed)
         if changed:
             self.evalSetupChanged.emit()
 
@@ -2170,6 +2281,21 @@ class GUIController(QtCore.QObject):
             if abs(parsed - float(self._play_gmz_temperature)) <= 1e-9:
                 return
             self._play_gmz_temperature = parsed
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+
+    @QtCore.Slot(str)
+    def set_play_inference_search_sims(self, value: str) -> None:
+        parsed = self._sanitize_mcts_sims(value, 32)
+        if is_az_algo(self._play_model_algo_key):
+            if int(parsed) == int(self._play_az_mcts_sims):
+                return
+            self._play_az_mcts_sims = int(parsed)
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            return
+        if self._play_model_algo_key == "gumbel_muzero":
+            if int(parsed) == int(self._play_gmz_search_sims):
+                return
+            self._play_gmz_search_sims = int(parsed)
             self.playModelMetaChanged.emit(self._play_model_algo_label)
 
     @QtCore.Slot()
@@ -4219,19 +4345,21 @@ class GUIController(QtCore.QObject):
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
             if is_az_algo(learner_algo) and az_eval_mode == "mcts":
                 env.insert("AZ_EVAL_MCTS_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
+                env.insert("AZ_EVAL_MCTS_SIMS", str(self._eval_side_search_sims(learner_side)))
             if is_az_algo(opponent_algo) and az_opponent_mode == "mcts":
                 env.insert("AZ_EVAL_OPPONENT_MCTS_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
+                env.insert("AZ_EVAL_OPPONENT_MCTS_SIMS", str(self._eval_side_search_sims(opponent_side)))
             env.insert("AZ_EVAL_MCTS_DIR_EPS", "0.0")
-        # Fast GMZ eval preset: lower search budget + selectable mode for learner/opponent.
-        env.insert("GMZ_EVAL_SIMS", "32")
         env.insert("GMZ_EVAL_ROOT_TOP_K", "8")
         gmz_eval_mode = learner_mode if learner_algo == "gumbel_muzero" and learner_mode in {"greedy", "search"} else "greedy"
         gmz_opponent_mode = opponent_mode if opponent_algo == "gumbel_muzero" and opponent_mode in {"greedy", "search"} else "greedy"
         env.insert("GMZ_EVAL_MODE", gmz_eval_mode)
         env.insert("GMZ_OPPONENT_MODE", gmz_opponent_mode)
         if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
+            env.insert("GMZ_EVAL_SIMS", str(self._eval_side_search_sims(learner_side)))
             env.insert("GMZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
         if opponent_algo == "gumbel_muzero" and gmz_opponent_mode == "search":
+            env.insert("GMZ_EVAL_OPPONENT_SIMS", str(self._eval_side_search_sims(opponent_side)))
             env.insert("GMZ_EVAL_OPPONENT_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
@@ -4260,18 +4388,27 @@ class GUIController(QtCore.QObject):
             az_eval_tail = f"AZ-eval={az_eval_mode}"
             az_opp_tail = f"AZ-opponent-mode={az_opponent_mode}"
             if is_az_algo(learner_algo) and az_eval_mode == "mcts":
-                az_eval_tail += f"(temp={self._eval_side_temperature(learner_side):.2f})"
+                az_eval_tail += (
+                    f"(sims={self._eval_side_search_sims(learner_side)},"
+                    f"temp={self._eval_side_temperature(learner_side):.2f})"
+                )
             if is_az_algo(opponent_algo) and az_opponent_mode == "mcts":
-                az_opp_tail += f"(temp={self._eval_side_temperature(opponent_side):.2f})"
+                az_opp_tail += (
+                    f"(sims={self._eval_side_search_sims(opponent_side)},"
+                    f"temp={self._eval_side_temperature(opponent_side):.2f})"
+                )
             mode_parts.append(az_eval_tail)
             mode_parts.append(az_opp_tail)
         if learner_algo == "gumbel_muzero" or opponent_algo == "gumbel_muzero":
-            gmz_eval_tail = f"GMZ-eval={gmz_eval_mode}(sims=32,top_k=8)"
+            gmz_eval_tail = f"GMZ-eval={gmz_eval_mode}(sims={self._eval_side_search_sims(learner_side)},top_k=8)"
             gmz_opp_tail = f"GMZ-opponent={gmz_opponent_mode}"
             if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
                 gmz_eval_tail += f"(temp={self._eval_side_temperature(learner_side):.2f})"
             if opponent_algo == "gumbel_muzero" and gmz_opponent_mode == "search":
-                gmz_opp_tail += f"(temp={self._eval_side_temperature(opponent_side):.2f})"
+                gmz_opp_tail += (
+                    f"(sims={self._eval_side_search_sims(opponent_side)},"
+                    f"temp={self._eval_side_temperature(opponent_side):.2f})"
+                )
             mode_parts.append(gmz_eval_tail)
             mode_parts.append(gmz_opp_tail)
         mode_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
@@ -4318,11 +4455,13 @@ class GUIController(QtCore.QObject):
             env["AZ_PLAY_MODE"] = self._play_az_mode
             if self._play_az_mode == "mcts":
                 env["AZ_PLAY_MCTS_TEMPERATURE"] = f"{float(self._play_az_temperature):.3f}"
+                env["AZ_PLAY_MCTS_SIMS"] = str(int(self._play_az_mcts_sims))
                 env["AZ_PLAY_MCTS_DIR_EPS"] = "0.0"
         elif self._play_model_algo_key == "gumbel_muzero":
             env["GMZ_PLAY_MODE"] = self._play_gmz_mode
             if self._play_gmz_mode == "search":
                 env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
+                env["GMZ_PLAY_SIMS"] = str(int(self._play_gmz_search_sims))
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -4368,11 +4507,13 @@ class GUIController(QtCore.QObject):
             env["AZ_PLAY_MODE"] = self._play_az_mode
             if self._play_az_mode == "mcts":
                 env["AZ_PLAY_MCTS_TEMPERATURE"] = f"{float(self._play_az_temperature):.3f}"
+                env["AZ_PLAY_MCTS_SIMS"] = str(int(self._play_az_mcts_sims))
                 env["AZ_PLAY_MCTS_DIR_EPS"] = "0.0"
         elif self._play_model_algo_key == "gumbel_muzero":
             env["GMZ_PLAY_MODE"] = self._play_gmz_mode
             if self._play_gmz_mode == "search":
                 env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
+                env["GMZ_PLAY_SIMS"] = str(int(self._play_gmz_search_sims))
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(

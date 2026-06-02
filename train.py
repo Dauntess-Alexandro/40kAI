@@ -97,6 +97,7 @@ from core.models.az_rollout_sink import (
     az_dist_stop_flag_path,
     az_dist_stop_requested,
     make_rollout_sink,
+    pack_az_dist_hyperparams,
     write_az_dist_train_context,
 )
 from core.models.alphazero_trainer import (
@@ -8867,6 +8868,39 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         )
         rollout_receiver.start()
         try:
+            _dist_az_hp = pack_az_dist_hyperparams(
+                {
+                    **AZ_CFG,
+                    "mcts_simulations": int(AZ_MCTS_SIMS),
+                    "mcts_parallel_sims": int(AZ_MCTS_PARALLEL_SIMS),
+                    "mcts_max_depth": int(AZ_MCTS_MAX_DEPTH),
+                    "mcts_top_k_per_head": int(AZ_MCTS_TOP_K_PER_HEAD),
+                    "mcts_batch_eval_size": int(AZ_MCTS_BATCH_EVAL_SIZE),
+                    "mcts_simulate_enemy": int(AZ_MCTS_SIMULATE_ENEMY),
+                    "mcts_mode": str(AZ_MCTS_MODE),
+                    "mcts_root_dirichlet_only": int(AZ_MCTS_ROOT_DIRICHLET_ONLY),
+                    "mcts_eval_cache_size": int(AZ_MCTS_EVAL_CACHE_SIZE),
+                    "c_puct": float(AZ_C_PUCT),
+                    "c_puct_min": float(AZ_C_PUCT_MIN),
+                    "c_puct_max": float(AZ_C_PUCT_MAX),
+                    "c_puct_schedule": str(AZ_C_PUCT_SCHEDULE),
+                    "dirichlet_alpha": float(AZ_DIR_ALPHA),
+                    "dirichlet_eps": float(AZ_DIR_EPS),
+                    "pw_alpha": float(AZ_PW_ALPHA),
+                    "pw_beta": float(AZ_PW_BETA),
+                    "prior_weight_early": float(AZ_PRIOR_WEIGHT_EARLY),
+                    "temperature_opening_moves": int(AZ_TEMP_OPENING_MOVES),
+                    "temperature_opening_value": float(AZ_TEMP_OPENING),
+                    "temperature_late_value": float(AZ_TEMP_LATE),
+                    "outcome_only": int(AZ_OUTCOME_ONLY),
+                    "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+                    "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+                    "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+                    "actor_batch_send": int(AZ_ACTOR_BATCH_SEND),
+                    "inference_timeout": float(AZ_INFERENCE_TIMEOUT),
+                    "self_play_enabled": int(SELF_PLAY_ENABLED),
+                }
+            )
             _dist_ctx_path = write_az_dist_train_context(
                 {
                     "opponent_agent_id": str(opponent_agent_id or OPPONENT_AGENT_ID or ""),
@@ -8874,11 +8908,14 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     "env_contract_hash": str(_az_contract_hash),
                     "self_play_enabled": int(SELF_PLAY_ENABLED),
                     "train_algo": str(TRAIN_ALGO),
+                    "az_hyperparams": _dist_az_hp,
                 }
             )
             append_agent_log(
                 f"[AZ][DIST][CONTEXT] wrote opponent_agent_id="
-                f"{opponent_agent_id or OPPONENT_AGENT_ID or '-'} path={_dist_ctx_path}"
+                f"{opponent_agent_id or OPPONENT_AGENT_ID or '-'} "
+                f"parallel_sims={_dist_az_hp.get('mcts_parallel_sims', '?')} "
+                f"path={_dist_ctx_path}"
             )
         except Exception as exc:
             append_agent_log(

@@ -4377,6 +4377,24 @@ ApplicationWindow {
                                         font.family: root.fontDataFamily
                                         onEditingFinished: controller.set_play_inference_temperature(text)
                                     }
+
+                                    Label {
+                                        visible: controller.playInferenceSearchSimsVisible
+                                        text: controller.playInferenceSearchSimsLabel
+                                        color: root.uiTextMuted
+                                        font.capitalization: Font.AllUppercase
+                                        font.letterSpacing: 0.8
+                                    }
+
+                                    TextField {
+                                        visible: controller.playInferenceSearchSimsVisible
+                                        Layout.preferredWidth: Math.round(72 * root.uiScale)
+                                        enabled: !controller.running
+                                        text: controller.playInferenceSearchSims
+                                        placeholderText: "32"
+                                        font.family: root.fontDataFamily
+                                        onEditingFinished: controller.set_play_inference_search_sims(text)
+                                    }
                                 }
 
                                 Rectangle {
@@ -4396,6 +4414,7 @@ ApplicationWindow {
                                         text:
                                             "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
                                             "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
+                                            "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = сильнее, но медленнее.\n" +
                                             "Температура работает только в MCTS/Search:\n" +
                                             "• меньше (0.03–0.08) — более стабильно;\n" +
                                             "• больше (0.10–0.15) — больше разнообразия.\n" +
@@ -5029,6 +5048,32 @@ ApplicationWindow {
                                                         }
                                                     }
                                                 }
+                                                Label {
+                                                    text: controller.evalP1InferenceSearchSimsLabel
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.8
+                                                    color: root.uiTextMuted
+                                                    opacity: controller.evalP1InferenceSearchSimsVisible ? 1.0 : 0.55
+                                                }
+                                                TextField {
+                                                    Layout.preferredWidth: Math.round(72 * root.uiScale)
+                                                    enabled: !controller.running && controller.evalP1InferenceSearchSimsVisible
+                                                    opacity: controller.evalP1InferenceSearchSimsVisible ? 1.0 : 0.55
+                                                    text: controller.evalP1InferenceSearchSims
+                                                    placeholderText: "32"
+                                                    font.family: root.fontDataFamily
+                                                    background: Rectangle {
+                                                        radius: 0
+                                                        color: parent.enabled ? "#253244" : "#202734"
+                                                        border.width: 1
+                                                        border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                                    }
+                                                    onEditingFinished: {
+                                                        if (controller.evalP1InferenceSearchSimsVisible) {
+                                                            controller.set_eval_p1_inference_search_sims(text)
+                                                        }
+                                                    }
+                                                }
                                                 Button {
                                                     text: "ⓘ"
                                                     flat: true
@@ -5037,6 +5082,7 @@ ApplicationWindow {
                                                     ToolTip.text:
                                                         "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
                                                         "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
+                                                        "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = сильнее, но медленнее.\n" +
                                                         "Температура работает только в MCTS/Search:\n" +
                                                         "• меньше (0.03–0.08) — более стабильно;\n" +
                                                         "• больше (0.10–0.15) — больше разнообразия.\n" +
@@ -5220,6 +5266,32 @@ ApplicationWindow {
                                                         }
                                                     }
                                                 }
+                                                Label {
+                                                    text: controller.evalP2InferenceSearchSimsLabel
+                                                    font.capitalization: Font.AllUppercase
+                                                    font.letterSpacing: 0.8
+                                                    color: root.uiTextMuted
+                                                    opacity: controller.evalP2InferenceSearchSimsVisible ? 1.0 : 0.55
+                                                }
+                                                TextField {
+                                                    Layout.preferredWidth: Math.round(72 * root.uiScale)
+                                                    enabled: !controller.running && controller.evalP2InferenceSearchSimsVisible
+                                                    opacity: controller.evalP2InferenceSearchSimsVisible ? 1.0 : 0.55
+                                                    text: controller.evalP2InferenceSearchSims
+                                                    placeholderText: "32"
+                                                    font.family: root.fontDataFamily
+                                                    background: Rectangle {
+                                                        radius: 0
+                                                        color: parent.enabled ? "#253244" : "#202734"
+                                                        border.width: 1
+                                                        border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                                    }
+                                                    onEditingFinished: {
+                                                        if (controller.evalP2InferenceSearchSimsVisible) {
+                                                            controller.set_eval_p2_inference_search_sims(text)
+                                                        }
+                                                    }
+                                                }
                                                 Button {
                                                     text: "ⓘ"
                                                     flat: true
@@ -5228,6 +5300,7 @@ ApplicationWindow {
                                                     ToolTip.text:
                                                         "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
                                                         "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
+                                                        "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = сильнее, но медленнее.\n" +
                                                         "Температура работает только в MCTS/Search:\n" +
                                                         "• меньше (0.03–0.08) — более стабильно;\n" +
                                                         "• больше (0.10–0.15) — больше разнообразия.\n" +

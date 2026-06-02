@@ -291,5 +291,16 @@ ChamferPanel {
             font.pixelSize: Math.round(10 * rootUi.uiScale)
             font.italic: true
         }
+
+        Label {
+            visible: panel.isEnabled
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: "Dist-акторы ПК2: MCTS/hyperparams подтягиваются из SMB az_dist_train_context.json (ПК1 пишет при train) — git pull не нужен.\n" +
+                  "inference batch size — на ПК1; remote IS: AZ_REMOTE_BATCH_SIZE ≥ batch size (heavy ≈ 64) в pc2_remote_az_is_config.bat."
+            color: rootUi.uiTextMuted
+            font.pixelSize: Math.round(10 * rootUi.uiScale)
+            font.italic: true
+        }
     }
 }

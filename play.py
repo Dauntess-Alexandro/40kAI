@@ -341,7 +341,7 @@ while isdone == False:
             mcts = AlphaZeroFactorizedMCTS(
                 policy_net,
                 config=MCTSConfig(
-                    simulations=max(1, int(os.getenv("AZ_PLAY_MCTS_SIMS", "96"))),
+                    simulations=max(1, int(os.getenv("AZ_PLAY_MCTS_SIMS", "32"))),
                     c_puct=float(os.getenv("AZ_PLAY_MCTS_C_PUCT", "1.5")),
                     dirichlet_alpha=float(os.getenv("AZ_PLAY_MCTS_DIR_ALPHA", "0.3")),
                     dirichlet_eps=float(os.getenv("AZ_PLAY_MCTS_DIR_EPS", "0.0")),

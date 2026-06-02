@@ -114,7 +114,7 @@
         "pw_beta": 0.5,
         "prior_weight_early": 0.25,
         "mcts_batch_eval_size": 16,
-        "mcts_parallel_sims": 1,
+        "mcts_parallel_sims": 4,
         "mcts_simulate_enemy": 1,
         "mcts_mode": "tree"
     },

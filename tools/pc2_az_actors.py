@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import multiprocessing as mp
 import os
 import sys
@@ -13,14 +14,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-# train импортируется после path setup
-import train  # noqa: E402
 from core.engine.agent_registry import make_env_contract, resolve_latest_opponent_agent_id  # noqa: E402
-from core.models.opponent_adapter import load_agent_opponent  # noqa: E402
 from core.models.az_rollout_sink import (  # noqa: E402
     az_dist_stop_flag_path,
     az_dist_stop_requested,
+    build_az_dist_worker_payloads,
+    normalize_az_dist_hyperparams,
     read_az_dist_train_context,
+    wait_az_dist_train_context,
 )
 
 
@@ -38,32 +39,53 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
-def _resolve_opponent_agent_id() -> str:
+def _train_dist_defaults(train_mod) -> dict:
+    return {
+        "simulations": int(train_mod.AZ_MCTS_SIMS),
+        "c_puct": float(train_mod.AZ_C_PUCT),
+        "c_puct_min": float(train_mod.AZ_C_PUCT_MIN),
+        "c_puct_max": float(train_mod.AZ_C_PUCT_MAX),
+        "c_puct_schedule": str(train_mod.AZ_C_PUCT_SCHEDULE),
+        "dirichlet_alpha": float(train_mod.AZ_DIR_ALPHA),
+        "dirichlet_eps": float(train_mod.AZ_DIR_EPS),
+        "top_k_per_head": int(train_mod.AZ_MCTS_TOP_K_PER_HEAD),
+        "max_depth": int(train_mod.AZ_MCTS_MAX_DEPTH),
+        "mode": str(train_mod.AZ_MCTS_MODE),
+        "root_dirichlet_only": bool(train_mod.AZ_MCTS_ROOT_DIRICHLET_ONLY),
+        "eval_cache_size": int(train_mod.AZ_MCTS_EVAL_CACHE_SIZE),
+        "pw_alpha": float(train_mod.AZ_PW_ALPHA),
+        "pw_beta": float(train_mod.AZ_PW_BETA),
+        "prior_weight_early": float(train_mod.AZ_PRIOR_WEIGHT_EARLY),
+        "batch_eval_size": int(train_mod.AZ_MCTS_BATCH_EVAL_SIZE),
+        "parallel_simulations": int(train_mod.AZ_MCTS_PARALLEL_SIMS),
+        "simulate_enemy_in_tree": bool(train_mod.AZ_MCTS_SIMULATE_ENEMY),
+        "temperature_opening_moves": int(train_mod.AZ_TEMP_OPENING_MOVES),
+        "temperature_opening_value": float(train_mod.AZ_TEMP_OPENING),
+        "temperature_late_value": float(train_mod.AZ_TEMP_LATE),
+        "outcome_only": bool(train_mod.AZ_OUTCOME_ONLY),
+        "outcome_value_win": float(train_mod.AZ_OUTCOME_VALUE_WIN),
+        "outcome_value_loss": float(train_mod.AZ_OUTCOME_VALUE_LOSS),
+        "outcome_value_draw": float(train_mod.AZ_OUTCOME_VALUE_DRAW),
+        "batch_send": int(train_mod.AZ_ACTOR_BATCH_SEND),
+        "inference_timeout": float(train_mod.AZ_INFERENCE_TIMEOUT),
+        "self_play_enabled": int(train_mod.SELF_PLAY_ENABLED),
+    }
+
+
+def _resolve_opponent_agent_id(ctx: dict | None = None) -> str:
     explicit = str(os.getenv("OPPONENT_AGENT_ID", "") or "").strip()
     if explicit:
         return explicit
 
-    wait_sec = max(0.0, _env_float("AZ_DIST_WAIT_CONTEXT_SEC", 0.0))
-    deadline = time.monotonic() + wait_sec if wait_sec > 0 else 0.0
-    while True:
-        ctx = read_az_dist_train_context()
-        agent_id = str(ctx.get("opponent_agent_id", "") or "").strip()
-        if agent_id:
-            print(f"[AZ][DIST][PC2] opponent из train context (SMB): {agent_id}", flush=True)
-            return agent_id
-        if wait_sec <= 0 or time.monotonic() >= deadline:
-            break
-        print(
-            "[AZ][DIST][PC2] ждём az_dist_train_context.json с ПК1 "
-            f"(осталось ~{max(0, int(deadline - time.monotonic()))} с)...",
-            flush=True,
-        )
-        time.sleep(2.0)
+    dist_ctx = ctx if isinstance(ctx, dict) else read_az_dist_train_context()
+    agent_id = str(dist_ctx.get("opponent_agent_id", "") or "").strip()
+    if agent_id:
+        print(f"[AZ][DIST][PC2] opponent из train context (SMB): {agent_id}", flush=True)
+        return agent_id
 
     learner_side = str(os.getenv("LEARNER_SIDE", "P1") or "P1").strip().upper() or "P1"
-    ctx = read_az_dist_train_context()
-    if str(ctx.get("learner_side", "")).strip():
-        learner_side = str(ctx.get("learner_side")).strip().upper()
+    if str(dist_ctx.get("learner_side", "")).strip():
+        learner_side = str(dist_ctx.get("learner_side")).strip().upper()
     agent_id = resolve_latest_opponent_agent_id(learner_side=learner_side)
     if agent_id:
         print(f"[AZ][DIST][PC2] opponent auto (latest_snapshot / SMB agents): {agent_id}", flush=True)
@@ -77,12 +99,14 @@ def _resolve_opponent_agent_id() -> str:
     return ""
 
 
-def _load_opponent_spec(roster_config: dict, b_len: int, b_hei: int):
+def _load_opponent_spec(train_mod, roster_config: dict, b_len: int, b_hei: int):
     agent_id = _resolve_opponent_agent_id()
     if not agent_id:
         return None
-    enemy, model = train._build_units_from_config(roster_config, b_len, b_hei)
-    mission_name = train.normalize_mission_name(roster_config.get("mission", train.DEFAULT_MISSION_NAME))
+    enemy, model = train_mod._build_units_from_config(roster_config, b_len, b_hei)
+    mission_name = train_mod.normalize_mission_name(
+        roster_config.get("mission", train_mod.DEFAULT_MISSION_NAME)
+    )
     import gymnasium as gym
 
     env = gym.make(
@@ -98,7 +122,7 @@ def _load_opponent_spec(roster_config: dict, b_len: int, b_hei: int):
         n_obs = len(list(state0.values()))
     else:
         n_obs = int(__import__("numpy").array(state0).shape[0])
-    n_actions = train.action_sizes_from_env(env, len(model))
+    n_actions = train_mod.action_sizes_from_env(env, len(model))
     try:
         env.close()
     except Exception:
@@ -107,52 +131,36 @@ def _load_opponent_spec(roster_config: dict, b_len: int, b_hei: int):
         n_observations=n_obs,
         n_actions=n_actions,
         mission_name=mission_name,
-        ruleset_version=train.RULESET_VERSION,
+        ruleset_version=train_mod.RULESET_VERSION,
         extras={"distributed_actor": 1},
     )
+    from core.models.opponent_adapter import load_agent_opponent
+
     return load_agent_opponent(agent_id=agent_id, expected_contract=contract)
 
 
 def _worker_main(worker_id: int) -> None:
-    roster = train._load_roster_config()
+    import train as train_mod
+
+    hp_pc1: dict = {}
+    raw_hp = str(os.getenv("AZ_DIST_HYPERPARAMS_JSON", "") or "").strip()
+    if raw_hp:
+        try:
+            hp_pc1 = normalize_az_dist_hyperparams(json.loads(raw_hp))
+        except (TypeError, json.JSONDecodeError):
+            hp_pc1 = {}
+
+    payloads = build_az_dist_worker_payloads(hp_pc1, defaults=_train_dist_defaults(train_mod))
+    mcts_payload = payloads["mcts"]
+    sp_payload = payloads["sp"]
+    outcome_payload = payloads["outcome"]
+
+    roster = train_mod._load_roster_config()
     b_len = int(roster["b_len"])
     b_hei = int(roster["b_hei"])
-    opponent_spec = _load_opponent_spec(roster, b_len, b_hei)
+    opponent_spec = _load_opponent_spec(train_mod, roster, b_len, b_hei)
 
-    hp = train.AZ_CFG
-    mcts_payload = {
-        "simulations": train.AZ_MCTS_SIMS,
-        "c_puct": train.AZ_C_PUCT,
-        "dirichlet_alpha": train.AZ_DIR_ALPHA,
-        "dirichlet_eps": train.AZ_DIR_EPS,
-        "top_k_per_head": train.AZ_MCTS_TOP_K_PER_HEAD,
-        "max_depth": train.AZ_MCTS_MAX_DEPTH,
-        "mode": train.AZ_MCTS_MODE,
-        "root_dirichlet_only": train.AZ_MCTS_ROOT_DIRICHLET_ONLY,
-        "eval_cache_size": train.AZ_MCTS_EVAL_CACHE_SIZE,
-        "c_puct_min": train.AZ_C_PUCT_MIN,
-        "c_puct_max": train.AZ_C_PUCT_MAX,
-        "c_puct_schedule": train.AZ_C_PUCT_SCHEDULE,
-        "pw_alpha": train.AZ_PW_ALPHA,
-        "pw_beta": train.AZ_PW_BETA,
-        "prior_weight_early": train.AZ_PRIOR_WEIGHT_EARLY,
-        "batch_eval_size": train.AZ_MCTS_BATCH_EVAL_SIZE,
-        "parallel_simulations": train.AZ_MCTS_PARALLEL_SIMS,
-        "simulate_enemy_in_tree": train.AZ_MCTS_SIMULATE_ENEMY,
-    }
-    sp_payload = {
-        "temperature_opening_moves": train.AZ_TEMP_OPENING_MOVES,
-        "temperature_opening_value": train.AZ_TEMP_OPENING,
-        "temperature_late_value": train.AZ_TEMP_LATE,
-    }
-    outcome_payload = {
-        "outcome_only": train.AZ_OUTCOME_ONLY,
-        "outcome_value_win": train.AZ_OUTCOME_VALUE_WIN,
-        "outcome_value_loss": train.AZ_OUTCOME_VALUE_LOSS,
-        "outcome_value_draw": train.AZ_OUTCOME_VALUE_DRAW,
-        "policy_version": 0,
-    }
-
+    hp = train_mod.AZ_CFG
     is_host = str(os.getenv("AZ_DIST_PC2_IS_HOST", "127.0.0.1"))
     is_port = _env_int("AZ_DIST_PC2_IS_PORT", 5555)
     rollout_host = str(os.getenv("AZ_DIST_PC1_HOST", "127.0.0.1"))
@@ -160,9 +168,9 @@ def _worker_main(worker_id: int) -> None:
     auth = str(os.getenv("AZ_DIST_AUTH_TOKEN", os.getenv("AZ_INFERENCE_REMOTE_AUTH_TOKEN", "")))
     contract_hash = str(os.getenv("AZ_DIST_ENV_CONTRACT_HASH", ""))
     stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path())
-    batch_send = _env_int("AZ_ACTOR_BATCH_SEND", int(hp.get("actor_batch_send", 32)))
+    batch_send = int(payloads["batch_send"])
 
-    train._az_env_worker_entry(
+    train_mod._az_env_worker_entry(
         int(worker_id),
         0,
         roster,
@@ -172,12 +180,12 @@ def _worker_main(worker_id: int) -> None:
         None,
         None,
         None,
-        int(1 if train.SELF_PLAY_ENABLED else 0),
+        int(payloads["self_play_enabled"]),
         opponent_spec,
         sp_payload,
         mcts_payload,
         outcome_payload,
-        float(train.AZ_INFERENCE_TIMEOUT),
+        float(payloads["inference_timeout"]),
         "remote",
         is_host,
         is_port,
@@ -193,9 +201,32 @@ def _worker_main(worker_id: int) -> None:
 
 
 def main() -> int:
-    num_workers = max(1, _env_int("AZ_DIST_PC2_NUM_WORKERS", 4))
+    wait_sec = max(0.0, _env_float("AZ_DIST_WAIT_CONTEXT_SEC", 0.0))
+    dist_ctx = wait_az_dist_train_context(
+        wait_sec=wait_sec,
+        require_opponent=False,
+        require_hyperparams=False,
+    )
+    hp_pc1 = normalize_az_dist_hyperparams(dist_ctx.get("az_hyperparams"))
+    if hp_pc1:
+        os.environ["AZ_DIST_HYPERPARAMS_JSON"] = json.dumps(hp_pc1, ensure_ascii=False)
+        print(
+            "[AZ][DIST][PC2] hyperparams с ПК1 (SMB): "
+            f"parallel_sims={hp_pc1.get('mcts_parallel_sims')} "
+            f"mcts_sims={hp_pc1.get('mcts_simulations')} "
+            f"max_depth={hp_pc1.get('mcts_max_depth')}",
+            flush=True,
+        )
+    elif wait_sec > 0:
+        print(
+            "[AZ][DIST][PC2][WARN] az_hyperparams в SMB нет — MCTS из локального hyperparams.json на ПК2. "
+            "Где: az_dist_train_context.json. Что делать: сначала запустите train на ПК1.",
+            flush=True,
+        )
+
+    num_workers = max(1, _env_int("AZ_DIST_PC2_NUM_WORKERS", 8))
     worker_id_base = max(0, _env_int("AZ_DIST_PC2_WORKER_ID_BASE", 100))
-    opp_id = _resolve_opponent_agent_id()
+    opp_id = _resolve_opponent_agent_id(dist_ctx)
     if opp_id:
         os.environ["OPPONENT_AGENT_ID"] = opp_id
     models_dir = str(os.getenv("MODELS_DIR", "") or os.getenv("40KAI_MODELS_DIR", "")).strip()

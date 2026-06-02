@@ -59,6 +59,178 @@ def read_az_dist_train_context() -> dict[str, Any]:
         return {}
 
 
+# Поля alphazero_tree, которые ПК1 пишет в SMB, а dist-акторы ПК2 подставляют в MCTS.
+AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
+    "mcts_simulations",
+    "mcts_parallel_sims",
+    "mcts_max_depth",
+    "mcts_top_k_per_head",
+    "mcts_batch_eval_size",
+    "mcts_simulate_enemy",
+    "mcts_mode",
+    "mcts_root_dirichlet_only",
+    "mcts_eval_cache_size",
+    "c_puct",
+    "c_puct_min",
+    "c_puct_max",
+    "c_puct_schedule",
+    "dirichlet_alpha",
+    "dirichlet_eps",
+    "pw_alpha",
+    "pw_beta",
+    "prior_weight_early",
+    "temperature_opening_moves",
+    "temperature_opening_value",
+    "temperature_late_value",
+    "outcome_only",
+    "outcome_value_win",
+    "outcome_value_loss",
+    "outcome_value_draw",
+    "actor_batch_send",
+    "inference_timeout",
+    "self_play_enabled",
+)
+
+
+def pack_az_dist_hyperparams(values: dict[str, Any]) -> dict[str, Any]:
+    """Оставить только ключи для SMB az_dist_train_context.az_hyperparams."""
+    src = values if isinstance(values, dict) else {}
+    out: dict[str, Any] = {}
+    for key in AZ_DIST_HYPERPARAM_KEYS:
+        if key not in src:
+            continue
+        out[key] = src[key]
+    return out
+
+
+def normalize_az_dist_hyperparams(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    return pack_az_dist_hyperparams(raw)
+
+
+def _hp_pick(hp: dict[str, Any], key: str, default: Any) -> Any:
+    if key in hp:
+        return hp[key]
+    return default
+
+
+def _hp_bool(hp: dict[str, Any], key: str, default: bool) -> bool:
+    raw = _hp_pick(hp, key, default)
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in ("1", "true", "yes")
+
+
+def build_az_dist_worker_payloads(
+    hp: dict[str, Any] | None,
+    *,
+    defaults: dict[str, Any],
+) -> dict[str, Any]:
+    """
+  Собрать mcts/sp/outcome payload для _az_env_worker_entry.
+  hp — снимок с ПК1 (SMB); defaults — локальный fallback (модуль train на ПК2).
+  """
+    hp = normalize_az_dist_hyperparams(hp or {})
+    d = defaults if isinstance(defaults, dict) else {}
+
+    mcts_payload = {
+        "simulations": int(_hp_pick(hp, "mcts_simulations", d.get("simulations", 32))),
+        "c_puct": float(_hp_pick(hp, "c_puct", d.get("c_puct", 1.5))),
+        "c_puct_min": float(_hp_pick(hp, "c_puct_min", d.get("c_puct_min", 1.0))),
+        "c_puct_max": float(_hp_pick(hp, "c_puct_max", d.get("c_puct_max", 2.0))),
+        "c_puct_schedule": str(_hp_pick(hp, "c_puct_schedule", d.get("c_puct_schedule", "none"))),
+        "dirichlet_alpha": float(_hp_pick(hp, "dirichlet_alpha", d.get("dirichlet_alpha", 0.3))),
+        "dirichlet_eps": float(_hp_pick(hp, "dirichlet_eps", d.get("dirichlet_eps", 0.25))),
+        "top_k_per_head": int(_hp_pick(hp, "mcts_top_k_per_head", d.get("top_k_per_head", 8))),
+        "max_depth": int(_hp_pick(hp, "mcts_max_depth", d.get("max_depth", 1))),
+        "mode": str(_hp_pick(hp, "mcts_mode", d.get("mode", "tree"))).strip().lower() or "tree",
+        "root_dirichlet_only": _hp_bool(
+            hp, "mcts_root_dirichlet_only", bool(d.get("root_dirichlet_only", True))
+        ),
+        "eval_cache_size": int(_hp_pick(hp, "mcts_eval_cache_size", d.get("eval_cache_size", 10000))),
+        "pw_alpha": float(_hp_pick(hp, "pw_alpha", d.get("pw_alpha", 1.0))),
+        "pw_beta": float(_hp_pick(hp, "pw_beta", d.get("pw_beta", 0.5))),
+        "prior_weight_early": float(_hp_pick(hp, "prior_weight_early", d.get("prior_weight_early", 0.25))),
+        "batch_eval_size": int(_hp_pick(hp, "mcts_batch_eval_size", d.get("batch_eval_size", 16))),
+        "parallel_simulations": int(_hp_pick(hp, "mcts_parallel_sims", d.get("parallel_simulations", 1))),
+        "simulate_enemy_in_tree": _hp_bool(
+            hp, "mcts_simulate_enemy", bool(d.get("simulate_enemy_in_tree", True))
+        ),
+    }
+    sp_payload = {
+        "temperature_opening_moves": int(
+            _hp_pick(hp, "temperature_opening_moves", d.get("temperature_opening_moves", 12))
+        ),
+        "temperature_opening_value": float(
+            _hp_pick(hp, "temperature_opening_value", d.get("temperature_opening_value", 1.0))
+        ),
+        "temperature_late_value": float(
+            _hp_pick(hp, "temperature_late_value", d.get("temperature_late_value", 0.3))
+        ),
+    }
+    outcome_payload = {
+        "outcome_only": _hp_bool(hp, "outcome_only", bool(d.get("outcome_only", True))),
+        "outcome_value_win": float(_hp_pick(hp, "outcome_value_win", d.get("outcome_value_win", 1.0))),
+        "outcome_value_loss": float(_hp_pick(hp, "outcome_value_loss", d.get("outcome_value_loss", -1.0))),
+        "outcome_value_draw": float(_hp_pick(hp, "outcome_value_draw", d.get("outcome_value_draw", -0.25))),
+        "policy_version": 0,
+    }
+    batch_send = int(_hp_pick(hp, "actor_batch_send", d.get("batch_send", 32)))
+    inference_timeout = float(_hp_pick(hp, "inference_timeout", d.get("inference_timeout", 5.0)))
+    self_play_enabled = int(
+        _hp_bool(hp, "self_play_enabled", bool(int(d.get("self_play_enabled", 0))))
+    )
+    return {
+        "mcts": mcts_payload,
+        "sp": sp_payload,
+        "outcome": outcome_payload,
+        "batch_send": batch_send,
+        "inference_timeout": inference_timeout,
+        "self_play_enabled": self_play_enabled,
+    }
+
+
+def wait_az_dist_train_context(
+    *,
+    wait_sec: float = 0.0,
+    require_hyperparams: bool = False,
+    require_opponent: bool = False,
+    poll_sec: float = 2.0,
+    log_fn=None,
+) -> dict[str, Any]:
+    """Ждать az_dist_train_context.json на SMB (ПК1 пишет при старте train)."""
+    wait_sec = max(0.0, float(wait_sec))
+    deadline = time.monotonic() + wait_sec if wait_sec > 0 else 0.0
+
+    def _ready(ctx: dict[str, Any]) -> bool:
+        if require_opponent and not str(ctx.get("opponent_agent_id", "") or "").strip():
+            return False
+        if require_hyperparams and not normalize_az_dist_hyperparams(ctx.get("az_hyperparams")):
+            return False
+        return bool(ctx)
+
+    while True:
+        ctx = read_az_dist_train_context()
+        if _ready(ctx):
+            return ctx
+        if wait_sec <= 0 or time.monotonic() >= deadline:
+            return ctx
+        if log_fn is not None:
+            left = max(0, int(deadline - time.monotonic()))
+            log_fn(
+                f"[AZ][DIST] ждём az_dist_train_context.json на SMB "
+                f"(осталось ~{left} с, path={az_dist_context_path()})"
+            )
+        else:
+            print(
+                f"[AZ][DIST][PC2] ждём az_dist_train_context.json "
+                f"(осталось ~{max(0, int(deadline - time.monotonic()))} с)...",
+                flush=True,
+            )
+        time.sleep(max(0.5, float(poll_sec)))
+
+
 class RolloutSink(Protocol):
     def put(self, kind: str, payload: Any) -> None: ...
 

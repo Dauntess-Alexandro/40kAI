@@ -16,7 +16,7 @@ set "AZ_DIST_STOP_FLAG_PATH=Z:\az_dist_stop.flag"
 set "MODELS_DIR=Z:"
 
 REM --- Воркеры ---
-set "AZ_DIST_PC2_NUM_WORKERS=4"
+set "AZ_DIST_PC2_NUM_WORKERS=8"
 set "AZ_DIST_PC2_WORKER_ID_BASE=100"
 
 REM --- Должен совпадать с train на ПК1 (GUI / hyperparams) ---

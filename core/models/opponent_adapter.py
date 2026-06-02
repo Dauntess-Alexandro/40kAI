@@ -194,7 +194,15 @@ def build_policy_fn(
         if az_eval_mode == "mcts":
             mcts_mode = az_mcts_mode_for(opponent.algo)
             mcts_cfg = MCTSConfig(
-                simulations=max(1, int(os.getenv("AZ_EVAL_MCTS_SIMS", "96"))),
+                simulations=max(
+                    1,
+                    int(
+                        os.getenv(
+                            "AZ_EVAL_OPPONENT_MCTS_SIMS",
+                            os.getenv("AZ_EVAL_MCTS_SIMS", "32"),
+                        )
+                    ),
+                ),
                 c_puct=float(os.getenv("AZ_EVAL_MCTS_C_PUCT", "1.5")),
                 dirichlet_alpha=float(os.getenv("AZ_EVAL_MCTS_DIR_ALPHA", "0.3")),
                 dirichlet_eps=float(os.getenv("AZ_EVAL_MCTS_DIR_EPS", "0.0")),
@@ -270,7 +278,15 @@ def build_policy_fn(
         search = GumbelMuZeroSearch(
             net=net,
             config=GumbelMuZeroSearchConfig(
-                num_simulations=max(1, int(os.getenv("GMZ_EVAL_SIMS", "32"))),
+                num_simulations=max(
+                    1,
+                    int(
+                        os.getenv(
+                            "GMZ_EVAL_OPPONENT_SIMS",
+                            os.getenv("GMZ_EVAL_SIMS", "32"),
+                        )
+                    ),
+                ),
                 root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
                 temperature=float(
                     os.getenv(
