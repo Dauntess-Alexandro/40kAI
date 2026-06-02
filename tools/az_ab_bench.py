@@ -48,6 +48,25 @@ CONFIGS: dict[str, dict[str, str]] = {
 
 _WR_RE = re.compile(r"\[AZ\]\[HONEST_EVAL\] done ep=(\d+) win_rate=([0-9.]+) n=(\d+)")
 _EP_RE = re.compile(r"\bep=(\d+)/(\d+)")
+_AGENT_LOG = _REPO / "runtime" / "logs" / "LOGS_FOR_AGENTS_TRAIN.md"
+
+
+def _parse_winrate_from_agent_log(start_offset: int) -> tuple[float | None, int | None]:
+    """Honest-eval winrate пишется в agent-лог (не в stdout). Читаем только хвост,
+    добавленный за этот прогон (с start_offset), берём последний HONEST_EVAL."""
+    if not _AGENT_LOG.is_file():
+        return None, None
+    try:
+        with _AGENT_LOG.open("r", encoding="utf-8", errors="ignore") as fh:
+            fh.seek(start_offset)
+            tail = fh.read()
+    except OSError:
+        return None, None
+    wr = n = None
+    for m in _WR_RE.finditer(tail):
+        wr = float(m.group(2))
+        n = int(m.group(3))
+    return wr, n
 
 
 def run_one(name: str, overrides: dict[str, str], episodes: int, timeout: float, logdir: Path) -> dict:
@@ -58,6 +77,7 @@ def run_one(name: str, overrides: dict[str, str], episodes: int, timeout: float,
 
     log_path = logdir / f"bench_{name}.log"
     print(f"\n=== [{name}] start: episodes={episodes} overrides={overrides or '{}'} ===", flush=True)
+    agent_log_offset = _AGENT_LOG.stat().st_size if _AGENT_LOG.is_file() else 0
     t0 = time.perf_counter()
     timed_out = False
     rc = 0
@@ -77,10 +97,8 @@ def run_one(name: str, overrides: dict[str, str], episodes: int, timeout: float,
     eps_done = 0
     for m in _EP_RE.finditer(text):
         eps_done = max(eps_done, int(m.group(1)))
-    wr = n_eval = None
-    for m in _WR_RE.finditer(text):
-        wr = float(m.group(2))
-        n_eval = int(m.group(3))
+    # winrate пишется в agent-лог, не в stdout сабпроцесса → читаем хвост agent-лога
+    wr, n_eval = _parse_winrate_from_agent_log(agent_log_offset)
     eph = (eps_done / (elapsed / 3600.0)) if (elapsed > 0 and eps_done > 0) else 0.0
     sec_per_ep = (elapsed / eps_done) if eps_done > 0 else float("nan")
 
@@ -135,6 +153,12 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=86400.0, help="таймаут на конфиг, сек")
     ap.add_argument("--only", default="", help="список конфигов через запятую (default,A1_parallel1,...)")
     args = ap.parse_args()
+
+    # Windows-консоль часто cp1251 → русский/эмодзи в print роняют процесс. utf-8 + replace.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
     names = [s.strip() for s in args.only.split(",") if s.strip()] or list(CONFIGS.keys())
     unknown = [n for n in names if n not in CONFIGS]
