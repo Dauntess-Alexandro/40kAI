@@ -122,13 +122,8 @@ _AZ_BASE: dict[str, int | float | str] = {
     "mcts_simulate_enemy": 1,
 }
 
-DEFAULT_AZ_TREE_HYPERPARAMS: dict[str, int | float | str] = {
-    **_AZ_BASE,
-    "mcts_mode": "tree",
-    "mcts_simulations": 128,
-    "mcts_top_k_per_head": 12,
-    "mcts_max_depth": 4,
-}
+# DEFAULT_AZ_TREE_HYPERPARAMS определён ниже как base + balanced-пресет
+# (после AZ_TREE_PROFILE_PRESETS), чтобы no-preset дефолт = balanced и не разъезжался.
 
 DEFAULT_AZ_PROXY_HYPERPARAMS: dict[str, int | float | str] = {
     **_AZ_BASE,
@@ -193,6 +188,13 @@ AZ_TREE_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "sync_every_updates": 2,
         "learning_rate": 0.0002,
     },
+}
+
+# No-preset дефолт = balanced (чтобы свежий конфиг не был heavy depth=4).
+DEFAULT_AZ_TREE_HYPERPARAMS: dict[str, int | float | str] = {
+    **_AZ_BASE,
+    "mcts_mode": "tree",
+    **AZ_TREE_PROFILE_PRESETS["balanced"],
 }
 
 AZ_TREE_BASIC_KEYS: tuple[str, ...] = (
