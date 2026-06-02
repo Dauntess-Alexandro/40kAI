@@ -1,6 +1,8 @@
 @echo off
 REM Пример конфига AZ Remote IS для ПК2 (AlphaZero tree inference server).
-REM Скопируйте в pc2_remote_az_is_config.bat и заполните пути.
+REM При git pull: tools\pc2_remote_az_is.bat сам обновит pc2_remote_az_is_config.bat,
+REM если pc2_remote_az_is_config.example.rev новее (старый → .bat.bak).
+REM Свои пути (Z:, auth) после обновления проверь в .bat или .bat.bak.
 
 REM --- SMB: файл весов с ПК1 (learner пишет latest_az_tree_policy.pth, сервер читает) ---
 set "AZ_REMOTE_WEIGHTS_PATH=Z:\latest_az_tree_policy.pth"
