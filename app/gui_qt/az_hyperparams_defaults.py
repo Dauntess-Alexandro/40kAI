@@ -12,6 +12,12 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "inference_remote_host",
     "inference_remote_port",
     "inference_remote_auth_token",
+    "distributed_actors_enabled",
+    "distributed_actors_port",
+    "distributed_actors_bind_host",
+    "distributed_actors_auth_token",
+    "distributed_actors_drain_sec",
+    "distributed_actors_zmq_hwm",
     "learning_rate",
     "batch_size",
     "value_loss_weight",
@@ -62,6 +68,25 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "prior_weight_early",
 )
 
+# Не сбрасывать при смене профиля Fast/Balanced/Heavy (пользователь настраивает LAN один раз).
+AZ_INFERENCE_PRESERVE_KEYS: tuple[str, ...] = (
+    "inference_server_enabled",
+    "inference_server_mode",
+    "num_env_workers",
+    "inference_batch_size",
+    "inference_batch_interval_ms",
+    "inference_timeout",
+    "inference_remote_host",
+    "inference_remote_port",
+    "inference_remote_auth_token",
+    "distributed_actors_enabled",
+    "distributed_actors_port",
+    "distributed_actors_bind_host",
+    "distributed_actors_auth_token",
+    "distributed_actors_drain_sec",
+    "distributed_actors_zmq_hwm",
+)
+
 _AZ_BASE: dict[str, int | float | str] = {
     # Inference server (variant B) — по умолчанию выключен до smoke-теста
     "inference_server_enabled": 0,
@@ -73,6 +98,12 @@ _AZ_BASE: dict[str, int | float | str] = {
     "inference_remote_host": "127.0.0.1",
     "inference_remote_port": 5555,
     "inference_remote_auth_token": "",
+    "distributed_actors_enabled": 0,
+    "distributed_actors_port": 5557,
+    "distributed_actors_bind_host": "0.0.0.0",
+    "distributed_actors_auth_token": "",
+    "distributed_actors_drain_sec": 30.0,
+    "distributed_actors_zmq_hwm": 256,
     "learning_rate": 0.0003,
     "batch_size": 128,
     "value_loss_weight": 1.0,
@@ -323,6 +354,8 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "inference_remote_host": "LAN: IP ПК2 с GPU inference server (например 192.168.1.100).",
     "inference_remote_port": "LAN: TCP-порт ПК2 (по умолчанию 5555).",
     "inference_remote_auth_token": "LAN: общий секрет (опционально, должен совпадать с ПК2).",
+    "distributed_actors_enabled": "LAN: 1 = доп. env-воркеры на ПК2 (rollout :5557). В GUI включается с LAN по умолчанию.",
+    "distributed_actors_port": "LAN: PULL-порт learner для rollout с ПК2 (по умолчанию 5557).",
     "learning_rate": "Скорость обучения policy-value сети.",
     "batch_size": "Размер батча learner.",
     "value_loss_weight": "Вес value loss.",

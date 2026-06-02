@@ -8887,9 +8887,16 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     append_agent_log(
                         f"[AZ][REMOTE_CLIENT] health_check failed host={AZ_INFERENCE_REMOTE_HOST}: {exc}"
                     )
+                    hint_host = ""
+                    if str(AZ_INFERENCE_REMOTE_HOST).strip() in ("127.0.0.1", "localhost", "::1"):
+                        hint_host = (
+                            f" Сейчас host={AZ_INFERENCE_REMOTE_HOST!r} — это ПК1, не ПК2. "
+                            "В hyperparams/GUI задайте LAN-IP ПК2 (inference_remote_host)."
+                        )
                     raise RuntimeError(
                         "Remote AZ inference server недоступен. Проверьте: 1) сервер на ПК2 "
-                        "(tools\\pc2_remote_az_is.bat), 2) IP/порт, 3) firewall (TCP 5555)."
+                        f"(tools\\pc2_remote_az_is.bat), 2) IP/порт ({AZ_INFERENCE_REMOTE_HOST}:{AZ_INFERENCE_REMOTE_PORT}), "
+                        f"3) firewall (TCP 5555).{hint_host} exc={exc}"
                     ) from exc
                 request_q = None
                 reply_queues = None

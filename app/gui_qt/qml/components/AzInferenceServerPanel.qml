@@ -15,6 +15,14 @@ ChamferPanel {
     readonly property string mode: azStr("inference_server_mode", "local")
     readonly property bool localOn: isEnabled && mode === "local"
     readonly property bool lanOn: isEnabled && mode === "remote"
+    readonly property bool distOn: azNum("distributed_actors_enabled", lanOn ? 1 : 0) === 1
+
+    function setLanEnabled(checked) {
+        setKey("inference_server_mode", checked ? "remote" : "local")
+        setKey("inference_server_enabled", checked ? "1" : "0")
+        if (checked)
+            setKey("distributed_actors_enabled", "1")
+    }
 
     function azNum(k, d) {
         var v = hp[k]
@@ -144,8 +152,7 @@ ChamferPanel {
                         ? "Инференс на GPU ПК2 · tools\\pc2_remote_az_is.bat"
                         : "Второй ПК в LAN · при включении Local выключается"
                     onToggled: function(checked) {
-                        panel.setKey("inference_server_mode", checked ? "remote" : "local")
-                        panel.setKey("inference_server_enabled", checked ? "1" : "0")
+                        panel.setLanEnabled(checked)
                     }
                 }
 
@@ -153,6 +160,26 @@ ChamferPanel {
                     Layout.fillWidth: true
                     spacing: rootUi.spacingSm
                     visible: panel.lanOn
+
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(0.45, 0.75, 0.95, 0.25) }
+
+                    GmzIsToggleRow {
+                        Layout.fillWidth: true
+                        rootUi: panel.rootUi
+                        title: "Distributed actors (ПК2)"
+                        tooltipText: "Self-play на CPU ПК2: rollout → этот ПК (:5557). Infer на ПК2 — localhost к IS. После старта train на ПК2: tools\\pc2_az_actors.bat"
+                        active: true
+                        switchChecked: panel.distOn
+                        switchEnabled: !controller.running
+                        accentOn: "#6eb8ff"
+                        accentOff: "#4a5564"
+                        subtitle: panel.distOn
+                            ? "Включено · на ПК2 после train: pc2_az_actors.bat (нужен pc2_remote_az_is.bat)"
+                            : "Выключено — только infer на ПК2, env только на этом ПК"
+                        onToggled: function(checked) {
+                            panel.setKey("distributed_actors_enabled", checked ? "1" : "0")
+                        }
+                    }
 
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Qt.rgba(0.45, 0.75, 0.95, 0.25) }
 
@@ -164,10 +191,13 @@ ChamferPanel {
 
                         Text { text: "Хост ПК2"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
                         TextField {
+                            id: remoteHostField
                             Layout.fillWidth: true
                             text: panel.azStr("inference_remote_host", "127.0.0.1")
                             placeholderText: "192.168.1.100"
                             onEditingFinished: panel.setKey("inference_remote_host", text)
+                            onActiveFocusChanged: if (!activeFocus) panel.setKey("inference_remote_host", text)
+                            onTextChanged: panel.setKey("inference_remote_host", text)
                         }
 
                         Text { text: "Порт"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
@@ -183,15 +213,19 @@ ChamferPanel {
                             text: panel.azNum("inference_timeout", 5.0).toFixed(1)
                             inputMethodHints: Qt.ImhFormattedNumbersOnly
                             onEditingFinished: panel.setKey("inference_timeout", parseFloat(text))
+                            onActiveFocusChanged: if (!activeFocus) panel.setKey("inference_timeout", parseFloat(text))
                         }
 
                         Text { text: "Auth token"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
                         TextField {
+                            id: remoteAuthField
                             Layout.fillWidth: true
                             text: panel.azStr("inference_remote_auth_token", "")
                             echoMode: TextInput.Password
                             placeholderText: "опционально"
                             onEditingFinished: panel.setKey("inference_remote_auth_token", text)
+                            onActiveFocusChanged: if (!activeFocus) panel.setKey("inference_remote_auth_token", text)
+                            onTextChanged: panel.setKey("inference_remote_auth_token", text)
                         }
                     }
 

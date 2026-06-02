@@ -143,8 +143,9 @@ def az_remote_health_check(
     sock.setsockopt(zmq.LINGER, 0)
     sock.setsockopt(zmq.RCVTIMEO, int(float(timeout) * 1000.0))
     sock.setsockopt(zmq.SNDTIMEO, int(float(timeout) * 1000.0))
+    host_s = str(host).strip() or "127.0.0.1"
     try:
-        sock.connect(f"tcp://{str(host).strip()}:{int(port)}")
+        sock.connect(f"tcp://{host_s}:{int(port)}")
         sock.send(encode_message(build_health_check_request(auth_token=auth_token)))
         data = sock.recv()
         msg = decode_message(data)
@@ -154,6 +155,17 @@ def az_remote_health_check(
                 f"[AZ][REMOTE_CLIENT] health_check вернул ошибку: {msg.get('message', '?')}"
             )
         return msg
+    except zmq.Again as exc:
+        hint = ""
+        if host_s in ("127.0.0.1", "localhost", "::1"):
+            hint = (
+                " Для IS LAN на ПК2 укажите inference_remote_host = IPv4 второго ПК "
+                "(не 127.0.0.1 на ПК1)."
+            )
+        raise TimeoutError(
+            f"[AZ][REMOTE_CLIENT] health_check timeout ({timeout}s) tcp://{host_s}:{int(port)}.{hint} "
+            "Проверьте: pc2_remote_az_is.bat на ПК2, firewall TCP 5555, IP/порт."
+        ) from exc
     finally:
         try:
             sock.close(linger=0)

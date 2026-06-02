@@ -50,6 +50,7 @@ from app.gui_qt.az_hyperparams_defaults import (
     AZ_TREE_BASIC_KEYS,
     AZ_TREE_PROFILE_PRESETS,
     DEFAULT_AZ_PROXY_HYPERPARAMS,
+    AZ_INFERENCE_PRESERVE_KEYS,
     DEFAULT_AZ_TREE_HYPERPARAMS,
 )
 from app.gui_qt.gmz_hyperparams_defaults import (
@@ -3041,9 +3042,14 @@ class GUIController(QtCore.QObject):
         if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "inference_server_mode"}:
             parsed = str(value or "").strip().lower()
             return parsed or str(default)
-        if key in {"inference_remote_host", "inference_remote_auth_token"}:
+        if key in {
+            "inference_remote_host",
+            "inference_remote_auth_token",
+            "distributed_actors_bind_host",
+            "distributed_actors_auth_token",
+        }:
             # Сохраняем как есть (host/token регистрозависимы)
-            return str(value if value is not None else default)
+            return str(value if value is not None else default).strip()
         if isinstance(default, int):
             return int(float(str(value).strip()))
         return float(str(value).strip())
@@ -3101,9 +3107,15 @@ class GUIController(QtCore.QObject):
         mode = str(profile or "").strip().lower()
         if mode not in {"fast", "balanced", "heavy"}:
             return
+        preserved = {
+            k: self._az_tree_hyperparams[k]
+            for k in AZ_INFERENCE_PRESERVE_KEYS
+            if k in self._az_tree_hyperparams
+        }
         base = dict(self._default_az_tree_hyperparams)
         base.update(self._az_tree_profile_presets.get(mode, {}))
         base["mcts_mode"] = "tree"
+        base.update(preserved)
         self._az_tree_hyperparams.update(base)
         self._az_tree_selected_profile = mode
         self.trainingHyperparamsChanged.emit()
@@ -3115,9 +3127,15 @@ class GUIController(QtCore.QObject):
         mode = str(profile or "").strip().lower()
         if mode not in {"fast", "balanced", "heavy"}:
             return
+        preserved = {
+            k: self._az_proxy_hyperparams[k]
+            for k in AZ_INFERENCE_PRESERVE_KEYS
+            if k in self._az_proxy_hyperparams
+        }
         base = dict(self._default_az_proxy_hyperparams)
         base.update(self._az_proxy_profile_presets.get(mode, {}))
         base["mcts_mode"] = "proxy"
+        base.update(preserved)
         self._az_proxy_hyperparams.update(base)
         self._az_proxy_selected_profile = mode
         self.trainingHyperparamsChanged.emit()
@@ -3646,10 +3664,14 @@ class GUIController(QtCore.QObject):
                 continue
             raw_val = raw.get(key, default_value)
             try:
-                if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode"}:
+                if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "inference_server_mode"}:
                     updated[key] = str(raw_val).strip().lower() or str(default_value)
+                elif key in {"inference_remote_host", "inference_remote_auth_token", "distributed_actors_bind_host", "distributed_actors_auth_token"}:
+                    updated[key] = str(raw_val if raw_val is not None else default_value).strip()
                 elif isinstance(default_value, int):
                     updated[key] = int(raw_val)
+                elif isinstance(default_value, str):
+                    updated[key] = str(raw_val if raw_val is not None else default_value).strip()
                 else:
                     updated[key] = float(raw_val)
             except (TypeError, ValueError):
