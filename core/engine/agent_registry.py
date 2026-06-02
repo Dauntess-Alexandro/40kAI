@@ -225,6 +225,77 @@ def save_agent_artifact(
     return root
 
 
+def agents_meta_root() -> str:
+    """Корень agents/ (локальный repo или SMB через MODELS_DIR / 40KAI_MODELS_DIR)."""
+    custom = str(os.getenv("40KAI_MODELS_DIR", os.getenv("MODELS_DIR", "")) or "").strip()
+    if custom:
+        base = custom.rstrip("\\/")
+        name = os.path.basename(base).lower()
+        if name == "agents":
+            return base
+        if name == "actor_sync":
+            parent = os.path.dirname(base)
+            return os.path.join(parent, "agents") if parent else os.path.join(base, "agents")
+        return os.path.join(base, "agents")
+    return AGENTS_ROOT
+
+
+def collect_registered_agents_meta(*, agents_root: str | None = None) -> list[dict[str, str]]:
+    """Список снапшотов из meta.json (как GUI «Последний снапшот»), новые первые."""
+    root = str(agents_root or agents_meta_root())
+    if not os.path.isdir(root):
+        return []
+    records: list[dict[str, str]] = []
+    for dirpath, _, files in os.walk(root):
+        if "meta.json" not in files:
+            continue
+        meta_path = os.path.join(dirpath, "meta.json")
+        payload = _load_json(meta_path, {})
+        if not isinstance(payload, dict):
+            continue
+        agent_id = str(payload.get("agent_id", "")).strip()
+        side = str(payload.get("side", "")).strip().upper()
+        faction = str(payload.get("faction", "")).strip()
+        created_at = str(payload.get("created_at", "")).strip()
+        algo = str(payload.get("algo", "")).strip().lower()
+        if algo == "alphazero":
+            continue
+        if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+            paths = payload.get("paths")
+            if isinstance(paths, dict):
+                target_path = paths.get("target")
+                algo = "ppo" if (target_path is None or str(target_path).strip() == "") else "dqn"
+            else:
+                algo = "unknown"
+        if not agent_id or side not in {"P1", "P2"}:
+            continue
+        records.append(
+            {
+                "agent_id": agent_id,
+                "side": side,
+                "faction": faction or "Unknown",
+                "created_at": created_at,
+                "algo": algo,
+            }
+        )
+    records.sort(key=lambda item: (item.get("created_at", ""), item["agent_id"]), reverse=True)
+    return records
+
+
+def resolve_latest_opponent_agent_id(*, learner_side: str = "P1", agents_root: str | None = None) -> str:
+    """Последний снапшот на стороне оппонента (как GUI latest_snapshot)."""
+    side = str(learner_side or "P1").strip().upper() or "P1"
+    opponent_side = "P2" if side == "P1" else "P1"
+    records = [
+        rec
+        for rec in collect_registered_agents_meta(agents_root=agents_root)
+        if str(rec.get("side", "")).upper() == opponent_side
+    ]
+    if not records:
+        return ""
+    return str(records[0].get("agent_id", "") or "").strip()
+
+
 def list_agents(*, side: Optional[str] = None, faction: Optional[str] = None) -> list[dict[str, Any]]:
     registry = _load_json(AGENTS_REGISTRY_PATH, {"agents": []})
     agents = registry.get("agents", []) if isinstance(registry, dict) else []

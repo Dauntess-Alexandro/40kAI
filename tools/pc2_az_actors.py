@@ -16,7 +16,12 @@ if str(_REPO_ROOT) not in sys.path:
 # train импортируется после path setup
 import train  # noqa: E402
 from core.engine.agent_registry import load_agent_opponent, make_env_contract  # noqa: E402
-from core.models.az_rollout_sink import az_dist_stop_flag_path, az_dist_stop_requested  # noqa: E402
+from core.engine.agent_registry import resolve_latest_opponent_agent_id  # noqa: E402
+from core.models.az_rollout_sink import (  # noqa: E402
+    az_dist_stop_flag_path,
+    az_dist_stop_requested,
+    read_az_dist_train_context,
+)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -26,8 +31,54 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except Exception:
+        return float(default)
+
+
+def _resolve_opponent_agent_id() -> str:
+    explicit = str(os.getenv("OPPONENT_AGENT_ID", "") or "").strip()
+    if explicit:
+        return explicit
+
+    wait_sec = max(0.0, _env_float("AZ_DIST_WAIT_CONTEXT_SEC", 0.0))
+    deadline = time.monotonic() + wait_sec if wait_sec > 0 else 0.0
+    while True:
+        ctx = read_az_dist_train_context()
+        agent_id = str(ctx.get("opponent_agent_id", "") or "").strip()
+        if agent_id:
+            print(f"[AZ][DIST][PC2] opponent из train context (SMB): {agent_id}", flush=True)
+            return agent_id
+        if wait_sec <= 0 or time.monotonic() >= deadline:
+            break
+        print(
+            "[AZ][DIST][PC2] ждём az_dist_train_context.json с ПК1 "
+            f"(осталось ~{max(0, int(deadline - time.monotonic()))} с)...",
+            flush=True,
+        )
+        time.sleep(2.0)
+
+    learner_side = str(os.getenv("LEARNER_SIDE", "P1") or "P1").strip().upper() or "P1"
+    ctx = read_az_dist_train_context()
+    if str(ctx.get("learner_side", "")).strip():
+        learner_side = str(ctx.get("learner_side")).strip().upper()
+    agent_id = resolve_latest_opponent_agent_id(learner_side=learner_side)
+    if agent_id:
+        print(f"[AZ][DIST][PC2] opponent auto (latest_snapshot / SMB agents): {agent_id}", flush=True)
+        return agent_id
+    print(
+        "[AZ][DIST][PC2][WARN] OPPONENT_AGENT_ID не найден — эвристический оппонент. "
+        "Где: pc2_az_actors._resolve_opponent_agent_id. "
+        "Что делать: запустите train на ПК1 (пишет az_dist_train_context.json) или задайте OPPONENT_AGENT_ID в конфиге.",
+        flush=True,
+    )
+    return ""
+
+
 def _load_opponent_spec(roster_config: dict, b_len: int, b_hei: int):
-    agent_id = str(os.getenv("OPPONENT_AGENT_ID", "") or "").strip()
+    agent_id = _resolve_opponent_agent_id()
     if not agent_id:
         return None
     enemy, model = train._build_units_from_config(roster_config, b_len, b_hei)
@@ -144,6 +195,9 @@ def _worker_main(worker_id: int) -> None:
 def main() -> int:
     num_workers = max(1, _env_int("AZ_DIST_PC2_NUM_WORKERS", 4))
     worker_id_base = max(0, _env_int("AZ_DIST_PC2_WORKER_ID_BASE", 100))
+    opp_id = _resolve_opponent_agent_id()
+    if opp_id:
+        os.environ["OPPONENT_AGENT_ID"] = opp_id
 
     print(
         f"[AZ][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "

@@ -7,6 +7,9 @@ REM   tools\pc2_remote_az_is.bat setup   — venv + firewall + конфиг
 REM   tools\pc2_remote_az_is.bat start   — запуск сервера
 REM   tools\pc2_remote_az_is.bat check   — проверка без сервера
 REM   tools\pc2_remote_az_is.bat config  — открыть конфиг в блокноте
+REM   tools\pc2_remote_az_is.bat actors-only — только dist-акторы (IS уже запущен)
+REM   tools\pc2_remote_az_is.bat serve — только IS (внутренний режим, отдельное окно)
+REM При AZ_REMOTE_DIST_ACTORS_ENABLED=1 (по умолчанию в example): IS + actors одной кнопкой.
 
 cd /d "%~dp0\.."
 set "ROOT=%cd%"
@@ -123,13 +126,72 @@ if "%AZ_REMOTE_SETUP_FIREWALL%"=="" set "AZ_REMOTE_SETUP_FIREWALL=1"
 if /i "%MODE%"=="check" goto :do_check
 if /i "%MODE%"=="setup" goto :do_setup
 if /i "%MODE%"=="start" goto :do_setup
+if /i "%MODE%"=="serve" goto :do_serve
+if /i "%MODE%"=="actors-only" goto :do_actors_only
 goto :unknown_mode
 
 :unknown_mode
 echo [ОШИБКА] Неизвестный режим: %MODE%
-echo Использование: tools\pc2_remote_az_is.bat [setup^|start^|check^|config]
+echo Использование: tools\pc2_remote_az_is.bat [setup^|start^|check^|config^|actors-only]
 pause
 exit /b 1
+
+:apply_dist_env
+if "%AZ_DIST_PC2_IS_HOST%"=="" set "AZ_DIST_PC2_IS_HOST=127.0.0.1"
+if "%AZ_DIST_PC2_IS_PORT%"=="" set "AZ_DIST_PC2_IS_PORT=%AZ_REMOTE_PORT%"
+if "%AZ_DIST_ROLLOUT_PORT%"=="" set "AZ_DIST_ROLLOUT_PORT=5557"
+if "%AZ_DIST_PC2_NUM_WORKERS%"=="" set "AZ_DIST_PC2_NUM_WORKERS=4"
+if "%AZ_DIST_PC2_WORKER_ID_BASE%"=="" set "AZ_DIST_PC2_WORKER_ID_BASE=100"
+if "%AZ_REMOTE_DIST_ACTORS_DELAY_SEC%"=="" set "AZ_REMOTE_DIST_ACTORS_DELAY_SEC=12"
+if "%AZ_DIST_WAIT_CONTEXT_SEC%"=="" set "AZ_DIST_WAIT_CONTEXT_SEC=90"
+if "%AZ_DIST_STOP_FLAG_PATH%"=="" set "AZ_DIST_STOP_FLAG_PATH=Z:\actor_sync\az_dist_stop.flag"
+if "%MODELS_DIR%"=="" set "MODELS_DIR=Z:\actor_sync"
+if "%AZ_INFERENCE_REMOTE_AUTH_TOKEN%"=="" if not "%AZ_REMOTE_AUTH_TOKEN%"=="" set "AZ_INFERENCE_REMOTE_AUTH_TOKEN=%AZ_REMOTE_AUTH_TOKEN%"
+if "%AZ_DIST_AUTH_TOKEN%"=="" if not "%AZ_REMOTE_AUTH_TOKEN%"=="" set "AZ_DIST_AUTH_TOKEN=%AZ_REMOTE_AUTH_TOKEN%"
+exit /b 0
+
+:run_actors_foreground
+call "%ROOT%\.venv\Scripts\activate.bat"
+if errorlevel 1 (
+  echo [ОШИБКА] Не удалось активировать .venv для dist actors
+  pause
+  exit /b 1
+)
+echo.
+echo [START] Distributed actors  target=%AZ_DIST_PC1_HOST%:%AZ_DIST_ROLLOUT_PORT%  is=%AZ_DIST_PC2_IS_HOST%:%AZ_DIST_PC2_IS_PORT%  workers=%AZ_DIST_PC2_NUM_WORKERS%
+echo         Train на ПК1 должен быть запущен (distributed_actors_enabled=1).
+echo         Остановка: Ctrl+C
+echo.
+python "%TOOLS%\pc2_az_actors.py"
+set "EC=%ERRORLEVEL%"
+if not "%EC%"=="0" echo [ОШИБКА] pc2_az_actors exit=%EC%
+exit /b %EC%
+
+:do_actors_only
+call :apply_dist_env
+if "%AZ_DIST_PC1_HOST%"=="" (
+  echo [ОШИБКА] Не задан AZ_DIST_PC1_HOST ^(IP ПК1^) в %CONFIG_BAT%
+  echo Что делать: tools\pc2_remote_az_is.bat config
+  pause
+  exit /b 1
+)
+if not exist "%ROOT%\.venv\Scripts\python.exe" (
+  echo [SETUP] .venv не найден — setup...
+  call "%ROOT%\installer\install_deps.bat" -y
+)
+call :run_actors_foreground
+pause
+exit /b %EC%
+
+:do_serve
+call "%ROOT%\.venv\Scripts\activate.bat"
+if errorlevel 1 (
+  echo [ОШИБКА] Не удалось активировать .venv
+  exit /b 1
+)
+set "USE_INIT=0"
+if not exist "%AZ_REMOTE_WEIGHTS_PATH%" if not "%AZ_REMOTE_INIT_WEIGHTS%"=="" set "USE_INIT=1"
+goto :start_is_foreground
 
 :do_setup
 if not exist "%ROOT%\.venv\Scripts\python.exe" (
@@ -201,6 +263,10 @@ if not exist "%AZ_REMOTE_WEIGHTS_PATH%" (
 set "USE_INIT=0"
 if not exist "%AZ_REMOTE_WEIGHTS_PATH%" if not "%AZ_REMOTE_INIT_WEIGHTS%"=="" set "USE_INIT=1"
 
+if "%AZ_REMOTE_DIST_ACTORS_ENABLED%"=="" set "AZ_REMOTE_DIST_ACTORS_ENABLED=0"
+if /i not "%MODE%"=="serve" if "%AZ_REMOTE_DIST_ACTORS_ENABLED%"=="1" goto :start_dist_bundle
+
+:start_is_foreground
 echo.
 echo [START] AZ Remote IS  host=%AZ_REMOTE_HOST%  port=%AZ_REMOTE_PORT%  device=%AZ_REMOTE_DEVICE%
 echo         weights=%AZ_REMOTE_WEIGHTS_PATH%
@@ -233,5 +299,30 @@ if not "%EC%"=="0" (
 ) else (
   echo [EXIT] Сервер остановлен.
 )
+if /i "%MODE%"=="serve" exit /b %EC%
+pause
+exit /b %EC%
+
+:start_dist_bundle
+call :apply_dist_env
+if "%AZ_DIST_PC1_HOST%"=="" (
+  echo [ОШИБКА] AZ_REMOTE_DIST_ACTORS_ENABLED=1, но не задан AZ_DIST_PC1_HOST ^(IP ПК1^).
+  echo Что делать: tools\pc2_remote_az_is.bat config
+  pause
+  exit /b 1
+)
+echo.
+echo [START] IS + distributed actors ^(два процесса^)
+echo         1^) IS в отдельном окне  :%AZ_REMOTE_PORT%
+echo         2^) Actors здесь  -^> %AZ_DIST_PC1_HOST%:%AZ_DIST_ROLLOUT_PORT%
+echo         Сначала запустите train на ПК1, затем этот bat ^(или наоборот в течение ~1 мин^).
+echo.
+start "40kAI AZ IS" cmd /k ""%~f0" serve"
+echo [WAIT] Ждём готовности IS ^(%AZ_REMOTE_DIST_ACTORS_DELAY_SEC% с^)...
+timeout /t %AZ_REMOTE_DIST_ACTORS_DELAY_SEC% /nobreak >nul
+call :run_actors_foreground
+set "EC=%ERRORLEVEL%"
+echo.
+echo [INFO] Окно "40kAI AZ IS" может оставаться открытым — закройте его вручную после train.
 pause
 exit /b %EC%

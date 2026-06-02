@@ -31,3 +31,25 @@ set "AZ_REMOTE_AUTH_TOKEN="
 
 REM --- При первом setup: добавить правило firewall для порта (1=да, 0=нет) ---
 set "AZ_REMOTE_SETUP_FIREWALL=1"
+
+REM --- Distributed self-play (CPU env на ПК2 → rollout на ПК1) ---
+REM 1 = pc2_remote_az_is.bat поднимает IS + actors одной кнопкой (IS в отдельном окне).
+REM Train на ПК1 должен быть уже запущен (receiver :5557). На ПК1 открыть inbound TCP 5557.
+set "AZ_REMOTE_DIST_ACTORS_ENABLED=1"
+set "AZ_REMOTE_DIST_ACTORS_DELAY_SEC=12"
+REM Сек: ждать az_dist_train_context.json с ПК1 (если ПК2 стартуют до train)
+set "AZ_DIST_WAIT_CONTEXT_SEC=90"
+REM IP ПК1 (learner), не ПК2:
+set "AZ_DIST_PC1_HOST=192.168.0.100"
+set "AZ_DIST_ROLLOUT_PORT=5557"
+set "AZ_DIST_PC2_IS_HOST=127.0.0.1"
+set "AZ_DIST_PC2_IS_PORT=5555"
+set "AZ_DIST_STOP_FLAG_PATH=Z:\actor_sync\az_dist_stop.flag"
+set "MODELS_DIR=Z:\actor_sync"
+set "AZ_DIST_PC2_NUM_WORKERS=4"
+set "AZ_DIST_PC2_WORKER_ID_BASE=100"
+REM Пусто = авто из train (SMB az_dist_train_context.json) или latest_snapshot на Z:\agents
+set "OPPONENT_AGENT_ID="
+set "AZ_DIST_ENV_CONTRACT_HASH="
+set "AZ_DIST_AUTH_TOKEN="
+set "AZ_INFERENCE_REMOTE_AUTH_TOKEN="

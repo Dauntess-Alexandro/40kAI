@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from typing import Any, Protocol
 
 from core.models.az_rollout_protocol import (
@@ -23,6 +25,38 @@ def az_dist_stop_flag_path() -> str:
 def az_dist_stop_requested(flag_path: str | None = None) -> bool:
     path = str(flag_path or az_dist_stop_flag_path())
     return bool(path) and os.path.isfile(path)
+
+
+def az_dist_context_path() -> str:
+    custom = str(os.getenv("AZ_DIST_CONTEXT_PATH", "") or "").strip()
+    if custom:
+        return custom
+    return os.path.join(os.path.dirname(az_dist_stop_flag_path()), "az_dist_train_context.json")
+
+
+def write_az_dist_train_context(payload: dict[str, Any]) -> str:
+    path = az_dist_context_path()
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    body = dict(payload or {})
+    body.setdefault("written_at", time.strftime("%Y-%m-%dT%H:%M:%S"))
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(body, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    return path
+
+
+def read_az_dist_train_context() -> dict[str, Any]:
+    path = az_dist_context_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 class RolloutSink(Protocol):

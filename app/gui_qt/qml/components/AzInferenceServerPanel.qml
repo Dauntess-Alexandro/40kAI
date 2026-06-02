@@ -149,7 +149,7 @@ ChamferPanel {
                     accentOn: "#4eb8e8"
                     accentOff: "#4a5564"
                     subtitle: panel.lanOn
-                        ? "Инференс на GPU ПК2 · tools\\pc2_remote_az_is.bat"
+                        ? "ПК2: tools\\pc2_remote_az_is.bat (IS + actors, один раз после train)"
                         : "Второй ПК в LAN · при включении Local выключается"
                     onToggled: function(checked) {
                         panel.setLanEnabled(checked)
@@ -167,14 +167,14 @@ ChamferPanel {
                         Layout.fillWidth: true
                         rootUi: panel.rootUi
                         title: "Distributed actors (ПК2)"
-                        tooltipText: "Self-play на CPU ПК2: rollout → этот ПК (:5557). Infer на ПК2 — localhost к IS. После старта train на ПК2: tools\\pc2_az_actors.bat"
+                        tooltipText: "Self-play на CPU ПК2: rollout → этот ПК (:5557). На ПК2 после train: tools\\pc2_remote_az_is.bat (IS + actors одной кнопкой)."
                         active: true
                         switchChecked: panel.distOn
                         switchEnabled: !controller.running
                         accentOn: "#6eb8ff"
                         accentOff: "#4a5564"
                         subtitle: panel.distOn
-                            ? "Включено · на ПК2 после train: pc2_az_actors.bat (нужен pc2_remote_az_is.bat)"
+                            ? "Включено · на ПК2: pc2_remote_az_is.bat (IS + actors вместе)"
                             : "Выключено — только infer на ПК2, env только на этом ПК"
                         onToggled: function(checked) {
                             panel.setKey("distributed_actors_enabled", checked ? "1" : "0")

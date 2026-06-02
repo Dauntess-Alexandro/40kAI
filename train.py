@@ -93,7 +93,12 @@ from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
 from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
 from core.models.az_rollout_receiver import RolloutReceiver
-from core.models.az_rollout_sink import az_dist_stop_flag_path, az_dist_stop_requested, make_rollout_sink
+from core.models.az_rollout_sink import (
+    az_dist_stop_flag_path,
+    az_dist_stop_requested,
+    make_rollout_sink,
+    write_az_dist_train_context,
+)
 from core.models.alphazero_trainer import (
     AlphaZeroTrainConfig,
     alphazero_train_config_from_env,
@@ -8861,6 +8866,25 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             log_fn=append_agent_log,
         )
         rollout_receiver.start()
+        try:
+            _dist_ctx_path = write_az_dist_train_context(
+                {
+                    "opponent_agent_id": str(opponent_agent_id or OPPONENT_AGENT_ID or ""),
+                    "learner_side": str(LEARNER_SIDE or "P1"),
+                    "env_contract_hash": str(_az_contract_hash),
+                    "self_play_enabled": int(SELF_PLAY_ENABLED),
+                    "train_algo": str(TRAIN_ALGO),
+                }
+            )
+            append_agent_log(
+                f"[AZ][DIST][CONTEXT] wrote opponent_agent_id="
+                f"{opponent_agent_id or OPPONENT_AGENT_ID or '-'} path={_dist_ctx_path}"
+            )
+        except Exception as exc:
+            append_agent_log(
+                f"[AZ][DIST][CONTEXT][WARN] Не удалось записать контекст для PC2: {exc}. "
+                "Где: write_az_dist_train_context. Что делать: проверьте SMB actor_sync."
+            )
 
     if remaining_episodes > 0:
         if AZ_INFERENCE_SERVER_ENABLED:

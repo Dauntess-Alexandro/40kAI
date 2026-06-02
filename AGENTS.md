@@ -65,7 +65,7 @@
 ## Distributed self-play (AlphaZero tree, PC1+PC2)
 - **План:** `plans/az-distributed-selfplay.md`. Целевой профиль: **IS LAN** на PC2 + доп. env-воркеры на PC2 (rollout → PC1).
 - **ПК1 (train):** `distributed_actors_enabled=1` в `hyperparams.json` → `alphazero_tree` или env `AZ_DISTRIBUTED_ACTORS=1`. Learner поднимает `RolloutReceiver` (PULL **5557**), пишет `artifacts/models/actor_sync/az_dist_stop.flag` по завершении.
-- **ПК2:** 1) `tools/pc2_remote_az_is.bat` (IS :5555), 2) `tools/pc2_az_actors.bat` (конфиг: `runtime/state/pc2_az_actors_config.bat`). Воркеры: `_az_env_worker_entry`, infer → `127.0.0.1:5555`, rollout PUSH → IP PC1:5557.
+- **ПК2:** `tools/pc2_remote_az_is.bat` — IS (:5555) + distributed actors (конфиг: `runtime/state/pc2_remote_az_is_config.bat`, `AZ_REMOTE_DIST_ACTORS_ENABLED=1`). Отдельно только actors: `tools/pc2_az_actors.bat` → `actors-only`. Воркеры: infer → `127.0.0.1:5555`, rollout → IP PC1:5557.
 - Логи: `[AZ][DIST]`, `[AZ][DIST][RECEIVER]`, `[AZ][DIST][SINK]`, `stale_drop remote=…%`.
 - Отключить: `AZ_DISTRIBUTED_ACTORS=0` — прежний одиночный путь.
 

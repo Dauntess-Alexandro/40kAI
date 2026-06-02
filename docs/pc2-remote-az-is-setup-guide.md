@@ -38,18 +38,23 @@ tools\pc2_remote_az_is.bat
   при пустом Z: — `AZ_REMOTE_INIT_WEIGHTS=` локальный checkpoint.
 - Сохранить, закрыть блокнот.
 
-### 5. ПК2: установка + старт
+### 5. ПК1: запустить train
+GUI: LAN Inference server + Distributed actors (ПК2). Или `distributed_actors_enabled=1` в hyperparams.
+
+### 6. ПК2: установка + старт (IS + actors одной кнопкой)
+В `pc2_remote_az_is_config.bat` задать **`AZ_DIST_PC1_HOST`** = IP ПК1, **`AZ_REMOTE_DIST_ACTORS_ENABLED=1`** (в example по умолчанию).
 ```bat
 tools\pc2_remote_az_is.bat setup    REM venv + firewall :5555 (один раз)
-tools\pc2_remote_az_is.bat          REM запуск сервера
+tools\pc2_remote_az_is.bat          REM IS в отдельном окне + actors в этом
 ```
-Ожидаемо в консоли:
-```text
-[AZ][REMOTE_IS] listening on 0.0.0.0:5555 device=cuda:0
-```
-Окно не закрывать. Остановка — Ctrl+C.
+Ожидаемо: окно **40kAI AZ IS** → `listening on 0.0.0.0:5555`; в основном окне → `[AZ][DIST][PC2] spawning workers=...`  
+На ПК1 в логе train: `[AZ][DIST][RECEIVER] hello worker=100`.  
+Только IS без actors: `set AZ_REMOTE_DIST_ACTORS_ENABLED=0` в конфиге.
 
-### 6. ПК1: запустить train
+### 7. (устар.) отдельный pc2_az_actors.bat
+Не нужен, если используете шаг 6. `pc2_az_actors.bat` = `actors-only` (IS уже запущен).
+
+### 8. ПК1 (env vars, если без GUI)
 Env vars (или GUI после реализации панели):
 ```bat
 set TRAIN_ALGO=alphazero_tree
@@ -69,6 +74,8 @@ python train.py ...
 - [ ] `Z:\latest_az_tree_policy.pth` или `AZ_REMOTE_INIT_WEIGHTS`
 - [ ] `Z:\az_remote_search_cfg.json` есть
 - [ ] `listening on 0.0.0.0:5555`
+- [ ] `AZ_DIST_PC1_HOST` верный; на ПК1 открыт inbound **TCP 5557**
+- [ ] В train: `hello worker=100+` (если distributed включён)
 
 **ПК1**
 - [ ] `az_remote_health_check` OK (или train стартует без ошибки health_check)

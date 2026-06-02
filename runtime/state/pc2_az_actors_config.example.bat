@@ -1,6 +1,7 @@
 @echo off
-REM Пример конфига distributed AZ actors на ПК2 (IS LAN + rollout → ПК1).
-REM Скопируйте в pc2_az_actors_config.bat и заполните.
+REM Устарело: настройки перенесены в pc2_remote_az_is_config.example.bat
+REM Используйте: tools\pc2_remote_az_is.bat  (IS + actors) или actors-only.
+REM Этот файл оставлен для старых pc2_az_actors_config.bat на ПК2.
 
 REM --- ПК1: IP learner (RolloutReceiver PULL :5557) ---
 set "AZ_DIST_PC1_HOST=192.168.1.10"
