@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -96,13 +97,27 @@ def train_alphazero_step(
         batch = [b for b in batch if int(getattr(b, "policy_version", 0)) >= min_ver]
         if not batch:
             return None
-    obs = torch.tensor([b.state for b in batch], dtype=torch.float32, device=device)
-    target_value = torch.tensor([b.value_target for b in batch], dtype=torch.float32, device=device)
+    # np.stack + from_numpy вместо torch.tensor([np-массивы]) — ~20× быстрее сборки
+    # и без UserWarning «extremely slow» (числа идентичны).
+    obs_np = np.stack([np.asarray(b.state, dtype=np.float32) for b in batch])
+    obs = torch.from_numpy(obs_np).to(device)
+    target_value = torch.from_numpy(
+        np.asarray([b.value_target for b in batch], dtype=np.float32)
+    ).to(device)
     logits_by_head, value = net(obs)
+
+    num_heads = len(logits_by_head)
+    # Стэки таргетов по головам собираем разом (один np.stack на голову, не torch.tensor([...]))
+    target_pi_by_head = [
+        torch.from_numpy(
+            np.stack([np.asarray(b.policy_targets[h], dtype=np.float32) for b in batch])
+        ).to(device)
+        for h in range(num_heads)
+    ]
 
     policy_loss = torch.tensor(0.0, device=device)
     for h_idx, logits in enumerate(logits_by_head):
-        target_pi = torch.tensor([b.policy_targets[h_idx] for b in batch], dtype=torch.float32, device=device)
+        target_pi = target_pi_by_head[h_idx]
         target_pi = target_pi / target_pi.sum(dim=1, keepdim=True).clamp_min(1e-8)
         logp = F.log_softmax(logits, dim=1)
         policy_loss = policy_loss + (-(target_pi * logp).sum(dim=1).mean())
