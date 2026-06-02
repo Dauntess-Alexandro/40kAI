@@ -15,8 +15,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 # train импортируется после path setup
 import train  # noqa: E402
-from core.engine.agent_registry import load_agent_opponent, make_env_contract  # noqa: E402
-from core.engine.agent_registry import resolve_latest_opponent_agent_id  # noqa: E402
+from core.engine.agent_registry import make_env_contract, resolve_latest_opponent_agent_id  # noqa: E402
+from core.models.opponent_adapter import load_agent_opponent  # noqa: E402
 from core.models.az_rollout_sink import (  # noqa: E402
     az_dist_stop_flag_path,
     az_dist_stop_requested,
