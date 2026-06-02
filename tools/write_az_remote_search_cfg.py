@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,32 +29,145 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
+def _dims_from_env_contract(contract: dict) -> tuple[int, list[int]]:
+    if not isinstance(contract, dict):
+        return 0, []
+    if contract.get("n_observations") and contract.get("n_actions"):
+        try:
+            obs = int(contract.get("n_observations", 0) or 0)
+            acts = [int(x) for x in (contract.get("n_actions", []) or [])]
+            if obs > 0 and acts:
+                return obs, acts
+        except Exception:
+            pass
+    obs_sig = str(contract.get("obs_space_signature", "") or "")
+    act_sig = str(contract.get("action_space_signature", "") or "")
+    obs_dim = 0
+    m_obs = re.match(r"vec:(\d+)", obs_sig)
+    if m_obs:
+        obs_dim = int(m_obs.group(1))
+    action_sizes: list[int] = []
+    if act_sig.startswith("heads:"):
+        tail = act_sig.split(":", 1)[1].strip()
+        if tail:
+            action_sizes = [int(x) for x in tail.split(",") if str(x).strip().isdigit()]
+    return obs_dim, action_sizes
+
+
+def _dims_from_latest_checkpoint(ckpt_dir: Path) -> tuple[int, list[int], str]:
+    if not ckpt_dir.is_dir():
+        return 0, [], ""
+    ckpts = sorted(ckpt_dir.glob("checkpoint_ep*.pth"), key=os.path.getmtime, reverse=True)
+    if not ckpts:
+        return 0, [], ""
+    path = ckpts[0]
+    try:
+        import torch
+
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        contract = payload.get("env_contract", {}) if isinstance(payload, dict) else {}
+        obs, acts = _dims_from_env_contract(contract)
+        if obs > 0 and acts:
+            return obs, acts, str(path)
+    except Exception as exc:
+        print(f"[WARN] checkpoint {path}: {exc}")
+    return 0, [], ""
+
+
+def _dims_from_latest_agent_contract(agents_root: Path) -> tuple[int, list[int], str]:
+    if not agents_root.is_dir():
+        return 0, [], ""
+    candidates = sorted(
+        agents_root.glob("**/env_contract.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        contract = _load_json(path)
+        obs, acts = _dims_from_env_contract(contract)
+        if obs > 0 and acts:
+            return obs, acts, str(path)
+    return 0, [], ""
+
+
+def _dims_from_roster_bootstrap() -> tuple[int, list[int], str]:
+    """Поднять env по train_data / roster — без checkpoint."""
+    try:
+        import gymnasium as gym
+        import numpy as np
+
+        import train as train_mod
+
+        roster = train_mod._load_roster_config()
+        b_len = int(roster["b_len"])
+        b_hei = int(roster["b_hei"])
+        enemy, model = train_mod._build_units_from_config(roster, b_len, b_hei)
+        env = gym.make(
+            "40kAI-v0",
+            disable_env_checker=True,
+            enemy=enemy,
+            model=model,
+            b_len=b_len,
+            b_hei=b_hei,
+        )
+        state0, _ = env.reset(options={"m": model, "e": enemy, "trunc": True})
+        if isinstance(state0, (dict,)):
+            n_obs = len(list(state0.values()))
+        else:
+            n_obs = int(np.asarray(state0).shape[0])
+        n_actions = train_mod.action_sizes_from_env(env, len(model))
+        try:
+            env.close()
+        except Exception:
+            pass
+        if n_obs > 0 and n_actions:
+            return int(n_obs), [int(x) for x in n_actions], "roster_bootstrap"
+    except Exception as exc:
+        print(f"[WARN] roster bootstrap: {exc}")
+    return 0, [], ""
+
+
 def main() -> int:
     hp = _load_json(_REPO_ROOT / "hyperparams.json")
     az = hp.get("alphazero_tree", {}) if isinstance(hp, dict) else {}
 
-    # obs_dim / action_sizes требуют поднять env по ростеру. Чтобы не дублировать
-    # тяжёлую логику train.py, читаем из последнего env_contract в checkpoint, если есть.
+    tried: list[str] = []
     obs_dim = 0
     action_sizes: list[int] = []
-    ckpt_dir = _REPO_ROOT / "artifacts" / "models" / "alphazero_tree"
-    if ckpt_dir.is_dir():
-        ckpts = sorted(ckpt_dir.glob("checkpoint_ep*.pth"), key=os.path.getmtime, reverse=True)
-        if ckpts:
-            try:
-                import torch
-                payload = torch.load(ckpts[0], map_location="cpu", weights_only=False)
-                contract = payload.get("env_contract", {}) if isinstance(payload, dict) else {}
-                obs_dim = int(contract.get("n_observations", 0) or 0)
-                action_sizes = [int(x) for x in (contract.get("n_actions", []) or [])]
-            except Exception as exc:
-                print(f"[WARN] не удалось прочитать env_contract из checkpoint: {exc}")
+    source = ""
+
+    for algo in ("alphazero_tree", "alphazero_proxy"):
+        ckpt_dir = _REPO_ROOT / "artifacts" / "models" / algo
+        obs, acts, src = _dims_from_latest_checkpoint(ckpt_dir)
+        tried.append(f"{ckpt_dir} ({len(list(ckpt_dir.glob('checkpoint_ep*.pth')))} checkpoint_ep*.pth)")
+        if obs > 0 and acts:
+            obs_dim, action_sizes, source = obs, acts, src
+            break
+
+    if obs_dim <= 0 or not action_sizes:
+        agents_root = _REPO_ROOT / "artifacts" / "models" / "agents"
+        obs, acts, src = _dims_from_latest_agent_contract(agents_root)
+        tried.append(f"{agents_root}/**/env_contract.json")
+        if obs > 0 and acts:
+            obs_dim, action_sizes, source = obs, acts, src
+
+    if obs_dim <= 0 or not action_sizes:
+        obs, acts, src = _dims_from_roster_bootstrap()
+        tried.append("train_data/roster bootstrap")
+        if obs > 0 and acts:
+            obs_dim, action_sizes, source = obs, acts, src
 
     if obs_dim <= 0 or not action_sizes:
         print(
-            "[ERROR] obs_dim/action_sizes не определены. "
-            "Сначала запустите train (создастся checkpoint с env_contract), "
-            "затем повторите write_az_remote_search_cfg."
+            "[ERROR] obs_dim/action_sizes не определены.\n"
+            "Проверено:\n  - " + "\n  - ".join(tried) + "\n"
+            "Частые причины:\n"
+            "  1) SAVE_EVERY=0 — периодические checkpoint_ep*.pth не пишутся "
+            "(остаётся только final agent в artifacts/models/agents/).\n"
+            "  2) Папка artifacts/models на другом диске / 40KAI_INSTALL_ROOT.\n"
+            "  3) Train не дошёл до сохранения агента (прерван до конца).\n"
+            "Что делать: убедитесь что есть train_data.txt, или задайте SAVE_EVERY>=50 и "
+            "дождитесь одного checkpoint, или завершите один полный прогон AZ."
         )
         return 1
 
@@ -65,13 +179,13 @@ def main() -> int:
         "n_value_ensemble": int(az.get("value_ensemble", 1)),
         "num_simulations": int(az.get("mcts_simulations", 32)),
         "_generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "_sources": ["hyperparams.json:alphazero_tree", "checkpoint env_contract"],
+        "_sources": ["hyperparams.json:alphazero_tree", f"dims_from={source}"],
     }
 
     out_state = _REPO_ROOT / "runtime" / "state" / "az_remote_search_cfg.json"
     out_state.parent.mkdir(parents=True, exist_ok=True)
     out_state.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"[OK] {out_state}")
+    print(f"[OK] {out_state}  (source: {source})")
 
     out_smb = _REPO_ROOT / "artifacts" / "models" / "actor_sync" / "az_remote_search_cfg.json"
     try:
