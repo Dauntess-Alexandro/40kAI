@@ -167,6 +167,12 @@ class AZRemoteInferenceServer:
         self._router.setsockopt(zmq.LINGER, 0)
         self._router.bind(f"tcp://{self.host}:{self.port}")
         _log(f"[AZ][REMOTE_IS] listening on {self.host}:{self.port} device={torch_device}", log_path)
+        # Маркер нового кода телеметрии: видно в логе ПК2 = health_check шлёт CPU/RAM ПК2.
+        _log(
+            f"[AZ][REMOTE_IS] telemetry cpu={'on' if self._psutil is not None else 'OFF(psutil?)'} "
+            f"cpu_label={self._cpu_label!r}",
+            log_path,
+        )
 
     def stop(self) -> None:
         self._running = False
