@@ -408,3 +408,6 @@ AZ_PROXY_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
         "learning_rate": 0.0002,
     },
 }
+
+# No-preset дефолт proxy = balanced (tree-дефолт уже = balanced выше).
+DEFAULT_AZ_PROXY_HYPERPARAMS = {**DEFAULT_AZ_PROXY_HYPERPARAMS, **AZ_PROXY_PROFILE_PRESETS["balanced"]}

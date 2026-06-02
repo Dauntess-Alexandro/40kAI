@@ -112,6 +112,11 @@ DQN_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {
     "heavy": {"batch_size": 512, "updates_per_step": 8, "hidden_size": 384, "ensemble_size": 2},
 }
 
+# No-preset дефолт = balanced (единый удобный дефолт для всех моделей).
+# Активный hyperparams.json не затрагивается — только свежий/сброшенный конфиг.
+DEFAULT_DQN_HYPERPARAMS = {**DEFAULT_DQN_HYPERPARAMS, **DQN_PROFILE_PRESETS["balanced"]}
+DEFAULT_PPO_HYPERPARAMS = {**DEFAULT_PPO_HYPERPARAMS, **PPO_PROFILE_PRESETS["balanced"]}
+
 DQN_BASIC_KEYS: tuple[str, ...] = (
     "lr",
     "gamma",

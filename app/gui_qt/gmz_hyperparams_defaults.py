@@ -238,6 +238,11 @@ GMZ_PROFILE_PRESETS: dict[str, dict[str, int | float | str]] = {
     },
 }
 
+# No-preset дефолт = balanced (единый удобный дефолт для всех моделей).
+# ВАЖНО: затрагивает только свежий/сброшенный конфиг; активный hyperparams.json
+# (где у пользователя сейчас heavy) НЕ меняется.
+DEFAULT_GMZ_HYPERPARAMS = {**DEFAULT_GMZ_HYPERPARAMS, **GMZ_PROFILE_PRESETS["balanced"]}
+
 GMZ_BASIC_KEYS: tuple[str, ...] = (
     "learning_rate",
     "batch_size",
