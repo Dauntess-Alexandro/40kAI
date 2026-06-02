@@ -26,6 +26,7 @@ class TelemetryController(QtCore.QObject):
         self._algo = "dqn"
         self._remote_cfg: Optional[dict] = None
         self._batch_size_hint: Optional[int] = None
+        self._labels: dict = self._load_labels()
         self._pool = QtCore.QThreadPool.globalInstance()
         self._busy = False
 
@@ -74,6 +75,24 @@ class TelemetryController(QtCore.QObject):
         self._batch.feed_line(line)
 
     # --- internals ---
+    @staticmethod
+    def _load_labels() -> dict:
+        """P3: необязательные подписи железа из runtime/state/telemetry_labels.json
+        (ключи pc1_gpu/pc1_cpu/pc2_gpu/pc2_cpu). Нет файла → пустой dict, имена из NVML/health."""
+        import json
+        from pathlib import Path
+
+        try:
+            root = Path(__file__).resolve().parents[3]
+            path = root / "runtime" / "state" / "telemetry_labels.json"
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+        return {}
+
     def _tick(self) -> None:
         if self._busy:
             return
@@ -98,14 +117,22 @@ class TelemetryController(QtCore.QObject):
         local = self._local.sample(self._pid)
         remote = None
         if self._remote_cfg:
+            # transport выбирает протокол health_check: 'az' → AZ Remote IS, иначе GMZ (по умолчанию).
+            health_fn = None
+            if str(self._remote_cfg.get("transport", "gmz")).lower() == "az":
+                from core.models.az_inference_transport import az_remote_health_check
+
+                health_fn = az_remote_health_check
             remote = RemoteTelemetryProbe(
                 host=self._remote_cfg.get("host", "127.0.0.1"),
                 port=int(self._remote_cfg.get("port", 5555)),
                 auth_token=self._remote_cfg.get("auth_token", ""),
+                health_fn=health_fn,
             ).sample()
         return build_cards(
             local=local, remote=remote, batch_avg=self._batch.average(),
             batch_size_hint=self._batch_size_hint, algo=self._algo, active=self._active,
+            labels=self._labels,
         )
 
     @QtCore.Slot(object)

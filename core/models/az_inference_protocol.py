@@ -140,7 +140,13 @@ def build_health_response(
     gpu_mem_used_mb: float | None = None,
     gpu_mem_total_mb: float | None = None,
     gpu_temp_c: float | None = None,
+    cpu_name: str | None = None,
+    cpu_pct_system: float | None = None,
+    ram_pct_system: float | None = None,
+    ram_gb_system: float | None = None,
 ) -> dict[str, Any]:
+    # cpu_*/ram_* — опциональны (P1: телеметрия CPU/RAM ПК2). Старый ПК2 их не шлёт → None,
+    # старый ПК1 (GUI) их игнорирует. Обратная совместимость по протоколу сохраняется.
     return {
         "kind": "health_check",
         "status": "ok",
@@ -154,4 +160,8 @@ def build_health_response(
         "gpu_mem_used_mb": gpu_mem_used_mb,
         "gpu_mem_total_mb": gpu_mem_total_mb,
         "gpu_temp_c": gpu_temp_c,
+        "cpu_name": None if cpu_name is None else str(cpu_name),
+        "cpu_pct_system": cpu_pct_system,
+        "ram_pct_system": ram_pct_system,
+        "ram_gb_system": ram_gb_system,
     }

@@ -121,6 +121,8 @@ class GUIController(QtCore.QObject):
     progressLabelChanged = QtCore.Signal(str)
     progressStatsChanged = QtCore.Signal(str)
     progressTextChanged = QtCore.Signal(str)
+    progressPhaseChanged = QtCore.Signal(str)
+    progressDetailChanged = QtCore.Signal(str)
     rosterSummaryChanged = QtCore.Signal(str)
     numGamesChanged = QtCore.Signal(int)
     missionChanged = QtCore.Signal(str)
@@ -179,6 +181,8 @@ class GUIController(QtCore.QObject):
         self._progress_label = "ep=0/0 (0%)"
         self._progress_stats = "— it/s • elapsed 00:00"
         self._progress_text = "0%"
+        self._progress_phase = ""      # "", "collecting", "draining", "done" (только distributed AZ)
+        self._progress_detail = ""     # русский текст фазы для UI
 
         self._num_games = 100
         self._mission_options = ["only_war"]
@@ -466,6 +470,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=progressTextChanged)
     def progressText(self) -> str:
         return self._progress_text
+
+    @QtCore.Property(str, notify=progressPhaseChanged)
+    def progressPhase(self) -> str:
+        return self._progress_phase
+
+    @QtCore.Property(str, notify=progressDetailChanged)
+    def progressDetail(self) -> str:
+        return self._progress_detail
 
     @QtCore.Property(str, notify=rosterSummaryChanged)
     def rosterSummary(self) -> str:
@@ -4641,6 +4653,60 @@ class GUIController(QtCore.QObject):
         self.progressTextChanged.emit(self._progress_text)
         self.progressLabelChanged.emit(self._progress_label)
 
+    # --- P2: фазы прогресса distributed AZ ---
+    def _handle_progress_phase_line(self, line: str) -> bool:
+        """Разбирает [TRAIN][PHASE]/[TRAIN][DIST]. True = строка обработана как фаза."""
+        norm = line.strip()
+        phase_m = re.search(r"\[TRAIN\]\[PHASE\]\s+(collecting|draining|done)", norm)
+        if phase_m:
+            self._set_progress_phase(phase_m.group(1))
+            return True
+        dist_m = re.search(
+            r"\[TRAIN\]\[DIST\]\s+remote_alive=(\d+)\s+ep_done=(\d+)/(\d+)\s+drain_left=(\d+)s",
+            norm,
+        )
+        if dist_m:
+            self._update_drain_detail(int(dist_m.group(1)), int(dist_m.group(4)))
+            return True
+        return False
+
+    def _set_progress_detail(self, text: str) -> None:
+        text = str(text)
+        if text != self._progress_detail:
+            self._progress_detail = text
+            self.progressDetailChanged.emit(text)
+
+    def _set_progress_phase(self, phase: str) -> None:
+        phase = str(phase)
+        self._progress_phase = phase
+        self.progressPhaseChanged.emit(phase)
+        if phase == "collecting":
+            self._set_progress_detail("Сбор эпизодов (ПК1 + ПК2)")
+        elif phase == "draining":
+            self._apply_draining_display(detail="Завершение воркеров ПК2…")
+        elif phase == "done":
+            self._progress_value = 1.0
+            self._progress_text = "100%"
+            self.progressValueChanged.emit(1.0)
+            self.progressTextChanged.emit("100%")
+            self._set_progress_detail("Готово")
+
+    def _apply_draining_display(self, *, detail: str, drain_left: Optional[int] = None) -> None:
+        """В фазе drain бар не прыгает в 100%: держим ~98% + текст про завершение ПК2."""
+        suffix = f" (≈{drain_left}с)" if drain_left is not None else ""
+        self._progress_value = 0.98
+        self._progress_text = f"99% · завершение ПК2{suffix}"
+        self.progressValueChanged.emit(self._progress_value)
+        self.progressTextChanged.emit(self._progress_text)
+        self._set_progress_detail(detail + suffix)
+
+    def _update_drain_detail(self, remote_alive: int, drain_left: int) -> None:
+        if self._progress_phase != "draining":
+            return
+        self._apply_draining_display(
+            detail=f"Завершение ПК2: активно воркеров {remote_alive}", drain_left=drain_left,
+        )
+
     def _on_training_ui_tick(self) -> None:
         """Раз в секунду обновляет elapsed/it/s, пока train ждёт длинную партию или learner."""
         if not self._running or self._active_process_kind != "train":
@@ -5065,13 +5131,13 @@ class GUIController(QtCore.QObject):
             pid=self._process.processId() or None,
             algo=str(self._training_algo),
             active=True,
-            remote_cfg=self._gmz_remote_cfg_for_telemetry(),
+            remote_cfg=self._gmz_remote_cfg_for_telemetry() or self._az_remote_cfg_for_telemetry(),
             batch_size_hint=self._gmz_batch_size_hint(),
         )
         self._telemetry.start()
 
     def _gmz_remote_cfg_for_telemetry(self):
-        # Remote IS (и карточка ПК2) существует только для Gumbel MuZero.
+        # Remote IS (и карточка ПК2) для Gumbel MuZero.
         if str(self._training_algo) != "gumbel_muzero":
             return None
         try:
@@ -5086,6 +5152,30 @@ class GUIController(QtCore.QObject):
                 "host": data.get("host", "127.0.0.1"),
                 "port": int(data.get("port", 5555)),
                 "auth_token": data.get("auth_token", ""),
+                "transport": "gmz",
+            }
+        except Exception:
+            return None
+
+    def _az_remote_cfg_for_telemetry(self):
+        # Карточка ПК2 GPU для AlphaZero Tree: только когда инференс реально на ПК2
+        # (mode=remote и host не локальный). distributed_actors с локальным IS не даёт
+        # remote GPU для опроса, поэтому гейтим по inference_remote_host.
+        if str(self._training_algo) != "alphazero_tree":
+            return None
+        try:
+            hp = self._az_tree_hyperparams
+            mode = str(hp.get("inference_server_mode", "") or "").lower()
+            if mode != "remote":
+                return None
+            host = str(hp.get("inference_remote_host", "127.0.0.1") or "127.0.0.1").strip()
+            if host in ("", "127.0.0.1", "localhost", "::1"):
+                return None
+            return {
+                "host": host,
+                "port": int(hp.get("inference_remote_port", 5555) or 5555),
+                "auth_token": str(hp.get("inference_remote_auth_token", "") or ""),
+                "transport": "az",
             }
         except Exception:
             return None
@@ -5274,6 +5364,9 @@ class GUIController(QtCore.QObject):
         return False
 
     def _handle_progress_line(self, line: str) -> None:
+        # P2: фазы distributed AZ (collecting → draining → done).
+        if self._handle_progress_phase_line(line):
+            return
         current, total = self._parse_training_progress(line, self._train_total_episodes)
         if current is None:
             return
@@ -5329,6 +5422,11 @@ class GUIController(QtCore.QObject):
         now = time.time()
         self._training_start_time = now
         self._training_last_ui_update = now - 1
+        if self._progress_phase or self._progress_detail:
+            self._progress_phase = ""
+            self._progress_detail = ""
+            self.progressPhaseChanged.emit("")
+            self.progressDetailChanged.emit("")
 
     def _on_error(self, error: QtCore.QProcess.ProcessError) -> None:
         self._emit_log(f"[GUI] Ошибка процесса: {error}.", level="ERROR")

@@ -9089,6 +9089,11 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     dist_remote_transitions_total = 0
     dist_remote_stale_total = 0
 
+    # P2: фаза прогресса для GUI (collecting → draining → done). Только distributed AZ.
+    if AZ_DISTRIBUTED_ACTORS:
+        append_agent_log("[TRAIN][PHASE] collecting")
+        print("[TRAIN][PHASE] collecting", flush=True)
+
     while True:
         if not AZ_DISTRIBUTED_ACTORS:
             if done_actors >= active_actors:
@@ -9099,6 +9104,17 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     dist_draining = True
                     dist_drain_until = time.monotonic() + float(AZ_DIST_DRAIN_SEC)
                     _touch_az_dist_stop_flag()
+                    _remote_alive = (
+                        rollout_receiver.active_remote_workers() if rollout_receiver is not None else 0
+                    )
+                    _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
+                    for _ln in (
+                        "[TRAIN][PHASE] draining",
+                        f"[TRAIN][DIST] remote_alive={_remote_alive} "
+                        f"ep_done={int(episodes_finished)}/{int(totLifeT)} drain_left={_drain_left}s",
+                    ):
+                        append_agent_log(_ln)
+                        print(_ln, flush=True)
                 if dist_draining and time.monotonic() >= dist_drain_until and done_actors >= active_actors:
                     break
             elif active_actors > 0 and done_actors >= active_actors:
@@ -9119,6 +9135,17 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 )
                 print(wait_line, flush=True)
                 append_agent_log(wait_line)
+                if dist_draining:
+                    _remote_alive = (
+                        rollout_receiver.active_remote_workers() if rollout_receiver is not None else 0
+                    )
+                    _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
+                    dist_line = (
+                        f"[TRAIN][DIST] remote_alive={_remote_alive} "
+                        f"ep_done={int(episodes_finished)}/{int(totLifeT)} drain_left={_drain_left}s"
+                    )
+                    print(dist_line, flush=True)
+                    append_agent_log(dist_line)
                 last_heartbeat = now
             continue
 
@@ -9324,6 +9351,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 _save_az_sync()
                 last_sync_opt_steps = int(optimize_steps)
 
+    if AZ_DISTRIBUTED_ACTORS:
+        append_agent_log("[TRAIN][PHASE] done")
+        print("[TRAIN][PHASE] done", flush=True)
     if rollout_receiver is not None:
         rollout_receiver.stop()
     if dist_remote_transitions_total > 0:

@@ -47,6 +47,13 @@ class RolloutReceiver:
             f"contract_hash={self._contract_hash or '-'}"
         )
 
+    def active_remote_workers(self, *, stale_sec: float = 30.0) -> int:
+        """Сколько PC2-воркеров слали hello/heartbeat недавно (для [TRAIN][DIST] прогресса)."""
+        if not self._last_heartbeat:
+            return len(self._remote_workers)
+        now = time.time()
+        return sum(1 for ts in self._last_heartbeat.values() if (now - ts) <= float(stale_sec))
+
     def stop(self, *, join_timeout: float = 2.0) -> None:
         self._stop.set()
         if self._thread is not None:

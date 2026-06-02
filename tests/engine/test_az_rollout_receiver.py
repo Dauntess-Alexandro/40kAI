@@ -68,3 +68,19 @@ def test_push_pull_to_data_q():
         assert got_rollout
     finally:
         receiver.stop()
+
+
+def test_active_remote_workers_counts_recent_heartbeats():
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    data_q: mp.Queue = ctx.Queue(maxsize=8)
+    receiver = RolloutReceiver(data_q, bind_host="127.0.0.1", bind_port=15561)
+    now = time.time()
+    # 3 свежих воркера + 1 устаревший (> stale_sec назад)
+    receiver._remote_workers = {100, 101, 102, 103}
+    receiver._last_heartbeat = {100: now, 101: now - 5, 102: now - 1, 103: now - 120}
+    assert receiver.active_remote_workers(stale_sec=30.0) == 3
+    # без heartbeat'ов — fallback на число виденных воркеров
+    receiver._last_heartbeat = {}
+    assert receiver.active_remote_workers() == 4

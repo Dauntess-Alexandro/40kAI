@@ -633,6 +633,13 @@ ApplicationWindow {
                                         color: root.uiTextMain
                                         font.family: root.fontDataFamily
                                     }
+                                    Text {
+                                        text: controller.progressDetail
+                                        visible: controller.progressDetail.length > 0
+                                        color: root.uiTextMuted
+                                        font.family: root.fontDataFamily
+                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                    }
                                 }
                             }
                         }

@@ -1,0 +1,7 @@
+{
+  "_comment": "P3: подписи железа на полоске телеметрии. Скопируйте в telemetry_labels.json и поправьте. Любой ключ можно опустить — тогда имя берётся из NVML (GPU) / health_check (CPU ПК2) / platform.",
+  "pc1_gpu": "RTX 5060 Ti",
+  "pc1_cpu": "Ryzen 5 7600",
+  "pc2_gpu": "RTX 2060 Super",
+  "pc2_cpu": "Ryzen 5 1600"
+}

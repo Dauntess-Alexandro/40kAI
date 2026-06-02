@@ -38,4 +38,9 @@ class RemoteTelemetryProbe:
             "temp_c": hc.get("gpu_temp_c"),
             "avg_batch": hc.get("avg_batch"),
             "queue_depth": hc.get("queue_depth"),
+            # P1: CPU/RAM ПК2 (None, если сервер старой версии — карточка не рисуется).
+            "cpu_name": hc.get("cpu_name"),
+            "cpu_pct_system": hc.get("cpu_pct_system"),
+            "ram_pct_system": hc.get("ram_pct_system"),
+            "ram_gb_system": hc.get("ram_gb_system"),
         }

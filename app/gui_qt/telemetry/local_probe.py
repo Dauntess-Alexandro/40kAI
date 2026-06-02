@@ -35,6 +35,9 @@ class LocalTelemetryProbe:
             "cpu_pct": cpu_ram["cpu_pct"],
             "ram_pct": cpu_ram["ram_pct"],
             "ram_gb": cpu_ram["ram_gb"],
+            "cpu_pct_system": cpu_ram.get("cpu_pct_system"),
+            "ram_pct_system": cpu_ram.get("ram_pct_system"),
+            "ram_gb_system": cpu_ram.get("ram_gb_system"),
             "ok": cpu_ram["ok"],
             "gpus": gpus,
         }

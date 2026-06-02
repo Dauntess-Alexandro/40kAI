@@ -142,6 +142,26 @@ class AZRemoteInferenceServer:
             self._gpu_backend = None
         self._gpu_index = int(torch_device.index or 0) if torch_device.type == "cuda" else 0
 
+        # P1: системные CPU/RAM ПК2 для телеметрии ПК1 (через health_check).
+        try:
+            import psutil  # noqa: F401
+
+            self._psutil = psutil
+            try:
+                psutil.cpu_percent(None)  # прайминг: первый вызов всегда 0.0
+            except Exception:
+                pass
+        except Exception:
+            self._psutil = None
+        # Имя CPU для подписи «ПК2 · …»: env (из конфига ПК2) → platform fallback.
+        import platform
+        self._cpu_label = (
+            os.environ.get("40KAI_PC2_CPU_LABEL")
+            or os.environ.get("AZ_REMOTE_CPU_LABEL")
+            or platform.processor()
+            or "CPU"
+        )
+
         self._ctx = zmq.Context.instance()
         self._router = self._ctx.socket(zmq.ROUTER)
         self._router.setsockopt(zmq.LINGER, 0)
@@ -199,6 +219,15 @@ class AZRemoteInferenceServer:
                         break
             except Exception:
                 pass
+        cpu_pct_sys = ram_pct_sys = ram_gb_sys = None
+        if self._psutil is not None:
+            try:
+                cpu_pct_sys = float(self._psutil.cpu_percent(None))
+                vm = self._psutil.virtual_memory()
+                ram_pct_sys = float(vm.percent)
+                ram_gb_sys = float(vm.used) / 1e9
+            except Exception:
+                pass
         self._send(identity, build_health_response(
             policy_version=int(self._engine.weight_version),
             gpu_name=str(self._gpu_name),
@@ -207,6 +236,10 @@ class AZRemoteInferenceServer:
             avg_batch=avg_batch,
             gpu_util=gpu_util, gpu_mem_used_mb=gpu_used,
             gpu_mem_total_mb=gpu_total, gpu_temp_c=gpu_temp,
+            cpu_name=str(self._cpu_label),
+            cpu_pct_system=cpu_pct_sys,
+            ram_pct_system=ram_pct_sys,
+            ram_gb_system=ram_gb_sys,
         ))
 
     def _dispatch(self, identity: bytes, data: bytes) -> None:

@@ -26,21 +26,43 @@ class ProcessMeter:
             import psutil  # noqa: F401
 
             self._psutil = psutil
+            # Прайминг системного cpu_percent: первый вызов всегда 0.0, делаем его сейчас,
+            # чтобы первый tick уже отдавал осмысленную загрузку всей машины.
+            try:
+                psutil.cpu_percent(None)
+            except Exception:
+                pass
         except Exception:
             self._psutil = None
 
     def available(self) -> bool:
         return self._psutil is not None
 
+    def _system_metrics(self) -> dict[str, Any]:
+        """Загрузка всей машины (а не только дерева train) — для карточки CPU 'система'."""
+        ps = self._psutil
+        if ps is None:
+            return {}
+        try:
+            vm = ps.virtual_memory()
+            return {
+                "cpu_pct_system": float(ps.cpu_percent(None)),
+                "ram_pct_system": float(vm.percent),
+                "ram_gb_system": float(vm.used) / 1e9,
+            }
+        except Exception:
+            return {}
+
     def sample(self, pid: Optional[int]) -> dict[str, Any]:
         ps = self._psutil
+        sys_metrics = self._system_metrics()
         if ps is None or pid is None:
-            return {"cpu_pct": 0.0, "ram_pct": 0.0, "ram_gb": 0.0, "ok": False}
+            return {"cpu_pct": 0.0, "ram_pct": 0.0, "ram_gb": 0.0, "ok": False, **sys_metrics}
         try:
             root = ps.Process(int(pid))
             procs = [root] + root.children(recursive=True)
         except Exception:
-            return {"cpu_pct": 0.0, "ram_pct": 0.0, "ram_gb": 0.0, "ok": False}
+            return {"cpu_pct": 0.0, "ram_pct": 0.0, "ram_gb": 0.0, "ok": False, **sys_metrics}
 
         samples: list[dict[str, Any]] = []
         live_pids: set[int] = set()
@@ -66,4 +88,5 @@ class ProcessMeter:
 
         result = aggregate_tree(samples, ncpu=ps.cpu_count() or 1, total_ram=ps.virtual_memory().total)
         result["pids"] = live_pids
+        result.update(sys_metrics)
         return result
