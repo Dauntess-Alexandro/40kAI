@@ -26,6 +26,7 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "mcts_root_dirichlet_only",
     "mcts_batch_eval_size",
     "mcts_parallel_sims",
+    "mcts_simulate_enemy",
     "snapshot_opp_deterministic",
     "opponent_stochastic_eps",
     "temperature_opening_moves",
@@ -118,6 +119,7 @@ _AZ_BASE: dict[str, int | float | str] = {
     "prior_weight_early": 0.25,
     "mcts_batch_eval_size": 16,
     "mcts_parallel_sims": 8,
+    "mcts_simulate_enemy": 1,
 }
 
 DEFAULT_AZ_TREE_HYPERPARAMS: dict[str, int | float | str] = {
@@ -239,6 +241,7 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
             "mcts_eval_cache_size",
             "mcts_batch_eval_size",
             "mcts_parallel_sims",
+            "mcts_simulate_enemy",
         ),
         "default_collapsed": False,
     },
@@ -364,6 +367,7 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "balanced_outcome_sampling": "1 = баланс win/loss в replay.",
     "mcts_batch_eval_size": "Размер батча для оценки листьев MCTS (GPU). 1 = отключено, 8-32 = рекомендуется для Tree.",
     "mcts_parallel_sims": "Число параллельных симуляций в MCTS (ThreadPool). 0 = отключено, 4-8 = рекомендуется для Tree.",
+    "mcts_simulate_enemy": "1 = ходить за врага в rollout'ах MCTS (точнее, но дороже — enemyTurn самый тяжёлый). 0 = пропустить ход врага, брать оценку сети (быстрее, оценки грубее). Только для Tree.",
 }
 
 AZ_PROXY_PROFILE_PRESETS: dict[str, dict[str, int | float]] = {

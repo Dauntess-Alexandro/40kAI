@@ -2937,6 +2937,11 @@ AZ_PRIOR_WEIGHT_EARLY = float(os.getenv("AZ_PRIOR_WEIGHT_EARLY", str(AZ_CFG.get(
 AZ_BALANCED_FACTION_SAMPLING = str(os.getenv("AZ_BALANCED_FACTION_SAMPLING", "0")).strip() == "1"
 AZ_MCTS_BATCH_EVAL_SIZE = int(os.getenv("AZ_MCTS_BATCH_EVAL_SIZE", str(AZ_CFG.get("mcts_batch_eval_size", 16))))
 AZ_MCTS_PARALLEL_SIMS = int(os.getenv("AZ_MCTS_PARALLEL_SIMS", str(AZ_CFG.get("mcts_parallel_sims", 8))))
+# 1 = симулировать ход врага в rollout'ах (точнее, но дороже — enemyTurn самый тяжёлый);
+# 0 = пропустить enemyTurn, брать оценку сети на листе (быстрее, оценки грубее).
+AZ_MCTS_SIMULATE_ENEMY = str(
+    os.getenv("AZ_MCTS_SIMULATE_ENEMY", str(AZ_CFG.get("mcts_simulate_enemy", 1)))
+).strip() == "1"
 
 # --- Inference Server (variant B) ---
 AZ_INFERENCE_SERVER_REQUESTED = (
@@ -3025,6 +3030,7 @@ def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig
         temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
         batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
         parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
+        simulate_enemy_in_tree=bool(AZ_MCTS_SIMULATE_ENEMY),
     )
 
 
@@ -8083,6 +8089,9 @@ def _actor_learner_actor_entry_alphazero(
                 pw_beta=float(mcts_cfg_payload.get("pw_beta", AZ_PW_BETA)),
                 prior_weight_early=float(mcts_cfg_payload.get("prior_weight_early", AZ_PRIOR_WEIGHT_EARLY)),
                 temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
+                batch_eval_size=int(mcts_cfg_payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
+                parallel_simulations=int(mcts_cfg_payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
+                simulate_enemy_in_tree=bool(mcts_cfg_payload.get("simulate_enemy_in_tree", AZ_MCTS_SIMULATE_ENEMY)),
             ),
             device=cpu_device,
         )
@@ -8329,6 +8338,7 @@ def _az_env_worker_entry(
                 temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
                 batch_eval_size=int(mcts_cfg_payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
                 parallel_simulations=int(mcts_cfg_payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
+                simulate_enemy_in_tree=bool(mcts_cfg_payload.get("simulate_enemy_in_tree", AZ_MCTS_SIMULATE_ENEMY)),
             ),
             device=torch.device("cpu"),
             evaluator=evaluator,
@@ -8696,6 +8706,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         "prior_weight_early": AZ_PRIOR_WEIGHT_EARLY,
         "batch_eval_size": AZ_MCTS_BATCH_EVAL_SIZE,
         "parallel_simulations": AZ_MCTS_PARALLEL_SIMS,
+        "simulate_enemy_in_tree": AZ_MCTS_SIMULATE_ENEMY,
     }
     _sp_cfg_payload = {
         "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,

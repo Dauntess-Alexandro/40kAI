@@ -109,7 +109,8 @@
     "prior_weight_early": 0.25,
     "mcts_batch_eval_size": 16,
     "mcts_parallel_sims": 8,
-    "mcts_mode": "tree"
+    "mcts_mode": "tree",
+    "mcts_simulate_enemy": 1
   },
   "alphazero_proxy": {
     "inference_server_enabled": 0,
