@@ -62,6 +62,20 @@ if not exist "%CONFIG_BAT%" (
 
 goto :after_config_sync
 
+:resolve_smb_paths
+REM Z: = artifacts\models (файлы в actor_sync\) или Z: = только actor_sync (файлы в корне Z:\).
+if not exist "%AZ_REMOTE_SEARCH_CONFIG%" (
+  if exist "Z:\actor_sync\az_remote_search_cfg.json" set "AZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\az_remote_search_cfg.json"
+  if exist "Z:\az_remote_search_cfg.json" set "AZ_REMOTE_SEARCH_CONFIG=Z:\az_remote_search_cfg.json"
+)
+if not exist "%AZ_REMOTE_WEIGHTS_PATH%" (
+  if exist "Z:\actor_sync\latest_az_tree_policy.pth" set "AZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_az_tree_policy.pth"
+  if exist "Z:\latest_az_tree_policy.pth" set "AZ_REMOTE_WEIGHTS_PATH=Z:\latest_az_tree_policy.pth"
+)
+if "%MODELS_DIR%"=="" set "MODELS_DIR=Z:\"
+if /i "%MODELS_DIR%"=="Z:\actor_sync" if exist "Z:\agents\" set "MODELS_DIR=Z:\"
+exit /b 0
+
 :sync_config_from_example
 if not exist "%CONFIG_EXAMPLE%" exit /b 0
 set "EX_REV=0"
@@ -94,8 +108,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if "%AZ_REMOTE_WEIGHTS_PATH%"=="" set "AZ_REMOTE_WEIGHTS_PATH=Z:\latest_az_tree_policy.pth"
-if "%AZ_REMOTE_SEARCH_CONFIG%"=="" set "AZ_REMOTE_SEARCH_CONFIG=Z:\az_remote_search_cfg.json"
+if "%AZ_REMOTE_WEIGHTS_PATH%"=="" set "AZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_az_tree_policy.pth"
+if "%AZ_REMOTE_SEARCH_CONFIG%"=="" set "AZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\az_remote_search_cfg.json"
+call :resolve_smb_paths
 if "%AZ_REMOTE_WEIGHTS_PATH%"=="" (
   echo [ОШИБКА] В конфиге не задан AZ_REMOTE_WEIGHTS_PATH
   echo Что делать: tools\pc2_remote_az_is.bat config
@@ -110,7 +125,9 @@ if "%AZ_REMOTE_SEARCH_CONFIG%"=="" (
 )
 if not exist "%AZ_REMOTE_SEARCH_CONFIG%" (
   echo [ОШИБКА] search_cfg не найден: %AZ_REMOTE_SEARCH_CONFIG%
-  echo С ПК1: tools\write_az_remote_search_cfg.bat ^(копия на Z:\^)
+  echo Ожидается при Z:=models: Z:\actor_sync\az_remote_search_cfg.json
+  echo При Z:=actor_sync ^(legacy^): Z:\az_remote_search_cfg.json
+  echo С ПК1: tools\write_az_remote_search_cfg.bat
   pause
   exit /b 1
 )

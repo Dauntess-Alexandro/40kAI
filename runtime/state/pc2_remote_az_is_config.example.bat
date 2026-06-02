@@ -4,15 +4,15 @@ REM При git pull: tools\pc2_remote_az_is.bat сам обновит pc2_remote
 REM если pc2_remote_az_is_config.example.rev новее (старый → .bat.bak).
 REM Свои пути (Z:, auth) после обновления проверь в .bat или .bat.bak.
 
-REM --- SMB: файл весов с ПК1 (learner пишет latest_az_tree_policy.pth, сервер читает) ---
-set "AZ_REMOTE_WEIGHTS_PATH=Z:\latest_az_tree_policy.pth"
+REM --- SMB: Z: = весь artifacts\models (рекомендуется; внутри actor_sync + agents) ---
+REM Если Z: = только actor_sync (legacy), пути без actor_sync\ — bat подставит сам при старте.
+set "AZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_az_tree_policy.pth"
 
 REM --- Стартовый checkpoint, если на Z: ещё нет latest_az_tree_policy.pth (иначе пусто) ---
 set "AZ_REMOTE_INIT_WEIGHTS="
 
-REM --- JSON: obs_dim, action_sizes, hidden_size (как на ПК1) ---
-REM С ПК1: tools\write_az_remote_search_cfg.bat кладёт копию в actor_sync (SMB Z:)
-set "AZ_REMOTE_SEARCH_CONFIG=Z:\az_remote_search_cfg.json"
+REM --- JSON: obs_dim, action_sizes (ПК1: tools\write_az_remote_search_cfg.bat) ---
+set "AZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\az_remote_search_cfg.json"
 
 REM --- Сеть / GPU ---
 set "AZ_REMOTE_HOST=0.0.0.0"
@@ -45,7 +45,7 @@ set "AZ_DIST_ROLLOUT_PORT=5557"
 set "AZ_DIST_PC2_IS_HOST=127.0.0.1"
 set "AZ_DIST_PC2_IS_PORT=5555"
 set "AZ_DIST_STOP_FLAG_PATH=Z:\actor_sync\az_dist_stop.flag"
-set "MODELS_DIR=Z:\actor_sync"
+set "MODELS_DIR=Z:\"
 set "AZ_DIST_PC2_NUM_WORKERS=4"
 set "AZ_DIST_PC2_WORKER_ID_BASE=100"
 REM Пусто = авто из train (SMB az_dist_train_context.json) или latest_snapshot на Z:\agents
