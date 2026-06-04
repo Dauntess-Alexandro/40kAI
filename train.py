@@ -2214,6 +2214,36 @@ def append_agent_log(line: str) -> None:
     _flush_agent_log_buffer(force=False)
 
 
+def _torch_save_atomic(payload: object, final_path: str, *, label: str = "sync") -> None:
+    final_path = str(final_path)
+    final_dir = os.path.dirname(final_path)
+    if final_dir:
+        os.makedirs(final_dir, exist_ok=True)
+    tmp_path = f"{final_path}.tmp.{os.getpid()}.{threading.get_ident()}"
+    try:
+        with open(tmp_path, "wb") as fh:
+            torch.save(payload, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        last_exc: Exception | None = None
+        for attempt in range(6):
+            try:
+                os.replace(tmp_path, final_path)
+                return
+            except OSError as exc:
+                last_exc = exc
+                if attempt >= 5:
+                    break
+                time.sleep(0.05 * (attempt + 1))
+        raise RuntimeError(f"atomic replace failed for {label}: {final_path} exc={last_exc}")
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
 def _trace_ep_enabled(ep_idx_1based: int) -> bool:
     if not ACTION_TRACE_ENABLED:
         return False
@@ -3010,8 +3040,11 @@ AZ_DIST_ZMQ_HWM = max(8, int(os.getenv("AZ_DIST_ZMQ_HWM", str(AZ_CFG.get("distri
 def _clear_az_dist_stop_flag() -> None:
     path = az_dist_stop_flag_path()
     try:
+        removed = False
         if os.path.isfile(path):
             os.remove(path)
+            removed = True
+        append_agent_log(f"[AZ][DIST] cleared stop.flag removed={int(removed)} path={path}")
     except Exception as exc:
         append_agent_log(f"[AZ][DIST][WARN] не удалось удалить stop.flag: {path} exc={exc}")
 
@@ -8781,13 +8814,14 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
 
     def _save_az_sync() -> None:
         cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
-        torch.save(
+        _torch_save_atomic(
             {
                 "policy_version": int(policy_version),
                 "optimize_steps": int(optimize_steps),
                 "state_dict": cpu_sd,
             },
             sync_path,
+            label="latest_az_policy",
         )
 
     def _save_checkpoint(episode_idx: int) -> str:
@@ -9239,13 +9273,14 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 )
                 if gate_pass:
                     try:
-                        torch.save(
+                        _torch_save_atomic(
                             {
                                 "episode": int(episodes_finished),
                                 "policy_version": int(policy_version),
                                 "state_dict": {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()},
                             },
                             opp_sync_path,
+                            label="latest_az_opponent",
                         )
                         append_agent_log(
                             "[AZ][GATE] pass "
@@ -10171,13 +10206,14 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
 
     def _save_gmz_sync() -> None:
         cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(gmz_net.state_dict()).items()}
-        torch.save(
+        _torch_save_atomic(
             {
                 "policy_version": int(policy_version),
                 "optimize_steps": int(optimize_steps),
                 "state_dict": cpu_sd,
             },
             sync_path,
+            label="latest_gmz_policy",
         )
 
     def _save_checkpoint(episode_idx: int) -> str:

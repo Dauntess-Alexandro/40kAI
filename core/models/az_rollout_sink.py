@@ -305,6 +305,8 @@ class RemoteRolloutSink:
         self._sock.setsockopt(zmq.LINGER, 2000)
         endpoint = f"tcp://{host}:{int(port)}"
         self._sock.connect(endpoint)
+        self._sent_counts: dict[str, int] = {}
+        self._failed_counts: dict[str, int] = {}
         hello = build_hello_payload(
             worker_id=self._worker_id,
             env_contract_hash=env_contract_hash,
@@ -319,13 +321,16 @@ class RemoteRolloutSink:
         data = encode_rollout_message(wire)
         try:
             self._sock.send(data, flags=0)
+            self._sent_counts[kind] = self._sent_counts.get(kind, 0) + 1
         except zmq.Again:
+            self._failed_counts[kind] = self._failed_counts.get(kind, 0) + 1
             print(
                 f"[AZ][DIST][SINK] queue_full worker={self._worker_id} kind={kind} "
                 "(ZMQ SNDHWM). Где: RemoteRolloutSink. Что делать: увеличьте HWM или снизьте нагрузку PC2.",
                 flush=True,
             )
         except zmq.ZMQError as exc:
+            self._failed_counts[kind] = self._failed_counts.get(kind, 0) + 1
             print(
                 f"[AZ][DIST][SINK] send failed worker={self._worker_id} kind={kind}: {exc}",
                 flush=True,
@@ -345,6 +350,16 @@ class RemoteRolloutSink:
         self._send(str(kind), out)
 
     def close(self) -> None:
+        try:
+            print(
+                f"[AZ][DIST][SINK] closed worker={self._worker_id} "
+                f"sent_rollout={int(self._sent_counts.get('rollout', 0))} "
+                f"sent_ep={int(self._sent_counts.get('ep', 0))} "
+                f"failed={int(sum(self._failed_counts.values()))}",
+                flush=True,
+            )
+        except Exception:
+            pass
         try:
             self._sock.close(linger=0)
         except Exception:

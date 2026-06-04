@@ -35,6 +35,7 @@ class RolloutReceiver:
         self._last_heartbeat: dict[int, float] = {}
         self._dropped_contract = 0
         self._received_rollouts = 0
+        self._received_eps = 0
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -59,7 +60,7 @@ class RolloutReceiver:
         if self._thread is not None:
             self._thread.join(timeout=float(join_timeout))
         self._log(
-            f"[AZ][DIST][RECEIVER] stopped rollouts={self._received_rollouts} "
+            f"[AZ][DIST][RECEIVER] stopped eps={self._received_eps} rollouts={self._received_rollouts} "
             f"dropped_contract={self._dropped_contract}"
         )
 
@@ -129,6 +130,8 @@ class RolloutReceiver:
         self._enqueue(kind, payload)
         if kind == "rollout":
             self._received_rollouts += 1
+        elif kind == "ep":
+            self._received_eps += 1
 
     def _enqueue(self, kind: str, payload: Any) -> None:
         try:
