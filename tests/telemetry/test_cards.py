@@ -3,7 +3,7 @@ from app.gui_qt.telemetry.cards import build_cards
 
 def _local():
     return {
-        "cpu_pct": 58.0, "ram_pct": 42.0, "ram_gb": 11.2, "ok": True,
+        "cpu_name": "Ryzen 5 7600", "cpu_pct": 58.0, "ram_pct": 42.0, "ram_gb": 11.2, "ok": True,
         "gpus": [{"index": 0, "name": "RTX 5060 Ti", "util": 81,
                   "mem_used_mb": 4096, "mem_total_mb": 16384,
                   "proc_mem_mb": 3500, "temp_c": 64}],
@@ -83,7 +83,7 @@ def test_two_pc_mode_prefixes_local_cards():
     cpu = next(c for c in cards if c["id"] == "cpu")
     pc2 = next(c for c in cards if c["id"] == "pc2")
     assert gpu_local["label"].startswith("ПК1 · ")
-    assert cpu["label"] == "ПК1 · CPU"
+    assert cpu["label"] == "ПК1 · Ryzen 5 7600"
     assert pc2["label"].startswith("ПК2 · ")
 
 

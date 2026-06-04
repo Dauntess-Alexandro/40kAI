@@ -124,6 +124,7 @@ class RolloutReceiver:
         if kind not in ("rollout", "ep"):
             return
 
+        self._last_heartbeat[wid] = time.time()
         payload.setdefault("source", "remote")
         self._enqueue(kind, payload)
         if kind == "rollout":

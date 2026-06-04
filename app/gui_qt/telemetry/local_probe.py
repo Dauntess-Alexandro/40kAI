@@ -1,15 +1,42 @@
 from __future__ import annotations
 
+import platform
 from typing import Any, Optional
 
 from core.telemetry.gpu_backend import GpuBackend
 from app.gui_qt.telemetry.process_meter import ProcessMeter
 
 
+def _detect_local_cpu_name() -> str:
+    """Human-readable CPU label for the local telemetry card."""
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"HARDWARE\DESCRIPTION\System\CentralProcessor\0",
+        ) as key:
+            value, _kind = winreg.QueryValueEx(key, "ProcessorNameString")
+            name = str(value or "").strip()
+            if name:
+                return name
+    except Exception:
+        pass
+
+    try:
+        name = str(platform.processor() or "").strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return "CPU"
+
+
 class LocalTelemetryProbe:
     def __init__(self, proc_meter: Any = None, gpu_backend: Any = None) -> None:
         self._proc = proc_meter if proc_meter is not None else ProcessMeter()
         self._gpu = gpu_backend if gpu_backend is not None else GpuBackend()
+        self._cpu_name = _detect_local_cpu_name()
 
     def sample(self, pid: Optional[int], child_pids: Optional[set[int]] = None) -> dict[str, Any]:
         cpu_ram = self._proc.sample(pid)
@@ -32,6 +59,7 @@ class LocalTelemetryProbe:
                 }
             )
         return {
+            "cpu_name": self._cpu_name,
             "cpu_pct": cpu_ram["cpu_pct"],
             "ram_pct": cpu_ram["ram_pct"],
             "ram_gb": cpu_ram["ram_gb"],

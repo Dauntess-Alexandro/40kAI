@@ -81,8 +81,9 @@ def build_cards(
     # Fallback на process-метрику, если системная недоступна (старый psutil/нет данных).
     cpu_sys = local.get("cpu_pct_system")
     cpu_value = cpu_sys if cpu_sys is not None else local.get("cpu_pct", 0.0)
+    pc1_cpu_name = str(local.get("cpu_name") or "CPU")
     cards.append(_cpu_card(
-        "cpu", f"{pc1_prefix}{_label('pc1_cpu', 'CPU')}", cpu_value, active, "local",
+        "cpu", f"{pc1_prefix}{_label('pc1_cpu', pc1_cpu_name)}", cpu_value, active, "local",
     ))
 
     # P1: CPU ПК2 — только если сервер прислал системную метрику (новый ПК2).

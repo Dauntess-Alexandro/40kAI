@@ -181,7 +181,7 @@ class GUIController(QtCore.QObject):
         self._progress_label = "ep=0/0 (0%)"
         self._progress_stats = "— it/s • elapsed 00:00"
         self._progress_text = "0%"
-        self._progress_phase = ""      # "", "collecting", "draining", "done" (только distributed AZ)
+        self._progress_phase = ""      # "", "collecting", "evaluating", "draining", "done" (только distributed AZ)
         self._progress_detail = ""     # русский текст фазы для UI
 
         self._num_games = 100
@@ -4657,7 +4657,7 @@ class GUIController(QtCore.QObject):
     def _handle_progress_phase_line(self, line: str) -> bool:
         """Разбирает [TRAIN][PHASE]/[TRAIN][DIST]. True = строка обработана как фаза."""
         norm = line.strip()
-        phase_m = re.search(r"\[TRAIN\]\[PHASE\]\s+(collecting|draining|done)", norm)
+        phase_m = re.search(r"\[TRAIN\]\[PHASE\]\s+(collecting|draining|evaluating|done)", norm)
         if phase_m:
             self._set_progress_phase(phase_m.group(1))
             return True
@@ -4684,6 +4684,12 @@ class GUIController(QtCore.QObject):
             self._set_progress_detail("Сбор эпизодов (ПК1 + ПК2)")
         elif phase == "draining":
             self._apply_draining_display(detail="Завершение воркеров ПК2…")
+        elif phase == "evaluating":
+            self._progress_value = 0.97
+            self._progress_text = "97% · оценка модели (DET)"
+            self.progressValueChanged.emit(self._progress_value)
+            self.progressTextChanged.emit(self._progress_text)
+            self._set_progress_detail("Оценка модели на ПК1 (≈2–3 мин)…")
         elif phase == "done":
             self._progress_value = 1.0
             self._progress_text = "100%"
@@ -5369,6 +5375,13 @@ class GUIController(QtCore.QObject):
             return
         current, total = self._parse_training_progress(line, self._train_total_episodes)
         if current is None:
+            return
+        if self._progress_phase in ("draining", "evaluating"):
+            self._progress_current_ep = max(0, int(current))
+            now = time.time()
+            if now - self._training_last_ui_update >= 0.25:
+                self._training_last_ui_update = now
+                self._update_progress_stats(self._progress_current_ep)
             return
         self._set_progress(current, total)
         now = time.time()

@@ -9085,6 +9085,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     last_heartbeat = wait_started
     az_heartbeat_sec = max(5.0, float(os.getenv("AZ_HEARTBEAT_SEC", "20") or 20))
     dist_draining = False
+    dist_stop_sent = False
     dist_drain_until = 0.0
     dist_remote_transitions_total = 0
     dist_remote_stale_total = 0
@@ -9100,14 +9101,28 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 break
         else:
             if int(episodes_finished) >= int(totLifeT):
-                if not dist_draining:
-                    dist_draining = True
+                if not dist_stop_sent:
+                    dist_stop_sent = True
                     dist_drain_until = time.monotonic() + float(AZ_DIST_DRAIN_SEC)
                     _touch_az_dist_stop_flag()
+                    _ln = (
+                        f"[TRAIN][DIST] stop_requested ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                        f"drain_budget={int(round(float(AZ_DIST_DRAIN_SEC)))}s"
+                    )
+                    append_agent_log(_ln)
+                    print(_ln, flush=True)
+                if not dist_draining:
                     _remote_alive = (
                         rollout_receiver.active_remote_workers() if rollout_receiver is not None else 0
                     )
                     _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
+                    if _drain_left <= 0 and done_actors >= active_actors:
+                        append_agent_log(
+                            f"[TRAIN][DIST] drain_skipped remote_alive={_remote_alive} "
+                            f"ep_done={int(episodes_finished)}/{int(totLifeT)} reason=budget_elapsed"
+                        )
+                        break
+                    dist_draining = True
                     for _ln in (
                         "[TRAIN][PHASE] draining",
                         f"[TRAIN][DIST] remote_alive={_remote_alive} "
@@ -9188,6 +9203,21 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
             ):
                 last_actor_det_eval_ep = int(episodes_finished)
+                # Сразу гасим ПК2 до долгого HONEST_EVAL на ПК1: лишние rollout'ы после cap отбрасываются.
+                if AZ_DISTRIBUTED_ACTORS and int(episodes_finished) >= int(totLifeT) and not dist_stop_sent:
+                    dist_stop_sent = True
+                    dist_drain_until = time.monotonic() + float(AZ_DIST_DRAIN_SEC)
+                    _touch_az_dist_stop_flag()
+                    _ln = (
+                        f"[TRAIN][DIST] stop_requested ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                        f"drain_budget={int(round(float(AZ_DIST_DRAIN_SEC)))}s"
+                    )
+                    append_agent_log(_ln)
+                    print(_ln, flush=True)
+                if int(episodes_finished) >= int(totLifeT):
+                    for _ln in ("[TRAIN][PHASE] evaluating",):
+                        append_agent_log(_ln)
+                        print(_ln, flush=True)
                 det_payload = _az_build_actor_det_payload(
                     az_net=az_net,
                     device=device,
