@@ -32,3 +32,5 @@ pyzmq
 msgpack
 psutil
 nvidia-ml-py
+# Dev: линтер/форматтер (используется хуком .claude/hooks/ruff_fix.py)
+ruff

@@ -49,4 +49,9 @@ app/viewer/assets/fx/_source/
 
 # IDE / agent worktrees (не часть репозитория)
 .worktrees/
-.claude/
+
+# Claude Code: общие автоматизации (settings.json, hooks/agents/skills) коммитим;
+# личные/локальные настройки — нет.
+.claude/settings.local.json
+.claude/projects/
+.claude/.cache/
