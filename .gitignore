@@ -55,3 +55,6 @@ app/viewer/assets/fx/_source/
 .claude/settings.local.json
 .claude/projects/
 .claude/.cache/
+
+# Локальная память агентов (плагин remember) — не часть репозитория.
+.remember/
