@@ -24,6 +24,7 @@ runtime/state/build/
 runtime/logs/
 runtime/logs/*.log
 runtime/img/
+runtime/tb/
 runtime/state/img/*.png
 runtime/state/data.json
 runtime/state/response.txt

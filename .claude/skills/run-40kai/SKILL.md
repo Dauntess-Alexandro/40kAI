@@ -58,6 +58,16 @@ python -u eval.py
 
 ---
 
+## TensorBoard (трекинг/визуализация обучения)
+Во время обучения метрики пишутся в `runtime/tb/<algo>/<run_id>/` (эпизоды: reward/winrate/vp_diff;
+лоссы/LR; телеметрия CPU/RAM/GPU). Смотреть — в отдельном терминале:
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m tensorboard.main --logdir runtime/tb    # открой http://localhost:6006
+```
+Выключить логирование TB на прогон: `$env:TB_ENABLED = "0"` перед запуском train.
+Старые CSV/PNG (`artifacts/metrics`, GUI) продолжают работать как раньше — TB добавлен рядом.
+
 ## После запуска
 - Что-то пошло не так → скилл **`logs-triage`** (читаем `runtime/logs/LOGS_FOR_AGENTS_*.md`).
 - Distributed: на ПК2 поднимается отдельно (`tools/pc2_remote_az_is.bat`) — см. AGENTS.md.

@@ -32,5 +32,6 @@ pyzmq
 msgpack
 psutil
 nvidia-ml-py
+tensorboard
 # Dev: линтер/форматтер (используется хуком .claude/hooks/ruff_fix.py)
 ruff

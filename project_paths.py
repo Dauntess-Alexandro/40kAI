@@ -56,6 +56,7 @@ RUNTIME_DIR = PROJECT_ROOT / "runtime"
 RUNTIME_LOGS_DIR = RUNTIME_DIR / "logs"
 RUNTIME_STATE_DIR = RUNTIME_DIR / "state"
 RUNTIME_CACHE_DIR = RUNTIME_DIR / "cache"
+RUNTIME_TB_DIR = RUNTIME_DIR / "tb"  # event-файлы TensorBoard (в .gitignore)
 
 AGENT_TRAIN_LOG_PATH = RUNTIME_LOGS_DIR / "LOGS_FOR_AGENTS_TRAIN.md"
 AGENT_PLAY_LOG_PATH = RUNTIME_LOGS_DIR / "LOGS_FOR_AGENTS_PLAY.md"
@@ -76,6 +77,7 @@ def ensure_runtime_dirs() -> None:
         RUNTIME_LOGS_DIR,
         RUNTIME_STATE_DIR,
         RUNTIME_CACHE_DIR,
+        RUNTIME_TB_DIR,
     ):
         directory.mkdir(parents=True, exist_ok=True)
 

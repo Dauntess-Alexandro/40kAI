@@ -1,43 +1,45 @@
-from collections import Counter
-import sys
-import os
-import csv
-import numpy as np
-import gymnasium as gym
-import pickle
-import datetime
-import collections
-import math
-import json
-import random
-import matplotlib.pyplot as plt
-import time
-import multiprocessing as mp
-import threading
 import atexit
+import collections
+import csv
+import datetime
+import json
+import math
+import multiprocessing as mp
+import os
+import pickle
 import queue as mp_queue
+import random
+import sys
+import threading
+import time
+from collections import Counter
+
+import gymnasium as gym
+import matplotlib.pyplot as plt
+import numpy as np
+from gymnasium import spaces
 from tqdm import tqdm
-from core.envs.warhamEnv import *
-from core.engine import genDisplay, Unit, unitData, weaponData, initFile, metrics
-from core.engine.io_profiler import get_io_profiler
-from core.engine.game_io import ConsoleIO, set_active_io
-from core.engine.mission import (
-    normalize_mission_name,
-    board_dims_for_mission,
-    deploy_for_mission,
-    post_deploy_setup,
-)
+
+from core.engine import Unit, genDisplay, initFile, metrics, unitData, weaponData
 from core.engine.agent_registry import (
     AgentIdentity,
     build_agent_id,
     compatible_contracts,
+    list_agents,
     load_agent_by_id,
     make_env_contract,
-    list_agents,
     save_agent_artifact,
 )
+from core.engine.game_io import ConsoleIO, set_active_io
+from core.engine.io_profiler import get_io_profiler
 from core.engine.matchmaker import choose_opponent, record_matchup
-from gymnasium import spaces
+from core.engine.mission import (
+    board_dims_for_mission,
+    deploy_for_mission,
+    normalize_mission_name,
+    post_deploy_setup,
+)
+from core.envs.warhamEnv import *
 from project_paths import (
     AGENT_TRAIN_LOG_PATH,
     ARTIFACTS_METRICS_DIR,
@@ -66,32 +68,28 @@ plt.rcParams.update(
 AGENT_TRAIN_LOG_FILE = str(AGENT_TRAIN_LOG_PATH.relative_to(AGENT_TRAIN_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 
-from core.models.DQN import *
-from core.models.memory import *
-from core.models.utils import *
-from core.models.PPO import (
-    ActorCriticMultiHead,
-    make_actor_critic,
-    ppo_kwargs_from_env,
-    update_ppo_entropy_coef,
-)
-from core.models.ppo_buffer import PPORolloutBuffer
-from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
+from core.models.action_contract import action_sizes_from_env, ordered_action_keys
 from core.models.alphazero_ids import (
     VALID_TRAIN_ALGOS,
     az_mcts_mode_for,
     az_section_for,
     is_az_algo,
 )
+from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import (
     alphazero_arch_from_payload,
     alphazero_kwargs_from_env,
     load_alphazero_state_dict,
     make_alphazero_net,
 )
-from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
-from core.models.alphazero_selfplay import play_episode_with_mcts, SelfPlayConfig
+from core.models.alphazero_selfplay import SelfPlayConfig, play_episode_with_mcts
+from core.models.alphazero_trainer import (
+    AlphaZeroTrainConfig,
+    alphazero_train_config_from_env,
+    build_alphazero_lr_scheduler,
+    train_alphazero_step,
+)
 from core.models.az_rollout_receiver import RolloutReceiver
 from core.models.az_rollout_sink import (
     az_dist_stop_flag_path,
@@ -100,21 +98,26 @@ from core.models.az_rollout_sink import (
     pack_az_dist_hyperparams,
     write_az_dist_train_context,
 )
-from core.models.alphazero_trainer import (
-    AlphaZeroTrainConfig,
-    alphazero_train_config_from_env,
-    build_alphazero_lr_scheduler,
-    train_alphazero_step,
-)
-from core.models.gumbel_muzero_model import GumbelMuZeroNet
-from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.gumbel_muzero_replay import GumbelMuZeroReplayBuffer, GMZTransition
-from core.models.gumbel_muzero_selfplay import play_episode_with_gumbel_muzero, GumbelSelfPlayConfig
+from core.models.DQN import *
 from core.models.gmz_inference_client import GMZInferenceClient
 from core.models.gmz_inference_server import gmz_inference_server_entry
-from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, train_gumbel_muzero_step, make_gmz_lr_scheduler
-from core.models.gumbel_muzero_reanalysis import GumbelMuZeroReanalyzer, GumbelMuZeroReanalysisConfig
-from core.models.action_contract import ordered_action_keys, action_sizes_from_env
+from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_reanalysis import GumbelMuZeroReanalysisConfig, GumbelMuZeroReanalyzer
+from core.models.gumbel_muzero_replay import GMZTransition, GumbelMuZeroReplayBuffer
+from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
+from core.models.gumbel_muzero_selfplay import GumbelSelfPlayConfig, play_episode_with_gumbel_muzero
+from core.models.gumbel_muzero_trainer import GumbelMuZeroTrainConfig, make_gmz_lr_scheduler, train_gumbel_muzero_step
+from core.models.memory import *
+from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
+from core.models.PPO import (
+    ActorCriticMultiHead,
+    make_actor_critic,
+    ppo_kwargs_from_env,
+    update_ppo_entropy_coef,
+)
+from core.models.ppo_buffer import PPORolloutBuffer
+from core.models.utils import *
+
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
 RUNTIME_IMG_DIR = os.path.join(str(RUNTIME_STATE_DIR), "img")
@@ -125,11 +128,13 @@ os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim as optim
 from torch.optim import Optimizer
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import torch
+
 print("[DEVICE CHECK] cuda:", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("[DEVICE CHECK] name:", torch.cuda.get_device_name(0))
@@ -178,6 +183,7 @@ def _patch_optimizer_methods_no_compile(optimizer) -> None:
 
 
 import warnings
+
 warnings.filterwarnings("ignore") 
 
 # ===== torch inductor warnings/behavior =====
@@ -1013,6 +1019,29 @@ def append_episode_diagnostics(
     _append_jsonl(os.path.join(metrics_dir, f"episodes_{run_id}.jsonl"), payload)
     _append_jsonl(os.path.join(metrics_dir, "episodes_latest.jsonl"), payload)
 
+    # TensorBoard: единая точка для всех путей train.py (DQN/PPO/subproc/actor-learner).
+    # no-op, если TB выключен/не установлен; ошибки логирования не должны ронять обучение.
+    try:
+        from core.telemetry.tb_logger import get_tb_logger
+
+        diag = diagnostics or {}
+        algo = str(diag.get("algo") or "train")
+        tb = get_tb_logger(str(run_id), algo=algo)
+        if tb.active:
+            step = int(diag.get("global_step") or (episode_row or {}).get("episode") or 0)
+            tb.log_episode(episode_row or {}, step=step)
+            # Лоссы/LR и прочие числовые величины из diagnostics (служебные ключи пропускаем).
+            skip = {"global_step", "update_step"}
+            train_metrics = {
+                k: v
+                for k, v in diag.items()
+                if k not in skip and isinstance(v, (int, float)) and not isinstance(v, bool)
+            }
+            tb.log_train(train_metrics, step=step)
+            tb.log_telemetry(step=step)
+    except Exception:
+        pass
+
 
 def _save_actor_det_eval_snapshot(run_id: str, payload: dict, metrics_dir: str = METRICS_DIR) -> None:
     os.makedirs(metrics_dir, exist_ok=True)
@@ -1062,7 +1091,7 @@ def _det_eval_read_jsonl_points(run_id: str, metrics_dir: str = METRICS_DIR) -> 
         return []
     by_ep: dict[int, dict] = {}
     try:
-        with open(jsonl_path, "r", encoding="utf-8") as f:
+        with open(jsonl_path, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -2073,7 +2102,7 @@ def save_heuristic_metrics_snapshot(run_id: str, ep_rows: list[dict] | None = No
             except ValueError:
                 return None
 
-        with open(log_path, "r", encoding="utf-8", errors="replace") as handle:
+        with open(log_path, encoding="utf-8", errors="replace") as handle:
             all_lines = handle.readlines()
             start_idx = 0
             for idx, line in enumerate(all_lines):
@@ -4633,7 +4662,7 @@ def main():
             if not contract_path:
                 return {}
             try:
-                with open(contract_path, "r", encoding="utf-8") as handle:
+                with open(contract_path, encoding="utf-8") as handle:
                     payload = json.load(handle)
                 return payload if isinstance(payload, dict) else {}
             except Exception:
@@ -4860,7 +4889,7 @@ def main():
         inText.append("Enemy units:")
         for i in enemy:
             inText.append("Name: {}, Army Type: {}".format(i.showUnitData()["Name"], i.showUnitData()["Army"]))
-    inText.append("Number of Lifetimes ran: {}\n".format(totLifeT))
+    inText.append(f"Number of Lifetimes ran: {totLifeT}\n")
     
     pbar_update_every = int(os.getenv("PBAR_UPDATE_EVERY", "5" if os.name == "nt" else "1"))
     pbar_update_every = max(1, pbar_update_every)
@@ -5761,6 +5790,7 @@ def main():
                         run_id=str(randNum),
                         episode_row=episode_row,
                         diagnostics={
+                            "algo": "dqn",
                             "battle_round": battle_round,
                             "model_hp_total": mh,
                             "enemy_hp_total": ph,
@@ -5984,6 +6014,23 @@ def main():
                             lr_scheduler.step(float(result["loss"]))
                         else:
                             lr_scheduler.step()
+                    # TensorBoard: тренировочный лосс DQN (no-op, если TB выключен).
+                    try:
+                        from core.telemetry.tb_logger import get_tb_logger
+
+                        _tb = get_tb_logger(str(randNum), algo="dqn")
+                        if _tb.active:
+                            _tb.log_train(
+                                {
+                                    "loss": float(result["loss"]),
+                                    "td_target_mean": float(result.get("td_target_mean", 0.0) or 0.0),
+                                    "td_target_max": float(result.get("td_target_max", 0.0) or 0.0),
+                                    "lr": float(optimizer.param_groups[0]["lr"]),
+                                },
+                                step=int(optimize_steps),
+                            )
+                    except Exception:
+                        pass
                     perf_counts["updates"] += 1
                     timing = result.get("timing", {})
                     perf_stats["replay_sample_s"] += float(timing.get("sample_s", 0.0))
@@ -6734,6 +6781,22 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         lr_scheduler.step(float(last_loss))
                     else:
                         lr_scheduler.step()
+                # TensorBoard: тренировочный лосс DQN actor-learner (no-op, если TB выключен).
+                try:
+                    from core.telemetry.tb_logger import get_tb_logger
+
+                    _tb = get_tb_logger(str(randNum), algo="dqn")
+                    if _tb.active:
+                        _tb.log_train(
+                            {
+                                "loss": float(last_loss),
+                                "td_target_mean": float(result.get("td_target_mean", 0.0) or 0.0),
+                                "lr": float(optimizer.param_groups[0]["lr"]),
+                            },
+                            step=int(optimize_steps),
+                        )
+                except Exception:
+                    pass
 
             # периодически публикуем свежие веса для акторов
             if sync_enabled and (optimize_steps - last_sync_opt_steps) >= sync_every_updates:
@@ -9214,6 +9277,16 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             ep_rows.append(payload)
             metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
             metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+            # TensorBoard: метрики эпизода + телеметрия (no-op, если TB выключен).
+            try:
+                from core.telemetry.tb_logger import get_tb_logger
+
+                _tb = get_tb_logger(str(run_id), algo="alphazero")
+                if _tb.active:
+                    _tb.log_episode(payload, step=int(episodes_finished))
+                    _tb.log_telemetry(step=int(episodes_finished))
+            except Exception:
+                pass
             target_n = min(int(totLifeT), int(episodes_finished))
             if target_n > int(pbar.n):
                 pbar.update(target_n - int(pbar.n))
@@ -9405,6 +9478,21 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             last_loss = float(update_info.get("loss", 0.0) or 0.0)
             loss_trace.append(float(last_loss))
             metrics_obj.updateLoss(float(last_loss))
+            # TensorBoard: тренировочные лоссы AZ (no-op, если TB выключен).
+            try:
+                from core.telemetry.tb_logger import get_tb_logger
+
+                _tb = get_tb_logger(str(run_id), algo="alphazero")
+                if _tb.active:
+                    _tb_metrics = {
+                        "loss": float(last_loss),
+                        "policy_loss": float(update_info.get("policy_loss", 0.0) or 0.0),
+                        "value_loss": float(update_info.get("value_loss", 0.0) or 0.0),
+                        "lr": float(optimizer.param_groups[0]["lr"]),
+                    }
+                    _tb.log_train(_tb_metrics, step=int(optimize_steps))
+            except Exception:
+                pass
             append_agent_log(
                 "[AZ][UPDATE] "
                 f"step={optimize_steps} policy_version={policy_version} "
@@ -10435,6 +10523,16 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             ep_rows.append(payload)
             metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
             metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+            # TensorBoard: метрики эпизода + телеметрия (no-op, если TB выключен).
+            try:
+                from core.telemetry.tb_logger import get_tb_logger
+
+                _tb = get_tb_logger(str(run_id), algo="gumbel_muzero")
+                if _tb.active:
+                    _tb.log_episode(payload, step=int(episodes_finished))
+                    _tb.log_telemetry(step=int(episodes_finished))
+            except Exception:
+                pass
             target_n = min(int(totLifeT), int(episodes_finished))
             if target_n > int(pbar.n):
                 pbar.update(target_n - int(pbar.n))
@@ -10542,6 +10640,22 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             policy_version += 1
             last_loss = float(update_info.get("loss", 0.0) or 0.0)
             metrics_obj.updateLoss(float(last_loss))
+            # TensorBoard: тренировочные лоссы MuZero (no-op, если TB выключен).
+            try:
+                from core.telemetry.tb_logger import get_tb_logger
+
+                _tb = get_tb_logger(str(run_id), algo="gumbel_muzero")
+                if _tb.active:
+                    _tb_metrics = {
+                        "loss": float(last_loss),
+                        "policy_loss": float(update_info.get("policy_loss", 0.0) or 0.0),
+                        "value_loss": float(update_info.get("value_loss", 0.0) or 0.0),
+                        "reward_loss": float(update_info.get("reward_loss", 0.0) or 0.0),
+                        "lr": float(optimizer.param_groups[0]["lr"]),
+                    }
+                    _tb.log_train(_tb_metrics, step=int(optimize_steps))
+            except Exception:
+                pass
             # B2: Periodic reanalysis — refresh policy targets with real search
             if (
                 gmz_reanalyzer is not None
