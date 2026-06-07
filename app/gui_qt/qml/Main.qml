@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import Qt.labs.platform 1.1 as Platform
+import QtWebEngine
 import "components"
 
 ApplicationWindow {
@@ -1894,6 +1895,26 @@ ApplicationWindow {
                                             enabled: !controller.running
                                             onClicked: clearCacheDialog.open()
                                             Layout.preferredWidth: Math.round(140 * root.uiScale)
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                                font.bold: true
+                                                font.pixelSize: root.evalCaptionSize
+                                                horizontalAlignment: Text.AlignHCenter
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: ChamferPanel {
+                                                cutSize: Math.round(6 * root.uiScale)
+                                                contentMargin: 0
+                                                fillColor: parent.hovered ? "#25303d" : "transparent"
+                                                borderWidth: 1
+                                                borderColor: parent.hovered ? "#e1be68" : "#b88a26"
+                                            }
+                                        }
+                                        Button {
+                                            text: "TENSORBOARD"
+                                            onClicked: tbWindow.openTensorboard()
+                                            Layout.preferredWidth: Math.round(150 * root.uiScale)
                                             contentItem: Text {
                                                 text: parent.text
                                                 color: parent.enabled ? "#d5b15a" : "#737b8a"
@@ -6201,6 +6222,89 @@ ApplicationWindow {
         id: trainingAlgoHelpDialog
         rootUi: root
         initialAlgo: controller.trainingAlgo
+    }
+
+    // Встроенный просмотр TensorBoard (без внешнего браузера).
+    Window {
+        id: tbWindow
+        title: "TensorBoard — 40kAI"
+        width: 1180
+        height: 760
+        color: "#0F172A"
+        modality: Qt.NonModal
+
+        // Стартует фоновый TB-сервер и открывает окно. Первый запуск TB долгий
+        // (несколько секунд на сборку ассетов), поэтому грузим URL с авто-повтором,
+        // пока сервер не ответит, и останавливаемся при успешной загрузке.
+        function openTensorboard() {
+            tbView.pendingUrl = controller.start_tensorboard()
+            tbView.attempts = 0
+            tbView.ready = false
+            show()
+            raise()
+            requestActivate()
+            tbRetry.restart()
+        }
+
+        Timer {
+            id: tbRetry
+            interval: 1500
+            repeat: true
+            onTriggered: {
+                if (tbView.ready) { stop(); return }
+                tbView.attempts += 1
+                // Каждую попытку — гарантированно свежая навигация (cache-buster),
+                // иначе reload() после ERR_CONNECTION_REFUSED может залипнуть на ошибке.
+                tbView.url = tbView.pendingUrl + "?_=" + tbView.attempts
+                if (tbView.attempts >= 40) stop()  // ~60 c максимум
+            }
+        }
+
+        onClosing: controller.stop_tensorboard()
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 8
+                spacing: 8
+
+                Button {
+                    text: "Перезагрузить"
+                    onClicked: { tbView.ready = false; tbView.reload() }
+                }
+                Button {
+                    text: "Открыть в браузере"
+                    onClicked: Qt.openUrlExternally(tbView.pendingUrl)
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: tbView.ready
+                          ? tbView.pendingUrl
+                          : ("Загрузка TensorBoard… " + tbView.pendingUrl + " (попытка " + tbView.attempts + ")")
+                    color: "#98a4b8"
+                    elide: Text.ElideRight
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            WebEngineView {
+                id: tbView
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                property string pendingUrl: ""
+                property int attempts: 0
+                property bool ready: false
+                onLoadingChanged: function(loadRequest) {
+                    if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
+                        tbView.ready = true
+                        tbRetry.stop()
+                    }
+                }
+            }
+        }
     }
 
     Connections {

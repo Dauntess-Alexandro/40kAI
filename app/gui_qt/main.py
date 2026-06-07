@@ -1,5 +1,6 @@
 import ast
 import csv
+import ctypes
 import json
 import math
 import os
@@ -8,11 +9,9 @@ import shutil
 import subprocess
 import sys
 import time
-import ctypes
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 # Запуск вида `python app/gui_qt/main.py` добавляет в sys.path только app/gui_qt,
 # из‑за этого не находится project_paths в корне репозитория — QML грузится без controller.
@@ -24,8 +23,7 @@ if _repo_root_str not in sys.path:
 from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from PySide6.QtQuickControls2 import QQuickStyle
-from theme.loader import ThemeTokenError, load_tokens_flat_for_qml
-from core.models.alphazero_ids import is_az_algo
+
 from app.gui_qt.algo_hyperparams_defaults import (
     DEFAULT_DQN_HYPERPARAMS,
     DEFAULT_PPO_HYPERPARAMS,
@@ -45,12 +43,12 @@ from app.gui_qt.az_hyperparams_defaults import (
     AZ_FIELD_TOOLTIPS,
     AZ_GROUPS,
     AZ_HYPERPARAM_KEYS,
+    AZ_INFERENCE_PRESERVE_KEYS,
     AZ_PROXY_BASIC_KEYS,
     AZ_PROXY_PROFILE_PRESETS,
     AZ_TREE_BASIC_KEYS,
     AZ_TREE_PROFILE_PRESETS,
     DEFAULT_AZ_PROXY_HYPERPARAMS,
-    AZ_INFERENCE_PRESERVE_KEYS,
     DEFAULT_AZ_TREE_HYPERPARAMS,
 )
 from app.gui_qt.gmz_hyperparams_defaults import (
@@ -77,6 +75,7 @@ from app.gui_qt.remote_is_store import (
     load_remote_is,
     save_remote_is,
 )
+from core.models.alphazero_ids import is_az_algo
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
@@ -93,6 +92,7 @@ from project_paths import (
     ensure_runtime_dirs,
     get_runtime_python,
 )
+from theme.loader import ThemeTokenError, load_tokens_flat_for_qml
 
 _GUI_CONTROLLER_REF = None
 
@@ -169,7 +169,9 @@ class GUIController(QtCore.QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._process: Optional[QtCore.QProcess] = None
+        self._process: QtCore.QProcess | None = None
+        self._tb_process: QtCore.QProcess | None = None  # TensorBoard (фоновый сервер)
+        self._tb_port = 6006
         self._running = False
         self._repo_root = str(PROJECT_ROOT)
         self._runtime_python = get_runtime_python(PROJECT_ROOT)
@@ -218,7 +220,7 @@ class GUIController(QtCore.QObject):
         self._metrics_defaults = self._build_default_metrics()
         self._metrics_files = dict(self._metrics_defaults)
         self._metrics_paths = self._build_metrics_paths(self._metrics_files, cache_token=self._cache_token())
-        self._metrics_mtimes: dict[str, Optional[float]] = {}
+        self._metrics_mtimes: dict[str, float | None] = {}
         self._metrics_label = "По умолчанию"
         self._metrics_run_id = ""
         self._metrics_meta: dict[str, str] = {}
@@ -1757,6 +1759,86 @@ class GUIController(QtCore.QObject):
             )
         self.remoteIsChanged.emit()
 
+    # --- TensorBoard (встроенный просмотр метрик) ---
+    @staticmethod
+    def _find_free_port(candidates: list[int]) -> int:
+        """Вернуть первый свободный TCP-порт из списка кандидатов; иначе любой свободный."""
+        import socket
+
+        for port in candidates:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(("127.0.0.1", port))
+                    return port
+                except OSError:
+                    continue
+        # Ни один кандидат не свободен — пусть ОС выдаст любой свободный порт.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return int(s.getsockname()[1])
+
+    @QtCore.Slot(result=str)
+    def start_tensorboard(self) -> str:
+        """Запустить TensorBoard как фоновый локальный сервер и вернуть его URL.
+
+        Идемпотентно: если сервер уже поднят, просто возвращаем тот же URL.
+        Логи берём из runtime/tb (туда пишет TBLogger всех алгоритмов).
+        """
+        # Уже запущен — не плодим второй процесс.
+        if self._tb_process is not None and self._tb_process.state() != QtCore.QProcess.NotRunning:
+            return f"http://127.0.0.1:{self._tb_port}/"
+        # Выбираем свободный порт: 6006 часто занят (напр. отладчик Godot), поэтому
+        # подбираем первый свободный из диапазона, иначе TB не забиндится и окно белое.
+        self._tb_port = self._find_free_port([6006, 6010, 6016, 6066, 16006])
+        url = f"http://127.0.0.1:{self._tb_port}/"
+        logdir = os.path.join(self._repo_root, "runtime", "tb")
+        os.makedirs(logdir, exist_ok=True)
+        proc = QtCore.QProcess(self)
+        proc.setWorkingDirectory(self._repo_root)
+        env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("PYTHONPATH", self._pythonpath_with_core())
+        proc.setProcessEnvironment(env)
+        args = [
+            "-m",
+            "tensorboard.main",
+            "--logdir",
+            logdir,
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(self._tb_port),
+            "--reload_interval",
+            "10",
+        ]
+        try:
+            proc.start(self._runtime_python, args)
+            if not proc.waitForStarted(5000):
+                self._emit_status("TensorBoard: не удалось запустить процесс (проверьте, установлен ли пакет tensorboard).")
+                return url
+            self._tb_process = proc
+            self._emit_status(f"TensorBoard запущен: {url} (порт {self._tb_port}, логи: runtime/tb)")
+        except Exception as exc:
+            self._emit_status(f"TensorBoard: ошибка запуска — {exc}")
+        return url
+
+    @QtCore.Slot()
+    def stop_tensorboard(self) -> None:
+        """Остановить фоновый TensorBoard (вызывается при закрытии окна/приложения)."""
+        proc = self._tb_process
+        if proc is None:
+            return
+        try:
+            if proc.state() != QtCore.QProcess.NotRunning:
+                proc.terminate()
+                if not proc.waitForFinished(3000):
+                    proc.kill()
+                    proc.waitForFinished(2000)
+        except Exception:
+            pass
+        finally:
+            self._tb_process = None
+
     # --- AZ inference server (variant B) LAN health check ---
     azInferenceChanged = QtCore.Signal()
 
@@ -1971,7 +2053,7 @@ class GUIController(QtCore.QObject):
             return defaults
 
         try:
-            with open(config_path, "r", encoding="utf-8") as handle:
+            with open(config_path, encoding="utf-8") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError):
             self._emit_log(
@@ -2024,7 +2106,7 @@ class GUIController(QtCore.QObject):
         self._unit_icon_cache[cache_key] = icon
         return icon
 
-    def get_unit_icon_source(self, unit_name: str, pixel_size: Optional[int] = None) -> str:
+    def get_unit_icon_source(self, unit_name: str, pixel_size: int | None = None) -> str:
         normalized = self.normalize_unit_name(unit_name)
         if not normalized:
             return ""
@@ -2610,7 +2692,7 @@ class GUIController(QtCore.QObject):
                 continue
             meta_path = os.path.join(root, "meta.json")
             try:
-                with open(meta_path, "r", encoding="utf-8") as handle:
+                with open(meta_path, encoding="utf-8") as handle:
                     payload = json.load(handle)
             except (OSError, json.JSONDecodeError):
                 continue
@@ -3877,7 +3959,7 @@ class GUIController(QtCore.QObject):
             existing_payload: dict[str, object] = {}
             if os.path.exists(self._hyperparams_path):
                 try:
-                    with open(self._hyperparams_path, "r", encoding="utf-8") as read_handle:
+                    with open(self._hyperparams_path, encoding="utf-8") as read_handle:
                         loaded = json.load(read_handle)
                     if isinstance(loaded, dict):
                         existing_payload = dict(loaded)
@@ -4043,7 +4125,7 @@ class GUIController(QtCore.QObject):
 
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
         try:
-            with open(self._hyperparams_path, "r", encoding="utf-8") as handle:
+            with open(self._hyperparams_path, encoding="utf-8") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError) as exc:
             self._dqn_hyperparams = dict(self._default_dqn_hyperparams)
@@ -4697,7 +4779,7 @@ class GUIController(QtCore.QObject):
             self.progressTextChanged.emit("100%")
             self._set_progress_detail("Готово")
 
-    def _apply_draining_display(self, *, detail: str, drain_left: Optional[int] = None) -> None:
+    def _apply_draining_display(self, *, detail: str, drain_left: int | None = None) -> None:
         """В фазе drain бар не прыгает в 100%: держим ~98% + текст про завершение ПК2."""
         suffix = f" (≈{drain_left}с)" if drain_left is not None else ""
         self._progress_value = 0.98
@@ -5197,7 +5279,7 @@ class GUIController(QtCore.QObject):
         except Exception:
             return None
 
-    def _refresh_train_data_json_from_rosters(self, *, expected_num_life: Optional[int] = None) -> bool:
+    def _refresh_train_data_json_from_rosters(self, *, expected_num_life: int | None = None) -> bool:
         """Пересобрать runtime/state/data.json из runtime/state/units.txt (data.bat → initFile.py)."""
         script = self._script_path("data")
         # initFile.py: unit-списки и оружие по строкам — из units.txt; фракции — из ростеров learner/model.
@@ -5236,7 +5318,7 @@ class GUIController(QtCore.QObject):
             )
             return False
         try:
-            with open(str(TRAIN_DATA_PATH), "r", encoding="utf-8") as handle:
+            with open(str(TRAIN_DATA_PATH), encoding="utf-8") as handle:
                 payload = json.load(handle)
             actual_num_life = int(payload.get("numLife", 0) or 0)
         except Exception as exc:
@@ -5390,7 +5472,7 @@ class GUIController(QtCore.QObject):
             self._training_last_ui_update = now
             self._update_progress_stats(current)
 
-    def _parse_training_progress(self, line: str, fallback_total: int) -> tuple[Optional[int], int]:
+    def _parse_training_progress(self, line: str, fallback_total: int) -> tuple[int | None, int]:
         normalized = line.strip()
 
         hb_match = re.search(
@@ -5939,7 +6021,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(board_path):
             return "board.txt не найден. Запустите игру, чтобы сформировать карту."
         try:
-            with open(board_path, "r", encoding="utf-8") as handle:
+            with open(board_path, encoding="utf-8") as handle:
                 content = handle.read()
         except OSError as exc:
             return f"Не удалось прочитать board.txt: {exc}"
@@ -5984,7 +6066,7 @@ class GUIController(QtCore.QObject):
     def _cache_token(self) -> str:
         return str(int(time.time() * 1000))
 
-    def _resolve_metric_path(self, raw_path: Optional[str], fallback: str) -> str:
+    def _resolve_metric_path(self, raw_path: str | None, fallback: str) -> str:
         if not raw_path:
             return fallback
         if os.path.isabs(raw_path):
@@ -6023,7 +6105,7 @@ class GUIController(QtCore.QObject):
 
     def _load_metrics_from_json(self, json_path: str) -> bool:
         try:
-            with open(json_path, "r", encoding="utf-8") as handle:
+            with open(json_path, encoding="utf-8") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError) as exc:
             self._emit_status("Не удалось прочитать метрики. Проверьте файл.")
@@ -6099,7 +6181,7 @@ class GUIController(QtCore.QObject):
         latest_det_json = os.path.join(str(ARTIFACTS_METRICS_DIR), "actor_det_eval_latest.json")
         if os.path.exists(latest_det_json):
             try:
-                with open(latest_det_json, "r", encoding="utf-8", errors="replace") as handle:
+                with open(latest_det_json, encoding="utf-8", errors="replace") as handle:
                     det_payload = json.load(handle)
                 run_id = str(det_payload.get("run_id", "") or "").strip()
                 if run_id:
@@ -6169,7 +6251,7 @@ class GUIController(QtCore.QObject):
             f"Мин: {min_value:.4f} | Макс: {max_value:.4f}"
         )
 
-    def _find_stats_csv_for_run(self) -> Optional[str]:
+    def _find_stats_csv_for_run(self) -> str | None:
         metrics_dir = str(ARTIFACTS_METRICS_DIR)
         if not os.path.isdir(metrics_dir):
             return None
@@ -6197,7 +6279,7 @@ class GUIController(QtCore.QObject):
         results_path = str(RESULTS_PATH)
         if os.path.exists(results_path):
             try:
-                with open(results_path, "r", encoding="utf-8", errors="replace") as handle:
+                with open(results_path, encoding="utf-8", errors="replace") as handle:
                     for line in handle:
                         match = re.search(r"эпизоды=(\d+)", line)
                         if match:
@@ -6210,7 +6292,7 @@ class GUIController(QtCore.QObject):
         logs_path = str(AGENT_TRAIN_LOG_PATH)
         if os.path.exists(logs_path):
             try:
-                with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
+                with open(logs_path, encoding="utf-8", errors="replace") as handle:
                     for line in handle:
                         if "[SELFPLAY] enabled=1 mode=snapshot" in line:
                             snapshot_episodes += 1
@@ -6235,7 +6317,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(logs_path):
             return values
         try:
-            with open(logs_path, "r", encoding="utf-8", errors="replace") as handle:
+            with open(logs_path, encoding="utf-8", errors="replace") as handle:
                 for line in handle:
                     if "[RESUME] loaded:" not in line:
                         continue
@@ -6250,7 +6332,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(path):
             return "League: нет данных матчапов."
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError):
             return "League: не удалось прочитать matchups.json."
@@ -6296,7 +6378,7 @@ class GUIController(QtCore.QObject):
         if det_jsonl_path and os.path.exists(det_jsonl_path):
             by_ep: dict[int, dict] = {}
             try:
-                with open(det_jsonl_path, "r", encoding="utf-8", errors="replace") as handle:
+                with open(det_jsonl_path, encoding="utf-8", errors="replace") as handle:
                     for line in handle:
                         line = line.strip()
                         if not line:
@@ -6394,7 +6476,7 @@ class GUIController(QtCore.QObject):
             rows: list[dict[str, str]] = []
             if csv_path and os.path.exists(csv_path):
                 try:
-                    with open(csv_path, "r", encoding="utf-8", errors="replace") as handle:
+                    with open(csv_path, encoding="utf-8", errors="replace") as handle:
                         reader = csv.DictReader(handle)
                         rows = list(reader)
                 except (OSError, csv.Error):
@@ -6455,7 +6537,7 @@ class GUIController(QtCore.QObject):
             self.heuristicMetricsChanged.emit()
             return
         try:
-            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError):
             self._heuristic_metrics = {}
@@ -6491,7 +6573,7 @@ class GUIController(QtCore.QObject):
         self._heuristic_metrics_text = "\n".join(lines)
         self.heuristicMetricsChanged.emit()
 
-    def _find_latest_model_file(self) -> Optional[str]:
+    def _find_latest_model_file(self) -> str | None:
         models_path = str(ARTIFACTS_MODELS_DIR)
         if not os.path.isdir(models_path):
             return None
@@ -6626,7 +6708,7 @@ class GUIController(QtCore.QObject):
         self.playViewerPlayerRoleLabelChanged.emit(player_label)
         self.playViewerModelRoleLabelChanged.emit(model_label)
 
-    def _find_latest_checkpoint_file(self) -> Optional[str]:
+    def _find_latest_checkpoint_file(self) -> str | None:
         models_path = str(ARTIFACTS_MODELS_DIR)
         if not os.path.isdir(models_path):
             return None
@@ -6648,13 +6730,13 @@ class GUIController(QtCore.QObject):
                     latest_path = path
         return latest_path
 
-    def _extract_checkpoint_episode(self, filename: str) -> Optional[int]:
+    def _extract_checkpoint_episode(self, filename: str) -> int | None:
         match = re.search(r"checkpoint_ep(\d+)\.pth$", filename)
         if not match:
             return None
         return int(match.group(1))
 
-    def _find_best_checkpoint_by_episode(self) -> Optional[str]:
+    def _find_best_checkpoint_by_episode(self) -> str | None:
         models_path = str(ARTIFACTS_MODELS_DIR)
         if not os.path.isdir(models_path):
             return None
@@ -6681,7 +6763,7 @@ class GUIController(QtCore.QObject):
 
         return best_path
 
-    def _find_eval_pickle_for_checkpoint(self, checkpoint_path: str) -> Optional[str]:
+    def _find_eval_pickle_for_checkpoint(self, checkpoint_path: str) -> str | None:
         checkpoint_dir = os.path.dirname(checkpoint_path)
         checkpoint_stem, _ = os.path.splitext(checkpoint_path)
         direct_pickle = f"{checkpoint_stem}.pickle"
@@ -6709,7 +6791,7 @@ class GUIController(QtCore.QObject):
 
         return best_pickle
 
-    def _find_latest_resume_file(self) -> Optional[str]:
+    def _find_latest_resume_file(self) -> str | None:
         checkpoint_path = self._find_latest_checkpoint_file()
         if checkpoint_path:
             return checkpoint_path
@@ -6734,7 +6816,7 @@ class GUIController(QtCore.QObject):
                     latest_path = path
         return latest_path
 
-    def _find_latest_metrics_json(self) -> Optional[str]:
+    def _find_latest_metrics_json(self) -> str | None:
         models_path = str(ARTIFACTS_MODELS_DIR)
         if not os.path.isdir(models_path):
             return None
@@ -6869,7 +6951,7 @@ class GUIController(QtCore.QObject):
             return selected
         return ""
 
-    def _get_selected_roster_entry(self) -> Optional[RosterEntry]:
+    def _get_selected_roster_entry(self) -> RosterEntry | None:
         side = str(self._roster_preview_side or "").strip().upper()
         idx = int(self._roster_preview_roster_index)
         if idx < 0:
@@ -7288,7 +7370,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(unit_path):
             self._emit_log("[GUI] unitData.json не найден, список юнитов пуст.", level="WARN")
             return
-        with open(unit_path, "r", encoding="utf-8") as handle:
+        with open(unit_path, encoding="utf-8") as handle:
             payload = json.load(handle)
 
         self._available_units.clear()
@@ -7370,7 +7452,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(units_path):
             return
         section = None
-        with open(units_path, "r", encoding="utf-8") as handle:
+        with open(units_path, encoding="utf-8") as handle:
             for raw_line in handle:
                 line = raw_line.strip()
                 if not line:
@@ -7405,7 +7487,7 @@ class GUIController(QtCore.QObject):
                     else:
                         self._model_roster.append(entry)
 
-    def _parse_roster_line(self, line: str) -> Optional[RosterEntry]:
+    def _parse_roster_line(self, line: str) -> RosterEntry | None:
         if "|" not in line:
             return RosterEntry(name=line, count=0, instance_id="")
         parts = [part.strip() for part in line.split("|")]
@@ -7478,6 +7560,10 @@ class GUIController(QtCore.QObject):
                     shutil.rmtree(target)
                 else:
                     os.remove(target)
+        # TensorBoard event-файлы (runtime/tb): сначала гасим сервер, чтобы он не держал
+        # файлы открытыми (иначе на Windows удаление упрётся в «файл занят»), потом чистим.
+        self.stop_tensorboard()
+        self._remove_contents(os.path.join(self._repo_root, "runtime", "tb"))
         self._clear_runtime_logs()
 
     def _remove_contents(
@@ -7538,7 +7624,26 @@ def main() -> int:
         os.environ["QT_QUICK_CONTROLS_STYLE"] = "Fusion"
     QQuickStyle.setStyle(os.environ["QT_QUICK_CONTROLS_STYLE"])
 
+    # QtWebEngine (встроенный просмотр TensorBoard) требует общего GL-контекста ДО создания
+    # приложения и явной инициализации. Если модуль недоступен — GUI работает без вкладки TB.
+    # На части Windows/GPU аппаратный рендер WebEngine даёт белый экран (несовпадение
+    # RHI Qt Quick и GL WebEngine) — форсируем программный рендер для стабильной отрисовки.
+    if "QTWEBENGINE_CHROMIUM_FLAGS" not in os.environ:
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing"
+    try:
+        QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    except Exception:
+        pass
+
     app = QtGui.QGuiApplication(sys.argv)
+
+    try:
+        from PySide6.QtWebEngineQuick import QtWebEngineQuick
+
+        QtWebEngineQuick.initialize()
+    except Exception as exc:
+        print(f"[40kAI] QtWebEngine не инициализирован (встроенный TensorBoard недоступен): {exc}", flush=True)
+
     theme_flat = None
     try:
         theme_flat = load_tokens_flat_for_qml()
@@ -7605,6 +7710,9 @@ def main() -> int:
     if os.path.exists(icon_path):
         if hasattr(root, "setIcon"):
             root.setIcon(QIcon(icon_path))
+
+    # Гасим фоновый TensorBoard при выходе из приложения.
+    app.aboutToQuit.connect(_GUI_CONTROLLER_REF.stop_tensorboard)
 
     return app.exec()
 
