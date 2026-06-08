@@ -3670,7 +3670,7 @@ def run_ppo_training(
             and b_len > 0
             and b_hei > 0
             and episode > 0
-            and (episode % DET_EVAL_EVERY_EPISODES == 0)
+            and (episode % DET_EVAL_EVERY_EPISODES == 0 or episode == int(totLifeT))
             and episode != last_det_eval_ep
         ):
             try:
@@ -5026,10 +5026,12 @@ def main():
                 f"TURN_LIMIT_VP_MARGIN_REWARD_SCALE={vp_reward_scale:.3f}"
             )
 
-    def _run_deterministic_eval(total_episode: int) -> None:
+    def _run_deterministic_eval(total_episode: int, force: bool = False) -> None:
         if not DET_EVAL_ENABLED:
             return
-        if total_episode <= 0 or total_episode % DET_EVAL_EVERY_EPISODES != 0:
+        # force=True — финальный эпизод прогона: даём DET-eval якорь, даже если он
+        # не кратен DET_EVAL_EVERY_EPISODES (чтобы последняя точка совпала с концом обучения).
+        if total_episode <= 0 or (total_episode % DET_EVAL_EVERY_EPISODES != 0 and not force):
             return
         wins = 0
         draws = 0
@@ -5925,7 +5927,7 @@ def main():
                             f"pool_source={selected_source} picked_id={selected_id} picked_score={selected_score} "
                             f"pool_size={len(opponent_pool_entries)}"
                         )
-                _run_deterministic_eval(total_episode)
+                _run_deterministic_eval(total_episode, force=((numLifeT + 1) >= totLifeT))
     
                 if USE_SUBPROC_ENVS:
                     ctx["conn"].send(("reset", None))
@@ -6567,7 +6569,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 if (
                     ACTOR_DET_EVAL_ENABLED
                     and episodes_finished > 0
-                    and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0)
+                    and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
                     and episodes_finished != last_actor_det_eval_ep
                 ):
                     try:
@@ -7261,7 +7263,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 if (
                     ACTOR_DET_EVAL_ENABLED
                     and episodes_finished > 0
-                    and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0)
+                    and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
                     and episodes_finished != last_actor_det_eval_ep
                 ):
                     try:
