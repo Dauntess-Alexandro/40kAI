@@ -180,7 +180,9 @@ ChamferPanel {
                             from: 1
                             to: 65535
                             value: controller.remoteIsPort
-                            onValueChanged: controller.setRemoteIsPort(value)
+                            // onValueModified — только ручное изменение; onValueChanged ловил бы и
+                            // программный апдейт value из controller → binding loop.
+                            onValueModified: controller.setRemoteIsPort(value)
                         }
 
                         Text { text: "Таймаут, с"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
