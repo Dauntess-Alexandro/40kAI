@@ -183,6 +183,12 @@ DQN_GROUPS: tuple[dict[str, object], ...] = (
         "keys": ("noisy_sigma0", "noisy_disable_eps", "noisy_sigma_anneal", "per_ensemble_priority_lambda"),
         "default_collapsed": True,
     },
+    {
+        "id": "distributed",
+        "title": "Распределённое обучение (ПК2)",
+        "keys": ("distributed_actors_enabled", "distributed_rollout_port", "distributed_auth_token"),
+        "default_collapsed": True,
+    },
 )
 
 PPO_GROUPS: tuple[dict[str, object], ...] = (
@@ -239,6 +245,9 @@ DQN_FIELD_TOOLTIPS: dict[str, str] = {
     "noisy_disable_eps": "1 = отключить epsilon при NoisyNet.",
     "noisy_sigma_anneal": "1 = anneal sigma NoisyNet.",
     "per_ensemble_priority_lambda": "Вес приоритета PER для ансамбля.",
+    "distributed_actors_enabled": "1 = принимать переходы со второго ПК (ПК2) в общий replay (Ape-X). ПК1 поднимет приёмник на порту ниже.",
+    "distributed_rollout_port": "Порт приёма rollout'ов с ПК2 (по умолчанию 5558, отдельно от AZ-dist 5557).",
+    "distributed_auth_token": "Общий секрет ПК1↔ПК2 (пусто = без проверки). Должен совпадать на обоих ПК.",
 }
 
 PPO_FIELD_TOOLTIPS: dict[str, str] = {
