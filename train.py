@@ -6530,6 +6530,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 "n_observations": int(n_observations),
                 "n_actions": list(n_actions),
                 "rollout_port": int(DQN_DIST_ROLLOUT_PORT),
+                "auth_token": str(DQN_DIST_AUTH_TOKEN or ""),
                 "mission": str(normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))),
             })
         except Exception as exc:

@@ -1,6 +1,14 @@
 # tests/models/test_dqn_dist_priority_optional.py
 """DQN dist: RemoteDataQ.put((kind,payload)) → sink.put(kind,payload); priority опционален."""
-from core.models.dqn_dist import RemoteDataQ
+from core.models.dqn_dist import RemoteDataQ, derive_host_from_unc
+
+
+def test_derive_host_from_unc():
+    assert derive_host_from_unc(r"\\192.168.1.10\40kai_models") == "192.168.1.10"
+    assert derive_host_from_unc(r"\\PC1\share\sub") == "PC1"
+    assert derive_host_from_unc("//192.168.0.5/share") == "192.168.0.5"
+    assert derive_host_from_unc(r"Z:\models") == ""
+    assert derive_host_from_unc("") == ""
 
 
 class _SpySink:

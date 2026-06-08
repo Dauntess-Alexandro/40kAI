@@ -16,6 +16,7 @@ if str(_REPO_ROOT) not in sys.path:
 from core.models.az_rollout_sink import make_rollout_sink  # noqa: E402
 from core.models.dqn_dist import (  # noqa: E402
     RemoteDataQ,
+    derive_host_from_unc,
     dqn_dist_stop_flag_path,
     dqn_dist_stop_requested,
     wait_dqn_dist_train_context,
@@ -161,6 +162,36 @@ def main() -> int:
     ctx = wait_dqn_dist_train_context(wait_sec=wait_sec)
     if ctx.get("opponent_agent_id"):
         os.environ.setdefault("OPPONENT_AGENT_ID", str(ctx["opponent_agent_id"]))
+
+    # --- Автозаполнение: на ПК2 достаточно задать MODELS_DIR (SMB-шара ПК1). ---
+    # IP ПК1 — из UNC-пути шары; порт и auth — из train-context, который пишет ПК1.
+    host = str(os.getenv("DQN_DIST_PC1_HOST", "") or "").strip()
+    if not host:
+        host = derive_host_from_unc(os.getenv("MODELS_DIR", ""))
+    if not host:
+        host = "127.0.0.1"
+    os.environ["DQN_DIST_PC1_HOST"] = host
+
+    if not str(os.getenv("DQN_DIST_ROLLOUT_PORT", "") or "").strip():
+        os.environ["DQN_DIST_ROLLOUT_PORT"] = str(ctx.get("rollout_port", 5558) or 5558)
+
+    if not str(os.getenv("DQN_DIST_AUTH_TOKEN", "") or "").strip():
+        ctx_auth = str(ctx.get("auth_token", "") or "")
+        if ctx_auth:
+            os.environ["DQN_DIST_AUTH_TOKEN"] = ctx_auth
+
+    if not str(os.getenv("DQN_DIST_PC2_NUM_WORKERS", "") or "").strip():
+        os.environ["DQN_DIST_PC2_NUM_WORKERS"] = str(max(1, min(int(os.cpu_count() or 6), 12)))
+
+    print(
+        f"[DQN][DIST][PC2] автоконфиг: host={host} (из {'env' if os.getenv('DQN_DIST_PC1_HOST') else 'UNC'}) "
+        f"port={os.environ.get('DQN_DIST_ROLLOUT_PORT')} "
+        f"auth={'задан' if os.environ.get('DQN_DIST_AUTH_TOKEN') else 'нет'} "
+        f"workers={os.environ.get('DQN_DIST_PC2_NUM_WORKERS')} "
+        f"context={'есть' if ctx else 'НЕТ (ПК1 не запущен?)'}",
+        flush=True,
+    )
+
     ctx_json = json.dumps(ctx, ensure_ascii=False)
 
     num_workers = max(1, _env_int("DQN_DIST_PC2_NUM_WORKERS", 6))

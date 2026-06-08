@@ -13,6 +13,21 @@ import time
 from typing import Any
 
 
+def derive_host_from_unc(path: str) -> str:
+    r"""Из UNC-пути SMB-шары (\\server\share\...) достать имя/IP сервера ПК1.
+
+    Возвращает '' для не-UNC (например, подключённый диск Z:\...) — тогда host
+    надо задать явно. Примеры: '\\192.168.1.10\models' → '192.168.1.10';
+    '//PC1/share' → 'PC1'.
+    """
+    p = str(path or "").strip()
+    if p.startswith("\\\\") or p.startswith("//"):
+        rest = p.lstrip("\\/").replace("/", "\\")
+        server = rest.split("\\")[0].strip()
+        return server
+    return ""
+
+
 def dqn_dist_stop_flag_path() -> str:
     custom = str(os.getenv("DQN_DIST_STOP_FLAG_PATH", "") or "").strip()
     if custom:
