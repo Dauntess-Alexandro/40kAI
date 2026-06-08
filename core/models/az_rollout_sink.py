@@ -52,7 +52,7 @@ def read_az_dist_train_context() -> dict[str, Any]:
     if not os.path.isfile(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
@@ -338,6 +338,19 @@ class RemoteRolloutSink:
 
     def put(self, kind: str, payload: Any) -> None:
         if kind == "done":
+            return
+        if kind == "batch":
+            # DQN: payload — голый список 6-кортежей (как в локальном data_q).
+            steps = payload.get("steps") if isinstance(payload, dict) else payload
+            # Кортежи не обходятся _encode_value рекурсивно — конвертируем в списки.
+            steps_as_lists = [list(t) for t in (steps or [])]
+            wrapped = {
+                "worker_id": int(self._worker_id),
+                "steps": steps_as_lists,
+                "priority": (payload.get("priority") if isinstance(payload, dict) else None),
+                "source": self._source,
+            }
+            self._send("batch", wrapped)
             return
         if not isinstance(payload, dict):
             if kind == "error":
