@@ -5,7 +5,8 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from core.models.az_rollout_protocol import decode_rollout_message, validate_wire_message
 
@@ -122,13 +123,13 @@ class RolloutReceiver:
             self._enqueue("error", payload.get("message", payload))
             return
 
-        if kind not in ("rollout", "ep"):
+        if kind not in ("rollout", "ep", "batch"):
             return
 
         self._last_heartbeat[wid] = time.time()
         payload.setdefault("source", "remote")
         self._enqueue(kind, payload)
-        if kind == "rollout":
+        if kind in ("rollout", "batch"):
             self._received_rollouts += 1
         elif kind == "ep":
             self._received_eps += 1

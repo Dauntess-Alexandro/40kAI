@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 import msgpack
-import numpy as np
 
 from core.models.az_inference_protocol import _decode_value, _encode_value
 
@@ -73,7 +72,7 @@ def validate_wire_message(
     if expected_auth and got_auth != expected_auth:
         raise ValueError("[AZ][DIST] auth_token mismatch")
     kind, payload = parse_wire_message(msg)
-    if expected_contract_hash and kind in ("hello", "rollout"):
+    if expected_contract_hash and kind in ("hello", "rollout", "batch"):
         got_hash = str(payload.get("env_contract_hash", "") or "")
         if got_hash and got_hash != str(expected_contract_hash):
             raise ValueError(
