@@ -99,6 +99,10 @@ from core.models.az_rollout_sink import (
     write_az_dist_train_context,
 )
 from core.models.DQN import *
+from core.models.dqn_dist import (
+    touch_dqn_dist_stop_flag,
+    write_dqn_dist_train_context,
+)
 from core.models.gmz_inference_client import GMZInferenceClient
 from core.models.gmz_inference_server import gmz_inference_server_entry
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
@@ -3064,6 +3068,13 @@ AZ_DIST_DRAIN_SEC = max(
     1.0, float(os.getenv("AZ_DIST_DRAIN_SEC", str(AZ_CFG.get("distributed_actors_drain_sec", 30.0))))
 )
 AZ_DIST_ZMQ_HWM = max(8, int(os.getenv("AZ_DIST_ZMQ_HWM", str(AZ_CFG.get("distributed_actors_zmq_hwm", 256)))))
+
+# --- Distributed DQN actors (ПК2 → rollout ZMQ → learner data_q) ---
+DQN_DISTRIBUTED_ACTORS = os.getenv("DQN_DISTRIBUTED_ACTORS", "0").strip() in {"1", "true", "yes"}
+DQN_DIST_ROLLOUT_PORT = int(os.getenv("DQN_DIST_ROLLOUT_PORT", "5558"))
+DQN_DIST_BIND_HOST = str(os.getenv("DQN_DIST_BIND_HOST", "0.0.0.0"))
+DQN_DIST_AUTH_TOKEN = str(os.getenv("DQN_DIST_AUTH_TOKEN", ""))
+DQN_DIST_ZMQ_HWM = max(8, int(os.getenv("DQN_DIST_ZMQ_HWM", "256")))
 
 
 def _clear_az_dist_stop_flag() -> None:
@@ -6486,6 +6497,41 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
 
+    # --- Distributed actors (ПК2): receiver + SMB train-context ---
+    rollout_receiver = None
+    if DQN_DISTRIBUTED_ACTORS:
+        env_contract_hash = str(env_contract.get("contract_hash", "") or "")
+        rollout_receiver = RolloutReceiver(
+            data_q,
+            bind_host=DQN_DIST_BIND_HOST,
+            bind_port=DQN_DIST_ROLLOUT_PORT,
+            expected_contract_hash=env_contract_hash,
+            auth_token=DQN_DIST_AUTH_TOKEN,
+            zmq_hwm=DQN_DIST_ZMQ_HWM,
+            log_fn=append_agent_log,
+        )
+        rollout_receiver.start()
+        try:
+            torch.save({"state_dict": init_weights}, sync_path)
+        except Exception as exc:
+            append_agent_log(f"[DQN][DIST][WARN] не удалось записать стартовые веса {sync_path}: {exc}")
+        try:
+            write_dqn_dist_train_context({
+                "env_contract_hash": env_contract_hash,
+                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                "learner_side": str(learner_side_cfg),
+                "n_observations": int(n_observations),
+                "n_actions": list(n_actions),
+                "rollout_port": int(DQN_DIST_ROLLOUT_PORT),
+                "mission": str(normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))),
+            })
+        except Exception as exc:
+            append_agent_log(f"[DQN][DIST][WARN] не удалось записать train-context: {exc}")
+        append_agent_log(
+            f"[DQN][DIST] receiver bind=:{DQN_DIST_ROLLOUT_PORT} "
+            f"contract_hash={env_contract_hash or '-'} sync={sync_path}"
+        )
+
     procs = []
     for a_idx in range(num_actors):
         base = int(totLifeT) // int(num_actors)
@@ -6743,7 +6789,16 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         if kind != "batch":
             continue
 
-        for (s_np, a_list, r_sum, ns_np, done_flag, n_count) in payload:
+        # Локальный actor шлёт голый список; remote (ПК2) — dict {"steps":..,"priority":..}.
+        if isinstance(payload, dict):
+            batch_steps = payload.get("steps", []) or []
+            # MVP: priority принимается, но не применяется (learner-side max_priority).
+            # Точка расширения под actor-side Ape-X (DQN_DIST_ACTOR_PRIORITY).
+            _remote_priority = payload.get("priority", None)  # noqa: F841
+        else:
+            batch_steps = payload
+
+        for (s_np, a_list, r_sum, ns_np, done_flag, n_count) in batch_steps:
             dev = next(policy_net.parameters()).device
             state_t = torch.tensor(np.asarray(s_np, dtype=np.float32), device=dev).unsqueeze(0)
             action_t = torch.tensor([a_list], device="cpu")
@@ -6820,6 +6875,18 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     p_tgt.data.add_(p.data, alpha=TAU)
 
         # прогресс по ep_rows (приходит отдельными сообщениями "ep")
+
+    if DQN_DISTRIBUTED_ACTORS:
+        try:
+            stop_path = touch_dqn_dist_stop_flag()
+            append_agent_log(f"[DQN][DIST] stop.flag записан: {stop_path}")
+        except Exception as exc:
+            append_agent_log(f"[DQN][DIST][WARN] не удалось записать stop.flag: {exc}")
+        if rollout_receiver is not None:
+            try:
+                rollout_receiver.stop()
+            except Exception:
+                pass
 
     pbar.close()
     elapsed = time.perf_counter() - started
