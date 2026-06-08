@@ -5927,7 +5927,9 @@ def main():
                             f"pool_source={selected_source} picked_id={selected_id} picked_score={selected_score} "
                             f"pool_size={len(opponent_pool_entries)}"
                         )
-                _run_deterministic_eval(total_episode, force=((numLifeT + 1) >= totLifeT))
+                # numLifeT здесь уже инкрементирован (см. выше), поэтому последний эпизод — это
+                # numLifeT == totLifeT (без +1, иначе якорь сработал бы и на предпоследнем).
+                _run_deterministic_eval(total_episode, force=(numLifeT >= totLifeT))
     
                 if USE_SUBPROC_ENVS:
                     ctx["conn"].send(("reset", None))
