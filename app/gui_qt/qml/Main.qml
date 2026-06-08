@@ -3924,336 +3924,204 @@ ApplicationWindow {
                             }
                         }
 
-                        GridLayout {
-                            columns: 2
-                            columnSpacing: root.spacingMd
-                            rowSpacing: root.spacingMd
+                        // --- Новый дашборд DET-eval: живые графики QtCharts ---
+                        ColumnLayout {
+                            id: metricsDash
                             width: parent.width
+                            spacing: root.spacingMd
 
-                            GroupBox {
-                                title: "DET: награда"
+                            property var detData: ({ count: 0, episodes: [], series: {}, loss: { episodes: [], values: [] }, endReasons: {} })
+                            function reloadDet() { detData = controller.detSeries() }
+                            function _xsFor(spec) {
+                                if (spec.src === "loss")
+                                    return (detData.loss && detData.loss.episodes) ? detData.loss.episodes : []
+                                return detData.episodes || []
+                            }
+                            function _seriesFor(spec) {
+                                var out = []
+                                for (var i = 0; i < spec.lines.length; i++) {
+                                    var ln = spec.lines[i]
+                                    var ys = []
+                                    if (spec.src === "loss")
+                                        ys = (detData.loss && detData.loss.values) ? detData.loss.values : []
+                                    else if (spec.src === "end")
+                                        ys = (detData.endReasons && detData.endReasons[ln.key]) ? detData.endReasons[ln.key] : []
+                                    else
+                                        ys = (detData.series && detData.series[ln.key]) ? detData.series[ln.key] : []
+                                    out.push({ name: ln.name, color: ln.color, ys: ys })
+                                }
+                                return out
+                            }
+
+                            property var chartSpecs: [
+                                { title: "Winrate", fmt: "pct", src: "series", lines: [{ key: "win_rate", name: "win", color: root.accentPrimaryAction }] },
+                                { title: "Средняя награда", fmt: "num", src: "series", lines: [{ key: "reward_mean", name: "reward", color: root.accentP1 }] },
+                                { title: "Loss обучения", fmt: "num", src: "loss", lines: [{ key: "values", name: "loss", color: "#3fb950" }] },
+                                { title: "Длина эпизода", fmt: "int", src: "series", lines: [{ key: "ep_len_mean", name: "ep_len", color: "#9b8cff" }] },
+                                { title: "Avg VP (model vs enemy)", fmt: "num", src: "series", lines: [{ key: "model_vp_mean", name: "model", color: root.accentP1 }, { key: "enemy_vp_mean", name: "enemy", color: root.accentP2 }] },
+                                { title: "HP diff", fmt: "num", src: "series", lines: [{ key: "hp_diff_mean", name: "hp_diff", color: root.accentP2 }] },
+                                { title: "Kill diff", fmt: "num", src: "series", lines: [{ key: "kill_diff_mean", name: "kill_diff", color: root.accentPrimaryAction }] },
+                                { title: "Причины завершения", fmt: "pct", src: "end", lines: [{ key: "wipeout_enemy_rate", name: "wipe enemy", color: root.accentP1 }, { key: "wipeout_model_rate", name: "wipe model", color: root.accentP2 }, { key: "turn_limit_rate", name: "turn limit", color: root.accentGhost }] }
+                            ]
+
+                            Connections {
+                                target: controller
+                                function onMetricsSummaryChanged() { metricsDash.reloadDet() }
+                            }
+                            Component.onCompleted: metricsDash.reloadDet()
+
+                            // KPI-плитки: главное одним взглядом.
+                            RowLayout {
                                 Layout.fillWidth: true
+                                spacing: root.spacingMd
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
+                                Repeater {
+                                    model: [
+                                        { label: "WINRATE (DET)", value: controller.detWinrateLast, accent: root.accentPrimaryAction },
+                                        { label: "REWARD (DET)", value: controller.detRewardLast, accent: root.accentP1 },
+                                        { label: "ДЛИНА ЭПИЗОДА", value: controller.detEpLenLast, accent: "#9b8cff" },
+                                        { label: "ЭПИЗОД-ЯКОРЬ", value: controller.detEpisodeLast, accent: root.accentGhost }
+                                    ]
+                                    delegate: Item {
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
+                                        implicitHeight: Math.round(64 * root.uiScale)
 
-                                        Image {
-                                            id: rewardChart
+                                        ChamferPanel {
                                             anchors.fill: parent
-                                            source: controller.metricsRewardPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
+                                            cutSize: Math.round(8 * root.uiScale)
+                                            contentMargin: 0
+                                            fillColor: root.bgElevated
+                                            borderWidth: 1
+                                            borderColor: root.borderMuted
                                         }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_reward."
-                                            color: "#777777"
-                                            visible: rewardChart.status !== Image.Ready
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            anchors.margins: Math.round(6 * root.uiScale)
+                                            width: Math.round(3 * root.uiScale)
+                                            radius: width / 2
+                                            color: modelData.accent
                                         }
-                                    }
-
-                                    Label {
-                                        text: "Средняя награда за eval-игру (агрегат по батчу DET)."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.rewardSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
+                                        ColumnLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: Math.round(16 * root.uiScale)
+                                            anchors.rightMargin: Math.round(12 * root.uiScale)
+                                            anchors.topMargin: Math.round(8 * root.uiScale)
+                                            anchors.bottomMargin: Math.round(8 * root.uiScale)
+                                            spacing: 0
+                                            Text {
+                                                text: modelData.label
+                                                color: root.uiTextMuted
+                                                font.pixelSize: Math.max(8, root.evalCaptionSize - 1)
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: modelData.value
+                                                color: root.uiTextMain
+                                                font.bold: true
+                                                font.pixelSize: root.evalSectionTitleSize + Math.round(3 * root.uiScale)
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
                                     }
                                 }
                             }
 
-                            GroupBox {
-                                title: "DET: loss обучения"
+                            // Панель действий: заголовок + переход в TensorBoard.
+                            RowLayout {
                                 Layout.fillWidth: true
+                                spacing: root.spacingMd
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: lossChart
-                                            anchors.fill: parent
-                                            source: controller.metricsLossPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_loss."
-                                            color: "#777777"
-                                            visible: lossChart.status !== Image.Ready
-                                        }
+                                Text {
+                                    text: "Графики DET-eval"
+                                    color: root.uiTextMain
+                                    font.bold: true
+                                    font.pixelSize: root.evalSectionTitleSize
+                                    Layout.fillWidth: true
+                                }
+                                Button {
+                                    text: "ОТКРЫТЬ В TENSORBOARD"
+                                    onClicked: tbWindow.openTensorboard()
+                                    Layout.preferredWidth: Math.round(210 * root.uiScale)
+                                    contentItem: Text {
+                                        text: parent.text
+                                        color: parent.enabled ? "#d5b15a" : "#737b8a"
+                                        font.bold: true
+                                        font.pixelSize: root.evalCaptionSize
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
                                     }
-
-                                    Label {
-                                        text: "Loss на момент чекпоинта обучения (не supervised-loss на игре)."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.lossSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
+                                    background: ChamferPanel {
+                                        cutSize: Math.round(6 * root.uiScale)
+                                        contentMargin: 0
+                                        fillColor: parent.hovered ? "#25303d" : "transparent"
+                                        borderWidth: 1
+                                        borderColor: parent.hovered ? "#e1be68" : "#b88a26"
                                     }
                                 }
                             }
 
-                            GroupBox {
-                                title: "DET: длина эпизода"
+                            // Пустое состояние (нет DET-eval данных).
+                            Item {
                                 Layout.fillWidth: true
+                                implicitHeight: Math.round(160 * root.uiScale)
+                                visible: (metricsDash.detData.count || 0) === 0
 
-                                ColumnLayout {
+                                ChamferPanel {
                                     anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: epLenChart
-                                            anchors.fill: parent
-                                            source: controller.metricsEpLenPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_ep_len."
-                                            color: "#777777"
-                                            visible: epLenChart.status !== Image.Ready
-                                        }
+                                    cutSize: Math.round(8 * root.uiScale)
+                                    contentMargin: 0
+                                    fillColor: root.bgElevated
+                                    borderWidth: 1
+                                    borderColor: root.borderMuted
+                                }
+                                ColumnLayout {
+                                    anchors.centerIn: parent
+                                    spacing: root.spacingSm
+                                    Text {
+                                        text: "Нет DET-eval данных"
+                                        color: root.uiTextMain
+                                        font.bold: true
+                                        font.pixelSize: root.evalSectionTitleSize
+                                        Layout.alignment: Qt.AlignHCenter
                                     }
-
-                                    Label {
-                                        text: "Среднее число шагов в eval-эпизодах."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.epLenSummary
-                                        wrapMode: Text.WordWrap
+                                    Text {
+                                        text: "Запусти обучение — графики появятся после первого DET-eval чекпоинта."
                                         color: root.uiTextMuted
+                                        font.pixelSize: root.evalCaptionSize
+                                        Layout.alignment: Qt.AlignHCenter
                                     }
                                 }
                             }
 
-                            GroupBox {
-                                title: "DET: winrate"
+                            // Сетка живых графиков.
+                            GridLayout {
                                 Layout.fillWidth: true
+                                columns: 2
+                                columnSpacing: root.spacingMd
+                                rowSpacing: root.spacingMd
+                                visible: (metricsDash.detData.count || 0) > 0
 
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
+                                Repeater {
+                                    model: metricsDash.chartSpecs
+                                    delegate: MetricChart {
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: winrateChart
-                                            anchors.fill: parent
-                                            source: controller.metricsWinratePath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_winrate."
-                                            color: "#777777"
-                                            visible: winrateChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Доля побед по eval-играм."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.winrateSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "DET: Avg VP"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: avgVpChart
-                                            anchors.fill: parent
-                                            source: controller.metricsAvgVpPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_avg_vp."
-                                            color: "#777777"
-                                            visible: avgVpChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Средние Victory Points по DET-eval (модель и противник)."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.avgVpSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "DET: HP diff"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: hpDiffChart
-                                            anchors.fill: parent
-                                            source: controller.metricsHpDiffPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_hp_diff."
-                                            color: "#777777"
-                                            visible: hpDiffChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Разница HP на конец DET-игры (model − enemy)."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.hpDiffSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "DET: Kill diff"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: killDiffChart
-                                            anchors.fill: parent
-                                            source: controller.metricsKillDiffPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_kill_diff."
-                                            color: "#777777"
-                                            visible: killDiffChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Kill diff на конец DET-игры (по моделям): model − enemy."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.killDiffSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
-                                    }
-                                }
-                            }
-
-                            GroupBox {
-                                title: "DET: причины завершения"
-                                Layout.fillWidth: true
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    spacing: root.spacingXs
-
-                                    Item {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: Math.round(230 * root.uiScale)
-
-                                        Image {
-                                            id: endReasonChart
-                                            anchors.fill: parent
-                                            source: controller.metricsEndReasonPath
-                                            fillMode: Image.PreserveAspectFit
-                                            smooth: true
-                                        }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Нет графика det_endreasons."
-                                            color: "#777777"
-                                            visible: endReasonChart.status !== Image.Ready
-                                        }
-                                    }
-
-                                    Label {
-                                        text: "Доли wipeout / turn limit по eval-играм."
-                                        wrapMode: Text.WordWrap
-                                    }
-
-                                    Label {
-                                        text: controller.endReasonSummary
-                                        wrapMode: Text.WordWrap
-                                        color: root.uiTextMuted
+                                        Layout.preferredHeight: Math.round(258 * root.uiScale)
+                                        uiScale: root.uiScale
+                                        captionSize: root.evalCaptionSize
+                                        textMain: root.uiTextMain
+                                        textMuted: root.uiTextMuted
+                                        panelFill: root.bgElevated
+                                        panelBorder: root.borderMuted
+                                        gridColor: root.borderMuted
+                                        title: modelData.title
+                                        fmt: modelData.fmt
+                                        accent: modelData.lines[0].color
+                                        xs: metricsDash._xsFor(modelData)
+                                        series: metricsDash._seriesFor(modelData)
                                     }
                                 }
                             }

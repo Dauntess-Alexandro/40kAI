@@ -804,6 +804,94 @@ class GUIController(QtCore.QObject):
     def detTrainLossLast(self) -> str:
         return str(self._det_last.get("train_loss", "—"))
 
+    @QtCore.Slot(result="QVariant")
+    def detSeries(self) -> dict:
+        """Серии DET-eval для нативных графиков (вместо PNG): массивы по чекпоинтам.
+
+        Читает actor_det_eval_<run_id>.jsonl (или последний доступный) из artifacts/metrics
+        и возвращает структуру с массивами; QML строит по ним живые QtCharts.
+        """
+        empty = {
+            "count": 0,
+            "episodes": [],
+            "series": {},
+            "loss": {"episodes": [], "values": []},
+            "endReasons": {},
+        }
+        metrics_dir = str(ARTIFACTS_METRICS_DIR)
+        run_id = str(self._metrics_run_id or "").strip()
+        path = ""
+        if run_id:
+            cand = os.path.join(metrics_dir, f"actor_det_eval_{run_id}.jsonl")
+            if os.path.isfile(cand):
+                path = cand
+        if not path:
+            try:
+                files = [
+                    f
+                    for f in os.listdir(metrics_dir)
+                    if f.startswith("actor_det_eval_") and f.endswith(".jsonl")
+                ]
+                if files:
+                    files.sort(key=lambda f: os.path.getmtime(os.path.join(metrics_dir, f)))
+                    path = os.path.join(metrics_dir, files[-1])
+            except OSError:
+                return empty
+        if not path or not os.path.isfile(path):
+            return empty
+
+        points: list[dict] = []
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        points.append(json.loads(line))
+                    except ValueError:
+                        continue
+        except OSError:
+            return empty
+        if not points:
+            return empty
+
+        def col(key: str) -> list[float]:
+            return [float(p.get(key, 0.0) or 0.0) for p in points]
+
+        episodes = [int(p.get("episode", 0) or 0) for p in points]
+        loss_ep: list[int] = []
+        loss_val: list[float] = []
+        for p in points:
+            raw = p.get("training_loss", None)
+            if raw is None:
+                continue
+            try:
+                loss_val.append(float(raw))
+                loss_ep.append(int(p.get("episode", 0) or 0))
+            except (TypeError, ValueError):
+                continue
+
+        return {
+            "count": len(points),
+            "episodes": episodes,
+            "series": {
+                "win_rate": col("win_rate"),
+                "reward_mean": col("reward_mean"),
+                "ep_len_mean": col("ep_len_mean"),
+                "model_vp_mean": col("model_vp_mean"),
+                "enemy_vp_mean": col("enemy_vp_mean"),
+                "hp_diff_mean": col("hp_diff_mean"),
+                "kill_diff_mean": col("kill_diff_mean"),
+            },
+            "loss": {"episodes": loss_ep, "values": loss_val},
+            "endReasons": {
+                "wipeout_enemy_rate": col("wipeout_enemy_rate"),
+                "wipeout_model_rate": col("wipeout_model_rate"),
+                "turn_limit_rate": col("turn_limit_rate"),
+            },
+        }
+
     @QtCore.Property(int, constant=True)
     def detEvalEpisodes(self) -> int:
         # Параметры DET-eval для actor-learner (по умолчанию).
