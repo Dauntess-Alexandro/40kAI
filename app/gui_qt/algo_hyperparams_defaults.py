@@ -33,6 +33,9 @@ DQN_HYPERPARAM_KEYS: tuple[str, ...] = DQN_ROOT_SYNC_KEYS + (
     "noisy_disable_eps",
     "noisy_sigma_anneal",
     "per_ensemble_priority_lambda",
+    "distributed_actors_enabled",
+    "distributed_rollout_port",
+    "distributed_auth_token",
 )
 
 DEFAULT_DQN_HYPERPARAMS: dict[str, int | float | str] = {
@@ -62,6 +65,9 @@ DEFAULT_DQN_HYPERPARAMS: dict[str, int | float | str] = {
     "noisy_disable_eps": 1,
     "noisy_sigma_anneal": 0,
     "per_ensemble_priority_lambda": 0.1,
+    "distributed_actors_enabled": 0,
+    "distributed_rollout_port": 5558,
+    "distributed_auth_token": "",
 }
 
 PPO_HYPERPARAM_KEYS: tuple[str, ...] = (

@@ -5012,6 +5012,14 @@ class GUIController(QtCore.QObject):
         env_overrides.setdefault("ACTOR_BATCH_SEND", "32")
         env_overrides.setdefault("ACTOR_QUEUE_MAX", "256")
 
+        # Distributed DQN actors (ПК2): поднять receiver на ПК1, если включено в GUI (только для DQN).
+        if str(self._training_algo).strip().lower() == "dqn":
+            _dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
+            if int(_dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1:
+                env_overrides["DQN_DISTRIBUTED_ACTORS"] = "1"
+                env_overrides.setdefault("DQN_DIST_ROLLOUT_PORT", str(_dqn_hp.get("distributed_rollout_port", 5558)))
+                env_overrides.setdefault("DQN_DIST_AUTH_TOKEN", str(_dqn_hp.get("distributed_auth_token", "") or ""))
+
         if self._resume_from_checkpoint:
             resume_path = self._find_latest_resume_file()
             if not resume_path:
