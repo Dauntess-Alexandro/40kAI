@@ -26,6 +26,18 @@ def dqn_dist_stop_requested(flag_path: str | None = None) -> bool:
     return bool(path) and os.path.isfile(path)
 
 
+def clear_dqn_dist_stop_flag(flag_path: str | None = None) -> bool:
+    """Удалить stop.flag прошлого прогона, чтобы ПК2-воркеры не вышли сразу. True, если файл был."""
+    path = str(flag_path or dqn_dist_stop_flag_path())
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+            return True
+    except OSError:
+        pass
+    return False
+
+
 def touch_dqn_dist_stop_flag(flag_path: str | None = None) -> str:
     path = str(flag_path or dqn_dist_stop_flag_path())
     parent = os.path.dirname(path)

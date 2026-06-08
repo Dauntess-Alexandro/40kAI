@@ -100,6 +100,7 @@ from core.models.az_rollout_sink import (
 )
 from core.models.DQN import *
 from core.models.dqn_dist import (
+    clear_dqn_dist_stop_flag,
     touch_dqn_dist_stop_flag,
     write_dqn_dist_train_context,
 )
@@ -6501,6 +6502,12 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     rollout_receiver = None
     if DQN_DISTRIBUTED_ACTORS:
         env_contract_hash = str(env_contract.get("contract_hash", "") or "")
+        # Чистим stop.flag прошлого прогона, иначе ПК2-воркеры выйдут сразу при старте.
+        try:
+            if clear_dqn_dist_stop_flag():
+                append_agent_log("[DQN][DIST] очищен stop.flag прошлого прогона")
+        except Exception:
+            pass
         rollout_receiver = RolloutReceiver(
             data_q,
             bind_host=DQN_DIST_BIND_HOST,

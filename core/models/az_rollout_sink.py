@@ -299,6 +299,7 @@ class RemoteRolloutSink:
         self._auth = str(auth_token or "")
         self._source = str(source or "remote")
         self._worker_id = int(worker_id)
+        self._env_contract_hash = str(env_contract_hash or "")
         self._ctx = zmq.Context.instance()
         self._sock = self._ctx.socket(zmq.PUSH)
         self._sock.setsockopt(zmq.SNDHWM, max(1, int(zmq_hwm)))
@@ -349,6 +350,9 @@ class RemoteRolloutSink:
                 "steps": steps_as_lists,
                 "priority": (payload.get("priority") if isinstance(payload, dict) else None),
                 "source": self._source,
+                # Контракт-гард: каждое batch-сообщение несёт хэш (ZMQ message-oriented,
+                # валидация поштучная — нельзя полагаться только на hello).
+                "env_contract_hash": self._env_contract_hash,
             }
             self._send("batch", wrapped)
             return
