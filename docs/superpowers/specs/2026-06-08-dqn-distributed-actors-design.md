@@ -31,7 +31,7 @@
 │  • GPU train + PER replay   │                │  • N актор-процессов (spawn) │
 │  • локальные актора → data_q │                │  • env + ε/noisy net (2060)  │
 │  • RolloutReceiver (PULL     │◄──── LAN ──────│  • n-step → buf              │
-│    :5557) → тот же data_q    │   transitions  │  • RolloutSink (PUSH :5557)  │
+│    :5558) → тот же data_q    │   transitions  │  • RolloutSink (PUSH :5558)  │
 │  • пишет latest_policy.pth ──┼──► SMB-шара ◄──┼─ читает веса раз в N апдейтов │
 │  • dqn_dist_stop.flag ───────┼──► SMB ────────┼─ стоп-сигнал                 │
 └─────────────────────────────┘                └──────────────────────────────┘
@@ -48,6 +48,8 @@ learner не различает, откуда пришёл батч.
   `priority`. MVP едет на learner-side (поле пустое → `max_priority` при вставке, как сейчас).
   Actor-side TD-error (честный Ape-X) добавляется позже одним флагом — формат не меняется.
 - **IS-сервера для DQN нет** → порт 5555 свободен, конфликта с AZ/GMZ remote-IS на ПК2 нет.
+- **Rollout-порт DQN = 5558** (отдельный от AZ-dist :5557), чтобы AZ-dist и DQN-dist могли
+  работать на одном ПК1 одновременно.
 - **Off-policy толерантность:** дроп переходов при переполнении очереди и stale-веса безвредны
   (в отличие от PPO, где нужен V-trace).
 
@@ -56,7 +58,7 @@ learner не различает, откуда пришёл батч.
 ### Переиспользуем без изменений
 | Компонент | Файл | Роль для DQN |
 |---|---|---|
-| `RolloutReceiver` | `core/models/az_rollout_receiver.py` | PULL :5557 → `data_q`. Алго-агностичен. hello/heartbeat/контракт-хеш. |
+| `RolloutReceiver` | `core/models/az_rollout_receiver.py` | PULL :5558 (DQN) → `data_q`. Алго-агностичен. hello/heartbeat/контракт-хеш. |
 | wire-протокол | `core/models/az_rollout_protocol.py` | `encode/decode`, `validate_wire_message`, auth + `env_contract_hash`. |
 | sink на ПК2 | `core/models/az_rollout_sink.py` | ZMQ PUSH + stop-flag хелперы. |
 | net-sync файл | `train.py` (`actor_sync/latest_policy.pth`) | Уже пишется learner'ом; ПК2 направит `MODELS_DIR`→SMB. |
@@ -71,7 +73,7 @@ learner не различает, откуда пришёл батч.
    `("batch", {"steps": [...], "priority": ...})` от удалёнки (где `priority` есть — в
    `memory.push`/`update_priorities`). Точка под будущий actor-side Ape-X.
 3. **`RolloutReceiver` в `_main_actor_learner`** — под флагом `DQN_DISTRIBUTED_ACTORS=1`,
-   bind PULL :5557, тот же `data_q`. Учёт `active_remote_workers` в `[TRAIN][DIST]`.
+   bind PULL :5558, тот же `data_q`. Учёт `active_remote_workers` в `[TRAIN][DIST]`.
 4. **`tools/pc2_dqn_actors.py` + `.bat` + `runtime/state/pc2_dqn_actors_config.bat`** — по
    образцу `tools/pc2_az_actors.py`: спавнит N акторов с `_RemoteDataQ`, читает opponent/контракт
    из SMB train-context, останавливается по stop-flag.
@@ -85,10 +87,10 @@ learner не различает, откуда пришёл батч.
 
 1. ПК1 стартует train (DQN, `distributed_actors_enabled=1`) → пишет в SMB
    `dqn_dist_train_context.json` (контракт env, `env_contract_hash`, `opponent_agent_id`,
-   hyperparams) и стартовый `latest_policy.pth`. Поднимает `RolloutReceiver` (:5557).
+   hyperparams) и стартовый `latest_policy.pth`. Поднимает `RolloutReceiver` (:5558).
 2. ПК2: `pc2_dqn_actors.bat` → читает train-context с SMB, грузит веса, спавнит N акторов.
 3. ПК2-актор: `reset` → каждый шаг считает сеть на 2060 (ε/noisy) → копит n-step →
-   при `len(buf)>=batch_send` PUSH `("batch", {...})` на ПК1:5557. По концу эпизода — `("ep", {...})`.
+   при `len(buf)>=batch_send` PUSH `("batch", {...})` на ПК1:5558. По концу эпизода — `("ep", {...})`.
 4. ПК1 `RolloutReceiver` декодирует, валидирует (auth + `env_contract_hash`), кладёт в общий
    `data_q`. Learner вставляет в PER-replay и тренирует — источник безразличен.
 5. Раз в `ACTOR_SYNC_EVERY_UPDATES` learner перезаписывает `latest_policy.pth`; ПК2-актора
@@ -113,7 +115,7 @@ learner не различает, откуда пришёл батч.
 - `tests/models/test_dqn_dist_priority_optional.py` — payload без `priority` → `max_priority`;
   с `priority` → `update_priorities`. Фиксирует «оба сразу».
 - `tests/models/test_dqn_dist_contract_guard.py` — чужой `env_contract_hash` дропается.
-- Smoke: локальный self-connect (актор PUSH 127.0.0.1:5557 → receiver → data_q) на пару батчей,
+- Smoke: локальный self-connect (актор PUSH 127.0.0.1:5558 → receiver → data_q) на пару батчей,
   без обучения и без живого ПК2.
 
 Движок (фазы хода, бой, видимость, MCTS) не затрагиваем — только транспорт и learner-обвязка.
@@ -123,7 +125,7 @@ learner не различает, откуда пришёл батч.
 | Флаг | Где | Назначение |
 |---|---|---|
 | `DQN_DISTRIBUTED_ACTORS` / `distributed_actors_enabled` (hyperparams `dqn`) | ПК1 | Поднять `RolloutReceiver` в DQN-learner. По умолчанию 0. |
-| `DQN_DIST_ROLLOUT_PORT` | оба | Порт PULL/PUSH rollout'ов (по умолчанию 5557). |
+| `DQN_DIST_ROLLOUT_PORT` | оба | Порт PULL/PUSH rollout'ов (по умолчанию 5558, отдельный от AZ-dist 5557). |
 | `DQN_DIST_AUTH_TOKEN` | оба | Совместный секрет (можно общий с AZ). |
 | `DQN_DIST_PC2_NUM_WORKERS` | ПК2 | Число актор-процессов на ПК2. |
 | `DQN_DIST_ACTOR_PRIORITY` | ПК2 | (Будущее) включить actor-side TD-error. По умолчанию 0. |
