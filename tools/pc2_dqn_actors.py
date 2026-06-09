@@ -33,6 +33,14 @@ def _env_int(name: str, default: int) -> int:
 def _worker_main(worker_id: int, ctx_json: str) -> None:
     import json
 
+    # Консоль ПК2 часто cp1251 — символы вроде '→' роняют print с UnicodeEncodeError.
+    # Принудительно UTF-8 + replace, чтобы лог воркера не валил процесс.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     import gymnasium as gym
     import numpy as np
     import torch
@@ -135,7 +143,7 @@ def _worker_main(worker_id: int, ctx_json: str) -> None:
     remote_q = RemoteDataQ(sink)
 
     print(
-        f"[DQN][DIST][PC2] worker={worker_id} → {host}:{port} "
+        f"[DQN][DIST][PC2] worker={worker_id} -> {host}:{port} "
         f"contract_hash={contract_hash} n_obs={n_observations} n_act={len(n_actions)} "
         f"self_play={self_play_enabled} opp={opp_id or '-'}",
         flush=True,
