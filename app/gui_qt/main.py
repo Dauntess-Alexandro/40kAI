@@ -5021,9 +5021,38 @@ class GUIController(QtCore.QObject):
         if str(self._training_algo).strip().lower() == "dqn":
             _dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
             if int(_dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1:
+                from core.models.dqn_dist import resolve_dqn_dist_episode_split
+
                 env_overrides["DQN_DISTRIBUTED_ACTORS"] = "1"
                 env_overrides.setdefault("DQN_DIST_ROLLOUT_PORT", str(_dqn_hp.get("distributed_rollout_port", 5558)))
                 env_overrides.setdefault("DQN_DIST_AUTH_TOKEN", str(_dqn_hp.get("distributed_auth_token", "") or ""))
+                _dist_frac = float(
+                    _dqn_hp.get(
+                        "distributed_local_episode_fraction",
+                        _dqn_hp.get("distributed_local_worker_fraction", 0.7),
+                    )
+                    or 0.7
+                )
+                env_overrides["DQN_DIST_LOCAL_EPISODE_FRACTION"] = str(_dist_frac)
+                env_overrides.setdefault(
+                    "DQN_DIST_PC2_NUM_WORKERS",
+                    str(_dqn_hp.get("distributed_pc2_num_workers", env_overrides.get("NUM_ACTORS", "8"))),
+                )
+                env_overrides.setdefault(
+                    "DQN_DIST_DRAIN_SEC",
+                    str(_dqn_hp.get("distributed_actors_drain_sec", 30.0)),
+                )
+                _ep_total = max(1, int(self._train_total_episodes or 400))
+                _local_ep, _remote_ep = resolve_dqn_dist_episode_split(
+                    total_episodes=_ep_total,
+                    local_fraction=_dist_frac,
+                )
+                self._emit_log(
+                    f"[GUI] [DQN][DIST] episodes total={_ep_total} local={_local_ep} pc2={_remote_ep} "
+                    f"fraction={_dist_frac:.2f} actors_pc1={env_overrides.get('NUM_ACTORS', '8')} "
+                    f"actors_pc2={env_overrides.get('DQN_DIST_PC2_NUM_WORKERS', '8')}",
+                    level="INFO",
+                )
 
         if self._resume_from_checkpoint:
             resume_path = self._find_latest_resume_file()

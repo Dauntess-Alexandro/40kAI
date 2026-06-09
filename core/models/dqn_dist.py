@@ -52,6 +52,38 @@ def dqn_dist_stop_requested(flag_path: str | None = None) -> bool:
     return bool(path) and os.path.isfile(path)
 
 
+def resolve_dqn_dist_episode_split(
+    *,
+    total_episodes: int,
+    local_fraction: float,
+) -> tuple[int, int]:
+    """Разбить лимит эпизодов между ПК1 (local) и ПК2 (remote).
+
+    total_episodes — общий лимит прогона (например 400).
+    local_fraction — доля эпизодов на ПК1 (0.05..0.95), остальное на ПК2.
+    Число воркеров на каждой стороне задаётся отдельно (NUM_ACTORS / DQN_DIST_PC2_NUM_WORKERS).
+    """
+    total = max(1, int(total_episodes))
+    frac = max(0.05, min(0.95, float(local_fraction)))
+    if total == 1:
+        return 1, 0
+    local = max(1, min(total - 1, int(round(total * frac))))
+    remote = max(0, total - local)
+    if remote == 0:
+        local = total - 1
+        remote = 1
+    return local, remote
+
+
+def split_count_among_workers(*, total: int, num_workers: int) -> list[int]:
+    """Равномерно раздать total между num_workers (остаток — первым воркерам)."""
+    n = max(1, int(num_workers))
+    count = max(0, int(total))
+    base = count // n
+    rem = count % n
+    return [int(base + (1 if i < rem else 0)) for i in range(n)]
+
+
 def clear_dqn_dist_stop_flag(flag_path: str | None = None) -> bool:
     """Удалить stop.flag прошлого прогона, чтобы ПК2-воркеры не вышли сразу. True, если файл был."""
     path = str(flag_path or dqn_dist_stop_flag_path())

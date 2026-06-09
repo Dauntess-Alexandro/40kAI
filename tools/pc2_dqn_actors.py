@@ -19,6 +19,7 @@ from core.models.dqn_dist import (  # noqa: E402
     derive_host_from_unc,
     dqn_dist_stop_flag_path,
     dqn_dist_stop_requested,
+    split_count_among_workers,
     wait_dqn_dist_train_context,
 )
 
@@ -59,7 +60,7 @@ def _start_pc2_telemetry_thread() -> None:
     print("[DQN][DIST][PC2] телеметрия ПК2 -> actor_sync/pc2_telemetry.json (для карточек на ПК1)", flush=True)
 
 
-def _worker_main(worker_id: int, ctx_json: str) -> None:
+def _worker_main(worker_id: int, ctx_json: str, episodes: int) -> None:
     import json
 
     # Консоль ПК2 часто cp1251 — символы вроде '→' роняют print с UnicodeEncodeError.
@@ -157,7 +158,10 @@ def _worker_main(worker_id: int, ctx_json: str) -> None:
     port = _env_int("DQN_DIST_ROLLOUT_PORT", 5558)
     auth = str(os.getenv("DQN_DIST_AUTH_TOKEN", ""))
     batch_send = max(8, _env_int("ACTOR_BATCH_SEND", 32))
-    episodes = max(1, _env_int("DQN_DIST_PC2_EPISODES_PER_WORKER", 1000000))
+    episodes = max(0, int(episodes))
+    if episodes <= 0:
+        print(f"[DQN][DIST][PC2] worker={worker_id} episodes=0 — пропуск", flush=True)
+        return
 
     sink = make_rollout_sink(
         mode="remote",
@@ -241,7 +245,8 @@ def main() -> int:
             os.environ["DQN_DIST_AUTH_TOKEN"] = ctx_auth
 
     if not str(os.getenv("DQN_DIST_PC2_NUM_WORKERS", "") or "").strip():
-        os.environ["DQN_DIST_PC2_NUM_WORKERS"] = str(max(1, min(int(os.cpu_count() or 6), 12)))
+        ctx_pc2_workers = max(1, int(ctx.get("pc2_num_workers", 8) or 8))
+        os.environ["DQN_DIST_PC2_NUM_WORKERS"] = str(ctx_pc2_workers)
 
     print(
         f"[DQN][DIST][PC2] автоконфиг: host={host} (из {'env' if os.getenv('DQN_DIST_PC1_HOST') else 'UNC'}) "
@@ -256,11 +261,16 @@ def main() -> int:
 
     ctx_json = json.dumps(ctx, ensure_ascii=False)
 
-    num_workers = max(1, _env_int("DQN_DIST_PC2_NUM_WORKERS", 6))
+    num_workers = max(1, _env_int("DQN_DIST_PC2_NUM_WORKERS", 8))
     worker_id_base = max(0, _env_int("DQN_DIST_PC2_WORKER_ID_BASE", 100))
+    remote_ep_total = max(0, int(ctx.get("remote_episode_total", 0) or 0))
+    if remote_ep_total <= 0:
+        remote_ep_total = max(1, _env_int("DQN_DIST_PC2_EPISODES_TOTAL", 0))
+    worker_episode_plan = split_count_among_workers(total=remote_ep_total, num_workers=num_workers)
 
     print(
         f"[DQN][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "
+        f"remote_episodes={remote_ep_total} plan={worker_episode_plan} "
         f"rollout_target={os.getenv('DQN_DIST_PC1_HOST', '127.0.0.1')}:{_env_int('DQN_DIST_ROLLOUT_PORT', 5558)}",
         flush=True,
     )
@@ -269,7 +279,8 @@ def main() -> int:
     procs = []
     for i in range(num_workers):
         wid = worker_id_base + i
-        p = mp_ctx.Process(target=_worker_main, args=(int(wid), ctx_json), daemon=False)
+        ep_count = int(worker_episode_plan[i])
+        p = mp_ctx.Process(target=_worker_main, args=(int(wid), ctx_json, int(ep_count)), daemon=False)
         p.start()
         procs.append(p)
 

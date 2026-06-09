@@ -36,6 +36,9 @@ DQN_HYPERPARAM_KEYS: tuple[str, ...] = DQN_ROOT_SYNC_KEYS + (
     "distributed_actors_enabled",
     "distributed_rollout_port",
     "distributed_auth_token",
+    "distributed_local_episode_fraction",
+    "distributed_pc2_num_workers",
+    "distributed_actors_drain_sec",
 )
 
 DEFAULT_DQN_HYPERPARAMS: dict[str, int | float | str] = {
@@ -68,6 +71,9 @@ DEFAULT_DQN_HYPERPARAMS: dict[str, int | float | str] = {
     "distributed_actors_enabled": 0,
     "distributed_rollout_port": 5558,
     "distributed_auth_token": "",
+    "distributed_local_episode_fraction": 0.7,
+    "distributed_pc2_num_workers": 8,
+    "distributed_actors_drain_sec": 30.0,
 }
 
 PPO_HYPERPARAM_KEYS: tuple[str, ...] = (
@@ -242,6 +248,9 @@ DQN_FIELD_TOOLTIPS: dict[str, str] = {
     "distributed_actors_enabled": "Принимать опыт со второго ПК (ПК2) в общий replay на этом ПК.",
     "distributed_rollout_port": "Порт приёма данных с ПК2 (обычно 5558).",
     "distributed_auth_token": "Общий пароль ПК1↔ПК2 (можно оставить пустым).",
+    "distributed_local_episode_fraction": "Доля эпизодов на ПК1 (0.05–0.95); остальное на ПК2.",
+    "distributed_pc2_num_workers": "Число env-воркеров на ПК2 (на ПК1 — NUM_ACTORS, обычно 8).",
+    "distributed_actors_drain_sec": "Макс. секунд drain после лимита эпизодов (выход раньше, если ПК1+ПК2 уже idle).",
 }
 
 DQN_DIST_ACTORS_GUI_TOOLTIP = (
@@ -254,7 +263,9 @@ DQN_DIST_ACTORS_GUI_TOOLTIP = (
     "• Общая папка models по SMB (как для AZ/GMZ)\n"
     "• На этом ПК: включить переключатель и запустить train\n"
     "• На ПК2 после старта train: tools\\pc2_dqn_actors.bat\n"
-    "• Одинаковый ростер и миссия на обоих ПК\n\n"
+    "• Одинаковый ростер и миссия на обоих ПК\n"
+    "• Доля эпизодов: distributed_local_episode_fraction "
+    "(например 0.7 при 400 ep → 280 на ПК1, 120 на ПК2; воркеры по 8 на каждой машине)\n\n"
     "По умолчанию выключено — весь опыт собирают только процессы на этом ПК."
 )
 

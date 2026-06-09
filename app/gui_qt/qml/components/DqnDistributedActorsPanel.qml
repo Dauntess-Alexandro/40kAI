@@ -148,6 +148,44 @@ ChamferPanel {
                             onEditingFinished: panel.setKey("distributed_auth_token", text)
                             onActiveFocusChanged: if (!activeFocus) panel.setKey("distributed_auth_token", text)
                         }
+
+                        Text {
+                            text: "Доля эпизодов ПК1"
+                            color: rootUi.uiTextMuted
+                            font.pixelSize: Math.round(11 * rootUi.uiScale)
+                        }
+                        SpinBox {
+                            from: 5
+                            to: 95
+                            stepSize: 5
+                            value: Math.round(panel.dqnNum("distributed_local_episode_fraction", 0.7) * 100)
+                            onValueModified: panel.setKey("distributed_local_episode_fraction", (value / 100).toFixed(2))
+                        }
+
+                        Text {
+                            text: "Воркеров на ПК2"
+                            color: rootUi.uiTextMuted
+                            font.pixelSize: Math.round(11 * rootUi.uiScale)
+                        }
+                        SpinBox {
+                            from: 1
+                            to: 32
+                            value: panel.dqnNum("distributed_pc2_num_workers", 8)
+                            onValueModified: panel.setKey("distributed_pc2_num_workers", value)
+                        }
+
+                        Text {
+                            text: "Drain (сек)"
+                            color: rootUi.uiTextMuted
+                            font.pixelSize: Math.round(11 * rootUi.uiScale)
+                        }
+                        SpinBox {
+                            from: 5
+                            to: 300
+                            stepSize: 5
+                            value: panel.dqnNum("distributed_actors_drain_sec", 30)
+                            onValueModified: panel.setKey("distributed_actors_drain_sec", value)
+                        }
                     }
                 }
             }

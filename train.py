@@ -101,6 +101,9 @@ from core.models.az_rollout_sink import (
 from core.models.DQN import *
 from core.models.dqn_dist import (
     clear_dqn_dist_stop_flag,
+    dqn_dist_stop_requested,
+    resolve_dqn_dist_episode_split,
+    split_count_among_workers,
     touch_dqn_dist_stop_flag,
     write_dqn_dist_train_context,
 )
@@ -3125,6 +3128,27 @@ DQN_DIST_ROLLOUT_PORT = max(
 DQN_DIST_BIND_HOST = str(os.getenv("DQN_DIST_BIND_HOST", "0.0.0.0"))
 DQN_DIST_AUTH_TOKEN = str(os.getenv("DQN_DIST_AUTH_TOKEN", str(_DQN_CFG.get("distributed_auth_token", ""))))
 DQN_DIST_ZMQ_HWM = max(8, int(os.getenv("DQN_DIST_ZMQ_HWM", "256")))
+DQN_DIST_DRAIN_SEC = max(
+    1.0,
+    float(os.getenv("DQN_DIST_DRAIN_SEC", str(_DQN_CFG.get("distributed_actors_drain_sec", 30.0)))),
+)
+def _dqn_dist_local_episode_fraction() -> float:
+    legacy = _DQN_CFG.get("distributed_local_worker_fraction")
+    default = _DQN_CFG.get("distributed_local_episode_fraction", legacy if legacy is not None else 0.7)
+    return max(
+        0.05,
+        min(
+            0.95,
+            float(os.getenv("DQN_DIST_LOCAL_EPISODE_FRACTION", str(default))),
+        ),
+    )
+
+
+DQN_DIST_LOCAL_EPISODE_FRACTION = _dqn_dist_local_episode_fraction()
+DQN_DIST_PC2_NUM_WORKERS = max(
+    1,
+    int(os.getenv("DQN_DIST_PC2_NUM_WORKERS", str(_DQN_CFG.get("distributed_pc2_num_workers", 8)))),
+)
 
 
 def _clear_az_dist_stop_flag() -> None:
@@ -6415,6 +6439,19 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     Важно: это отдельный режим, не ломает текущий pipeline (ACTOR_LEARNER=0 по умолчанию).
     """
     num_actors = max(1, int(os.getenv("NUM_ACTORS", "8")))
+    dqn_dist_local_episodes = int(totLifeT)
+    dqn_dist_remote_episodes = 0
+    if DQN_DISTRIBUTED_ACTORS:
+        dqn_dist_local_episodes, dqn_dist_remote_episodes = resolve_dqn_dist_episode_split(
+            total_episodes=int(totLifeT),
+            local_fraction=DQN_DIST_LOCAL_EPISODE_FRACTION,
+        )
+        append_agent_log(
+            f"[DQN][DIST] episodes total={int(totLifeT)} "
+            f"local={dqn_dist_local_episodes} pc2={dqn_dist_remote_episodes} "
+            f"local_fraction={DQN_DIST_LOCAL_EPISODE_FRACTION:.2f} "
+            f"actors_pc1={num_actors} actors_pc2={DQN_DIST_PC2_NUM_WORKERS}"
+        )
     batch_send = max(8, int(os.getenv("ACTOR_BATCH_SEND", "32")))
     updates_per_batch = max(1, int(os.getenv("UPDATES_PER_BATCH", "8")))
     queue_max = max(64, int(os.getenv("ACTOR_QUEUE_MAX", "256")))
@@ -6583,6 +6620,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 "mission": str(normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))),
                 "ruleset_version": str(RULESET_VERSION),
                 "roster": _jsonable_roster(roster_config),
+                "local_episode_total": int(dqn_dist_local_episodes),
+                "remote_episode_total": int(dqn_dist_remote_episodes),
+                "num_local_actors": int(num_actors),
+                "pc2_num_workers": int(DQN_DIST_PC2_NUM_WORKERS),
+                "distributed_local_episode_fraction": float(DQN_DIST_LOCAL_EPISODE_FRACTION),
             })
         except Exception as exc:
             append_agent_log(f"[DQN][DIST][WARN] не удалось записать train-context: {exc}")
@@ -6591,11 +6633,19 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             f"contract_hash={env_contract_hash or '-'} sync={sync_path}"
         )
 
+    local_actor_episode_plan = (
+        split_count_among_workers(total=int(dqn_dist_local_episodes), num_workers=int(num_actors))
+        if DQN_DISTRIBUTED_ACTORS
+        else []
+    )
     procs = []
     for a_idx in range(num_actors):
-        base = int(totLifeT) // int(num_actors)
-        rem = int(totLifeT) % int(num_actors)
-        episodes = int(base + (1 if a_idx < rem else 0))
+        if DQN_DISTRIBUTED_ACTORS:
+            episodes = int(local_actor_episode_plan[a_idx])
+        else:
+            base = int(totLifeT) // int(num_actors)
+            rem = int(totLifeT) % int(num_actors)
+            episodes = int(base + (1 if a_idx < rem else 0))
         cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
         cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
         p = ctx.Process(
@@ -6645,10 +6695,87 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     started = time.perf_counter()
     pbar = tqdm(total=int(totLifeT), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
 
-    while done_actors < num_actors:
+    dist_draining = False
+    dist_stop_sent = False
+    dist_drain_until = 0.0
+
+    def _dqn_dist_remote_alive() -> int:
+        if rollout_receiver is None:
+            return 0
+        # Короткий stale при drain: не ждём 30 с, пока heartbeat «протухнет».
+        return int(rollout_receiver.active_remote_workers(stale_sec=5.0))
+
+    def _dqn_dist_should_finish_drain() -> tuple[bool, str]:
+        if not dist_draining:
+            return False, ""
+        if done_actors < num_actors:
+            return False, "local_actors_pending"
+        remote_alive = _dqn_dist_remote_alive()
+        if remote_alive == 0:
+            return True, "all_workers_idle"
+        if time.monotonic() >= dist_drain_until:
+            return True, "drain_budget_elapsed"
+        return False, "drain_waiting"
+
+    if DQN_DISTRIBUTED_ACTORS:
+        append_agent_log("[TRAIN][PHASE] collecting")
+        print("[TRAIN][PHASE] collecting", flush=True)
+
+    while True:
+        if not DQN_DISTRIBUTED_ACTORS:
+            if done_actors >= num_actors:
+                break
+        else:
+            if int(episodes_finished) >= int(totLifeT):
+                if not dist_stop_sent:
+                    dist_stop_sent = True
+                    dist_drain_until = time.monotonic() + float(DQN_DIST_DRAIN_SEC)
+                    touch_dqn_dist_stop_flag()
+                    _ln = (
+                        f"[TRAIN][DIST] stop_requested ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                        f"drain_budget_max={int(round(float(DQN_DIST_DRAIN_SEC)))}s"
+                    )
+                    append_agent_log(_ln)
+                    print(_ln, flush=True)
+                if not dist_draining:
+                    _remote_alive = _dqn_dist_remote_alive()
+                    _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
+                    dist_draining = True
+                    for _ln in (
+                        "[TRAIN][PHASE] draining",
+                        f"[TRAIN][DIST] remote_alive={_remote_alive} "
+                        f"ep_done={int(episodes_finished)}/{int(totLifeT)} drain_left_max={_drain_left}s",
+                    ):
+                        append_agent_log(_ln)
+                        print(_ln, flush=True)
+                _finish_drain, _drain_reason = _dqn_dist_should_finish_drain()
+                if _finish_drain:
+                    append_agent_log(
+                        f"[TRAIN][DIST] drain_done reason={_drain_reason} "
+                        f"ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                        f"local_done={done_actors}/{num_actors} remote_alive={_dqn_dist_remote_alive()}"
+                    )
+                    break
         try:
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
+            if DQN_DISTRIBUTED_ACTORS and dist_draining:
+                _remote_alive = _dqn_dist_remote_alive()
+                _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
+                dist_line = (
+                    f"[TRAIN][DIST] remote_alive={_remote_alive} "
+                    f"ep_done={int(episodes_finished)}/{int(totLifeT)} drain_left_max={_drain_left}s"
+                )
+                print(dist_line, flush=True)
+                append_agent_log(dist_line)
+                _finish_drain, _drain_reason = _dqn_dist_should_finish_drain()
+                if _finish_drain:
+                    append_agent_log(
+                        f"[TRAIN][DIST] drain_done reason={_drain_reason} "
+                        f"ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                        f"local_done={done_actors}/{num_actors} remote_alive={_remote_alive}"
+                    )
+                    break
             continue
 
         if kind == "error":
@@ -6658,6 +6785,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             continue
         if kind == "ep":
             if isinstance(payload, dict):
+                if DQN_DISTRIBUTED_ACTORS and int(episodes_finished) >= int(totLifeT):
+                    continue
                 if payload.get("episode") is None:
                     payload["episode"] = len(ep_rows) + 1
                 ep_rows.append(payload)
@@ -6773,6 +6902,20 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         if TRAIN_LOG_TO_CONSOLE:
                             print(det_line)
                         last_actor_det_eval_ep = int(episodes_finished)
+                        if (
+                            DQN_DISTRIBUTED_ACTORS
+                            and int(episodes_finished) >= int(totLifeT)
+                            and not dist_stop_sent
+                        ):
+                            dist_stop_sent = True
+                            dist_drain_until = time.monotonic() + float(DQN_DIST_DRAIN_SEC)
+                            touch_dqn_dist_stop_flag()
+                            _ln = (
+                                f"[TRAIN][DIST] stop_requested ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                                f"drain_budget={int(round(float(DQN_DIST_DRAIN_SEC)))}s"
+                            )
+                            append_agent_log(_ln)
+                            print(_ln, flush=True)
                     except Exception as exc:
                         warn_line = f"[ACTOR_LEARNER][DET_EVAL][WARN] eval пропущен: {exc}"
                         append_agent_log(warn_line)
@@ -6937,10 +7080,14 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
 
     if DQN_DISTRIBUTED_ACTORS:
         try:
-            stop_path = touch_dqn_dist_stop_flag()
-            append_agent_log(f"[DQN][DIST] stop.flag записан: {stop_path}")
+            if not dist_stop_sent:
+                stop_path = touch_dqn_dist_stop_flag()
+                append_agent_log(f"[DQN][DIST] stop.flag записан: {stop_path}")
         except Exception as exc:
             append_agent_log(f"[DQN][DIST][WARN] не удалось записать stop.flag: {exc}")
+        for _ln in ("[TRAIN][PHASE] done",):
+            append_agent_log(_ln)
+            print(_ln, flush=True)
         if rollout_receiver is not None:
             try:
                 rollout_receiver.stop()
@@ -7766,7 +7913,11 @@ def _actor_learner_actor_entry(
         buf = []
         n_step_buf = collections.deque(maxlen=N_STEP)
 
+        dist_stop = os.getenv("DQN_DISTRIBUTED_ACTORS", "0").strip().lower() in {"1", "true", "yes"}
         for _ep in range(int(episodes)):
+            if dist_stop and dqn_dist_stop_requested():
+                append_agent_log(f"[DQN][ACTOR] actor={int(actor_idx)} stop.flag — выход")
+                break
             ep_idx_1based = int(_ep) + 1
             trace_lines: list[str] = []
             round_timeline: list[dict] = []
