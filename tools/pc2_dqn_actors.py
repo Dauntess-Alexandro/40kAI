@@ -56,7 +56,7 @@ def _start_pc2_telemetry_thread() -> None:
             time.sleep(period)
 
     threading.Thread(target=_loop, name="pc2-telemetry", daemon=True).start()
-    print("[DQN][DIST][PC2] телеметрия ПК2 → actor_sync/pc2_telemetry.json (для карточек на ПК1)", flush=True)
+    print("[DQN][DIST][PC2] телеметрия ПК2 -> actor_sync/pc2_telemetry.json (для карточек на ПК1)", flush=True)
 
 
 def _worker_main(worker_id: int, ctx_json: str) -> None:
@@ -203,6 +203,14 @@ def _worker_main(worker_id: int, ctx_json: str) -> None:
 
 def main() -> int:
     import json
+
+    # Консоль ПК2 часто cp1251 — любой не-ASCII символ ('->' и т.п.) роняет print.
+    # Форсим UTF-8 для всего main-процесса (воркеры делают это сами в _worker_main).
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
     wait_sec = max(0.0, float(os.getenv("DQN_DIST_WAIT_CONTEXT_SEC", "0") or 0.0))
     ctx = wait_dqn_dist_train_context(wait_sec=wait_sec)
