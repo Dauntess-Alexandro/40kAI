@@ -8,8 +8,10 @@ from PySide6 import QtCore
 
 from app.gui_qt.pc2_launcher_backend import (
     build_launch_env,
+    load_saved_share_root,
     pc2_roles,
     resolve_role,
+    save_share_root,
     validate_share_root,
 )
 from project_paths import ARTIFACTS_MODELS_DIR, PROJECT_ROOT, resolve_share_models_root
@@ -38,9 +40,13 @@ class Pc2LauncherController(QtCore.QObject):
 
     def __init__(self, parent: QtCore.QObject | None = None) -> None:
         super().__init__(parent)
-        # При старте подставляем уже настроенную шару (env/MODELS_DIR), если есть.
-        guess = resolve_share_models_root()
-        self._share_root = "" if guess == str(ARTIFACTS_MODELS_DIR) else guess
+        # Приоритет: запомненный путь из прошлого запуска → env/MODELS_DIR-догадка.
+        saved = load_saved_share_root()
+        if saved:
+            self._share_root = saved
+        else:
+            guess = resolve_share_models_root()
+            self._share_root = "" if guess == str(ARTIFACTS_MODELS_DIR) else guess
         self._active_role = ""
         self._process: QtCore.QProcess | None = None
 
@@ -81,6 +87,8 @@ class Pc2LauncherController(QtCore.QObject):
     @QtCore.Slot()
     def checkSmb(self) -> None:
         res = validate_share_root(self._share_root)
+        if res.ok:
+            save_share_root(self._share_root)  # запоминаем рабочий путь
         self.smbChecked.emit(bool(res.ok), str(res.message))
 
     @QtCore.Slot(str)
@@ -95,6 +103,7 @@ class Pc2LauncherController(QtCore.QObject):
         if not self._share_root:
             self.logLine.emit("[GUI][ERROR] Сначала задайте общую папку (40KAI_SHARE_ROOT).")
             return
+        save_share_root(self._share_root)  # запоминаем путь для следующего запуска
 
         bat = os.path.join(str(PROJECT_ROOT), role.script.replace("/", os.sep))
         if not os.path.isfile(bat):

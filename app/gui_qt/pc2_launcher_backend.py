@@ -7,9 +7,15 @@
 from __future__ import annotations
 
 import glob
+import json
 import os
 import tempfile
 from dataclasses import dataclass
+
+from project_paths import RUNTIME_STATE_DIR
+
+# Последний введённый путь к общей папке — чтобы окно запоминало его между запусками.
+SHARE_SETTINGS_PATH = os.path.join(str(RUNTIME_STATE_DIR), "pc2_launcher.json")
 
 
 @dataclass(frozen=True)
@@ -87,6 +93,31 @@ def build_launch_env(share_root: str, base: dict[str, str] | None = None) -> dic
     env = dict(base if base is not None else os.environ)
     env["40KAI_SHARE_ROOT"] = str(share_root or "").strip()
     return env
+
+
+def load_saved_share_root(path: str | None = None) -> str:
+    """Прочитать запомненный путь к общей папке (пусто, если не сохранён)."""
+    p = str(path or SHARE_SETTINGS_PATH)
+    try:
+        with open(p, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return str(data.get("share_root", "") or "") if isinstance(data, dict) else ""
+    except (OSError, json.JSONDecodeError):
+        return ""
+
+
+def save_share_root(value: str, path: str | None = None) -> None:
+    """Запомнить путь к общей папке (пустое значение не затирает сохранённое)."""
+    value = str(value or "").strip()
+    if not value:
+        return
+    p = str(path or SHARE_SETTINGS_PATH)
+    try:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as handle:
+            json.dump({"share_root": value}, handle, ensure_ascii=False, indent=2)
+    except OSError:
+        pass
 
 
 def _actor_sync_of(share_root: str) -> str:

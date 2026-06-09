@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from app.gui_qt.pc2_launcher_backend import (
     build_launch_env,
+    load_saved_share_root,
     pc2_roles,
     resolve_role,
+    save_share_root,
     validate_share_root,
 )
 
@@ -56,6 +58,20 @@ def test_validate_share_root_existing_writable(tmp_path):
     assert res.writable is True
     assert res.ok is True
     assert res.has_weights is False
+
+
+def test_share_root_persistence_roundtrip(tmp_path):
+    settings = tmp_path / "pc2_launcher.json"
+    assert load_saved_share_root(settings) == ""  # ничего не сохранено
+    save_share_root(r"\\192.168.0.100\actor_sync", settings)
+    assert load_saved_share_root(settings) == r"\\192.168.0.100\actor_sync"
+
+
+def test_save_share_root_ignores_empty(tmp_path):
+    settings = tmp_path / "pc2_launcher.json"
+    save_share_root(r"\\PC1\actor_sync", settings)
+    save_share_root("", settings)  # пустое не должно затирать сохранённое
+    assert load_saved_share_root(settings) == r"\\PC1\actor_sync"
 
 
 def test_validate_share_root_detects_weights(tmp_path):
