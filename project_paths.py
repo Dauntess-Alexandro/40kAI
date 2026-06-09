@@ -89,13 +89,18 @@ def resolve_share_models_root() -> str:
     if base.endswith(":"):
         # Корень mapped-диска (Z:\) — без хвостового слэша станет drive-relative.
         return base + os.sep
-    if os.path.basename(base).lower() in {"actor_sync", "agents"}:
-        parent = os.path.dirname(base)
-        if not parent:
+    # Последний сегмент пути берём вручную: os.path.basename на UNC-шаре
+    # (\\PC1\actor_sync) возвращает '' и обрезка не срабатывает (путь удваивался).
+    norm = base.replace("/", "\\")
+    segments = [s for s in norm.split("\\") if s]
+    last = segments[-1].lower() if segments else ""
+    if last in {"actor_sync", "agents"}:
+        idx = norm.rfind("\\")
+        if idx <= 0:
             return base
-        # Убираем хвостовой разделитель от dirname, но сохраняем корень диска (X:\).
-        stripped = parent.rstrip("\\/")
-        return stripped if stripped and not stripped.endswith(":") else parent
+        parent = norm[:idx]
+        # Сохраняем корень mapped-диска (Z:\actor_sync → Z:\, не Z:).
+        return parent + os.sep if parent.endswith(":") else parent
     return base
 
 

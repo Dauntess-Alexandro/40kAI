@@ -57,6 +57,14 @@ def test_share_actor_sync_dir_appends_actor_sync(monkeypatch):
     assert pp.share_actor_sync_dir() == os.path.join(r"\\PC1\40kai_models", "actor_sync")
 
 
+def test_unc_share_named_actor_sync_not_doubled(monkeypatch):
+    # Шара называется actor_sync (\\PC1\actor_sync): на UNC os.path.basename даёт '',
+    # обрезка раньше не срабатывала → путь удваивался в \\PC1\actor_sync\actor_sync.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("40KAI_SHARE_ROOT", r"\\USER-PC\actor_sync")
+    assert pp.share_actor_sync_dir() == r"\\USER-PC\actor_sync"
+
+
 def test_mapped_drive_root_keeps_backslash(monkeypatch):
     # Z:\ (mapped drive) не должен схлопнуться в drive-relative 'Z:actor_sync'.
     _clear_env(monkeypatch)
