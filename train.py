@@ -6629,6 +6629,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             zmq_hwm=DQN_DIST_ZMQ_HWM,
             log_fn=append_agent_log,
             bind_retry_sec=DQN_DIST_BIND_RETRY_SEC,
+            # Своевременный прогресс ПК2 для GUI: маркер в stdout (GUI читает stdout,
+            # не log-файл), эмитится потоком приёмника сразу при приёме ep — не ждёт,
+            # пока learner добьёт backlog ep из data_q. Префикс не в GUI-allowlist —
+            # видимый лог не засоряется (только парсинг прогресса).
+            ep_marker_fn=lambda n: print(f"[TRAIN][DIST][PC2] pc2_ep_accepted={n}", flush=True),
         )
         rollout_receiver.start()
         try:

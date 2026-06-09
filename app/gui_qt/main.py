@@ -24,8 +24,6 @@ from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from PySide6.QtQuickControls2 import QQuickStyle
 
-from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
-
 from app.gui_qt.algo_hyperparams_defaults import (
     DEFAULT_DQN_HYPERPARAMS,
     DEFAULT_PPO_HYPERPARAMS,
@@ -80,6 +78,7 @@ from app.gui_qt.remote_is_store import (
     save_remote_is,
 )
 from core.models.alphazero_ids import is_az_algo
+from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
@@ -4958,10 +4957,22 @@ class GUIController(QtCore.QObject):
         if not self._dist_progress_enabled:
             return
         idx = int(actor_idx)
-        if 100 <= idx < int(DQN_DIST_TOPUP_ACTOR_IDX):
-            self._dist_pc2_ep_done += 1
-        elif idx < 100 or idx == int(DQN_DIST_TOPUP_ACTOR_IDX):
+        # ПК2 (100..TOPUP) НЕ считаем из TRACE: learner эмитит [TRACE][ACTIONS] только
+        # когда вынул ep из своей очереди (узкое место — обучение), поэтому прогресс ПК2
+        # отставал и прыгал в конце. ПК2 теперь из своевременного маркера приёмника
+        # pc2_ep_accepted (см. _handle_dqn_dist_progress_line). Из TRACE — только ПК1/topup.
+        if idx < 100 or idx == int(DQN_DIST_TOPUP_ACTOR_IDX):
             self._dist_pc1_ep_done += 1
+            self._update_dist_progress_display()
+
+    def _record_pc2_ep_accepted(self, received_eps: int) -> None:
+        """Прогресс ПК2 из накопительного счётчика приёмника (своевременно, не из TRACE)."""
+        if not self._dist_progress_enabled:
+            return
+        n = max(0, int(received_eps))
+        if n <= int(self._dist_pc2_ep_done):
+            return
+        self._dist_pc2_ep_done = n
         self._update_dist_progress_display()
 
     def _update_dist_progress_display(self) -> None:
@@ -5007,6 +5018,10 @@ class GUIController(QtCore.QObject):
                 status_hint = (
                     f"воркеров {int(self._dist_pc2_workers_alive)}/{int(self._dist_pc2_workers_need)}"
                 )
+            elif pc2_cur > 0:
+                # Воркеры ПК2 отвалились (remote_alive=0), но квота ещё не закрыта в учёте —
+                # не врём «воркеров 8/8», а показываем, что ПК2 свою часть отдал.
+                status_hint = "ПК2 завершил сбор, ждём обработку на ПК1"
             else:
                 status_hint = "сбор эпизодов с ПК2"
             status_tone = "collecting"
@@ -5042,6 +5057,10 @@ class GUIController(QtCore.QObject):
         if not self._dist_progress_enabled:
             return False
         norm = line.strip()
+        accepted_m = re.search(r"\[TRAIN\]\[DIST\]\[PC2\] pc2_ep_accepted=(\d+)", norm)
+        if accepted_m:
+            self._record_pc2_ep_accepted(int(accepted_m.group(1)))
+            return True
         wait_m = re.search(
             r"\[DQN\]\[DIST\] ждём ПК2: workers=(\d+)/(\d+) осталось=(\d+)s",
             norm,

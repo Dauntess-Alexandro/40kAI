@@ -23,6 +23,7 @@ class RolloutReceiver:
         zmq_hwm: int = 256,
         log_fn: Callable[[str], None] | None = None,
         bind_retry_sec: float = 25.0,
+        ep_marker_fn: Callable[[int], None] | None = None,
     ) -> None:
         self._data_q = data_q
         self._bind_host = str(bind_host or "0.0.0.0")
@@ -31,6 +32,10 @@ class RolloutReceiver:
         self._auth = str(auth_token or "")
         self._hwm = max(1, int(zmq_hwm))
         self._log = log_fn or (lambda _msg: None)
+        # Колбэк своевременного прогресса: дёргается из потока приёмника на каждый ep
+        # с накопительным счётчиком. Нужен GUI ПК1, чтобы прогресс ПК2 не зависел от
+        # пропускной способности обучения learner'а (TRACE эмитится только при drain ep).
+        self._ep_marker_fn = ep_marker_fn
         self._bind_retry_sec = max(0.0, float(bind_retry_sec))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -182,6 +187,11 @@ class RolloutReceiver:
             self._received_rollouts += 1
         elif kind == "ep":
             self._received_eps += 1
+            if self._ep_marker_fn is not None:
+                try:
+                    self._ep_marker_fn(self._received_eps)
+                except Exception:
+                    pass
 
     def _enqueue(self, kind: str, payload: Any) -> None:
         # ep/error не дропаем: иначе learner зависает на ep_done < total.

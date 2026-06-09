@@ -128,6 +128,32 @@ def compute_dqn_dist_topup_episodes(
     return max(0, int(total_episodes) - int(episodes_finished))
 
 
+def pc2_dist_should_exit(
+    *,
+    stop_requested: bool,
+    all_workers_dead: bool,
+    workers_done_mono: float | None,
+    now_mono: float,
+    linger_sec: float,
+) -> tuple[bool, str]:
+    """Пора ли main-процессу ПК2 выходить.
+
+    Раньше ПК2 выходил сразу, как только все воркеры доиграли квоту — но ПК1 в этот
+    момент ещё делает draining + DET-eval, а телеметрия ПК2 (daemon в main-процессе)
+    умирала вместе с процессом → карточки «ПК2 · GPU/CPU» пропадали на ПК1.
+
+    Теперь держим процесс (и телеметрию) до stop.flag ПК1. linger_sec — предохранитель:
+    если stop.flag не пришёл (ПК1 упал), всё равно выходим, чтобы не висеть вечно.
+    Возвращает (выходить?, причина).
+    """
+    if bool(stop_requested):
+        return True, "stop_flag"
+    if bool(all_workers_dead) and workers_done_mono is not None:
+        if (float(now_mono) - float(workers_done_mono)) >= max(0.0, float(linger_sec)):
+            return True, "linger_elapsed"
+    return False, ""
+
+
 def split_count_among_workers(*, total: int, num_workers: int) -> list[int]:
     """Равномерно раздать total между num_workers (остаток — первым воркерам)."""
     n = max(1, int(num_workers))

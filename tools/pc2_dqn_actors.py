@@ -303,13 +303,41 @@ def main() -> int:
         procs.append(p)
 
     stop_flag = dqn_dist_stop_flag_path()
+    # После доигрывания квоты НЕ выходим сразу: ПК1 ещё делает draining + DET-eval, а
+    # телеметрия ПК2 (daemon в этом процессе) нужна для карточек «ПК2 · GPU/CPU» на ПК1.
+    # Держимся до stop.flag ПК1; linger — предохранитель, если ПК1 упал.
+    linger_sec = max(0.0, float(os.getenv("DQN_DIST_PC2_LINGER_SEC", "600") or 600))
+    workers_done_mono: float | None = None
+    workers_done_logged = False
     try:
         while True:
-            if dqn_dist_stop_requested(stop_flag):
-                print(f"[DQN][DIST][PC2] stop.flag detected ({stop_flag}), завершаем воркеры...", flush=True)
-                break
-            if sum(1 for p in procs if p.is_alive()) == 0:
-                print("[DQN][DIST][PC2] все воркеры завершились.", flush=True)
+            all_dead = sum(1 for p in procs if p.is_alive()) == 0
+            if all_dead and workers_done_mono is None:
+                workers_done_mono = time.monotonic()
+            if all_dead and not workers_done_logged:
+                workers_done_logged = True
+                print(
+                    "[DQN][DIST][PC2] все воркеры доиграли квоту — держим телеметрию ПК2 "
+                    f"до stop.flag ПК1 (предохранитель {int(linger_sec)} с)...",
+                    flush=True,
+                )
+            should_exit, reason = pc2_dist_should_exit(
+                stop_requested=dqn_dist_stop_requested(stop_flag),
+                all_workers_dead=all_dead,
+                workers_done_mono=workers_done_mono,
+                now_mono=time.monotonic(),
+                linger_sec=linger_sec,
+            )
+            if should_exit:
+                if reason == "stop_flag":
+                    print(f"[DQN][DIST][PC2] stop.flag detected ({stop_flag}), завершаем воркеры...", flush=True)
+                else:
+                    print(
+                        f"[DQN][DIST][PC2][WARN] stop.flag не пришёл за {int(linger_sec)} с после "
+                        "завершения воркеров (ПК1 упал?) — выходим. "
+                        "Где: pc2_dqn_actors.main. Что делать: проверьте, что train на ПК1 жив.",
+                        flush=True,
+                    )
                 break
             time.sleep(2.0)
     finally:
