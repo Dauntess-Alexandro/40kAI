@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+import threading
 import time
 
 import pytest
@@ -68,6 +69,66 @@ def test_push_pull_to_data_q():
         assert got_rollout
     finally:
         receiver.stop()
+
+
+def test_enqueue_ep_blocks_instead_of_drop_when_queue_full():
+    """ep не должен теряться при переполнении data_q (блокирующий put)."""
+    import queue as std_queue
+
+    class _BlockingQueue:
+        def __init__(self) -> None:
+            self._items: list = []
+            self._max = 1
+            self.put_nowait_calls = 0
+            self.blocking_puts = 0
+
+        def put_nowait(self, item) -> None:
+            self.put_nowait_calls += 1
+            if len(self._items) >= self._max:
+                raise std_queue.Full
+            self._items.append(item)
+
+        def put(self, item, timeout=None) -> None:
+            self.blocking_puts += 1
+            deadline = time.time() + float(timeout or 1.0)
+            while len(self._items) >= self._max:
+                if time.time() >= deadline:
+                    raise std_queue.Full
+                time.sleep(0.01)
+            self._items.append(item)
+
+    q = _BlockingQueue()
+    receiver = RolloutReceiver(q, bind_host="127.0.0.1", bind_port=15562)
+    q.put_nowait(("batch", {"steps": []}))
+
+    def _drain_one() -> None:
+        time.sleep(0.05)
+        if q._items:
+            q._items.pop(0)
+
+    threading.Thread(target=_drain_one, daemon=True).start()
+    receiver._enqueue("ep", {"result": "win"})
+    assert len(q._items) == 1
+    assert q._items[0][0] == "ep"
+    assert q.blocking_puts >= 1
+
+
+def test_enqueue_batch_dropped_on_queue_full():
+    import queue as std_queue
+
+    class _FullQueue:
+        def put_nowait(self, _item) -> None:
+            raise std_queue.Full
+
+        def put(self, *_args, **_kwargs) -> None:
+            raise AssertionError("batch не должен блокировать")
+
+    logs: list[str] = []
+    q = _FullQueue()
+    receiver = RolloutReceiver(q, bind_host="127.0.0.1", bind_port=15563, log_fn=logs.append)
+    receiver._enqueue("batch", {"steps": []})
+    assert receiver._dropped_queue == 1
+    assert any("queue_full" in line for line in logs)
 
 
 def test_active_remote_workers_counts_recent_heartbeats():

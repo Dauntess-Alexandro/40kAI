@@ -106,6 +106,28 @@ def resolve_dqn_dist_episode_split(
     return local, remote
 
 
+DQN_DIST_TOPUP_ACTOR_IDX = 9000
+
+
+def compute_dqn_dist_topup_episodes(
+    *,
+    episodes_finished: int,
+    total_episodes: int,
+    local_actors_done: int,
+    num_local_actors: int,
+    remote_alive: int,
+    topup_process_alive: bool,
+) -> int:
+    """Сколько ep добрать на ПК1 после завершения dist-воркеров (0 — добор не нужен)."""
+    if bool(topup_process_alive):
+        return 0
+    if int(remote_alive) > 0:
+        return 0
+    if int(local_actors_done) < int(num_local_actors):
+        return 0
+    return max(0, int(total_episodes) - int(episodes_finished))
+
+
 def split_count_among_workers(*, total: int, num_workers: int) -> list[int]:
     """Равномерно раздать total между num_workers (остаток — первым воркерам)."""
     n = max(1, int(num_workers))

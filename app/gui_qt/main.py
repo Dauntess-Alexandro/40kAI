@@ -5029,6 +5029,9 @@ class GUIController(QtCore.QObject):
                 from core.models.dqn_dist import resolve_dqn_dist_episode_split
 
                 env_overrides["DQN_DISTRIBUTED_ACTORS"] = "1"
+                env_overrides["ACTOR_QUEUE_MAX"] = str(
+                    max(1024, int(env_overrides.get("ACTOR_QUEUE_MAX", "256")))
+                )
                 env_overrides.setdefault("DQN_DIST_ROLLOUT_PORT", str(_dqn_hp.get("distributed_rollout_port", 5558)))
                 env_overrides.setdefault("DQN_DIST_AUTH_TOKEN", str(_dqn_hp.get("distributed_auth_token", "") or ""))
                 _dist_frac = float(

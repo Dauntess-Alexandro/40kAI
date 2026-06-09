@@ -100,7 +100,9 @@ from core.models.az_rollout_sink import (
 )
 from core.models.DQN import *
 from core.models.dqn_dist import (
+    DQN_DIST_TOPUP_ACTOR_IDX,
     clear_dqn_dist_stop_flag,
+    compute_dqn_dist_topup_episodes,
     dqn_dist_env_contract_extras,
     dqn_dist_stop_requested,
     resolve_dqn_dist_episode_split,
@@ -3166,6 +3168,10 @@ DQN_DIST_WAIT_PC2_TIMEOUT_SEC = max(
 DQN_DIST_BIND_RETRY_SEC = max(
     0.0,
     float(os.getenv("DQN_DIST_BIND_RETRY_SEC", str(_DQN_CFG.get("distributed_bind_retry_sec", 25)))),
+)
+DQN_DIST_TOPUP_GRACE_SEC = max(
+    1.0,
+    float(os.getenv("DQN_DIST_TOPUP_GRACE_SEC", str(_DQN_CFG.get("distributed_topup_grace_sec", 5.0)))),
 )
 
 
@@ -6473,6 +6479,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     batch_send = max(8, int(os.getenv("ACTOR_BATCH_SEND", "32")))
     updates_per_batch = max(1, int(os.getenv("UPDATES_PER_BATCH", "8")))
     queue_max = max(64, int(os.getenv("ACTOR_QUEUE_MAX", "256")))
+    if DQN_DISTRIBUTED_ACTORS:
+        queue_max = max(
+            queue_max,
+            int(os.getenv("DQN_DIST_ACTOR_QUEUE_MAX", "1024")),
+        )
 
     b_len = roster_config["b_len"]
     b_hei = roster_config["b_hei"]
@@ -6668,20 +6679,14 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         if DQN_DISTRIBUTED_ACTORS
         else []
     )
-    procs = []
-    for a_idx in range(num_actors):
-        if DQN_DISTRIBUTED_ACTORS:
-            episodes = int(local_actor_episode_plan[a_idx])
-        else:
-            base = int(totLifeT) // int(num_actors)
-            rem = int(totLifeT) % int(num_actors)
-            episodes = int(base + (1 if a_idx < rem else 0))
-        cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
-        cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
-        p = ctx.Process(
+    cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
+    cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
+
+    def _spawn_dqn_local_actor(actor_idx: int, episodes: int) -> mp.Process:
+        proc = ctx.Process(
             target=_actor_learner_actor_entry,
             args=(
-                a_idx,
+                int(actor_idx),
                 int(episodes),
                 roster_config,
                 int(b_len),
@@ -6700,8 +6705,18 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             ),
             daemon=True,
         )
-        p.start()
-        procs.append(p)
+        proc.start()
+        return proc
+
+    procs = []
+    for a_idx in range(num_actors):
+        if DQN_DISTRIBUTED_ACTORS:
+            episodes = int(local_actor_episode_plan[a_idx])
+        else:
+            base = int(totLifeT) // int(num_actors)
+            rem = int(totLifeT) % int(num_actors)
+            episodes = int(base + (1 if a_idx < rem else 0))
+        procs.append(_spawn_dqn_local_actor(a_idx, episodes))
 
     done_actors = 0
     optimize_steps = 0
@@ -6728,12 +6743,48 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     dist_draining = False
     dist_stop_sent = False
     dist_drain_until = 0.0
+    dist_last_ep_progress_mono = time.monotonic()
+    dist_collect_stall_sec = max(
+        30.0,
+        float(os.getenv("DQN_DIST_COLLECT_STALL_SEC", "120")),
+    )
+    dist_topup_proc: mp.Process | None = None
+    dist_idle_since_mono: float | None = None
 
     def _dqn_dist_remote_alive() -> int:
         if rollout_receiver is None:
             return 0
         # Короткий stale при drain: не ждём 30 с, пока heartbeat «протухнет».
         return int(rollout_receiver.active_remote_workers(stale_sec=5.0))
+
+    def _dqn_dist_topup_shortfall() -> int:
+        _topup_alive = dist_topup_proc is not None and dist_topup_proc.is_alive()
+        return int(
+            compute_dqn_dist_topup_episodes(
+                episodes_finished=int(episodes_finished),
+                total_episodes=int(totLifeT),
+                local_actors_done=int(done_actors),
+                num_local_actors=int(num_actors),
+                remote_alive=int(_dqn_dist_remote_alive()),
+                topup_process_alive=bool(_topup_alive),
+            )
+        )
+
+    def _spawn_dqn_dist_topup(shortfall: int) -> None:
+        nonlocal dist_topup_proc, dist_idle_since_mono
+        need = max(0, int(shortfall))
+        if need <= 0:
+            return
+        dist_topup_proc = _spawn_dqn_local_actor(int(DQN_DIST_TOPUP_ACTOR_IDX), need)
+        procs.append(dist_topup_proc)
+        dist_idle_since_mono = None
+        for _ln in (
+            f"[TRAIN][DIST] topup_start shortfall={need} actor_idx={int(DQN_DIST_TOPUP_ACTOR_IDX)} "
+            f"ep_done={int(episodes_finished)}/{int(totLifeT)}",
+            "[TRAIN][PHASE] topup",
+        ):
+            append_agent_log(_ln)
+            print(_ln, flush=True)
 
     def _dqn_dist_should_finish_drain() -> tuple[bool, str]:
         if not dist_draining:
@@ -6806,6 +6857,51 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         f"local_done={done_actors}/{num_actors} remote_alive={_remote_alive}"
                     )
                     break
+            elif DQN_DISTRIBUTED_ACTORS and not dist_draining:
+                _remote_alive = _dqn_dist_remote_alive()
+                _shortfall = _dqn_dist_topup_shortfall()
+                _topup_alive = dist_topup_proc is not None and dist_topup_proc.is_alive()
+                if dist_topup_proc is not None and not dist_topup_proc.is_alive():
+                    dist_topup_proc = None
+                if _shortfall > 0:
+                    if dist_idle_since_mono is None:
+                        dist_idle_since_mono = time.monotonic()
+                    elif (
+                        dist_topup_proc is None
+                        and (time.monotonic() - float(dist_idle_since_mono)) >= float(DQN_DIST_TOPUP_GRACE_SEC)
+                    ):
+                        _spawn_dqn_dist_topup(_shortfall)
+                else:
+                    dist_idle_since_mono = None
+                if _topup_alive or (_shortfall > 0 and dist_topup_proc is not None):
+                    dist_last_ep_progress_mono = time.monotonic()
+                elif _shortfall > 0 and dist_idle_since_mono is not None:
+                    dist_last_ep_progress_mono = time.monotonic()
+                _stall_sec = time.monotonic() - float(dist_last_ep_progress_mono)
+                if _stall_sec >= float(dist_collect_stall_sec):
+                    if _shortfall > 0 and dist_topup_proc is None:
+                        _spawn_dqn_dist_topup(_shortfall)
+                    elif _shortfall > 0:
+                        for _ln in (
+                            f"[TRAIN][DIST][WARN] добор не закрыл дефицит ep "
+                            f"(ep_done={int(episodes_finished)}/{int(totLifeT)} shortfall={_shortfall}). "
+                            "Где: _main_actor_learner (сбор). Завершаем сбор.",
+                            "[TRAIN][PHASE] done",
+                        ):
+                            append_agent_log(_ln)
+                            print(_ln, flush=True)
+                        break
+                    else:
+                        for _ln in (
+                            f"[TRAIN][DIST][WARN] нет новых ep {_stall_sec:.0f}s "
+                            f"(ep_done={int(episodes_finished)}/{int(totLifeT)} "
+                            f"local_done={done_actors}/{num_actors} remote_alive={_remote_alive}). "
+                            "Где: _main_actor_learner (сбор). Завершаем сбор.",
+                            "[TRAIN][PHASE] done",
+                        ):
+                            append_agent_log(_ln)
+                            print(_ln, flush=True)
+                        break
             continue
 
         if kind == "error":
@@ -6821,6 +6917,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     payload["episode"] = len(ep_rows) + 1
                 ep_rows.append(payload)
                 episodes_finished = len(ep_rows)
+                dist_last_ep_progress_mono = time.monotonic()
                 target_n = min(int(totLifeT), int(episodes_finished))
                 if target_n > int(pbar.n):
                     pbar.update(target_n - int(pbar.n))

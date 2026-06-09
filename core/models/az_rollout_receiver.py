@@ -39,6 +39,7 @@ class RolloutReceiver:
         self._last_heartbeat: dict[int, float] = {}
         self._workers_lock = threading.Lock()
         self._dropped_contract = 0
+        self._dropped_queue = 0
         self._received_rollouts = 0
         self._received_eps = 0
 
@@ -75,7 +76,7 @@ class RolloutReceiver:
             self._thread.join(timeout=float(join_timeout))
         self._log(
             f"[AZ][DIST][RECEIVER] stopped eps={self._received_eps} rollouts={self._received_rollouts} "
-            f"dropped_contract={self._dropped_contract}"
+            f"dropped_contract={self._dropped_contract} dropped_queue={self._dropped_queue}"
         )
 
     def _bind_pull_socket(self) -> None:
@@ -183,10 +184,20 @@ class RolloutReceiver:
             self._received_eps += 1
 
     def _enqueue(self, kind: str, payload: Any) -> None:
+        # ep/error не дропаем: иначе learner зависает на ep_done < total.
+        if kind in ("ep", "error"):
+            while not self._stop.is_set():
+                try:
+                    self._data_q.put((kind, payload), timeout=0.25)
+                    return
+                except queue.Full:
+                    continue
+            return
         try:
             self._data_q.put_nowait((kind, payload))
         except queue.Full:
+            self._dropped_queue += 1
             self._log(
-                "[AZ][DIST] queue_full — data_q переполнена, rollout отброшен. "
-                "Где: RolloutReceiver. Что делать: увеличьте AZ_ACTOR_QUEUE_MAX или снизьте число PC2-воркеров."
+                f"[AZ][DIST] queue_full — data_q переполнена, {kind} отброшен. "
+                "Где: RolloutReceiver. Что делать: увеличьте ACTOR_QUEUE_MAX или снизьте нагрузку PC2."
             )
