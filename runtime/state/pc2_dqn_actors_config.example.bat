@@ -3,7 +3,7 @@ REM === Конфиг ПК2 для DQN distributed actors ===
 REM
 REM ОБЯЗАТЕЛЬНО задать только одно — общую SMB-папку ПК1 (где лежит artifacts/models):
 REM «if not defined» — чтобы значение из окна-лаунчера (pc2_launcher.bat) НЕ затиралось.
-if not defined 40KAI_SHARE_ROOT set "40KAI_SHARE_ROOT=\\192.168.1.10\40kai_models"
+if not defined 40KAI_SHARE_ROOT set "40KAI_SHARE_ROOT=\\192.168.0.100\actor_sync"
 REM (Можно указать и прямо на ...\actor_sync — корень models определится сам.)
 REM
 REM Совместимость: старая MODELS_DIR тоже понимается (если 40KAI_SHARE_ROOT пуст):
