@@ -19,6 +19,7 @@ from core.models.dqn_dist import (  # noqa: E402
     derive_host_from_unc,
     dqn_dist_stop_flag_path,
     dqn_dist_stop_requested,
+    pc2_dist_should_exit,
     split_count_among_workers,
     wait_dqn_dist_train_context,
 )
