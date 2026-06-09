@@ -133,15 +133,33 @@ def _worker_main(worker_id: int, ctx_json: str, episodes: int) -> None:
             for k, v in train_mod.normalize_state_dict(tmp_net.state_dict()).items()
         }
 
+    from core.models.dqn_dist import dqn_dist_env_contract_extras, resolve_dqn_dist_contract_hash
+
     mission_name = train_mod.normalize_mission_name(roster.get("mission", train_mod.DEFAULT_MISSION_NAME))
+    num_local_actors = max(1, int(ctx.get("num_local_actors", 8) or 8))
+    extras = dqn_dist_env_contract_extras(num_local_actors=num_local_actors)
     env_contract = make_env_contract(
         n_observations=n_observations,
         n_actions=n_actions,
         mission_name=mission_name,
         ruleset_version=train_mod.RULESET_VERSION,
-        extras={"actor_learner": 1, "distributed_actor": 1},
+        extras=extras,
     )
-    contract_hash = str(env_contract.get("contract_hash", "") or "")
+    contract_hash = resolve_dqn_dist_contract_hash(
+        ctx=ctx,
+        n_observations=n_observations,
+        n_actions=list(n_actions),
+        mission_name=mission_name,
+        ruleset_version=train_mod.RULESET_VERSION,
+        num_local_actors=num_local_actors,
+    )
+    if contract_hash and contract_hash != str(env_contract.get("contract_hash", "") or ""):
+        print(
+            f"[DQN][DIST][PC2][WARN] contract_hash из контекста ({contract_hash}) "
+            f"≠ локальный пересчёт ({env_contract.get('contract_hash', '')}). "
+            "Используем хэш ПК1 для sink.",
+            flush=True,
+        )
 
     # Self-play opponent (опционально).
     opponent_spec = None

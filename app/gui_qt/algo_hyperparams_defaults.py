@@ -39,6 +39,9 @@ DQN_HYPERPARAM_KEYS: tuple[str, ...] = DQN_ROOT_SYNC_KEYS + (
     "distributed_local_episode_fraction",
     "distributed_pc2_num_workers",
     "distributed_actors_drain_sec",
+    "distributed_wait_pc2",
+    "distributed_wait_pc2_timeout_sec",
+    "distributed_bind_retry_sec",
 )
 
 DEFAULT_DQN_HYPERPARAMS: dict[str, int | float | str] = {
@@ -74,6 +77,9 @@ DEFAULT_DQN_HYPERPARAMS: dict[str, int | float | str] = {
     "distributed_local_episode_fraction": 0.7,
     "distributed_pc2_num_workers": 8,
     "distributed_actors_drain_sec": 30.0,
+    "distributed_wait_pc2": 0,
+    "distributed_wait_pc2_timeout_sec": 600.0,
+    "distributed_bind_retry_sec": 25.0,
 }
 
 PPO_HYPERPARAM_KEYS: tuple[str, ...] = (
@@ -251,6 +257,9 @@ DQN_FIELD_TOOLTIPS: dict[str, str] = {
     "distributed_local_episode_fraction": "Доля эпизодов на ПК1 (0.05–0.95); остальное на ПК2.",
     "distributed_pc2_num_workers": "Число env-воркеров на ПК2 (на ПК1 — NUM_ACTORS, обычно 8).",
     "distributed_actors_drain_sec": "Макс. секунд drain после лимита эпизодов (выход раньше, если ПК1+ПК2 уже idle).",
+    "distributed_wait_pc2": "Не начинать сбор эпизодов, пока все воркеры ПК2 не подключатся (hello на порт приёма).",
+    "distributed_wait_pc2_timeout_sec": "Сколько ждать ПК2 (сек); 0 = ждать бесконечно.",
+    "distributed_bind_retry_sec": "Сколько секунд повторять bind порта приёма, если он занят прошлым прогоном.",
 }
 
 DQN_DIST_ACTORS_GUI_TOOLTIP = (
@@ -262,11 +271,19 @@ DQN_DIST_ACTORS_GUI_TOOLTIP = (
     "• Два ПК в одной сети, один и тот же код репозитория\n"
     "• Общая папка models по SMB (как для AZ/GMZ)\n"
     "• На этом ПК: включить переключатель и запустить train\n"
-    "• На ПК2 после старта train: tools\\pc2_dqn_actors.bat\n"
+    "• На ПК2 после старта train: tools\\pc2_dqn_actors.bat "
+    "(при «Ждать ПК2» train не начнёт сбор, пока не подключатся все воркеры)\n"
     "• Одинаковый ростер и миссия на обоих ПК\n"
     "• Доля эпизодов: distributed_local_episode_fraction "
     "(например 0.7 при 400 ep → 280 на ПК1, 120 на ПК2; воркеры по 8 на каждой машине)\n\n"
     "По умолчанию выключено — весь опыт собирают только процессы на этом ПК."
+)
+
+DQN_DIST_WAIT_PC2_GUI_TOOLTIP = (
+    "Train поднимает приёмник на порту 5558 и пишет train-context на SMB, "
+    "но локальные акторы не стартуют, пока с ПК2 не придёт hello от всех воркеров.\n\n"
+    "Порядок: 1) Старт train на ПК1 → 2) pc2_dqn_actors.bat на ПК2.\n"
+    "Таймаут 0 = ждать бесконечно."
 )
 
 PPO_FIELD_TOOLTIPS: dict[str, str] = {

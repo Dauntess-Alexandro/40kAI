@@ -10,7 +10,38 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Callable
 from typing import Any
+
+
+def dqn_dist_env_contract_extras(*, num_local_actors: int) -> dict[str, int]:
+    """extras для make_env_contract — одинаковые на ПК1 (learner) и ПК2 (воркеры)."""
+    return {"actor_learner": 1, "num_actors": max(1, int(num_local_actors))}
+
+
+def resolve_dqn_dist_contract_hash(
+    *,
+    ctx: dict[str, Any] | None,
+    n_observations: int,
+    n_actions: list[int],
+    mission_name: str,
+    ruleset_version: str,
+    num_local_actors: int,
+) -> str:
+    """Хэш из SMB train-context ПК1 или пересчёт с теми же extras, что на learner."""
+    cached = str((ctx or {}).get("env_contract_hash", "") or "").strip()
+    if cached:
+        return cached
+    from core.engine.agent_registry import make_env_contract
+
+    ec = make_env_contract(
+        n_observations=int(n_observations),
+        n_actions=list(n_actions),
+        mission_name=str(mission_name),
+        ruleset_version=str(ruleset_version),
+        extras=dqn_dist_env_contract_extras(num_local_actors=num_local_actors),
+    )
+    return str(ec.get("contract_hash", "") or "")
 
 
 def derive_host_from_unc(path: str) -> str:
@@ -136,6 +167,40 @@ def read_dqn_dist_train_context() -> dict[str, Any]:
         return data if isinstance(data, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def wait_dqn_dist_remote_workers(
+    receiver,
+    *,
+    min_workers: int,
+    timeout_sec: float,
+    poll_sec: float = 2.0,
+    log_fn: Callable[[str], None] | None = None,
+) -> None:
+    """Блокировать до подключения min_workers воркеров ПК2 (hello). timeout_sec=0 — ждать бесконечно."""
+    log = log_fn or (lambda _msg: None)
+    need = max(1, int(min_workers))
+    timeout_sec = max(0.0, float(timeout_sec))
+    deadline = None if timeout_sec <= 0 else time.monotonic() + timeout_sec
+    timeout_label = "∞" if deadline is None else f"{int(timeout_sec)}s"
+    log(
+        f"[DQN][DIST] ожидание ПК2: нужно воркеров={need} timeout={timeout_label}. "
+        "Запустите tools\\pc2_dqn_actors.bat на ПК2."
+    )
+    while True:
+        alive = int(receiver.remote_worker_count())
+        if alive >= need:
+            log(f"[DQN][DIST] ПК2 готов: workers={alive}/{need}")
+            return
+        if deadline is not None and time.monotonic() >= deadline:
+            raise RuntimeError(
+                f"ПК2 не подключился за {int(timeout_sec)} с (workers={alive}/{need}). "
+                "Где: dqn_dist.wait_dqn_dist_remote_workers. "
+                "Что делать: запустите tools\\pc2_dqn_actors.bat на ПК2 и перезапустите train."
+            )
+        left = "∞" if deadline is None else str(max(0, int(deadline - time.monotonic())))
+        log(f"[DQN][DIST] ждём ПК2: workers={alive}/{need} осталось={left}s")
+        time.sleep(max(0.5, float(poll_sec)))
 
 
 def wait_dqn_dist_train_context(*, wait_sec: float = 0.0, poll_sec: float = 2.0) -> dict[str, Any]:

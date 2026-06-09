@@ -22,6 +22,7 @@ class RolloutReceiver:
         auth_token: str = "",
         zmq_hwm: int = 256,
         log_fn: Callable[[str], None] | None = None,
+        bind_retry_sec: float = 25.0,
     ) -> None:
         self._data_q = data_q
         self._bind_host = str(bind_host or "0.0.0.0")
@@ -30,18 +31,24 @@ class RolloutReceiver:
         self._auth = str(auth_token or "")
         self._hwm = max(1, int(zmq_hwm))
         self._log = log_fn or (lambda _msg: None)
+        self._bind_retry_sec = max(0.0, float(bind_retry_sec))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._pull = None
         self._remote_workers: set[int] = set()
         self._last_heartbeat: dict[int, float] = {}
+        self._workers_lock = threading.Lock()
         self._dropped_contract = 0
         self._received_rollouts = 0
         self._received_eps = 0
 
-    def start(self) -> None:
+    def start(self, *, bind_retry_sec: float | None = None) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
+        if bind_retry_sec is not None:
+            self._bind_retry_sec = max(0.0, float(bind_retry_sec))
         self._stop.clear()
+        self._bind_pull_socket()
         self._thread = threading.Thread(target=self._run, name="az-rollout-receiver", daemon=True)
         self._thread.start()
         self._log(
@@ -49,12 +56,18 @@ class RolloutReceiver:
             f"contract_hash={self._contract_hash or '-'}"
         )
 
+    def remote_worker_count(self) -> int:
+        """Сколько distinct PC2-воркеров прислали hello (для ожидания перед стартом train)."""
+        with self._workers_lock:
+            return len(self._remote_workers)
+
     def active_remote_workers(self, *, stale_sec: float = 30.0) -> int:
         """Сколько PC2-воркеров слали hello/heartbeat недавно (для [TRAIN][DIST] прогресса)."""
-        if not self._last_heartbeat:
-            return len(self._remote_workers)
-        now = time.time()
-        return sum(1 for ts in self._last_heartbeat.values() if (now - ts) <= float(stale_sec))
+        with self._workers_lock:
+            if not self._last_heartbeat:
+                return len(self._remote_workers)
+            now = time.time()
+            return sum(1 for ts in self._last_heartbeat.values() if (now - ts) <= float(stale_sec))
 
     def stop(self, *, join_timeout: float = 2.0) -> None:
         self._stop.set()
@@ -65,14 +78,45 @@ class RolloutReceiver:
             f"dropped_contract={self._dropped_contract}"
         )
 
-    def _run(self) -> None:
+    def _bind_pull_socket(self) -> None:
         import zmq
 
         ctx = zmq.Context.instance()
         pull = ctx.socket(zmq.PULL)
         pull.setsockopt(zmq.RCVHWM, self._hwm)
         pull.setsockopt(zmq.LINGER, 0)
-        pull.bind(f"tcp://{self._bind_host}:{self._bind_port}")
+        endpoint = f"tcp://{self._bind_host}:{self._bind_port}"
+        deadline = time.monotonic() + self._bind_retry_sec
+        while True:
+            try:
+                pull.bind(endpoint)
+                self._pull = pull
+                return
+            except zmq.ZMQError as exc:
+                if getattr(exc, "errno", None) != zmq.EADDRINUSE:
+                    raise RuntimeError(
+                        f"Не удалось занять порт {self._bind_port} для приёма rollout. "
+                        f"Где: RolloutReceiver._bind_pull_socket. Ошибка: {exc}"
+                    ) from exc
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"Порт {self._bind_port} занят (Address in use) — не дождались освобождения за "
+                        f"{int(self._bind_retry_sec)} с. Где: RolloutReceiver._bind_pull_socket. "
+                        "Что делать: остановите прошлый train/GUI-процесс на ПК1 "
+                        f"(netstat -ano | findstr :{self._bind_port}) и перезапустите."
+                    ) from exc
+                self._log(
+                    f"[AZ][DIST][RECEIVER] порт {self._bind_port} занят — повтор через 1 с "
+                    f"(осталось ~{max(0, int(deadline - time.monotonic()))} с)"
+                )
+                time.sleep(1.0)
+
+    def _run(self) -> None:
+        import zmq
+
+        pull = self._pull
+        if pull is None:
+            return
         poller = zmq.Poller()
         poller.register(pull, zmq.POLLIN)
         try:
@@ -90,6 +134,7 @@ class RolloutReceiver:
                 pull.close(linger=0)
             except Exception:
                 pass
+            self._pull = None
 
     def _handle_message(self, data: bytes) -> None:
         try:
@@ -110,13 +155,15 @@ class RolloutReceiver:
 
         wid = int(payload.get("worker_id", payload.get("actor_idx", -1)) or -1)
         if kind == "hello":
-            self._remote_workers.add(wid)
-            self._last_heartbeat[wid] = time.time()
+            with self._workers_lock:
+                self._remote_workers.add(wid)
+                self._last_heartbeat[wid] = time.time()
             self._log(f"[AZ][DIST][RECEIVER] hello worker={wid} hash={payload.get('env_contract_hash', '')}")
             return
 
         if kind in ("heartbeat",):
-            self._last_heartbeat[wid] = time.time()
+            with self._workers_lock:
+                self._last_heartbeat[wid] = time.time()
             return
 
         if kind == "error":
@@ -126,7 +173,8 @@ class RolloutReceiver:
         if kind not in ("rollout", "ep", "batch"):
             return
 
-        self._last_heartbeat[wid] = time.time()
+        with self._workers_lock:
+            self._last_heartbeat[wid] = time.time()
         payload.setdefault("source", "remote")
         self._enqueue(kind, payload)
         if kind in ("rollout", "batch"):

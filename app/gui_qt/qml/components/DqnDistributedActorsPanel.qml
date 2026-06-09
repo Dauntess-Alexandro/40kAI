@@ -186,6 +186,37 @@ ChamferPanel {
                             value: panel.dqnNum("distributed_actors_drain_sec", 30)
                             onValueModified: panel.setKey("distributed_actors_drain_sec", value)
                         }
+
+                        Text {
+                            text: "Ожидание ПК2 (сек)"
+                            color: rootUi.uiTextMuted
+                            font.pixelSize: Math.round(11 * rootUi.uiScale)
+                        }
+                        SpinBox {
+                            from: 0
+                            to: 3600
+                            stepSize: 30
+                            value: panel.dqnNum("distributed_wait_pc2_timeout_sec", 600)
+                            onValueModified: panel.setKey("distributed_wait_pc2_timeout_sec", value)
+                        }
+                    }
+
+                    GmzIsToggleRow {
+                        Layout.fillWidth: true
+                        rootUi: panel.rootUi
+                        title: "Ждать ПК2 перед стартом"
+                        tooltipText: controller.dqnDistWaitPc2Tooltip
+                        active: true
+                        switchChecked: panel.dqnNum("distributed_wait_pc2", 0) === 1
+                        switchEnabled: !controller.running
+                        accentOn: "#6eb8ff"
+                        accentOff: "#4a5564"
+                        subtitle: panel.dqnNum("distributed_wait_pc2", 0) === 1
+                            ? "Train не начнёт сбор эпизодов, пока не подключатся все воркеры ПК2"
+                            : "Старт сразу (только ПК1), ПК2 может подключиться позже"
+                        onToggled: function(checked) {
+                            panel.setKey("distributed_wait_pc2", checked ? "1" : "0")
+                        }
                     }
                 }
             }
@@ -195,7 +226,8 @@ ChamferPanel {
             visible: panel.distOn
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: "После старта train настройки и веса попадут в общую SMB-папку — ПК2 подхватит их сам. " +
+            text: "Порядок: 1) Старт train на ПК1 → 2) pc2_dqn_actors.bat на ПК2. " +
+                  "При «Ждать ПК2» train встанет на waiting_pc2, пока не придут все hello. " +
                   "Порт 5558 (у AZ свой, :5557 — не мешают друг другу)."
             color: rootUi.uiTextMuted
             font.pixelSize: Math.round(10 * rootUi.uiScale)

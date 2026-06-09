@@ -101,10 +101,12 @@ from core.models.az_rollout_sink import (
 from core.models.DQN import *
 from core.models.dqn_dist import (
     clear_dqn_dist_stop_flag,
+    dqn_dist_env_contract_extras,
     dqn_dist_stop_requested,
     resolve_dqn_dist_episode_split,
     split_count_among_workers,
     touch_dqn_dist_stop_flag,
+    wait_dqn_dist_remote_workers,
     write_dqn_dist_train_context,
 )
 from core.models.gmz_inference_client import GMZInferenceClient
@@ -3148,6 +3150,22 @@ DQN_DIST_LOCAL_EPISODE_FRACTION = _dqn_dist_local_episode_fraction()
 DQN_DIST_PC2_NUM_WORKERS = max(
     1,
     int(os.getenv("DQN_DIST_PC2_NUM_WORKERS", str(_DQN_CFG.get("distributed_pc2_num_workers", 8)))),
+)
+DQN_DIST_WAIT_PC2 = os.getenv(
+    "DQN_DIST_WAIT_PC2", str(_DQN_CFG.get("distributed_wait_pc2", 0))
+).strip() in {"1", "true", "yes"}
+DQN_DIST_WAIT_PC2_TIMEOUT_SEC = max(
+    0.0,
+    float(
+        os.getenv(
+            "DQN_DIST_WAIT_PC2_TIMEOUT_SEC",
+            str(_DQN_CFG.get("distributed_wait_pc2_timeout_sec", 600)),
+        )
+    ),
+)
+DQN_DIST_BIND_RETRY_SEC = max(
+    0.0,
+    float(os.getenv("DQN_DIST_BIND_RETRY_SEC", str(_DQN_CFG.get("distributed_bind_retry_sec", 25)))),
 )
 
 
@@ -6498,10 +6516,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         n_actions=n_actions,
         mission_name=normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME)),
         ruleset_version=learner_identity.ruleset_version,
-        extras={
-            "actor_learner": 1,
-            "num_actors": int(num_actors),
-        },
+        extras=dqn_dist_env_contract_extras(num_local_actors=num_actors),
     )
 
     # Self-play opponent snapshot (optional): загружаем один раз в learner и раздаём акторам.
@@ -6602,6 +6617,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             auth_token=DQN_DIST_AUTH_TOKEN,
             zmq_hwm=DQN_DIST_ZMQ_HWM,
             log_fn=append_agent_log,
+            bind_retry_sec=DQN_DIST_BIND_RETRY_SEC,
         )
         rollout_receiver.start()
         try:
@@ -6611,6 +6627,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         try:
             write_dqn_dist_train_context({
                 "env_contract_hash": env_contract_hash,
+                "env_contract_extras": dqn_dist_env_contract_extras(num_local_actors=num_actors),
                 "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
                 "learner_side": str(learner_side_cfg),
                 "n_observations": int(n_observations),
@@ -6632,6 +6649,19 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             f"[DQN][DIST] receiver bind=:{DQN_DIST_ROLLOUT_PORT} "
             f"contract_hash={env_contract_hash or '-'} sync={sync_path}"
         )
+        if DQN_DIST_WAIT_PC2:
+            append_agent_log("[TRAIN][PHASE] waiting_pc2")
+            print("[TRAIN][PHASE] waiting_pc2", flush=True)
+            try:
+                wait_dqn_dist_remote_workers(
+                    rollout_receiver,
+                    min_workers=int(DQN_DIST_PC2_NUM_WORKERS),
+                    timeout_sec=float(DQN_DIST_WAIT_PC2_TIMEOUT_SEC),
+                    log_fn=lambda msg: (append_agent_log(msg), print(msg, flush=True)),
+                )
+            except RuntimeError as exc:
+                rollout_receiver.stop()
+                raise RuntimeError(str(exc)) from exc
 
     local_actor_episode_plan = (
         split_count_among_workers(total=int(dqn_dist_local_episodes), num_workers=int(num_actors))

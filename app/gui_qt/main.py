@@ -29,6 +29,7 @@ from app.gui_qt.algo_hyperparams_defaults import (
     DEFAULT_PPO_HYPERPARAMS,
     DQN_BASIC_KEYS,
     DQN_DIST_ACTORS_GUI_TOOLTIP,
+    DQN_DIST_WAIT_PC2_GUI_TOOLTIP,
     DQN_FIELD_TOOLTIPS,
     DQN_GROUPS,
     DQN_HYPERPARAM_KEYS,
@@ -1688,6 +1689,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, constant=True)
     def dqnDistActorsTooltip(self) -> str:
         return DQN_DIST_ACTORS_GUI_TOOLTIP
+
+    @QtCore.Property(str, constant=True)
+    def dqnDistWaitPc2Tooltip(self) -> str:
+        return DQN_DIST_WAIT_PC2_GUI_TOOLTIP
 
     remoteIsChanged = QtCore.Signal()
 
@@ -5041,6 +5046,18 @@ class GUIController(QtCore.QObject):
                 env_overrides.setdefault(
                     "DQN_DIST_DRAIN_SEC",
                     str(_dqn_hp.get("distributed_actors_drain_sec", 30.0)),
+                )
+                env_overrides.setdefault(
+                    "DQN_DIST_WAIT_PC2",
+                    str(int(_dqn_hp.get("distributed_wait_pc2", 0) or 0)),
+                )
+                env_overrides.setdefault(
+                    "DQN_DIST_WAIT_PC2_TIMEOUT_SEC",
+                    str(_dqn_hp.get("distributed_wait_pc2_timeout_sec", 600.0)),
+                )
+                env_overrides.setdefault(
+                    "DQN_DIST_BIND_RETRY_SEC",
+                    str(_dqn_hp.get("distributed_bind_retry_sec", 25.0)),
                 )
                 _ep_total = max(1, int(self._train_total_episodes or 400))
                 _local_ep, _remote_ep = resolve_dqn_dist_episode_split(

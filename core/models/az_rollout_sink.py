@@ -318,6 +318,7 @@ class RemoteRolloutSink:
         self._sock.connect(endpoint)
         self._sent_counts: dict[str, int] = {}
         self._failed_counts: dict[str, int] = {}
+        self._sent_transitions = 0
         hello = build_hello_payload(
             worker_id=self._worker_id,
             env_contract_hash=env_contract_hash,
@@ -364,6 +365,7 @@ class RemoteRolloutSink:
                 # валидация поштучная — нельзя полагаться только на hello).
                 "env_contract_hash": self._env_contract_hash,
             }
+            self._sent_transitions += len(steps_as_lists)
             self._send("batch", wrapped)
             return
         if not isinstance(payload, dict):
@@ -378,13 +380,31 @@ class RemoteRolloutSink:
 
     def close(self) -> None:
         try:
-            print(
-                f"[AZ][DIST][SINK] closed worker={self._worker_id} "
-                f"sent_rollout={int(self._sent_counts.get('rollout', 0))} "
-                f"sent_ep={int(self._sent_counts.get('ep', 0))} "
-                f"failed={int(sum(self._failed_counts.values()))}",
-                flush=True,
-            )
+            batch_n = int(self._sent_counts.get("batch", 0))
+            ep_n = int(self._sent_counts.get("ep", 0))
+            rollout_n = int(self._sent_counts.get("rollout", 0))
+            failed_n = int(sum(self._failed_counts.values()))
+            # DQN dist: _actor_learner_actor_entry шлёт kind=batch (переходы) и kind=ep (метрики).
+            # AZ dist: kind=rollout. sent_rollout=0 при DQN — норма, смотрите sent_batch.
+            if batch_n > 0 or (ep_n > 0 and rollout_n == 0):
+                warn = ""
+                if ep_n > 0 and batch_n == 0:
+                    warn = (
+                        " WARN: ep без batch — обучающие переходы не ушли на ПК1 "
+                        "(contract_hash mismatch или сбой ZMQ)."
+                    )
+                print(
+                    f"[DQN][DIST][SINK] closed worker={self._worker_id} "
+                    f"sent_batch={batch_n} sent_transitions={int(self._sent_transitions)} "
+                    f"sent_ep={ep_n} failed={failed_n}{warn}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[AZ][DIST][SINK] closed worker={self._worker_id} "
+                    f"sent_rollout={rollout_n} sent_ep={ep_n} failed={failed_n}",
+                    flush=True,
+                )
         except Exception:
             pass
         try:
