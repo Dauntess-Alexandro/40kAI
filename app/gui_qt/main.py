@@ -28,6 +28,7 @@ from app.gui_qt.algo_hyperparams_defaults import (
     DEFAULT_DQN_HYPERPARAMS,
     DEFAULT_PPO_HYPERPARAMS,
     DQN_BASIC_KEYS,
+    DQN_DIST_ACTORS_GUI_TOOLTIP,
     DQN_FIELD_TOOLTIPS,
     DQN_GROUPS,
     DQN_HYPERPARAM_KEYS,
@@ -1683,6 +1684,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, constant=True)
     def gmzLanIsTooltip(self) -> str:
         return GMZ_LAN_IS_GUI_TOOLTIP
+
+    @QtCore.Property(str, constant=True)
+    def dqnDistActorsTooltip(self) -> str:
+        return DQN_DIST_ACTORS_GUI_TOOLTIP
 
     remoteIsChanged = QtCore.Signal()
 

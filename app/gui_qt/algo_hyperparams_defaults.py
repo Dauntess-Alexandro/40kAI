@@ -183,12 +183,6 @@ DQN_GROUPS: tuple[dict[str, object], ...] = (
         "keys": ("noisy_sigma0", "noisy_disable_eps", "noisy_sigma_anneal", "per_ensemble_priority_lambda"),
         "default_collapsed": True,
     },
-    {
-        "id": "distributed",
-        "title": "Распределённое обучение (ПК2)",
-        "keys": ("distributed_actors_enabled", "distributed_rollout_port", "distributed_auth_token"),
-        "default_collapsed": True,
-    },
 )
 
 PPO_GROUPS: tuple[dict[str, object], ...] = (
@@ -245,10 +239,24 @@ DQN_FIELD_TOOLTIPS: dict[str, str] = {
     "noisy_disable_eps": "1 = отключить epsilon при NoisyNet.",
     "noisy_sigma_anneal": "1 = anneal sigma NoisyNet.",
     "per_ensemble_priority_lambda": "Вес приоритета PER для ансамбля.",
-    "distributed_actors_enabled": "1 = принимать переходы со второго ПК (ПК2) в общий replay (Ape-X). ПК1 поднимет приёмник на порту ниже.",
-    "distributed_rollout_port": "Порт приёма rollout'ов с ПК2 (по умолчанию 5558, отдельно от AZ-dist 5557).",
-    "distributed_auth_token": "Общий секрет ПК1↔ПК2 (пусто = без проверки). Должен совпадать на обоих ПК.",
+    "distributed_actors_enabled": "Принимать опыт со второго ПК (ПК2) в общий replay на этом ПК.",
+    "distributed_rollout_port": "Порт приёма данных с ПК2 (обычно 5558).",
+    "distributed_auth_token": "Общий пароль ПК1↔ПК2 (можно оставить пустым).",
 }
+
+DQN_DIST_ACTORS_GUI_TOOLTIP = (
+    "Распределённые акторы: второй ПК (ПК2) помогает собирать опыт для обучения DQN.\n\n"
+    "Зачем:\n"
+    "• Больше CPU на симуляцию партий — train на этом ПК идёт быстрее\n"
+    "• ПК2 только играет и шлёт данные; обучение (GPU) остаётся здесь\n\n"
+    "Что нужно:\n"
+    "• Два ПК в одной сети, один и тот же код репозитория\n"
+    "• Общая папка models по SMB (как для AZ/GMZ)\n"
+    "• На этом ПК: включить переключатель и запустить train\n"
+    "• На ПК2 после старта train: tools\\pc2_dqn_actors.bat\n"
+    "• Одинаковый ростер и миссия на обоих ПК\n\n"
+    "По умолчанию выключено — весь опыт собирают только процессы на этом ПК."
+)
 
 PPO_FIELD_TOOLTIPS: dict[str, str] = {
     "learning_rate": "Скорость обучения PPO.",

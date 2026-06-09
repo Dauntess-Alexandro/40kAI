@@ -2767,6 +2767,51 @@ def _load_roster_config():
 
     return config
 
+
+def _jsonable_roster(config):
+    """Снимок ростера для записи в dqn_dist_train_context.json (SMB → ПК2).
+
+    JSON не хранит кортежи, поэтому weapons (tuple) → list. Остальные поля
+    копируются как есть. Обратное преобразование — `_roster_from_context`.
+    """
+    def _unit(spec):
+        return {
+            "name": spec.get("name"),
+            "weapons": list(spec.get("weapons") or ()),
+            "count": spec.get("count"),
+            "instance_id": spec.get("instance_id"),
+        }
+
+    snapshot = dict(config or {})
+    snapshot["enemy_units"] = [_unit(u) for u in config.get("enemy_units", [])]
+    snapshot["model_units"] = [_unit(u) for u in config.get("model_units", [])]
+    return snapshot
+
+
+def _roster_from_context(ctx):
+    """Восстановить ростер из train-context ПК1 (None, если снимка нет).
+
+    Зеркало `_jsonable_roster`: weapons (list) → tuple, чтобы env на ПК2
+    строился из РОВНО того же ростера, что на ПК1 (совпадение contract_hash).
+    """
+    raw = (ctx or {}).get("roster")
+    if not isinstance(raw, dict):
+        return None
+
+    def _unit(spec):
+        return {
+            "name": spec.get("name"),
+            "weapons": tuple(spec.get("weapons") or ()),
+            "count": spec.get("count"),
+            "instance_id": spec.get("instance_id"),
+        }
+
+    roster = dict(raw)
+    roster["enemy_units"] = [_unit(u) for u in raw.get("enemy_units", [])]
+    roster["model_units"] = [_unit(u) for u in raw.get("model_units", [])]
+    return roster
+
+
 def _build_units_from_config(config, b_len, b_hei):
     enemy = []
     model = []
@@ -3071,10 +3116,14 @@ AZ_DIST_DRAIN_SEC = max(
 AZ_DIST_ZMQ_HWM = max(8, int(os.getenv("AZ_DIST_ZMQ_HWM", str(AZ_CFG.get("distributed_actors_zmq_hwm", 256)))))
 
 # --- Distributed DQN actors (ПК2 → rollout ZMQ → learner data_q) ---
-DQN_DISTRIBUTED_ACTORS = os.getenv("DQN_DISTRIBUTED_ACTORS", "0").strip() in {"1", "true", "yes"}
-DQN_DIST_ROLLOUT_PORT = int(os.getenv("DQN_DIST_ROLLOUT_PORT", "5558"))
+DQN_DISTRIBUTED_ACTORS = os.getenv(
+    "DQN_DISTRIBUTED_ACTORS", str(_DQN_CFG.get("distributed_actors_enabled", 0))
+).strip() in {"1", "true", "yes"}
+DQN_DIST_ROLLOUT_PORT = max(
+    1, int(os.getenv("DQN_DIST_ROLLOUT_PORT", str(_DQN_CFG.get("distributed_rollout_port", 5558))))
+)
 DQN_DIST_BIND_HOST = str(os.getenv("DQN_DIST_BIND_HOST", "0.0.0.0"))
-DQN_DIST_AUTH_TOKEN = str(os.getenv("DQN_DIST_AUTH_TOKEN", ""))
+DQN_DIST_AUTH_TOKEN = str(os.getenv("DQN_DIST_AUTH_TOKEN", str(_DQN_CFG.get("distributed_auth_token", ""))))
 DQN_DIST_ZMQ_HWM = max(8, int(os.getenv("DQN_DIST_ZMQ_HWM", "256")))
 
 
@@ -6532,6 +6581,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 "rollout_port": int(DQN_DIST_ROLLOUT_PORT),
                 "auth_token": str(DQN_DIST_AUTH_TOKEN or ""),
                 "mission": str(normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))),
+                "ruleset_version": str(RULESET_VERSION),
+                "roster": _jsonable_roster(roster_config),
             })
         except Exception as exc:
             append_agent_log(f"[DQN][DIST][WARN] не удалось записать train-context: {exc}")

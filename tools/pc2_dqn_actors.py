@@ -47,7 +47,18 @@ def _worker_main(worker_id: int, ctx_json: str) -> None:
     except Exception:
         ctx = {}
 
-    roster = train_mod._load_roster_config()
+    # Ростер из train-context ПК1 (снимок на SMB) — иначе локальный data.json ПК2,
+    # что даёт env_contract_hash mismatch при любом расхождении ростеров.
+    roster = train_mod._roster_from_context(ctx)
+    if roster is not None:
+        print("[DQN][DIST][PC2] ростер: из контекста ПК1 (SMB)", flush=True)
+    else:
+        roster = train_mod._load_roster_config()
+        print(
+            "[DQN][DIST][PC2][WARN] ростер: локальный runtime/state/data.json "
+            "(в контексте нет снимка — старый ПК1?). Возможен contract_hash mismatch.",
+            flush=True,
+        )
     b_len = int(roster["b_len"])
     b_hei = int(roster["b_hei"])
 

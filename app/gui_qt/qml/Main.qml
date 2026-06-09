@@ -4460,10 +4460,21 @@ ApplicationWindow {
 
                                     ScrollView {
                                         clip: true
-                                        SectionHyperparamsEditor {
+                                        contentWidth: dqnHyperparamsColumn.width
+                                        ColumnLayout {
+                                            id: dqnHyperparamsColumn
                                             width: algoHyperparamsStack.width
-                                            algoSection: "dqn"
-                                            rootUi: root
+                                            spacing: root.spacingSm
+
+                                            DqnDistributedActorsPanel {
+                                                rootUi: root
+                                            }
+
+                                            SectionHyperparamsEditor {
+                                                Layout.fillWidth: true
+                                                algoSection: "dqn"
+                                                rootUi: root
+                                            }
                                         }
                                     }
                                     ScrollView {

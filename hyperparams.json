@@ -34,7 +34,10 @@
         "noisy_sigma0": 0.5,
         "noisy_disable_eps": 1,
         "noisy_sigma_anneal": 0,
-        "per_ensemble_priority_lambda": 0.1
+        "per_ensemble_priority_lambda": 0.1,
+        "distributed_actors_enabled": 0,
+        "distributed_rollout_port": 5558,
+        "distributed_auth_token": ""
     },
     "ppo": {
         "learning_rate": 0.0003,
