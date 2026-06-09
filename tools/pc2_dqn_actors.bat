@@ -9,5 +9,8 @@ if not exist "%CFG%" (
 )
 call "%CFG%"
 echo [DQN][DIST][PC2] PC1=%DQN_DIST_PC1_HOST%:%DQN_DIST_ROLLOUT_PORT% workers=%DQN_DIST_PC2_NUM_WORKERS% MODELS_DIR=%MODELS_DIR%
-python tools\pc2_dqn_actors.py
+REM Python из .venv (где install_deps ставит зависимости), иначе системный.
+if exist ".\.venv\Scripts\python.exe" (set "PY=.\.venv\Scripts\python.exe") else (set "PY=python")
+echo [DQN][DIST][PC2] python=%PY%
+"%PY%" tools\pc2_dqn_actors.py
 endlocal
