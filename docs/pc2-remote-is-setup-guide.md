@@ -60,6 +60,11 @@ tools\pc2_remote_is.bat
 - `GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json`
 - `GMZ_REMOTE_PORT=5555`, `GMZ_REMOTE_DEVICE=cuda:0`, firewall и batch — из шаблона
 
+> **Единая переменная (как у акторов):** если в конфиге задать `set 40KAI_SHARE_ROOT=\\PC1\40kai_models`
+> и **не** задавать `GMZ_REMOTE_WEIGHTS_PATH`/`GMZ_REMOTE_SEARCH_CONFIG` явно — лаунчер сам найдёт веса
+> и search_cfg (пробует `SHARE\actor_sync\…` и `SHARE\…`). Явные пути и фолбэк на `Z:\` продолжают работать.
+> Через GUI-лаунчер ПК2 (`tools\pc2_launcher.py`) переменная подставляется автоматически.
+
 **Блокнот не открывается** — сразу идёт setup и запуск сервера.
 
 Редактировать вручную только если диск не `Z:` или другой порт:

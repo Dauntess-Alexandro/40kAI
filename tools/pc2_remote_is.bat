@@ -91,6 +91,23 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM Единый корень общей папки (как у акторов): если задан 40KAI_SHARE_ROOT и пути
+REM не заданы явно — выводим их из него. Обе раскладки: SHARE\actor_sync\ или SHARE\.
+REM Имя 40KAI_* начинается с цифры — в batch %40KAI_..% ломается на %4, читаем через for/f.
+set "_SHARE="
+for /f "tokens=1* delims==" %%A in ('set 40KAI_SHARE_ROOT 2^>nul') do set "_SHARE=%%B"
+if not "%_SHARE%"=="" (
+  if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" (
+    if exist "%_SHARE%\actor_sync\latest_gmz_policy.pth" set "GMZ_REMOTE_WEIGHTS_PATH=%_SHARE%\actor_sync\latest_gmz_policy.pth"
+    if exist "%_SHARE%\latest_gmz_policy.pth" set "GMZ_REMOTE_WEIGHTS_PATH=%_SHARE%\latest_gmz_policy.pth"
+  )
+  if "%GMZ_REMOTE_SEARCH_CONFIG%"=="" (
+    if exist "%_SHARE%\actor_sync\gmz_remote_search_cfg.json" set "GMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\actor_sync\gmz_remote_search_cfg.json"
+    if exist "%_SHARE%\gmz_remote_search_cfg.json" set "GMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\gmz_remote_search_cfg.json"
+  )
+)
+
+REM Фолбэк (обратная совместимость): прежний дефолт на Z:\.
 if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" set "GMZ_REMOTE_WEIGHTS_PATH=Z:\latest_gmz_policy.pth"
 if "%GMZ_REMOTE_SEARCH_CONFIG%"=="" set "GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json"
 if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" (

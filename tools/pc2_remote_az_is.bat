@@ -63,6 +63,23 @@ if not exist "%CONFIG_BAT%" (
 goto :after_config_sync
 
 :resolve_smb_paths
+REM Единый корень общей папки (как у акторов): сперва пробуем 40KAI_SHARE_ROOT, потом Z:.
+REM Обе раскладки: SHARE\actor_sync\ (SHARE=models) или SHARE\ (SHARE=actor_sync).
+REM Имя 40KAI_* начинается с цифры — в batch %40KAI_..% ломается на %4, читаем через for/f.
+set "_SHARE="
+for /f "tokens=1* delims==" %%A in ('set 40KAI_SHARE_ROOT 2^>nul') do set "_SHARE=%%B"
+if not "%_SHARE%"=="" (
+  if not exist "%AZ_REMOTE_SEARCH_CONFIG%" (
+    if exist "%_SHARE%\actor_sync\az_remote_search_cfg.json" set "AZ_REMOTE_SEARCH_CONFIG=%_SHARE%\actor_sync\az_remote_search_cfg.json"
+    if exist "%_SHARE%\az_remote_search_cfg.json" set "AZ_REMOTE_SEARCH_CONFIG=%_SHARE%\az_remote_search_cfg.json"
+  )
+  if not exist "%AZ_REMOTE_WEIGHTS_PATH%" (
+    if exist "%_SHARE%\actor_sync\latest_az_tree_policy.pth" set "AZ_REMOTE_WEIGHTS_PATH=%_SHARE%\actor_sync\latest_az_tree_policy.pth"
+    if exist "%_SHARE%\latest_az_tree_policy.pth" set "AZ_REMOTE_WEIGHTS_PATH=%_SHARE%\latest_az_tree_policy.pth"
+  )
+  if "%MODELS_DIR%"=="" set "MODELS_DIR=%_SHARE%"
+)
+
 REM Z: = artifacts\models (файлы в actor_sync\) или Z: = только actor_sync (файлы в корне Z:\).
 if not exist "%AZ_REMOTE_SEARCH_CONFIG%" (
   if exist "Z:\actor_sync\az_remote_search_cfg.json" set "AZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\az_remote_search_cfg.json"

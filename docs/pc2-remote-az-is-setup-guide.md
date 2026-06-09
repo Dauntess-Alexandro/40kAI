@@ -38,6 +38,11 @@ tools\pc2_remote_az_is.bat
   при пустом Z: — `AZ_REMOTE_INIT_WEIGHTS=` локальный checkpoint.
 - Сохранить, закрыть блокнот.
 
+> **Единая переменная (как у акторов):** вместо явных путей можно задать
+> `set 40KAI_SHARE_ROOT=\\PC1\40kai_models` и оставить `AZ_REMOTE_WEIGHTS_PATH`/
+> `AZ_REMOTE_SEARCH_CONFIG` пустыми — лаунчер сам найдёт файлы (пробует `SHARE\actor_sync\…`
+> и `SHARE\…`), с фолбэком на `Z:\`. Через GUI-лаунчер ПК2 переменная подставляется сама.
+
 ### 5. ПК1: запустить train
 GUI: LAN Inference server + Distributed actors (ПК2). Или `distributed_actors_enabled=1` в hyperparams.
 
