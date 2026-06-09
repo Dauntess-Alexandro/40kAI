@@ -30,6 +30,35 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _start_pc2_telemetry_thread() -> None:
+    """Демон-поток: пишет СИСТЕМНУЮ телеметрию ПК2 в actor_sync/pc2_telemetry.json.
+
+    ПК1 читает файл и рисует карточки «ПК2 · GPU/CPU». Завершается со stop.flag или
+    с процессом (daemon). Без inference-сервера это единственный канал телеметрии ПК2.
+    """
+    import threading
+
+    def _loop() -> None:
+        from core.telemetry.pc2_telemetry import (
+            TELEMETRY_FILENAME,
+            sample_system_telemetry,
+            write_pc2_telemetry,
+        )
+        from project_paths import share_actor_sync_dir
+
+        path = os.path.join(share_actor_sync_dir(), TELEMETRY_FILENAME)
+        period = max(1.0, float(os.getenv("PC2_TELEMETRY_PERIOD_SEC", "3") or 3))
+        while not dqn_dist_stop_requested():
+            try:
+                write_pc2_telemetry(path, sample_system_telemetry())
+            except Exception:
+                pass
+            time.sleep(period)
+
+    threading.Thread(target=_loop, name="pc2-telemetry", daemon=True).start()
+    print("[DQN][DIST][PC2] телеметрия ПК2 → actor_sync/pc2_telemetry.json (для карточек на ПК1)", flush=True)
+
+
 def _worker_main(worker_id: int, ctx_json: str) -> None:
     import json
 
@@ -214,6 +243,8 @@ def main() -> int:
         f"context={'есть' if ctx else 'НЕТ (ПК1 не запущен?)'}",
         flush=True,
     )
+
+    _start_pc2_telemetry_thread()
 
     ctx_json = json.dumps(ctx, ensure_ascii=False)
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from PySide6 import QtCore
 
@@ -16,16 +16,16 @@ class TelemetryController(QtCore.QObject):
     activeChanged = QtCore.Signal()
     _cardsReady = QtCore.Signal(object)
 
-    def __init__(self, parent: Optional[QtCore.QObject] = None, local_probe: Any = None) -> None:
+    def __init__(self, parent: QtCore.QObject | None = None, local_probe: Any = None) -> None:
         super().__init__(parent)
         self._local = local_probe if local_probe is not None else LocalTelemetryProbe()
         self._batch = BatchMeter(window=30)
         self._cards_model = TelemetryCardsModel(self)
         self._active = False
-        self._pid: Optional[int] = None
+        self._pid: int | None = None
         self._algo = "dqn"
-        self._remote_cfg: Optional[dict] = None
-        self._batch_size_hint: Optional[int] = None
+        self._remote_cfg: dict | None = None
+        self._batch_size_hint: int | None = None
         self._labels: dict = self._load_labels()
         self._pool = QtCore.QThreadPool.globalInstance()
         self._busy = False
@@ -49,8 +49,8 @@ class TelemetryController(QtCore.QObject):
         return self._active
 
     # --- lifecycle (вызывается GUIController) ---
-    def set_context(self, *, pid: Optional[int], algo: str, active: bool,
-                    remote_cfg: Optional[dict], batch_size_hint: Optional[int] = None) -> None:
+    def set_context(self, *, pid: int | None, algo: str, active: bool,
+                    remote_cfg: dict | None, batch_size_hint: int | None = None) -> None:
         self._pid = pid
         self._algo = str(algo or "dqn")
         self._remote_cfg = remote_cfg
@@ -129,11 +129,27 @@ class TelemetryController(QtCore.QObject):
                 auth_token=self._remote_cfg.get("auth_token", ""),
                 health_fn=health_fn,
             ).sample()
+        if remote is None:
+            # DQN distributed: на ПК2 нет inference-сервера для health — берём
+            # системную телеметрию ПК2 из actor_sync/pc2_telemetry.json (пишет ПК2).
+            remote = self._read_pc2_telemetry_file()
         return build_cards(
             local=local, remote=remote, batch_avg=self._batch.average(),
             batch_size_hint=self._batch_size_hint, algo=self._algo, active=self._active,
             labels=self._labels,
         )
+
+    def _read_pc2_telemetry_file(self):
+        """Системная телеметрия ПК2 из общей папки (DQN distributed). None — если нет/устарела."""
+        try:
+            import os
+
+            from core.telemetry.pc2_telemetry import TELEMETRY_FILENAME, read_pc2_telemetry
+            from project_paths import share_actor_sync_dir
+
+            return read_pc2_telemetry(os.path.join(share_actor_sync_dir(), TELEMETRY_FILENAME))
+        except Exception:
+            return None
 
     @QtCore.Slot(object)
     def _apply_cards(self, cards: list) -> None:
