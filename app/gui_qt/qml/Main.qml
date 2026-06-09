@@ -689,6 +689,17 @@ ApplicationWindow {
                             }
                         }
 
+                        DistTrainProgressPanel {
+                            Layout.fillWidth: true
+                            ctrl: controller
+                            uiScale: root.uiScale
+                            uiBorder: root.uiBorder
+                            uiTextMain: root.uiTextMain
+                            uiTextMuted: root.uiTextMuted
+                            fontUiFamily: root.fontUiFamily
+                            fontDataFamily: root.fontDataFamily
+                        }
+
                         TelemetryStrip {
                             Layout.fillWidth: true
                         }

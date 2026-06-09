@@ -24,6 +24,8 @@ from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from PySide6.QtQuickControls2 import QQuickStyle
 
+from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
+
 from app.gui_qt.algo_hyperparams_defaults import (
     DEFAULT_DQN_HYPERPARAMS,
     DEFAULT_PPO_HYPERPARAMS,
@@ -125,6 +127,14 @@ class GUIController(QtCore.QObject):
     progressTextChanged = QtCore.Signal(str)
     progressPhaseChanged = QtCore.Signal(str)
     progressDetailChanged = QtCore.Signal(str)
+    distProgressVisibleChanged = QtCore.Signal(bool)
+    pc1ProgressValueChanged = QtCore.Signal(float)
+    pc2ProgressValueChanged = QtCore.Signal(float)
+    pc1ProgressLabelChanged = QtCore.Signal(str)
+    pc2ProgressLabelChanged = QtCore.Signal(str)
+    pc2StatusLineChanged = QtCore.Signal(str)
+    pc2StatusHintChanged = QtCore.Signal(str)
+    pc2StatusToneChanged = QtCore.Signal(str)
     rosterSummaryChanged = QtCore.Signal(str)
     numGamesChanged = QtCore.Signal(int)
     missionChanged = QtCore.Signal(str)
@@ -185,8 +195,24 @@ class GUIController(QtCore.QObject):
         self._progress_label = "ep=0/0 (0%)"
         self._progress_stats = "— it/s • elapsed 00:00"
         self._progress_text = "0%"
-        self._progress_phase = ""      # "", "collecting", "evaluating", "draining", "done" (только distributed AZ)
+        self._progress_phase = ""      # "", "waiting_pc2", "collecting", "topup", "evaluating", "draining", "done"
         self._progress_detail = ""     # русский текст фазы для UI
+
+        self._dist_progress_enabled = False
+        self._dist_local_ep_total = 0
+        self._dist_remote_ep_total = 0
+        self._dist_pc1_ep_done = 0
+        self._dist_pc2_ep_done = 0
+        self._dist_pc2_workers_alive = 0
+        self._dist_pc2_workers_need = 8
+        self._dist_pc2_wait_left_sec = -1
+        self._pc1_progress_value = 0.0
+        self._pc2_progress_value = 0.0
+        self._pc1_progress_label = "0/0"
+        self._pc2_progress_label = "0/0"
+        self._pc2_status_line = ""
+        self._pc2_status_hint = ""
+        self._pc2_status_tone = ""
 
         self._num_games = 100
         self._mission_options = ["only_war"]
@@ -482,6 +508,38 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=progressDetailChanged)
     def progressDetail(self) -> str:
         return self._progress_detail
+
+    @QtCore.Property(bool, notify=distProgressVisibleChanged)
+    def distProgressVisible(self) -> bool:
+        return bool(self._dist_progress_enabled)
+
+    @QtCore.Property(float, notify=pc1ProgressValueChanged)
+    def pc1ProgressValue(self) -> float:
+        return float(self._pc1_progress_value)
+
+    @QtCore.Property(float, notify=pc2ProgressValueChanged)
+    def pc2ProgressValue(self) -> float:
+        return float(self._pc2_progress_value)
+
+    @QtCore.Property(str, notify=pc1ProgressLabelChanged)
+    def pc1ProgressLabel(self) -> str:
+        return str(self._pc1_progress_label)
+
+    @QtCore.Property(str, notify=pc2ProgressLabelChanged)
+    def pc2ProgressLabel(self) -> str:
+        return str(self._pc2_progress_label)
+
+    @QtCore.Property(str, notify=pc2StatusLineChanged)
+    def pc2StatusLine(self) -> str:
+        return str(self._pc2_status_line)
+
+    @QtCore.Property(str, notify=pc2StatusHintChanged)
+    def pc2StatusHint(self) -> str:
+        return str(self._pc2_status_hint)
+
+    @QtCore.Property(str, notify=pc2StatusToneChanged)
+    def pc2StatusTone(self) -> str:
+        return str(self._pc2_status_tone)
 
     @QtCore.Property(str, notify=rosterSummaryChanged)
     def rosterSummary(self) -> str:
@@ -4833,20 +4891,197 @@ class GUIController(QtCore.QObject):
         self.progressTextChanged.emit(self._progress_text)
         self.progressLabelChanged.emit(self._progress_label)
 
-    # --- P2: фазы прогресса distributed AZ ---
+    # --- Distributed DQN: прогресс ПК1/ПК2 (вариант C в hero) ---
+    def _init_dist_progress_for_train(self) -> None:
+        dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
+        enabled = (
+            str(self._training_algo).strip().lower() == "dqn"
+            and int(dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1
+        )
+        self._dist_progress_enabled = bool(enabled)
+        if not self._dist_progress_enabled:
+            self._reset_dist_progress_display(clear_visible=True)
+            return
+        frac = float(
+            dqn_hp.get(
+                "distributed_local_episode_fraction",
+                dqn_hp.get("distributed_local_worker_fraction", 0.7),
+            )
+            or 0.7
+        )
+        local_ep, remote_ep = resolve_dqn_dist_episode_split(
+            total_episodes=max(1, int(self._train_total_episodes)),
+            local_fraction=frac,
+        )
+        self._dist_local_ep_total = int(local_ep)
+        self._dist_remote_ep_total = int(remote_ep)
+        self._dist_pc1_ep_done = 0
+        self._dist_pc2_ep_done = 0
+        self._dist_pc2_workers_alive = 0
+        self._dist_pc2_workers_need = max(
+            1,
+            int(dqn_hp.get("distributed_pc2_num_workers", 8) or 8),
+        )
+        self._dist_pc2_wait_left_sec = -1
+        self.distProgressVisibleChanged.emit(True)
+        if int(dqn_hp.get("distributed_wait_pc2", 0) or 0) == 1:
+            self._progress_phase = "waiting_pc2"
+            self.progressPhaseChanged.emit("waiting_pc2")
+            self._set_progress_detail("Ожидание подключения ПК2")
+        self._update_dist_progress_display()
+
+    def _reset_dist_progress_display(self, *, clear_visible: bool) -> None:
+        self._dist_pc1_ep_done = 0
+        self._dist_pc2_ep_done = 0
+        self._dist_pc2_workers_alive = 0
+        self._dist_pc2_wait_left_sec = -1
+        self._pc1_progress_value = 0.0
+        self._pc2_progress_value = 0.0
+        self._pc1_progress_label = "0/0"
+        self._pc2_progress_label = "0/0"
+        self._pc2_status_line = ""
+        self._pc2_status_hint = ""
+        self._pc2_status_tone = ""
+        if clear_visible:
+            if self._dist_progress_enabled:
+                self._dist_progress_enabled = False
+                self.distProgressVisibleChanged.emit(False)
+        self.pc1ProgressValueChanged.emit(self._pc1_progress_value)
+        self.pc2ProgressValueChanged.emit(self._pc2_progress_value)
+        self.pc1ProgressLabelChanged.emit(self._pc1_progress_label)
+        self.pc2ProgressLabelChanged.emit(self._pc2_progress_label)
+        self.pc2StatusLineChanged.emit(self._pc2_status_line)
+        self.pc2StatusHintChanged.emit(self._pc2_status_hint)
+        self.pc2StatusToneChanged.emit(self._pc2_status_tone)
+
+    def _record_dist_actor_episode(self, actor_idx: int) -> None:
+        if not self._dist_progress_enabled:
+            return
+        idx = int(actor_idx)
+        if 100 <= idx < int(DQN_DIST_TOPUP_ACTOR_IDX):
+            self._dist_pc2_ep_done += 1
+        elif idx < 100 or idx == int(DQN_DIST_TOPUP_ACTOR_IDX):
+            self._dist_pc1_ep_done += 1
+        self._update_dist_progress_display()
+
+    def _update_dist_progress_display(self) -> None:
+        if not self._dist_progress_enabled:
+            return
+        pc1_total = max(1, int(self._dist_local_ep_total))
+        pc2_total = max(1, int(self._dist_remote_ep_total))
+        pc1_cur = min(int(self._dist_pc1_ep_done), pc1_total)
+        pc2_cur = min(int(self._dist_pc2_ep_done), pc2_total)
+        pc1_val = max(0.0, min(1.0, pc1_cur / float(pc1_total)))
+        pc2_val = max(0.0, min(1.0, pc2_cur / float(pc2_total)))
+        pc1_label = f"{pc1_cur}/{pc1_total}"
+        if self._progress_phase == "waiting_pc2":
+            pc2_label = f"0/{pc2_total}"
+            pc2_val = 0.0
+        elif pc2_cur >= pc2_total:
+            pc2_label = f"{pc2_total}/{pc2_total} готово"
+        else:
+            pc2_label = f"{pc2_cur}/{pc2_total}"
+
+        phase = str(self._progress_phase or "")
+        if phase == "waiting_pc2":
+            status_line = f"ПК2: ждём подключение · {pc2_cur}/{pc2_total}"
+            hint_parts = [
+                f"workers {int(self._dist_pc2_workers_alive)}/{int(self._dist_pc2_workers_need)}",
+            ]
+            if int(self._dist_pc2_wait_left_sec) >= 0:
+                hint_parts.append(f"осталось ~{int(self._dist_pc2_wait_left_sec)} с")
+            status_hint = " · ".join(hint_parts)
+            status_tone = "waiting"
+        elif pc2_cur >= pc2_total:
+            status_line = f"ПК2 готово · {pc2_total}/{pc2_total}"
+            if pc1_cur < pc1_total:
+                status_hint = "ПК1 доигрывает локальную квоту"
+            elif phase == "draining":
+                status_hint = "Завершение воркеров…"
+            else:
+                status_hint = "Квота ПК2 выполнена"
+            status_tone = "done"
+        else:
+            status_line = f"ПК2: принято · {pc2_cur}/{pc2_total}"
+            if int(self._dist_pc2_workers_alive) > 0:
+                status_hint = (
+                    f"воркеров {int(self._dist_pc2_workers_alive)}/{int(self._dist_pc2_workers_need)}"
+                )
+            else:
+                status_hint = "сбор эпизодов с ПК2"
+            status_tone = "collecting"
+
+        if (
+            pc1_val != self._pc1_progress_value
+            or pc2_val != self._pc2_progress_value
+            or pc1_label != self._pc1_progress_label
+            or pc2_label != self._pc2_progress_label
+        ):
+            self._pc1_progress_value = pc1_val
+            self._pc2_progress_value = pc2_val
+            self._pc1_progress_label = pc1_label
+            self._pc2_progress_label = pc2_label
+            self.pc1ProgressValueChanged.emit(pc1_val)
+            self.pc2ProgressValueChanged.emit(pc2_val)
+            self.pc1ProgressLabelChanged.emit(pc1_label)
+            self.pc2ProgressLabelChanged.emit(pc2_label)
+
+        if (
+            status_line != self._pc2_status_line
+            or status_hint != self._pc2_status_hint
+            or status_tone != self._pc2_status_tone
+        ):
+            self._pc2_status_line = status_line
+            self._pc2_status_hint = status_hint
+            self._pc2_status_tone = status_tone
+            self.pc2StatusLineChanged.emit(status_line)
+            self.pc2StatusHintChanged.emit(status_hint)
+            self.pc2StatusToneChanged.emit(status_tone)
+
+    def _handle_dqn_dist_progress_line(self, line: str) -> bool:
+        if not self._dist_progress_enabled:
+            return False
+        norm = line.strip()
+        wait_m = re.search(
+            r"\[DQN\]\[DIST\] ждём ПК2: workers=(\d+)/(\d+) осталось=(\d+)s",
+            norm,
+        )
+        if wait_m:
+            self._dist_pc2_workers_alive = int(wait_m.group(1))
+            self._dist_pc2_workers_need = int(wait_m.group(2))
+            self._dist_pc2_wait_left_sec = int(wait_m.group(3))
+            self._update_dist_progress_display()
+            return True
+        ready_m = re.search(r"\[DQN\]\[DIST\] ПК2 готов: workers=(\d+)/(\d+)", norm)
+        if ready_m:
+            self._dist_pc2_workers_alive = int(ready_m.group(1))
+            self._dist_pc2_workers_need = int(ready_m.group(2))
+            self._dist_pc2_wait_left_sec = -1
+            self._update_dist_progress_display()
+            return True
+        return False
+
+    # --- P2: фазы прогресса distributed AZ / DQN ---
     def _handle_progress_phase_line(self, line: str) -> bool:
         """Разбирает [TRAIN][PHASE]/[TRAIN][DIST]. True = строка обработана как фаза."""
         norm = line.strip()
-        phase_m = re.search(r"\[TRAIN\]\[PHASE\]\s+(collecting|draining|evaluating|done)", norm)
+        if self._handle_dqn_dist_progress_line(norm):
+            return True
+        phase_m = re.search(
+            r"\[TRAIN\]\[PHASE\]\s+(collecting|draining|evaluating|done|waiting_pc2|topup)",
+            norm,
+        )
         if phase_m:
             self._set_progress_phase(phase_m.group(1))
             return True
         dist_m = re.search(
-            r"\[TRAIN\]\[DIST\]\s+remote_alive=(\d+)\s+ep_done=(\d+)/(\d+)\s+drain_left=(\d+)s",
+            r"\[TRAIN\]\[DIST\]\s+remote_alive=(\d+)\s+ep_done=(\d+)/(\d+)\s+drain_left(?:_max)?=(\d+)s",
             norm,
         )
         if dist_m:
+            self._dist_pc2_workers_alive = int(dist_m.group(1))
             self._update_drain_detail(int(dist_m.group(1)), int(dist_m.group(4)))
+            self._update_dist_progress_display()
             return True
         return False
 
@@ -4860,8 +5095,12 @@ class GUIController(QtCore.QObject):
         phase = str(phase)
         self._progress_phase = phase
         self.progressPhaseChanged.emit(phase)
-        if phase == "collecting":
+        if phase == "waiting_pc2":
+            self._set_progress_detail("Ожидание подключения ПК2")
+        elif phase == "collecting":
             self._set_progress_detail("Сбор эпизодов (ПК1 + ПК2)")
+        elif phase == "topup":
+            self._set_progress_detail("Добор эпизодов на ПК1")
         elif phase == "draining":
             self._apply_draining_display(detail="Завершение воркеров ПК2…")
         elif phase == "evaluating":
@@ -4876,6 +5115,7 @@ class GUIController(QtCore.QObject):
             self.progressValueChanged.emit(1.0)
             self.progressTextChanged.emit("100%")
             self._set_progress_detail("Готово")
+        self._update_dist_progress_display()
 
     def _apply_draining_display(self, *, detail: str, drain_left: int | None = None) -> None:
         """В фазе drain бар не прыгает в 100%: держим ~98% + текст про завершение ПК2."""
@@ -5026,8 +5266,6 @@ class GUIController(QtCore.QObject):
         if str(self._training_algo).strip().lower() == "dqn":
             _dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
             if int(_dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1:
-                from core.models.dqn_dist import resolve_dqn_dist_episode_split
-
                 env_overrides["DQN_DISTRIBUTED_ACTORS"] = "1"
                 env_overrides["ACTOR_QUEUE_MAX"] = str(
                     max(1024, int(env_overrides.get("ACTOR_QUEUE_MAX", "256")))
@@ -5277,6 +5515,7 @@ class GUIController(QtCore.QObject):
 
         self._train_total_episodes = self._num_games
         self._reset_training_stats()
+        self._init_dist_progress_for_train()
         self._set_progress(0, self._train_total_episodes)
         self._progress_stats = "— it/s • elapsed 00:00"
         self.progressStatsChanged.emit(self._progress_stats)
@@ -5605,6 +5844,10 @@ class GUIController(QtCore.QObject):
         # P2: фазы distributed AZ (collecting → draining → done).
         if self._handle_progress_phase_line(line):
             return
+        normalized = line.strip()
+        trace_m = re.search(r"\[TRACE\]\[ACTIONS\] ep=\d+ actor=(\d+)", normalized)
+        if trace_m:
+            self._record_dist_actor_episode(int(trace_m.group(1)))
         current, total = self._parse_training_progress(line, self._train_total_episodes)
         if current is None:
             return
@@ -5672,6 +5915,7 @@ class GUIController(QtCore.QObject):
             self._progress_detail = ""
             self.progressPhaseChanged.emit("")
             self.progressDetailChanged.emit("")
+        self._reset_dist_progress_display(clear_visible=True)
 
     def _on_error(self, error: QtCore.QProcess.ProcessError) -> None:
         self._emit_log(f"[GUI] Ошибка процесса: {error}.", level="ERROR")
