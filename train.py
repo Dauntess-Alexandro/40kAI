@@ -7111,6 +7111,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     for p in procs:
         try:
             p.join(timeout=1.0)
+            # Зависший актор (например, заблокирован на put() в переполненную очередь
+            # во время remote-флуда) иначе подвесит выход родителя на atexit-join. Убиваем.
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=2.0)
         except Exception:
             pass
 
