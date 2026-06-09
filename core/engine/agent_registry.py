@@ -4,13 +4,13 @@ import hashlib
 import json
 import os
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import torch
-from project_paths import ARTIFACTS_MODELS_DIR, PROJECT_ROOT
 
+from project_paths import ARTIFACTS_MODELS_DIR, PROJECT_ROOT, resolve_share_models_root
 
 AGENTS_ROOT = str(ARTIFACTS_MODELS_DIR / "agents")
 AGENTS_REGISTRY_PATH = str(ARTIFACTS_MODELS_DIR / "agents_registry.json")
@@ -23,7 +23,7 @@ class AgentIdentity:
     faction: str
     ruleset_version: str = DEFAULT_RULESET_VERSION
 
-    def normalized(self) -> "AgentIdentity":
+    def normalized(self) -> AgentIdentity:
         side = str(self.side or "").strip().upper()
         if side not in {"P1", "P2"}:
             side = "P1"
@@ -44,7 +44,7 @@ def _load_json(path: str, fallback: Any) -> Any:
     if not os.path.exists(path):
         return fallback
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             return json.load(handle)
     except (OSError, json.JSONDecodeError):
         return fallback
@@ -58,19 +58,12 @@ def _write_json(path: str, payload: Any) -> None:
 
 
 def models_dir() -> str:
-    """Корень artifacts/models (локально или SMB: MODELS_DIR / 40KAI_MODELS_DIR)."""
-    custom = str(os.getenv("40KAI_MODELS_DIR", os.getenv("MODELS_DIR", "")) or "").strip()
-    if custom:
-        base = custom.rstrip("\\/")
-        name = os.path.basename(base).lower()
-        if name == "agents":
-            parent = os.path.dirname(base)
-            return parent if parent else base
-        if name == "actor_sync":
-            parent = os.path.dirname(base)
-            return parent if parent else base
-        return base
-    return str(ARTIFACTS_MODELS_DIR)
+    """Корень artifacts/models (локально или SMB-шара ПК1).
+
+    Единый резолвер из project_paths: 40KAI_SHARE_ROOT → 40KAI_MODELS_DIR →
+    MODELS_DIR → локальный artifacts/models (хвост actor_sync/agents стрипится).
+    """
+    return resolve_share_models_root()
 
 
 def agents_registry_path() -> str:
@@ -130,7 +123,7 @@ def _resolve_agent_artifact_path(path: Any, artifact_dir: str, fallback_name: st
     return raw
 
 
-def _find_agent_entry_on_disk(agent_id: str) -> Optional[dict[str, Any]]:
+def _find_agent_entry_on_disk(agent_id: str) -> dict[str, Any] | None:
     target = str(agent_id or "").strip()
     root_agents = agents_meta_root()
     if not target or not os.path.isdir(root_agents):
@@ -170,7 +163,7 @@ def make_env_contract(
     n_actions: list[int],
     mission_name: str,
     ruleset_version: str = DEFAULT_RULESET_VERSION,
-    extras: Optional[dict[str, Any]] = None,
+    extras: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     obs_signature = f"vec:{int(n_observations)}"
     act_signature = "heads:" + ",".join(str(int(v)) for v in n_actions)
@@ -220,9 +213,9 @@ def save_agent_artifact(
     agent_id: str,
     env_contract: dict[str, Any],
     policy_state_dict: dict[str, Any],
-    target_state_dict: Optional[dict[str, Any]] = None,
-    optimizer_state_dict: Optional[dict[str, Any]] = None,
-    extra_meta: Optional[dict[str, Any]] = None,
+    target_state_dict: dict[str, Any] | None = None,
+    optimizer_state_dict: dict[str, Any] | None = None,
+    extra_meta: dict[str, Any] | None = None,
 ) -> str:
     ident = identity.normalized()
     root = agent_dir(ident, agent_id)
@@ -343,7 +336,7 @@ def resolve_latest_opponent_agent_id(*, learner_side: str = "P1", agents_root: s
     return str(records[0].get("agent_id", "") or "").strip()
 
 
-def list_agents(*, side: Optional[str] = None, faction: Optional[str] = None) -> list[dict[str, Any]]:
+def list_agents(*, side: str | None = None, faction: str | None = None) -> list[dict[str, Any]]:
     registry = _load_json(agents_registry_path(), {"agents": []})
     agents = registry.get("agents", []) if isinstance(registry, dict) else []
     if not isinstance(agents, list):

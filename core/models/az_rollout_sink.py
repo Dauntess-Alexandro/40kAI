@@ -14,12 +14,22 @@ from core.models.az_rollout_protocol import (
 )
 
 
+def _actor_sync_dir() -> str:
+    """Папка actor_sync на SMB-шаре: единый резолвер (40KAI_SHARE_ROOT → … → локально)."""
+    try:
+        from project_paths import share_actor_sync_dir
+
+        return share_actor_sync_dir()
+    except Exception:
+        root = os.getenv("MODELS_DIR", os.path.join(os.getcwd(), "artifacts", "models"))
+        return os.path.join(root, "actor_sync")
+
+
 def az_dist_stop_flag_path() -> str:
     custom = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or "").strip()
     if custom:
         return custom
-    root = os.getenv("MODELS_DIR", os.path.join(os.getcwd(), "artifacts", "models"))
-    return os.path.join(root, "actor_sync", "az_dist_stop.flag")
+    return os.path.join(_actor_sync_dir(), "az_dist_stop.flag")
 
 
 def az_dist_stop_requested(flag_path: str | None = None) -> bool:

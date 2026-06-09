@@ -76,11 +76,9 @@ def _worker_main(worker_id: int, ctx_json: str) -> None:
         pass
 
     # Стартовые веса с SMB (если есть), иначе свежая сеть.
-    sync_path = os.path.join(
-        os.getenv("MODELS_DIR", os.path.join(os.getcwd(), "artifacts", "models")),
-        "actor_sync",
-        "latest_policy.pth",
-    )
+    from project_paths import share_actor_sync_dir
+
+    sync_path = os.path.join(share_actor_sync_dir(), "latest_policy.pth")
     init_weights = {}
     if os.path.isfile(sync_path):
         try:
@@ -174,11 +172,17 @@ def main() -> int:
     if ctx.get("opponent_agent_id"):
         os.environ.setdefault("OPPONENT_AGENT_ID", str(ctx["opponent_agent_id"]))
 
-    # --- Автозаполнение: на ПК2 достаточно задать MODELS_DIR (SMB-шара ПК1). ---
+    # --- Автозаполнение: на ПК2 достаточно задать 40KAI_SHARE_ROOT (SMB-шара ПК1). ---
     # IP ПК1 — из UNC-пути шары; порт и auth — из train-context, который пишет ПК1.
+    from project_paths import resolve_share_models_root
+
+    share_root = resolve_share_models_root()
+    # MODELS_DIR для обратной совместимости (downstream-код, читающий его напрямую).
+    os.environ.setdefault("MODELS_DIR", share_root)
+
     host = str(os.getenv("DQN_DIST_PC1_HOST", "") or "").strip()
     if not host:
-        host = derive_host_from_unc(os.getenv("MODELS_DIR", ""))
+        host = derive_host_from_unc(share_root)
     if not host:
         host = "127.0.0.1"
     os.environ["DQN_DIST_PC1_HOST"] = host

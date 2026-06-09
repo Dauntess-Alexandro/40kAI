@@ -229,10 +229,12 @@ def main() -> int:
     opp_id = _resolve_opponent_agent_id(dist_ctx)
     if opp_id:
         os.environ["OPPONENT_AGENT_ID"] = opp_id
-    models_dir = str(os.getenv("MODELS_DIR", "") or os.getenv("40KAI_MODELS_DIR", "")).strip()
-    if models_dir:
-        os.environ["MODELS_DIR"] = models_dir
-        os.environ["40KAI_MODELS_DIR"] = models_dir
+    # Единый резолвер (40KAI_SHARE_ROOT → 40KAI_MODELS_DIR → MODELS_DIR → локально).
+    from project_paths import resolve_share_models_root
+
+    models_dir = resolve_share_models_root()
+    os.environ.setdefault("MODELS_DIR", models_dir)
+    os.environ.setdefault("40KAI_MODELS_DIR", models_dir)
     from core.engine.agent_registry import agents_meta_root
 
     print(

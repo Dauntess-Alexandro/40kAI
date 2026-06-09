@@ -1,11 +1,15 @@
 @echo off
 REM === Конфиг ПК2 для DQN distributed actors ===
 REM
-REM ОБЯЗАТЕЛЬНО задать только одно — SMB-шару ПК1 с моделью (где лежит artifacts/models):
-set MODELS_DIR=\\192.168.1.10\40kai_models
+REM ОБЯЗАТЕЛЬНО задать только одно — общую SMB-папку ПК1 (где лежит artifacts/models):
+set 40KAI_SHARE_ROOT=\\192.168.1.10\40kai_models
+REM (Можно указать и прямо на ...\actor_sync — корень models определится сам.)
+REM
+REM Совместимость: старая MODELS_DIR тоже понимается (если 40KAI_SHARE_ROOT пуст):
+REM set MODELS_DIR=\\192.168.1.10\40kai_models
 REM
 REM Остальное выводится автоматически:
-REM   - IP ПК1    из UNC-пути MODELS_DIR (\\192.168.1.10\... -^> 192.168.1.10)
+REM   - IP ПК1    из UNC-пути шары (\\192.168.1.10\... -^> 192.168.1.10)
 REM   - порт+auth из dqn_dist_train_context.json (ПК1 пишет при старте)
 REM   - воркеры   из числа ядер CPU
 REM

@@ -28,12 +28,23 @@ def derive_host_from_unc(path: str) -> str:
     return ""
 
 
+def _actor_sync_dir() -> str:
+    """Папка actor_sync на SMB-шаре: единый резолвер (40KAI_SHARE_ROOT → … → локально)."""
+    try:
+        from project_paths import share_actor_sync_dir
+
+        return share_actor_sync_dir()
+    except Exception:
+        # Фолбэк, если project_paths недоступен (изолированный запуск).
+        root = os.getenv("MODELS_DIR", os.path.join(os.getcwd(), "artifacts", "models"))
+        return os.path.join(root, "actor_sync")
+
+
 def dqn_dist_stop_flag_path() -> str:
     custom = str(os.getenv("DQN_DIST_STOP_FLAG_PATH", "") or "").strip()
     if custom:
         return custom
-    root = os.getenv("MODELS_DIR", os.path.join(os.getcwd(), "artifacts", "models"))
-    return os.path.join(root, "actor_sync", "dqn_dist_stop.flag")
+    return os.path.join(_actor_sync_dir(), "dqn_dist_stop.flag")
 
 
 def dqn_dist_stop_requested(flag_path: str | None = None) -> bool:

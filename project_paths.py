@@ -69,6 +69,41 @@ RESPONSE_PATH = RUNTIME_STATE_DIR / "response.txt"
 TRAIN_DATA_PATH = RUNTIME_STATE_DIR / "data.json"
 
 
+def resolve_share_models_root() -> str:
+    """Корень общих моделей (локально или SMB-шара ПК1) — единая точка для ПК1↔ПК2.
+
+    Приоритет env: ``40KAI_SHARE_ROOT`` → ``40KAI_MODELS_DIR`` → ``MODELS_DIR`` →
+    локальный ``artifacts/models``. Резолвится динамически (на ПК2 переменные
+    задаются после импорта). Forgiving: если путь указывает прямо на ``actor_sync``
+    или ``agents`` — возвращаем родительский корень ``models``.
+    """
+    custom = ""
+    for var in ("40KAI_SHARE_ROOT", "40KAI_MODELS_DIR", "MODELS_DIR"):
+        val = str(os.getenv(var, "") or "").strip()
+        if val:
+            custom = val
+            break
+    if not custom:
+        return str(ARTIFACTS_MODELS_DIR)
+    base = custom.rstrip("\\/")
+    if base.endswith(":"):
+        # Корень mapped-диска (Z:\) — без хвостового слэша станет drive-relative.
+        return base + os.sep
+    if os.path.basename(base).lower() in {"actor_sync", "agents"}:
+        parent = os.path.dirname(base)
+        if not parent:
+            return base
+        # Убираем хвостовой разделитель от dirname, но сохраняем корень диска (X:\).
+        stripped = parent.rstrip("\\/")
+        return stripped if stripped and not stripped.endswith(":") else parent
+    return base
+
+
+def share_actor_sync_dir() -> str:
+    """Папка ``actor_sync`` в общем корне моделей (веса/контекст/stop.flag на SMB)."""
+    return os.path.join(resolve_share_models_root(), "actor_sync")
+
+
 def ensure_runtime_dirs() -> None:
     for directory in (
         ARTIFACTS_MODELS_DIR,
