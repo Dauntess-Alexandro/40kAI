@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import collections
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 import numpy as np
 import torch
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id
-from core.models.DQN import DQN
-from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_kwargs_from_env
+from core.models.action_contract import action_tensor_to_dict
 from core.models.alphazero_ids import az_mcts_mode_for, is_az_algo
-from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
+from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.action_contract import action_tensor_to_dict
+from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_kwargs_from_env
 from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, normalize_state_dict
 
 
@@ -57,7 +57,7 @@ def _parse_contract_sizes(contract: dict[str, Any]) -> tuple[int, list[int]]:
     return int(n_obs), [int(x) for x in n_actions]
 
 
-def load_agent_opponent(*, agent_id: str, expected_contract: Optional[dict[str, Any]] = None) -> OpponentSpec:
+def load_agent_opponent(*, agent_id: str, expected_contract: dict[str, Any] | None = None) -> OpponentSpec:
     payload = load_agent_by_id(str(agent_id))
     meta = payload.get("meta") if isinstance(payload, dict) else {}
     algo = str((meta or {}).get("algo", "")).strip().lower()
@@ -132,10 +132,12 @@ def build_policy_fn(
 
     if opponent.algo == "dqn":
         policy_state = normalize_state_dict(opponent.policy_state)
-        dueling = any(str(k).startswith("value_heads.") for k in policy_state.keys())
-        from core.models.DQN import make_dqn
+        from core.models.DQN import infer_dqn_arch_from_state_dict, make_dqn
 
-        net = make_dqn(n_obs, n_actions, dueling=dueling).to(torch.device("cpu"))
+        # Восстанавливаем арх (ensemble/dueling/слои/iqn/noisy) из самих весов —
+        # иначе ensemble>1 или dueling не совпадут и load_state_dict упадёт.
+        arch = infer_dqn_arch_from_state_dict(policy_state)
+        net = make_dqn(n_obs, n_actions, **arch).to(torch.device("cpu"))
         net.load_state_dict(policy_state)
         net.eval()
 

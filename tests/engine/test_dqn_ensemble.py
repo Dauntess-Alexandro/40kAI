@@ -70,3 +70,25 @@ def test_optimize_model_ensemble_heads_different_widths():
     ds = res["dist_stats"]
     assert ds["n_ensemble"] == 3
     assert ds["ensemble_std_mean"] >= 0.0
+
+
+def test_infer_dqn_arch_roundtrip_ensemble_and_single():
+    """Арх из state_dict восстанавливается так, что load_state_dict проходит (ens=3 и ens=1)."""
+    from core.models.DQN import infer_dqn_arch_from_state_dict, make_dqn
+
+    for n_ens in (1, 3):
+        src = make_dqn(
+            12, [3, 2, 4], dueling=True, noisy=True, distributional="iqn",
+            hidden_size=64, num_layers=2, n_ensemble=n_ens,
+        )
+        sd = src.state_dict()
+        arch = infer_dqn_arch_from_state_dict(sd)
+        assert arch["n_ensemble"] == n_ens
+        assert arch["dueling"] is True
+        assert arch["noisy"] is True
+        assert arch["distributional"] == "iqn"
+        assert arch["num_layers"] == 2
+        assert arch["hidden_size"] == 64
+        # Пересобранная по восстановленному арх сеть грузит веса без mismatch.
+        rebuilt = make_dqn(12, [3, 2, 4], **arch)
+        rebuilt.load_state_dict(sd)

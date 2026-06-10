@@ -1,5 +1,6 @@
 import math
 import os
+
 import torch
 
 
@@ -28,6 +29,54 @@ def make_dqn(n_observations, n_actions, dueling=False, noisy=True, distributiona
     )
     kwargs.update(overrides)
     return DQN(n_observations, n_actions, **kwargs)
+
+
+def infer_dqn_arch_from_state_dict(state_dict) -> dict:
+    """Восстановить арх-параметры сети из её state_dict.
+
+    Нужно, чтобы загрузить чужой чекпойнт (например DQN-оппонента для AZ) без
+    знания исходного конфига: иначе ensemble/dueling/слои не совпадут и
+    load_state_dict упадёт. Меты с арх-параметрами у агента может не быть.
+    """
+    import re
+
+    keys = list(state_dict.keys())
+
+    def _count_prefix(pattern: str) -> int:
+        idx = set()
+        for k in keys:
+            m = re.match(pattern, k)
+            if m:
+                idx.add(int(m.group(1)))
+        return len(idx)
+
+    n_ensemble = max(1, _count_prefix(r"head_bundles\.(\d+)\."))
+    num_layers = max(1, _count_prefix(r"blocks\.(\d+)\."))
+    dueling = any(k.startswith("value_heads.") or ".value_heads." in k for k in keys)
+    noisy = any(k.endswith("weight_mu") or ".weight_mu" in k for k in keys)
+    if any("iqn_tau_fc" in k for k in keys):
+        distributional = "iqn"
+    elif any(k.endswith("support") or ".support" in k for k in keys):
+        distributional = "c51"
+    else:
+        distributional = None
+
+    hidden_size = None
+    for k in keys:
+        if k.startswith("input_fc.") and (k.endswith("weight_mu") or k.endswith("weight")):
+            hidden_size = int(state_dict[k].shape[0])
+            break
+
+    arch = {
+        "dueling": dueling,
+        "noisy": noisy,
+        "distributional": distributional,
+        "n_ensemble": n_ensemble,
+        "num_layers": num_layers,
+    }
+    if hidden_size:
+        arch["hidden_size"] = hidden_size
+    return arch
 import torch.nn as nn
 import torch.nn.functional as F
 
