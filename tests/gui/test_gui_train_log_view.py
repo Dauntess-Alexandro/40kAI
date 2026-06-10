@@ -65,6 +65,25 @@ class TestTrainLogViewContract(unittest.TestCase):
         self.assertNotIn("logArea.text +=", main_src)
 
 
+class TestTrainEpLineContract(unittest.TestCase):
+    """Богатая строка эпизода [TRAIN][EP] должна быть во всех путях, не только в sync-DQN.
+
+    В dist/actor-learner режиме раньше печатался только служебный ep=N/M (журнал его
+    скрывает как дубль прогресс-бара) — эпизоды пропадали из журнала.
+    """
+
+    def test_train_ep_emitted_in_all_loops(self):
+        train_src = Path("train.py").read_text(encoding="utf-8")
+        # sync-DQN + actor-learner DQN (dist) + actor-learner GMZ.
+        self.assertGreaterEqual(train_src.count('"[TRAIN][EP] "'), 3)
+
+    def test_gui_explains_learner_queue_lag(self):
+        # Полоски сбора полные, а верхний бар идёт по обработанным эпизодам —
+        # GUI обязан объяснить разрыв текстом фазы.
+        gui_src = Path("app/gui_qt/main.py").read_text(encoding="utf-8")
+        self.assertIn("обучение разбирает очередь", gui_src)
+
+
 class TestTrainLogViewBehavior(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -6954,6 +6954,22 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         print(f"ep={episodes_finished}/{totLifeT}", flush=True)
                     except Exception:
                         pass
+                # Богатая строка эпизода для журнала/лог-файла (служебный ep=N/M GUI скрывает).
+                if TRAIN_LOG_ENABLED:
+                    train_ep_line = (
+                        "[TRAIN][EP] "
+                        f"ep={episodes_finished}/{int(totLifeT)} "
+                        f"actor={int(payload.get('actor_idx', -1) or -1)} "
+                        f"result={payload.get('result', '')} "
+                        f"end_reason={payload.get('end_reason', '')} "
+                        f"vp_diff={int(payload.get('vp_diff', 0) or 0)} "
+                        f"ep_reward={float(payload.get('ep_reward', 0.0) or 0.0):.4f} "
+                        f"turns={int(payload.get('turn', 0) or 0)}"
+                    )
+                    if TRAIN_LOG_TO_FILE:
+                        append_agent_log(train_ep_line)
+                    if TRAIN_LOG_TO_CONSOLE:
+                        print(train_ep_line, flush=True)
 
                 # Periodic DET-like eval для Actor-Learner (аналог DET_EVAL в основном loop).
                 if (
@@ -8371,6 +8387,14 @@ def _actor_learner_actor_entry(
                 )
             except Exception:
                 pass
+
+            if DQN_DISTRIBUTED_ACTORS:
+                # Своевременный маркер сбора ПК1 для GUI (аналог pc2_ep_accepted):
+                # learner-TRACE отстаёт на размер очереди обучения, прогресс сбора — отсюда.
+                try:
+                    print(f"[TRAIN][DIST][PC1] pc1_ep_collected actor={int(actor_idx)}", flush=True)
+                except Exception:
+                    pass
 
         if buf:
             data_q.put(("batch", buf))
@@ -10980,6 +11004,22 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 pbar.update(target_n - int(pbar.n))
             if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
                 print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+            # Богатая строка эпизода для журнала/лог-файла (служебный ep=N/M GUI скрывает).
+            if TRAIN_LOG_ENABLED:
+                train_ep_line = (
+                    "[TRAIN][EP] "
+                    f"ep={episodes_finished}/{int(totLifeT)} "
+                    f"actor={int(payload.get('actor_idx', -1) or -1)} "
+                    f"result={payload.get('result', '')} "
+                    f"end_reason={payload.get('end_reason', '')} "
+                    f"vp_diff={int(payload.get('vp_diff', 0) or 0)} "
+                    f"ep_reward={float(payload.get('ep_reward', 0.0) or 0.0):.4f} "
+                    f"turns={int(payload.get('turn', 0) or 0)}"
+                )
+                if TRAIN_LOG_TO_FILE:
+                    append_agent_log(train_ep_line)
+                if TRAIN_LOG_TO_CONSOLE:
+                    print(train_ep_line, flush=True)
             _maybe_train_progress_heartbeat(force=True)
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
                 last_checkpoint = _save_checkpoint(episodes_finished)

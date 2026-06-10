@@ -204,6 +204,9 @@ class GUIController(QtCore.QObject):
         self._dist_remote_ep_total = 0
         self._dist_pc1_ep_done = 0
         self._dist_pc2_ep_done = 0
+        # ПК1-полоска: сбор по маркеру актора pc1_ep_collected; до первого маркера —
+        # fallback на learner-TRACE (старые прогоны без маркера).
+        self._dist_pc1_marker_seen = False
         self._dist_pc2_workers_alive = 0
         self._dist_pc2_workers_need = 8
         self._dist_pc2_wait_left_sec = -1
@@ -4937,6 +4940,7 @@ class GUIController(QtCore.QObject):
         ep_total = max(1, int(self._train_total_episodes))
         self._dist_pc1_ep_done = 0
         self._dist_pc2_ep_done = 0
+        self._dist_pc1_marker_seen = False
         self._dist_pc2_workers_alive = 0
         self._dist_pc2_wait_left_sec = -1
         if dqn_enabled:
@@ -4978,6 +4982,7 @@ class GUIController(QtCore.QObject):
             self.distProgressModeChanged.emit("")
         self._dist_pc1_ep_done = 0
         self._dist_pc2_ep_done = 0
+        self._dist_pc1_marker_seen = False
         self._dist_pc2_workers_alive = 0
         self._dist_pc2_wait_left_sec = -1
         self._pc1_progress_value = 0.0
@@ -5002,6 +5007,10 @@ class GUIController(QtCore.QObject):
     def _record_dist_actor_episode(self, actor_idx: int) -> None:
         if not self._dist_progress_enabled:
             return
+        if self._dist_pc1_marker_seen:
+            # ПК1 уже считается по своевременному маркеру актора pc1_ep_collected —
+            # learner-TRACE (отстаёт на очередь обучения) игнорируем, иначе двойной счёт.
+            return
         idx = int(actor_idx)
         # ПК2 (100..TOPUP) НЕ считаем из TRACE: learner эмитит [TRACE][ACTIONS] только
         # когда вынул ep из своей очереди (узкое место — обучение), поэтому прогресс ПК2
@@ -5010,6 +5019,14 @@ class GUIController(QtCore.QObject):
         if idx < 100 or idx == int(DQN_DIST_TOPUP_ACTOR_IDX):
             self._dist_pc1_ep_done += 1
             self._update_dist_progress_display()
+
+    def _record_pc1_ep_collected(self) -> None:
+        """Прогресс сбора ПК1 из маркера актора (своевременно, не из learner-TRACE)."""
+        if not self._dist_progress_enabled:
+            return
+        self._dist_pc1_marker_seen = True
+        self._dist_pc1_ep_done += 1
+        self._update_dist_progress_display()
 
     def _record_pc2_ep_accepted(self, received_eps: int) -> None:
         """Прогресс ПК2 из накопительного счётчика приёмника (своевременно, не из TRACE)."""
@@ -5059,7 +5076,9 @@ class GUIController(QtCore.QObject):
         elif pc2_cur >= pc2_total and not pool_mode:
             status_line = f"ПК2 готово · {pc2_total}/{pc2_total}"
             if pc1_cur < pc1_total:
-                status_hint = "ПК1 доигрывает локальную квоту"
+                # pc1_cur растёт по обработанным learner'ом эпизодам ([TRACE]),
+                # а не по сбору — честный текст про очередь, а не «доигрывает».
+                status_hint = "обучение разбирает очередь эпизодов"
             elif phase == "draining":
                 status_hint = "Завершение воркеров…"
             else:
@@ -5106,10 +5125,19 @@ class GUIController(QtCore.QObject):
             self.pc2StatusHintChanged.emit(status_hint)
             self.pc2StatusToneChanged.emit(status_tone)
 
+        if phase == "collecting" and not pool_mode and pc2_cur >= pc2_total:
+            # Полоски сбора уже полные, а верхний бар движется по обработанным
+            # learner'ом эпизодам — объясняем разрыв, иначе общий прогресс
+            # выглядит «устаревшим» (ПК2 720/720, а бар 70%).
+            self._set_progress_detail("ПК2 собрал квоту — обучение разбирает очередь эпизодов")
+
     def _handle_dqn_dist_progress_line(self, line: str) -> bool:
         if not self._dist_progress_enabled:
             return False
         norm = line.strip()
+        if "[TRAIN][DIST][PC1] pc1_ep_collected" in norm:
+            self._record_pc1_ep_collected()
+            return True
         accepted_m = re.search(r"\[TRAIN\]\[DIST\]\[PC2\] pc2_ep_accepted=(\d+)", norm)
         if accepted_m:
             self._record_pc2_ep_accepted(int(accepted_m.group(1)))

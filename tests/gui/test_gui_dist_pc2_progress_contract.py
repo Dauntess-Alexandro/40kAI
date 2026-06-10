@@ -25,6 +25,21 @@ class TestGuiDistPc2ProgressContract(unittest.TestCase):
         # При remote_alive=0 в фазе сбора показываем «ПК2 завершил сбор», а не «воркеров 8/8».
         self.assertIn("ПК2 завершил сбор", self.source)
 
+    def test_pc1_progress_uses_actor_collection_marker(self):
+        # ПК1-полоска — сбор, а не обработка learner'ом: актор печатает своевременный
+        # маркер pc1_ep_collected (аналог pc2_ep_accepted), GUI считает по нему.
+        train_src = Path("train.py").read_text(encoding="utf-8")
+        self.assertIn("[TRAIN][DIST][PC1] pc1_ep_collected actor=", train_src)
+        self.assertIn("pc1_ep_collected", self.source)
+
+    def test_trace_pc1_count_disabled_when_marker_seen(self):
+        # После первого маркера сбора learner-TRACE для ПК1 игнорируется — иначе двойной счёт.
+        marker = "def _record_dist_actor_episode(self, actor_idx: int) -> None:"
+        start = self.source.index(marker)
+        end = self.source.index("def _update_dist_progress_display", start)
+        body = self.source[start:end]
+        self.assertIn("_dist_pc1_marker_seen", body)
+
     def test_az_dist_progress_uses_pool_mode(self):
         self.assertIn('self._dist_progress_mode = "pool"', self.source)
         self.assertIn("alphazero_tree", self.source)
