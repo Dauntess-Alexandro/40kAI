@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import multiprocessing as mp
 import os
+import socket
 import sys
 import time
 from pathlib import Path
@@ -37,6 +38,52 @@ def _env_float(name: str, default: float) -> float:
         return float(os.getenv(name, str(default)))
     except Exception:
         return float(default)
+
+
+def _pc1_receiver_reachable(host: str, port: int, timeout: float = 1.0) -> bool:
+    """TCP-проба приёмника ПК1: жив ли learner и слушает ли :port."""
+    try:
+        with socket.create_connection((str(host), int(port)), timeout=float(timeout)):
+            return True
+    except OSError:
+        return False
+
+
+def wait_for_pc1_live(
+    host: str,
+    port: int,
+    *,
+    total_wait_sec: float,
+    poll_sec: float = 2.0,
+    should_stop=None,
+    reachable=_pc1_receiver_reachable,
+    log=print,
+    sleep=time.sleep,
+    now=time.monotonic,
+) -> bool:
+    """Ждём, пока приёмник ПК1 (host:port) станет доступен — чтобы актёры не спамили без ПК1.
+
+    True  — ПК1 жив, можно спавнить актёров.
+    False — запрошен stop или истёк total_wait_sec (тогда актёры НЕ запускаются — без спама).
+    total_wait_sec<=0 — гейт выключен (старое поведение: сразу True).
+    """
+    if total_wait_sec <= 0:
+        return True
+    deadline = now() + float(total_wait_sec)
+    while True:
+        if should_stop is not None and should_stop():
+            log("[AZ][DIST][PC2] stop запрошен — актёры не запускаем (ПК1 не нужен).")
+            return False
+        if reachable(host, port):
+            return True
+        if now() >= deadline:
+            log(
+                f"[AZ][DIST][PC2] ПК1 {host}:{port} не появился за {int(total_wait_sec)}с — "
+                "выходим без запуска актёров (нет спама). Запустите train на ПК1 и перезапустите."
+            )
+            return False
+        log(f"[AZ][DIST][PC2] ждём ПК1: приёмник {host}:{port} недоступен (осталось ~{int(deadline - now())}с)...")
+        sleep(poll_sec)
 
 
 def _train_dist_defaults(train_mod) -> dict:
@@ -242,9 +289,25 @@ def main() -> int:
         flush=True,
     )
 
+    # Гейт «ждём живого ПК1»: без работающего learner'а (приёмник :5557) актёры не
+    # запускаем — иначе они крутят партии впустую (роллауты летят в мёртвый порт и
+    # дропаются). Проба досягаемости приёмника ПК1. Выключить: AZ_DIST_WAIT_PC1_SEC=0.
+    rollout_host = str(os.getenv("AZ_DIST_PC1_HOST", "127.0.0.1"))
+    rollout_port = _env_int("AZ_DIST_ROLLOUT_PORT", 5557)
+    stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path())
+    wait_pc1_sec = _env_float("AZ_DIST_WAIT_PC1_SEC", 600.0)
+    if not wait_for_pc1_live(
+        rollout_host,
+        rollout_port,
+        total_wait_sec=wait_pc1_sec,
+        should_stop=lambda: az_dist_stop_requested(stop_flag),
+    ):
+        print("[AZ][DIST][PC2] ПК1 не обнаружен — актёры не запущены (без спама).", flush=True)
+        return 0
+
     print(
         f"[AZ][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "
-        f"rollout_target={os.getenv('AZ_DIST_PC1_HOST', '127.0.0.1')}:{_env_int('AZ_DIST_ROLLOUT_PORT', 5557)} "
+        f"rollout_target={rollout_host}:{rollout_port} "
         f"is=127.0.0.1:{_env_int('AZ_DIST_PC2_IS_PORT', 5555)}",
         flush=True,
     )
@@ -257,7 +320,6 @@ def main() -> int:
         p.start()
         procs.append(p)
 
-    stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path())
     try:
         while True:
             if az_dist_stop_requested(stop_flag):
