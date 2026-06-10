@@ -3131,7 +3131,7 @@ DQN_DIST_ROLLOUT_PORT = max(
 )
 DQN_DIST_BIND_HOST = str(os.getenv("DQN_DIST_BIND_HOST", "0.0.0.0"))
 DQN_DIST_AUTH_TOKEN = str(os.getenv("DQN_DIST_AUTH_TOKEN", str(_DQN_CFG.get("distributed_auth_token", ""))))
-DQN_DIST_ZMQ_HWM = max(8, int(os.getenv("DQN_DIST_ZMQ_HWM", "256")))
+DQN_DIST_ZMQ_HWM = max(8, int(os.getenv("DQN_DIST_ZMQ_HWM", str(_DQN_CFG.get("distributed_zmq_hwm", 256)))))
 DQN_DIST_DRAIN_SEC = max(
     1.0,
     float(os.getenv("DQN_DIST_DRAIN_SEC", str(_DQN_CFG.get("distributed_actors_drain_sec", 30.0)))),
@@ -6482,7 +6482,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     if DQN_DISTRIBUTED_ACTORS:
         queue_max = max(
             queue_max,
-            int(os.getenv("DQN_DIST_ACTOR_QUEUE_MAX", "1024")),
+            int(os.getenv("DQN_DIST_ACTOR_QUEUE_MAX", str(_DQN_CFG.get("distributed_actor_queue_max", 1024)))),
         )
 
     b_len = roster_config["b_len"]
@@ -6662,6 +6662,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 "ensemble_size": int(DQN_ENSEMBLE_SIZE),
                 "hidden_size": int(DQN_HIDDEN_SIZE),
                 "num_layers": int(DQN_NUM_LAYERS),
+                # Транспорт: ПК2 берёт SNDHWM с ПК1 (иначе локальный дефолт 256).
+                "zmq_hwm": int(DQN_DIST_ZMQ_HWM),
             })
         except Exception as exc:
             append_agent_log(f"[DQN][DIST][WARN] не удалось записать train-context: {exc}")

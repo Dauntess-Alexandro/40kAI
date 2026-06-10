@@ -199,7 +199,9 @@ def _worker_main(worker_id: int, ctx_json: str, episodes: int) -> None:
         auth_token=auth,
         worker_id=int(worker_id),
         env_contract_hash=contract_hash,
-        zmq_hwm=_env_int("DQN_DIST_ZMQ_HWM", 256),
+        # SNDHWM: приоритет — значение из контекста ПК1 (единый транспорт ПК1↔ПК2),
+        # затем локальный env, затем дефолт.
+        zmq_hwm=int(ctx.get("zmq_hwm", _env_int("DQN_DIST_ZMQ_HWM", 256))),
     )
     remote_q = RemoteDataQ(sink)
 

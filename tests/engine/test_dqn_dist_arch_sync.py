@@ -16,12 +16,20 @@ def test_train_context_roundtrip_carries_arch_params(tmp_path, monkeypatch):
     monkeypatch.setenv("DQN_DIST_STOP_FLAG_PATH", str(sync / "az_dist_stop.flag"))
 
     write_dqn_dist_train_context(
-        {"ensemble_size": 3, "hidden_size": 256, "num_layers": 2, "n_observations": 12}
+        {
+            "ensemble_size": 3,
+            "hidden_size": 256,
+            "num_layers": 2,
+            "n_observations": 12,
+            "zmq_hwm": 1024,
+        }
     )
     ctx = read_dqn_dist_train_context()
     assert ctx["ensemble_size"] == 3
     assert ctx["hidden_size"] == 256
     assert ctx["num_layers"] == 2
+    # Транспортный параметр ПК1→ПК2 (SNDHWM воркеров).
+    assert ctx["zmq_hwm"] == 1024
 
 
 def test_apply_dqn_arch_overrides_sets_train_globals():

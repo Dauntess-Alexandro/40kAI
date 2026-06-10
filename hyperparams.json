@@ -43,7 +43,9 @@
         "distributed_actors_drain_sec": 30.0,
         "distributed_wait_pc2": 1,
         "distributed_wait_pc2_timeout_sec": 600.0,
-        "distributed_bind_retry_sec": 25.0
+        "distributed_bind_retry_sec": 25.0,
+        "distributed_actor_queue_max": 2048,
+        "distributed_zmq_hwm": 1024
     },
     "ppo": {
         "learning_rate": 0.0003,
