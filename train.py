@@ -3042,6 +3042,21 @@ AZ_DET_EVAL_GATE_TURN_LIMIT_MAX = float(
 AZ_DET_EVAL_GATE_DRAW_MAX = float(
     os.getenv("AZ_DET_EVAL_GATE_DRAW_MAX", str(AZ_CFG.get("det_eval_gate_draw_max", 0.70)))
 )
+
+
+def _az_det_eval_gate_pass(det_payload: dict) -> bool:
+    """Диагностика качества DET-eval по порогам AZ_DET_EVAL_GATE_*.
+
+    Только аннотация gate_pass в det-eval JSON: оппонент AZ фиксирован весь прогон,
+    снапшот-файл оппонента по результату gate не пишется (его никто не читал).
+    """
+    return (
+        float(det_payload.get("win_rate", 0.0)) >= float(AZ_DET_EVAL_GATE_WIN_MIN)
+        and float(det_payload.get("turn_limit_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_TURN_LIMIT_MAX)
+        and float(det_payload.get("draw_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_DRAW_MAX)
+    )
+
+
 AZ_HONEST_EVAL_EPISODES = max(1, int(os.getenv("AZ_HONEST_EVAL_EPISODES", "20")))
 AZ_HONEST_EVAL_SIMS = max(1, int(os.getenv("AZ_HONEST_EVAL_SIMS", str(AZ_MCTS_SIMS))))
 AZ_HONEST_EVAL_TEMPERATURE = float(os.getenv("AZ_HONEST_EVAL_TEMPERATURE", "0.06"))
@@ -9298,7 +9313,6 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     os.makedirs(sync_dir, exist_ok=True)
     _az_sync_tag = "tree" if TRAIN_ALGO == "alphazero_tree" else "proxy"
     sync_path = os.path.join(sync_dir, f"latest_az_{_az_sync_tag}_policy.pth")
-    opp_sync_path = os.path.join(sync_dir, f"latest_az_{_az_sync_tag}_opponent.pth")
 
     def _save_az_sync() -> None:
         cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
@@ -9788,37 +9802,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     opponent_spec=opponent_spec,
                 )
                 _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
-                gate_pass = (
-                    float(det_payload.get("win_rate", 0.0)) >= float(AZ_DET_EVAL_GATE_WIN_MIN)
-                    and float(det_payload.get("turn_limit_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_TURN_LIMIT_MAX)
-                    and float(det_payload.get("draw_rate", 1.0)) <= float(AZ_DET_EVAL_GATE_DRAW_MAX)
-                )
-                if gate_pass:
-                    try:
-                        _torch_save_atomic(
-                            {
-                                "episode": int(episodes_finished),
-                                "policy_version": int(policy_version),
-                                "state_dict": {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()},
-                            },
-                            opp_sync_path,
-                            label="latest_az_opponent",
-                        )
-                        append_agent_log(
-                            "[AZ][GATE] pass "
-                            f"ep={episodes_finished} win_rate={det_payload['win_rate']:.3f} "
-                            f"turn_limit_rate={det_payload['turn_limit_rate']:.3f} "
-                            f"draw_rate={det_payload['draw_rate']:.3f}"
-                        )
-                    except Exception as exc:
-                        append_agent_log(f"[AZ][GATE][WARN] Не удалось обновить latest_az_opponent: {exc}")
-                else:
-                    append_agent_log(
-                        "[AZ][GATE] blocked "
-                        f"ep={episodes_finished} win_rate={det_payload['win_rate']:.3f}<{AZ_DET_EVAL_GATE_WIN_MIN:.3f} "
-                        f"or turn_limit_rate={det_payload['turn_limit_rate']:.3f}>{AZ_DET_EVAL_GATE_TURN_LIMIT_MAX:.3f} "
-                        f"or draw_rate={det_payload['draw_rate']:.3f}>{AZ_DET_EVAL_GATE_DRAW_MAX:.3f}"
-                    )
+                gate_pass = _az_det_eval_gate_pass(det_payload)
 
                 try:
                     det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)

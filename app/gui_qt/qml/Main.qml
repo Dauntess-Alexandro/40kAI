@@ -1538,7 +1538,7 @@ ApplicationWindow {
                                                         borderWidth: 1
                                                         borderColor: parent.hovered ? "#b88a26" : "#4f5a6b"
                                                     }
-                                                    onClicked: logArea.text = ""
+                                                    onClicked: trainLog.clearAll()
                                                 }
                                                 Button {
                                                     text: root.mainLogExpanded ? "СВЕРНУТЬ" : "РАЗВЕРНУТЬ"
@@ -1569,24 +1569,14 @@ ApplicationWindow {
                                             }
                                         }
 
-                                        ScrollView {
+                                        TrainLogView {
+                                            id: trainLog
                                             Layout.fillWidth: true
                                             Layout.fillHeight: true
                                             visible: root.mainLogExpanded
-                                            TextArea {
-                                                id: logArea
-                                                readOnly: true
-                                                wrapMode: TextArea.Wrap
-                                                text: ""
-                                                font.family: root.fontDataFamily
-                                                color: root.uiTextMain
-                                                background: Rectangle {
-                                                    radius: 0
-                                                    color: "#111722"
-                                                    border.width: 1
-                                                    border.color: "#2e394d"
-                                                }
-                                            }
+                                            uiScale: root.uiScale
+                                            fontDataFamily: root.fontDataFamily
+                                            fontUiFamily: root.fontUiFamily
                                         }
                                     }
                                 }
@@ -6260,8 +6250,7 @@ ApplicationWindow {
     Connections {
         target: controller
         function onLogLine(message) {
-            logArea.text += message + "\n"
-            logArea.cursorPosition = logArea.length
+            trainLog.appendLine(message)
         }
         function onStatusChanged(message) {
             root.statusText = message
