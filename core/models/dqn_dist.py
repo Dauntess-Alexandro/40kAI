@@ -217,6 +217,37 @@ def read_dqn_dist_train_context() -> dict[str, Any]:
         return {}
 
 
+# Арх-параметры сети, влияющие на форму state_dict (latest_policy.pth).
+# train-глобал -> ключ в train-context ПК1.
+DQN_DIST_ARCH_PARAMS = {
+    "DQN_ENSEMBLE_SIZE": "ensemble_size",
+    "DQN_HIDDEN_SIZE": "hidden_size",
+    "DQN_NUM_LAYERS": "num_layers",
+}
+
+
+def apply_dqn_arch_overrides(train_mod: Any, ctx: dict[str, Any]) -> dict[str, int]:
+    """ПК2: применить арх-параметры сети из контекста ПК1 на глобалы train.
+
+    Зачем: ПК2 строит сеть из своего hyperparams.json, но грузит веса
+    latest_policy.pth с ПК1. Если, например, ensemble_size на ПК2 ≠ ПК1,
+    load_state_dict упадёт с mismatch. Контекст ПК1 — источник правды по форме сети
+    (как и ростер). Возвращает применённые значения.
+    """
+    applied: dict[str, int] = {}
+    for attr, key in DQN_DIST_ARCH_PARAMS.items():
+        val = (ctx or {}).get(key)
+        if val is None:
+            continue
+        try:
+            ival = int(val)
+        except (TypeError, ValueError):
+            continue
+        setattr(train_mod, attr, ival)
+        applied[attr] = ival
+    return applied
+
+
 def wait_dqn_dist_remote_workers(
     receiver,
     *,

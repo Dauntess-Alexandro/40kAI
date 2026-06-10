@@ -6658,6 +6658,10 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 "num_local_actors": int(num_actors),
                 "pc2_num_workers": int(DQN_DIST_PC2_NUM_WORKERS),
                 "distributed_local_episode_fraction": float(DQN_DIST_LOCAL_EPISODE_FRACTION),
+                # Арх-параметры сети — чтобы ПК2 собрал сеть под форму latest_policy.pth.
+                "ensemble_size": int(DQN_ENSEMBLE_SIZE),
+                "hidden_size": int(DQN_HIDDEN_SIZE),
+                "num_layers": int(DQN_NUM_LAYERS),
             })
         except Exception as exc:
             append_agent_log(f"[DQN][DIST][WARN] не удалось записать train-context: {exc}")

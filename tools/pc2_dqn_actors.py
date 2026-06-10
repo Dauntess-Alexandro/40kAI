@@ -86,6 +86,15 @@ def _worker_main(worker_id: int, ctx_json: str, episodes: int) -> None:
     except Exception:
         ctx = {}
 
+    # Арх-параметры сети — из контекста ПК1 (источник правды по форме весов
+    # latest_policy.pth). Иначе локальный ensemble_size/hidden/layers ПК2 может
+    # не совпасть с весами → load_state_dict mismatch.
+    from core.models.dqn_dist import apply_dqn_arch_overrides
+
+    applied_arch = apply_dqn_arch_overrides(train_mod, ctx)
+    if applied_arch:
+        print(f"[DQN][DIST][PC2] арх-параметры из контекста ПК1: {applied_arch}", flush=True)
+
     # Ростер из train-context ПК1 (снимок на SMB) — иначе локальный data.json ПК2,
     # что даёт env_contract_hash mismatch при любом расхождении ростеров.
     roster = train_mod._roster_from_context(ctx)
