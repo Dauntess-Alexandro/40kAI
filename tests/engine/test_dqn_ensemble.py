@@ -1,6 +1,11 @@
+import os
+
+import numpy as np
 import torch
 
+import core.models.utils as U
 from core.models.DQN import DQN
+from core.models.memory import PrioritizedReplayMemory
 
 
 def test_q_ensemble_stats_shape():
@@ -25,3 +30,43 @@ def test_iqn_ensemble_members_count():
     members = net.iqn_ensemble_members(x, num_quantiles=8)
     assert len(members) == 2
     assert members[0][0].shape[0] == 3
+
+
+def test_optimize_model_ensemble_heads_different_widths():
+    """Регресс: ensemble>1 с разноширинными головами не должен падать на агрегации std.
+
+    Реальный экшен-спейс 40k имеет головы разной ширины (move/attack/shoot/...),
+    поэтому torch.stack(stds, dim=1) недопустим — проверяем PER-путь целиком.
+    """
+    os.environ["PER_ENSEMBLE_PRIORITY_LAMBDA"] = "0.1"
+    torch.manual_seed(0)
+    np.random.seed(0)
+    n_obs, n_actions = 12, [3, 2, 4]
+
+    def make_net():
+        return DQN(
+            n_obs, n_actions, dueling=True, noisy=True, distributional="iqn",
+            hidden_size=64, num_layers=2, n_ensemble=3,
+            iqn_num_quantiles=16, iqn_num_target_quantiles=16, iqn_num_tau_samples=16,
+        )
+
+    policy, target = make_net(), make_net()
+    target.load_state_dict(policy.state_dict())
+    opt = torch.optim.Adam(policy.parameters(), lr=1e-4)
+    mem = PrioritizedReplayMemory(1024)
+    for _ in range(U.BATCH_SIZE + 50):
+        s = torch.randn(1, n_obs)
+        a = torch.tensor([[np.random.randint(x) for x in n_actions]], dtype=torch.long)
+        ns = None if np.random.rand() < 0.1 else torch.randn(1, n_obs)
+        r = torch.tensor([np.random.randn()], dtype=torch.float32)
+        mask = np.random.rand(n_actions[2]) > 0.3
+        mem.push(s, a, ns, r, np.random.randint(1, 4), mask)
+
+    res = U.optimize_model(
+        policy, target, opt, mem, n_obs,
+        double_dqn_enabled=True, per_enabled=True, per_beta=0.4,
+    )
+    assert res is not None
+    ds = res["dist_stats"]
+    assert ds["n_ensemble"] == 3
+    assert ds["ensemble_std_mean"] >= 0.0

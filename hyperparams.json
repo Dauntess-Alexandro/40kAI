@@ -20,7 +20,7 @@
         "warmup_steps": 5000,
         "hidden_size": 256,
         "num_layers": 2,
-        "ensemble_size": 1,
+        "ensemble_size": 3,
         "lr_scheduler": "none",
         "eps_schedule": "exp",
         "double_dqn": 1,
@@ -35,9 +35,15 @@
         "noisy_disable_eps": 1,
         "noisy_sigma_anneal": 0,
         "per_ensemble_priority_lambda": 0.1,
-        "distributed_actors_enabled": 0,
+        "distributed_actors_enabled": 1,
         "distributed_rollout_port": 5558,
-        "distributed_auth_token": ""
+        "distributed_auth_token": "",
+        "distributed_local_episode_fraction": 0.6,
+        "distributed_pc2_num_workers": 8,
+        "distributed_actors_drain_sec": 30.0,
+        "distributed_wait_pc2": 1,
+        "distributed_wait_pc2_timeout_sec": 600.0,
+        "distributed_bind_retry_sec": 25.0
     },
     "ppo": {
         "learning_rate": 0.0003,

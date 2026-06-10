@@ -1,19 +1,17 @@
+import collections
+import json
+import os
+import random
+from time import perf_counter
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import collections
-import numpy as np
-import os
-import json
-from time import perf_counter
 
-
-import random
-import math
-
-from core.models.memory import Transition
-from core.models.action_contract import ordered_action_keys, action_tensor_to_dict
 from core.engine.utils import distance
+from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
+from core.models.memory import Transition
 
 with open(os.path.abspath("hyperparams.json")) as j:
     data = json.loads(j.read())
@@ -517,7 +515,11 @@ def optimize_model(
             with torch.no_grad():
                 _, stds = policy_net.q_ensemble_stats(state_batch)
                 if stds:
-                    ensemble_std_mean = float(torch.stack(stds, dim=1).mean(dim=1).mean(dim=1).mean().item())
+                    # Головы имеют разную ширину (move/attack/shoot/...), поэтому
+                    # усредняем std внутри каждой головы и затем по головам — без stack.
+                    ensemble_std_mean = float(
+                        torch.stack([s.mean() for s in stds]).mean().item()
+                    )
 
         if per_enabled:
             weight_t = torch.tensor(weights, device=dev, dtype=torch.float32)
@@ -527,7 +529,15 @@ def optimize_model(
                 with torch.no_grad():
                     _, stds = policy_net.q_ensemble_stats(state_batch)
                     if stds:
-                        std_per_sample = torch.stack(stds, dim=1).mean(dim=1).mean(dim=1).detach().cpu().numpy()
+                        # per-sample неопределённость: усредняем std внутри головы
+                        # ([B, A_head] -> [B]), затем по головам ([B, H] -> [B]).
+                        std_per_sample = (
+                            torch.stack([s.mean(dim=1) for s in stds], dim=1)
+                            .mean(dim=1)
+                            .detach()
+                            .cpu()
+                            .numpy()
+                        )
                         new_priorities = new_priorities + ensemble_priority_lambda * std_per_sample
             memory.update_priorities(indices, new_priorities)
             per_stats = {
