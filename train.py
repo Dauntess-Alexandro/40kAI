@@ -97,6 +97,7 @@ from core.models.az_rollout_sink import (
     make_rollout_sink,
     pack_az_dist_hyperparams,
     write_az_dist_train_context,
+    write_az_remote_search_cfg,
 )
 from core.models.DQN import *
 from core.models.dqn_dist import (
@@ -9432,6 +9433,29 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     "az_hyperparams": _dist_az_hp,
                 }
             )
+            # Авто-запись search-cfg для IS на ПК2 (форма сети) — чтобы не требовался
+            # ручной tools/write_az_remote_search_cfg.bat и не было рассинхрона арх.
+            try:
+                _search_cfg_paths = write_az_remote_search_cfg(
+                    obs_dim=int(n_observations),
+                    action_sizes=list(n_actions),
+                    hidden_size=int(AZ_HIDDEN_SIZE),
+                    num_layers=int(AZ_NUM_LAYERS),
+                    n_value_ensemble=int(AZ_VALUE_ENSEMBLE),
+                    num_simulations=int(AZ_MCTS_SIMS),
+                    sources=["train.py:auto", f"env_contract_hash={_az_contract_hash}"],
+                )
+                append_agent_log(
+                    f"[AZ][DIST][CONTEXT] search_cfg обновлён (obs={int(n_observations)} "
+                    f"hidden={int(AZ_HIDDEN_SIZE)} layers={int(AZ_NUM_LAYERS)} "
+                    f"n_value_ensemble={int(AZ_VALUE_ENSEMBLE)}): {_search_cfg_paths}"
+                )
+            except Exception as exc:
+                append_agent_log(
+                    f"[AZ][DIST][CONTEXT][WARN] не удалось записать search_cfg: {exc}. "
+                    "Где: write_az_remote_search_cfg. Что делать: проверьте SMB actor_sync "
+                    "или запустите tools/write_az_remote_search_cfg.bat вручную."
+                )
             append_agent_log(
                 f"[AZ][DIST][CONTEXT] wrote opponent_agent_id="
                 f"{opponent_agent_id or OPPONENT_AGENT_ID or '-'} "

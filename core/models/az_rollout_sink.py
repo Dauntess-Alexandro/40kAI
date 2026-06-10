@@ -25,6 +25,52 @@ def _actor_sync_dir() -> str:
         return os.path.join(root, "actor_sync")
 
 
+def write_az_remote_search_cfg(
+    *,
+    obs_dim: int,
+    action_sizes: list[int],
+    hidden_size: int,
+    num_layers: int,
+    n_value_ensemble: int,
+    num_simulations: int,
+    sources: list[str] | None = None,
+) -> list[str]:
+    """ПК1: записать az_remote_search_cfg.json (форма сети для IS на ПК2).
+
+    Кладёт копию в actor_sync на шаре (её читает IS-сервер ПК2, чтобы собрать
+    сеть, совместимую с обучаемой) и локально в runtime/state. Вызывается
+    автоматически при старте AZ-распределёнки — ручной
+    tools/write_az_remote_search_cfg.bat больше не нужен. Возвращает записанные пути.
+    """
+    cfg = {
+        "obs_dim": int(obs_dim),
+        "action_sizes": [int(x) for x in action_sizes],
+        "hidden_size": int(hidden_size),
+        "num_layers": int(num_layers),
+        "n_value_ensemble": int(n_value_ensemble),
+        "num_simulations": int(num_simulations),
+        "_generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "_sources": list(sources or ["train.py:auto"]),
+    }
+    body = json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    targets = [
+        os.path.join(repo_root, "runtime", "state", "az_remote_search_cfg.json"),
+        os.path.join(_actor_sync_dir(), "az_remote_search_cfg.json"),
+    ]
+    written: list[str] = []
+    for path in targets:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            written.append(path)
+        except OSError:
+            continue
+    return written
+
+
 def az_dist_stop_flag_path() -> str:
     custom = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or "").strip()
     if custom:

@@ -111,3 +111,28 @@ def test_remap_models_path_pc1_to_smb(tmp_path, monkeypatch):
     assert _remap_models_path(pc1_path) == str(policy)
     assert agents_meta_root() == str(smb / "agents")
     assert models_dir() == str(smb)
+
+
+def test_write_az_remote_search_cfg_payload(tmp_path, monkeypatch):
+    """Авто-запись search-cfg для IS на ПК2: корректный payload в actor_sync."""
+    import core.models.az_rollout_sink as sink
+
+    share = tmp_path / "actor_sync"
+    monkeypatch.setattr(sink, "_actor_sync_dir", lambda: str(share))
+    written = sink.write_az_remote_search_cfg(
+        obs_dim=17,
+        action_sizes=[5, 2, 2, 2, 5, 2, 24, 24],
+        hidden_size=256,
+        num_layers=2,
+        n_value_ensemble=1,
+        num_simulations=32,
+    )
+    share_file = share / "az_remote_search_cfg.json"
+    assert str(share_file) in written
+    cfg = json.loads(share_file.read_text(encoding="utf-8"))
+    assert cfg["obs_dim"] == 17
+    assert cfg["action_sizes"] == [5, 2, 2, 2, 5, 2, 24, 24]
+    assert cfg["hidden_size"] == 256
+    assert cfg["num_layers"] == 2
+    assert cfg["n_value_ensemble"] == 1
+    assert cfg["num_simulations"] == 32

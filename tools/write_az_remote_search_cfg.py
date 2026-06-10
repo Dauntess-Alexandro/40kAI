@@ -12,7 +12,6 @@ import json
 import os
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -171,30 +170,23 @@ def main() -> int:
         )
         return 1
 
-    cfg = {
-        "obs_dim": int(obs_dim),
-        "action_sizes": list(action_sizes),
-        "hidden_size": int(az.get("hidden_size", 256)),
-        "num_layers": int(az.get("num_layers", 2)),
-        "n_value_ensemble": int(az.get("value_ensemble", 1)),
-        "num_simulations": int(az.get("mcts_simulations", 32)),
-        "_generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "_sources": ["hyperparams.json:alphazero_tree", f"dims_from={source}"],
-    }
+    # Единый писатель (тот же формат/пути, что и авто-запись из train.py).
+    from core.models.az_rollout_sink import write_az_remote_search_cfg
 
-    out_state = _REPO_ROOT / "runtime" / "state" / "az_remote_search_cfg.json"
-    out_state.parent.mkdir(parents=True, exist_ok=True)
-    out_state.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"[OK] {out_state}  (source: {source})")
-
-    out_smb = _REPO_ROOT / "artifacts" / "models" / "actor_sync" / "az_remote_search_cfg.json"
-    try:
-        out_smb.parent.mkdir(parents=True, exist_ok=True)
-        out_smb.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-        print(f"[OK] {out_smb} (SMB copy)")
-    except Exception as exc:
-        print(f"[WARN] не удалось записать SMB-копию: {exc}")
-
+    written = write_az_remote_search_cfg(
+        obs_dim=int(obs_dim),
+        action_sizes=list(action_sizes),
+        hidden_size=int(az.get("hidden_size", 256)),
+        num_layers=int(az.get("num_layers", 2)),
+        n_value_ensemble=int(az.get("value_ensemble", 1)),
+        num_simulations=int(az.get("mcts_simulations", 32)),
+        sources=["hyperparams.json:alphazero_tree", f"dims_from={source}"],
+    )
+    if not written:
+        print("[ERROR] не удалось записать ни одного файла az_remote_search_cfg.json")
+        return 1
+    for path in written:
+        print(f"[OK] {path}")
     return 0
 
 
