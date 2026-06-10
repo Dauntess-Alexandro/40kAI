@@ -9387,6 +9387,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             auth_token=AZ_DIST_AUTH_TOKEN,
             zmq_hwm=int(AZ_DIST_ZMQ_HWM),
             log_fn=append_agent_log,
+            ep_marker_fn=lambda n: print(f"[TRAIN][DIST][PC2] pc2_ep_accepted={n}", flush=True),
         )
         rollout_receiver.start()
         try:
@@ -9952,9 +9953,6 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 _save_az_sync()
                 last_sync_opt_steps = int(optimize_steps)
 
-    if AZ_DISTRIBUTED_ACTORS:
-        append_agent_log("[TRAIN][PHASE] done")
-        print("[TRAIN][PHASE] done", flush=True)
     if rollout_receiver is not None:
         rollout_receiver.stop()
     if dist_remote_transitions_total > 0:
@@ -9969,6 +9967,12 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     for p in procs:
         try:
             p.join(timeout=2.0)
+            if p.is_alive():
+                append_agent_log(
+                    f"[AZ][ENV_WORKER] процесс pid={p.pid} не завершился за 2с — terminate."
+                )
+                p.terminate()
+                p.join(timeout=1.0)
         except Exception:
             pass
     if inf_proc is not None and inf_proc.is_alive():
@@ -10040,11 +10044,17 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "policy_version": int(policy_version),
         },
     )
-    append_agent_log(
+    az_done_msg = (
         "[AZ][ACTOR_LEARNER] done "
         f"episodes={final_episode}/{totLifeT} checkpoint={last_checkpoint} "
         f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
     )
+    append_agent_log(az_done_msg)
+    print(az_done_msg, flush=True)
+    if AZ_DISTRIBUTED_ACTORS:
+        for _ln in ("[TRAIN][PHASE] done",):
+            append_agent_log(_ln)
+            print(_ln, flush=True)
 
 
 def _gmz_rollout_dict_from_transition(t: GMZTransition, policy_version: int) -> dict:

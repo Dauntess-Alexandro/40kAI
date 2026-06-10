@@ -127,6 +127,7 @@ class GUIController(QtCore.QObject):
     progressPhaseChanged = QtCore.Signal(str)
     progressDetailChanged = QtCore.Signal(str)
     distProgressVisibleChanged = QtCore.Signal(bool)
+    distProgressModeChanged = QtCore.Signal(str)
     pc1ProgressValueChanged = QtCore.Signal(float)
     pc2ProgressValueChanged = QtCore.Signal(float)
     pc1ProgressLabelChanged = QtCore.Signal(str)
@@ -198,6 +199,7 @@ class GUIController(QtCore.QObject):
         self._progress_detail = ""     # русский текст фазы для UI
 
         self._dist_progress_enabled = False
+        self._dist_progress_mode = ""  # "" | "quota" (DQN 70/30) | "pool" (AZ общий лимит)
         self._dist_local_ep_total = 0
         self._dist_remote_ep_total = 0
         self._dist_pc1_ep_done = 0
@@ -212,6 +214,7 @@ class GUIController(QtCore.QObject):
         self._pc2_status_line = ""
         self._pc2_status_hint = ""
         self._pc2_status_tone = ""
+        self._az_train_ui_finalized = False
 
         self._num_games = 100
         self._mission_options = ["only_war"]
@@ -511,6 +514,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=distProgressVisibleChanged)
     def distProgressVisible(self) -> bool:
         return bool(self._dist_progress_enabled)
+
+    @QtCore.Property(str, notify=distProgressModeChanged)
+    def distProgressMode(self) -> str:
+        return str(self._dist_progress_mode or "")
 
     @QtCore.Property(float, notify=pc1ProgressValueChanged)
     def pc1ProgressValue(self) -> float:
@@ -4874,6 +4881,30 @@ class GUIController(QtCore.QObject):
             self._running = value
             self.runningChanged.emit(value)
 
+    def _mark_az_train_complete(self) -> None:
+        """AZ: снять RUNNING по [AZ][ACTOR_LEARNER] done, не ждать exit процесса train."""
+        if self._active_process_kind != "train" or not is_az_algo(str(self._training_algo)):
+            return
+        if self._az_train_ui_finalized:
+            return
+        self._az_train_ui_finalized = True
+        self._training_ui_timer.stop()
+        if str(self._progress_phase or "") != "done":
+            self._set_progress_phase("done")
+        self._set_running(False)
+        self._emit_status("Обучение завершено.")
+        self._select_latest_metrics()
+        self._load_latest_heuristic_metrics()
+        self._refresh_specific_opponent_options()
+        self._refresh_eval_agent_options()
+        self._telemetry.set_context(
+            pid=self._process.processId() if self._process is not None else None,
+            algo=str(self._training_algo),
+            active=False,
+            remote_cfg=None,
+        )
+        self._telemetry.stop()
+
     def _set_progress(self, current: int, total: int) -> None:
         self._progress_current_ep = max(0, int(current))
         if total <= 0:
@@ -4890,46 +4921,61 @@ class GUIController(QtCore.QObject):
         self.progressTextChanged.emit(self._progress_text)
         self.progressLabelChanged.emit(self._progress_label)
 
-    # --- Distributed DQN: прогресс ПК1/ПК2 (вариант C в hero) ---
+    # --- Distributed DQN / AZ: прогресс ПК1/ПК2 (вариант C в hero) ---
     def _init_dist_progress_for_train(self) -> None:
+        algo = str(self._training_algo).strip().lower()
         dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
-        enabled = (
-            str(self._training_algo).strip().lower() == "dqn"
-            and int(dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1
-        )
-        self._dist_progress_enabled = bool(enabled)
+        az_hp = self._az_tree_hyperparams if isinstance(self._az_tree_hyperparams, dict) else {}
+        dqn_enabled = algo == "dqn" and int(dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1
+        az_enabled = algo == "alphazero_tree" and int(az_hp.get("distributed_actors_enabled", 0) or 0) == 1
+        self._dist_progress_enabled = bool(dqn_enabled or az_enabled)
         if not self._dist_progress_enabled:
+            self._dist_progress_mode = ""
+            self.distProgressModeChanged.emit("")
             self._reset_dist_progress_display(clear_visible=True)
             return
-        frac = float(
-            dqn_hp.get(
-                "distributed_local_episode_fraction",
-                dqn_hp.get("distributed_local_worker_fraction", 0.7),
-            )
-            or 0.7
-        )
-        local_ep, remote_ep = resolve_dqn_dist_episode_split(
-            total_episodes=max(1, int(self._train_total_episodes)),
-            local_fraction=frac,
-        )
-        self._dist_local_ep_total = int(local_ep)
-        self._dist_remote_ep_total = int(remote_ep)
+        ep_total = max(1, int(self._train_total_episodes))
         self._dist_pc1_ep_done = 0
         self._dist_pc2_ep_done = 0
         self._dist_pc2_workers_alive = 0
-        self._dist_pc2_workers_need = max(
-            1,
-            int(dqn_hp.get("distributed_pc2_num_workers", 8) or 8),
-        )
         self._dist_pc2_wait_left_sec = -1
+        if dqn_enabled:
+            self._dist_progress_mode = "quota"
+            frac = float(
+                dqn_hp.get(
+                    "distributed_local_episode_fraction",
+                    dqn_hp.get("distributed_local_worker_fraction", 0.7),
+                )
+                or 0.7
+            )
+            local_ep, remote_ep = resolve_dqn_dist_episode_split(
+                total_episodes=ep_total,
+                local_fraction=frac,
+            )
+            self._dist_local_ep_total = int(local_ep)
+            self._dist_remote_ep_total = int(remote_ep)
+            self._dist_pc2_workers_need = max(
+                1,
+                int(dqn_hp.get("distributed_pc2_num_workers", 8) or 8),
+            )
+        else:
+            # AZ: общий лимит totLifeT, вклад ПК1/ПК2 динамический (кто быстрее).
+            self._dist_progress_mode = "pool"
+            self._dist_local_ep_total = ep_total
+            self._dist_remote_ep_total = ep_total
+            self._dist_pc2_workers_need = max(1, int(az_hp.get("num_env_workers", 8) or 8))
         self.distProgressVisibleChanged.emit(True)
-        if int(dqn_hp.get("distributed_wait_pc2", 0) or 0) == 1:
+        self.distProgressModeChanged.emit(self._dist_progress_mode)
+        if dqn_enabled and int(dqn_hp.get("distributed_wait_pc2", 0) or 0) == 1:
             self._progress_phase = "waiting_pc2"
             self.progressPhaseChanged.emit("waiting_pc2")
             self._set_progress_detail("Ожидание подключения ПК2")
         self._update_dist_progress_display()
 
     def _reset_dist_progress_display(self, *, clear_visible: bool) -> None:
+        if clear_visible:
+            self._dist_progress_mode = ""
+            self.distProgressModeChanged.emit("")
         self._dist_pc1_ep_done = 0
         self._dist_pc2_ep_done = 0
         self._dist_pc2_workers_alive = 0
@@ -4982,12 +5028,15 @@ class GUIController(QtCore.QObject):
         pc2_total = max(1, int(self._dist_remote_ep_total))
         pc1_cur = min(int(self._dist_pc1_ep_done), pc1_total)
         pc2_cur = min(int(self._dist_pc2_ep_done), pc2_total)
+        pool_mode = str(self._dist_progress_mode or "") == "pool"
         pc1_val = max(0.0, min(1.0, pc1_cur / float(pc1_total)))
         pc2_val = max(0.0, min(1.0, pc2_cur / float(pc2_total)))
         pc1_label = f"{pc1_cur}/{pc1_total}"
         if self._progress_phase == "waiting_pc2":
             pc2_label = f"0/{pc2_total}"
             pc2_val = 0.0
+        elif pool_mode:
+            pc2_label = f"{pc2_cur}/{pc2_total}"
         elif pc2_cur >= pc2_total:
             pc2_label = f"{pc2_total}/{pc2_total} готово"
         else:
@@ -5003,7 +5052,11 @@ class GUIController(QtCore.QObject):
                 hint_parts.append(f"осталось ~{int(self._dist_pc2_wait_left_sec)} с")
             status_hint = " · ".join(hint_parts)
             status_tone = "waiting"
-        elif pc2_cur >= pc2_total:
+        elif pool_mode and pc2_cur > 0 and int(self._dist_pc2_workers_alive) == 0 and pc1_cur + pc2_cur < pc1_total:
+            status_line = f"ПК2: вклад · {pc2_cur}/{pc2_total}"
+            status_hint = "ПК2 завершил сбор, добирает ПК1"
+            status_tone = "collecting"
+        elif pc2_cur >= pc2_total and not pool_mode:
             status_line = f"ПК2 готово · {pc2_total}/{pc2_total}"
             if pc1_cur < pc1_total:
                 status_hint = "ПК1 доигрывает локальную квоту"
@@ -5864,6 +5917,16 @@ class GUIController(QtCore.QObject):
         if self._handle_progress_phase_line(line):
             return
         normalized = line.strip()
+        if self._dist_progress_enabled and str(self._dist_progress_mode or "") == "pool":
+            az_ep_m = re.search(r"\[AZ\]\s+ep=\d+/\d+\s+actor=(\d+)", normalized)
+            if az_ep_m and int(az_ep_m.group(1)) < 100:
+                self._dist_pc1_ep_done += 1
+                self._update_dist_progress_display()
+        if is_az_algo(str(self._training_algo)) and re.search(
+            r"\[AZ\]\[ACTOR_LEARNER\] done\b", normalized
+        ):
+            self._mark_az_train_complete()
+            return
         trace_m = re.search(r"\[TRACE\]\[ACTIONS\] ep=\d+ actor=(\d+)", normalized)
         if trace_m:
             self._record_dist_actor_episode(int(trace_m.group(1)))
@@ -5923,6 +5986,7 @@ class GUIController(QtCore.QObject):
 
 
     def _reset_training_stats(self) -> None:
+        self._az_train_ui_finalized = False
         self._training_samples.clear()
         self._progress_current_ep = 0
         self._training_optimize_steps = 0
@@ -5959,14 +6023,15 @@ class GUIController(QtCore.QObject):
                     "Что делать: проверьте лог оценки и traceback внизу."
                 )
         else:
-            if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
-                self._emit_status("Обучение завершено.")
-            else:
-                self._emit_status("Обучение завершено с ошибкой.")
-            self._select_latest_metrics()
-            self._load_latest_heuristic_metrics()
-            self._refresh_specific_opponent_options()
-            self._refresh_eval_agent_options()
+            if not self._az_train_ui_finalized:
+                if exit_status == QtCore.QProcess.ExitStatus.NormalExit:
+                    self._emit_status("Обучение завершено.")
+                else:
+                    self._emit_status("Обучение завершено с ошибкой.")
+                self._select_latest_metrics()
+                self._load_latest_heuristic_metrics()
+                self._refresh_specific_opponent_options()
+                self._refresh_eval_agent_options()
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
@@ -5977,10 +6042,13 @@ class GUIController(QtCore.QObject):
         )
         self._telemetry.stop()
         if self._process is None:
+            self._az_train_ui_finalized = False
+            self._set_running(False)
             return
         self._process.deleteLater()
         self._process = None
         self._active_process_kind = ""
+        self._az_train_ui_finalized = False
         self._set_running(False)
 
     def _emit_log(self, message: str, level: str | None = None) -> None:

@@ -39,6 +39,16 @@ ColumnLayout {
                 font.family: fontUiFamily
             }
 
+            Text {
+                visible: ctrl && ctrl.distProgressMode === "pool"
+                text: "вклад в общий лимит (квота не фиксирована, как у DQN 70/30)"
+                color: uiTextMuted
+                font.pixelSize: Math.round(10 * uiScale)
+                font.family: fontUiFamily
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
             TrainProgressLine {
                 Layout.fillWidth: true
                 uiScale: root.uiScale
@@ -71,46 +81,6 @@ ColumnLayout {
                 trackColor: "#1a2230"
                 borderColor: uiBorder
                 waitingMode: ctrl && ctrl.progressPhase === "waiting_pc2"
-            }
-        }
-    }
-
-    Rectangle {
-        Layout.fillWidth: true
-        implicitHeight: pc2StatusRow.implicitHeight + Math.round(16 * uiScale)
-        color: "#0d1521"
-        border.width: 1
-        border.color: {
-            if (!ctrl) return uiBorder
-            if (ctrl.pc2StatusTone === "waiting") return "#b88a26"
-            if (ctrl.pc2StatusTone === "done") return "#3a6ea5"
-            return uiBorder
-        }
-
-        RowLayout {
-            id: pc2StatusRow
-            anchors.fill: parent
-            anchors.margins: Math.round(8 * uiScale)
-            spacing: Math.round(8 * uiScale)
-
-            Text {
-                Layout.fillWidth: true
-                text: ctrl ? ctrl.pc2StatusLine : ""
-                color: uiTextMain
-                font.pixelSize: Math.round(12 * uiScale)
-                font.bold: true
-                font.family: fontDataFamily
-                elide: Text.ElideRight
-            }
-
-            Text {
-                text: ctrl ? ctrl.pc2StatusHint : ""
-                color: uiTextMuted
-                font.pixelSize: Math.round(11 * uiScale)
-                font.family: fontDataFamily
-                horizontalAlignment: Text.AlignRight
-                elide: Text.ElideLeft
-                Layout.maximumWidth: parent.width * 0.55
             }
         }
     }

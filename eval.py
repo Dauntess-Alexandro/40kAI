@@ -14,7 +14,12 @@ from typing import Optional
 
 import torch
 
-from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from core.engine.agent_registry import (
+    compatible_contracts,
+    load_agent_by_id,
+    make_env_contract,
+    resolve_agent_algo,
+)
 from core.engine.game_controller import n_actions_from_env
 from core.engine.mission import (
     check_end_of_battle,
@@ -955,6 +960,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy_state = None
     learner_algo_override = ""
+    learner_registry_target_state = None
     selected_agent_id = (args.learner_agent_id or "").strip()
     if selected_agent_id:
         try:
@@ -974,11 +980,22 @@ def main():
             return 1
         policy_state = payload.get("policy_state")
         meta = payload.get("meta") if isinstance(payload, dict) else {}
-        learner_algo_override = str((meta or {}).get("algo", "")).strip().lower()
-        if learner_algo_override not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
-            target_state_guess = payload.get("target_state") if isinstance(payload, dict) else None
-            learner_algo_override = "dqn" if isinstance(target_state_guess, dict) else "ppo"
-        log(f"Используется learner-agent-id={selected_agent_id} (policy из registry).")
+        try:
+            learner_algo_override = resolve_agent_algo(
+                meta=meta if isinstance(meta, dict) else {},
+                policy_state=policy_state if isinstance(policy_state, dict) else None,
+                target_state=payload.get("target_state") if isinstance(payload, dict) else None,
+                agent_id=selected_agent_id,
+            )
+        except ValueError as exc:
+            log(
+                f"[ERROR] Не удалось определить algo learner-agent-id={selected_agent_id}: {exc}. "
+                "Где: eval.py (resolve_agent_algo). Что делать: переобучите/пересохраните агента."
+            )
+            return 1
+        target_guess = payload.get("target_state") if isinstance(payload, dict) else None
+        learner_registry_target_state = target_guess if isinstance(target_guess, dict) and target_guess else None
+        log(f"Используется learner-agent-id={selected_agent_id} (policy из registry, algo={learner_algo_override}).")
     else:
         policy_state = _extract_policy_state_dict(checkpoint)
 
@@ -1041,20 +1058,18 @@ def main():
         policy_net.load_state_dict(normalize_state_dict(gmz_state))
         policy_net.eval()
     else:
-        net_type = checkpoint.get("net_type") if isinstance(checkpoint, dict) else None
-        dueling = net_type == "dueling"
-        if not dueling:
-            if any(key.startswith("value_heads.") for key in policy_state):
-                dueling = True
-        from core.models.DQN import make_dqn
+        from core.models.DQN import infer_dqn_arch_from_state_dict, make_dqn
 
-        policy_net = make_dqn(n_observations, n_actions, dueling=dueling).to(device)
-        target_net = make_dqn(n_observations, n_actions, dueling=dueling).to(device)
+        dqn_arch = infer_dqn_arch_from_state_dict(policy_state)
+        policy_net = make_dqn(n_observations, n_actions, **dqn_arch).to(device)
+        target_net = make_dqn(n_observations, n_actions, **dqn_arch).to(device)
         policy_net.load_state_dict(normalize_state_dict(policy_state))
         target_state = None
         if isinstance(checkpoint, dict):
             target_state = checkpoint.get("target_net") or checkpoint.get("target_model_state_dict")
-        if isinstance(target_state, dict):
+        if not isinstance(target_state, dict) and learner_registry_target_state is not None:
+            target_state = learner_registry_target_state
+        if isinstance(target_state, dict) and target_state:
             target_net.load_state_dict(normalize_state_dict(target_state))
         else:
             target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))

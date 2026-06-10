@@ -196,6 +196,76 @@ def compatible_contracts(left: dict[str, Any], right: dict[str, Any]) -> tuple[b
     return True, ""
 
 
+_VALID_AGENT_ALGOS = frozenset(
+    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}
+)
+
+
+def infer_algo_from_policy_state(policy_state: dict[str, Any] | None) -> str | None:
+    """Определить алгоритм по ключам state_dict (meta может быть устаревшей)."""
+    if not isinstance(policy_state, dict) or not policy_state:
+        return None
+    keys = [str(k) for k in policy_state.keys()]
+    if any(k.startswith("repr_input_fc.") or k.startswith("dyn_fc1.") for k in keys):
+        return "gumbel_muzero"
+    if any(
+        k.startswith("head_bundles.")
+        or k.startswith("q_heads.")
+        or k == "iqn_pi_multipliers"
+        for k in keys
+    ):
+        return "dqn"
+    if any(k.startswith("actor.") or k.startswith("critic.") for k in keys):
+        return "ppo"
+    if any(k.startswith("policy_heads.") for k in keys):
+        return "alphazero_tree"
+    return None
+
+
+def _refine_az_algo_from_meta(algo: str, meta: dict[str, Any] | None) -> str:
+    if algo not in {"alphazero_tree", "alphazero_proxy"}:
+        return algo
+    mm = str((meta or {}).get("mcts_mode", "") or "").strip().lower()
+    if mm == "proxy":
+        return "alphazero_proxy"
+    if mm == "tree":
+        return "alphazero_tree"
+    return algo
+
+
+def resolve_agent_algo(
+    *,
+    meta: dict[str, Any] | None,
+    policy_state: dict[str, Any] | None,
+    target_state: dict[str, Any] | None = None,
+    agent_id: str = "",
+) -> str:
+    """Согласовать meta.algo и фактическую архитектуру весов; при конфликте — доверять весам."""
+    meta_algo = str((meta or {}).get("algo", "")).strip().lower()
+    if meta_algo == "alphazero":
+        meta_algo = "alphazero_tree"
+    inferred = infer_algo_from_policy_state(policy_state)
+    if inferred is not None:
+        resolved = _refine_az_algo_from_meta(inferred, meta)
+        if meta_algo in _VALID_AGENT_ALGOS and meta_algo != resolved:
+            aid = str(agent_id or (meta or {}).get("agent_id", "") or "").strip()
+            prefix = f"agent '{aid}'" if aid else "agent"
+            print(
+                f"[AGENT][WARN] {prefix}: meta.algo={meta_algo!r} не совпадает с весами "
+                f"({resolved!r}); используем веса.",
+                flush=True,
+            )
+        return resolved
+    if meta_algo in _VALID_AGENT_ALGOS:
+        return _refine_az_algo_from_meta(meta_algo, meta)
+    if isinstance(target_state, dict) and bool(target_state):
+        return "dqn"
+    raise ValueError(
+        f"agent '{agent_id or (meta or {}).get('agent_id', '')}': не удалось определить algo "
+        f"(meta={meta_algo!r}; ожидается dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero)."
+    )
+
+
 def build_agent_id(identity: AgentIdentity, step_or_tag: str | int) -> str:
     ident = identity.normalized()
     now = datetime.now().strftime("%Y%m%d_%H%M%S")

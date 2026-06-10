@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from core.engine.agent_registry import compatible_contracts, load_agent_by_id
+from core.engine.agent_registry import compatible_contracts, load_agent_by_id, resolve_agent_algo
 from core.models.action_contract import action_tensor_to_dict
 from core.models.alphazero_ids import az_mcts_mode_for, is_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
@@ -60,42 +60,14 @@ def _parse_contract_sizes(contract: dict[str, Any]) -> tuple[int, list[int]]:
 def load_agent_opponent(*, agent_id: str, expected_contract: dict[str, Any] | None = None) -> OpponentSpec:
     payload = load_agent_by_id(str(agent_id))
     meta = payload.get("meta") if isinstance(payload, dict) else {}
-    algo = str((meta or {}).get("algo", "")).strip().lower()
-    if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
-        # Backward-compatible inference for older artifacts:
-        # - DQN artifacts usually have target_state saved
-        # - PPO artifacts usually don't
-        target_state = payload.get("target_state") if isinstance(payload, dict) else None
-        if isinstance(target_state, dict):
-            algo = "dqn"
-        else:
-            # last-resort heuristic by key prefixes
-            policy_state_guess = payload.get("policy_state") if isinstance(payload, dict) else None
-            if isinstance(policy_state_guess, dict):
-                keys = [str(k) for k in policy_state_guess.keys()]
-                if any(k.startswith("actor.") for k in keys):
-                    algo = "ppo"
-                elif any(k.startswith("policy_heads.") for k in keys):
-                    mm = str((meta or {}).get("mcts_mode", "") or "").strip().lower()
-                    if mm == "proxy":
-                        algo = "alphazero_proxy"
-                    elif mm == "tree":
-                        algo = "alphazero_tree"
-                    else:
-                        raise ValueError(
-                            f"agent '{agent_id}' has legacy/unknown AlphaZero meta (algo={algo!r}, mcts_mode={mm!r}). "
-                            "Переобучите агента как alphazero_tree или alphazero_proxy."
-                        )
-                else:
-                    raise ValueError(
-                        f"agent '{agent_id}' has unsupported algo='{algo}' "
-                        "(expected dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero)."
-                    )
-            else:
-                raise ValueError(
-                    f"agent '{agent_id}' has unsupported algo='{algo}' "
-                    "(expected dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero)."
-                )
+    policy_state_guess = payload.get("policy_state") if isinstance(payload, dict) else None
+    target_state_guess = payload.get("target_state") if isinstance(payload, dict) else None
+    algo = resolve_agent_algo(
+        meta=meta if isinstance(meta, dict) else {},
+        policy_state=policy_state_guess if isinstance(policy_state_guess, dict) else None,
+        target_state=target_state_guess if isinstance(target_state_guess, dict) else None,
+        agent_id=str(agent_id),
+    )
 
     contract = payload.get("contract") if isinstance(payload, dict) else None
     if expected_contract is not None:

@@ -25,6 +25,22 @@ class TestGuiDistPc2ProgressContract(unittest.TestCase):
         # При remote_alive=0 в фазе сбора показываем «ПК2 завершил сбор», а не «воркеров 8/8».
         self.assertIn("ПК2 завершил сбор", self.source)
 
+    def test_az_dist_progress_uses_pool_mode(self):
+        self.assertIn('self._dist_progress_mode = "pool"', self.source)
+        self.assertIn("alphazero_tree", self.source)
+        self.assertIn(r"\[AZ\]\s+ep=\d+/\d+\s+actor=(\d+)", self.source)
+
+    def test_az_rollout_receiver_emits_pc2_ep_marker(self):
+        train_src = Path("train.py").read_text(encoding="utf-8")
+        self.assertIn("ep_marker_fn=lambda n: print(f\"[TRAIN][DIST][PC2] pc2_ep_accepted={n}\"", train_src)
+
+    def test_az_train_complete_clears_running_before_process_exit(self):
+        self.assertIn("def _mark_az_train_complete(self)", self.source)
+        self.assertIn(r"\[AZ\]\[ACTOR_LEARNER\] done\b", self.source)
+        self.assertIn("self._set_running(False)", self.source)
+        train_src = Path("train.py").read_text(encoding="utf-8")
+        self.assertIn("print(az_done_msg, flush=True)", train_src)
+
 
 if __name__ == "__main__":
     unittest.main()
