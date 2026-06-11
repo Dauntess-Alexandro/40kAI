@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover
     scan_targets_in_range = None
 import datetime
 import inspect
+import json
 import math
 import os
 import random
@@ -31,15 +32,18 @@ from core.engine.mission import (
 )
 from core.engine.skills import apply_end_of_command_phase
 from core.engine.state_export import write_state_json
-from project_paths import BOARD_PATH, RUNTIME_STATE_DIR
+from project_paths import ARTIFACTS_METRICS_DIR, BOARD_PATH, RUNTIME_STATE_DIR
 
 from ..engine import utils as engine_utils
 from ..engine.heuristic_targeting import (
     ENEMY_PROFILE_CONFIG,
     allocate_shots,
     melee_trade_value,
+    new_heur_counters,
     pick_enemy_profile,
     prob_2d6_at_least,
+    record_heur_charge,
+    record_heur_move,
 )
 from ..engine.utils import *
 from ..engine.visibility import visibility_report
@@ -3229,6 +3233,30 @@ class Warhammer40kEnv(gym.Env):
             return None  # кайтить без дальнобоя бессмысленно
         return str(bias)
 
+    def _flush_heur_metrics(self) -> None:
+        """Сбросить счётчики решений эвристики за прошедшую партию в JSONL (per-pid).
+
+        First-class телеметрия: не зависит от debug-логов/sim-mode/IO. Пишет профиль,
+        распределение mode/role, риск, чардж и исход партии (winner/end_reason — чтобы
+        видеть, какой профиль чаще даёт draw). Аггрегатор — tools/heur_metrics_report.py.
+        """
+        if int(getattr(reward_cfg, "ENEMY_HEUR_METRICS_ENABLED", 1)) != 1:
+            return
+        counters = getattr(self, "_heur_metric_counters", None)
+        if not isinstance(counters, dict) or int(counters.get("moves", 0)) <= 0:
+            return
+        try:
+            out_dir = ARTIFACTS_METRICS_DIR / "heur_decisions"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            rec = dict(counters)
+            rec["winner"] = str(getattr(self, "last_winner", "") or "")
+            rec["end_reason"] = str(getattr(self, "last_end_reason", "") or "")
+            path = out_dir / f"heur_dec_{os.getpid()}.jsonl"
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception:
+            return
+
     def _enemy_heur_objective_distance(self, cell_x: int, cell_y: int) -> float:
         if not self._objective_positions_available():
             return 0.0
@@ -5124,6 +5152,13 @@ class Warhammer40kEnv(gym.Env):
                         best_score, best_x, best_y, best_mode, best_details, lookahead_bonus, look2_term = best_eval
                     movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
                     advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
+                    # First-class метрики: режим/роль/риск этого решения (без debug-зависимости).
+                    record_heur_move(
+                        getattr(self, "_heur_metric_counters", None),
+                        mode_pref,
+                        str(matchup.get("enemy_role", "hybrid")),
+                        float(best_details.get("risk_norm", 0.0)),
+                    )
                     if _heuristic_debug_enabled():
                         self._heur_log(
                             f"[ENEMY][HEUR][MOVE] unit={i + 11} target={idOfM + 21} mode={mode_pref} "
@@ -6261,6 +6296,8 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Charge объявлен по цели {self._format_unit_label('model', idOfM)}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
                         )
+                        # First-class метрики: объявленный чардж и его исход.
+                        record_heur_charge(getattr(self, "_heur_metric_counters", None), bool(diceRoll >= required))
                         if diceRoll >= required:
                             if self.trunc is False:
                                 self._log(
@@ -6514,6 +6551,9 @@ class Warhammer40kEnv(gym.Env):
         self._state_flush_last_ts = 0.0
         self._state_flush_pending = False
 
+        # First-class метрики: сбросить счётчики прошедшей партии в JSONL до сброса env.
+        self._flush_heur_metrics()
+
         # Phase 7: профиль-«характер» врага на эту партию (curriculum-разнообразие
         # стилей МЕЖДУ партиями). Детерминирован по seed, иначе случаен.
         if int(getattr(reward_cfg, "ENEMY_HEUR_PROFILE_RANDOMIZATION_ENABLED", 1)) == 1:
@@ -6524,6 +6564,8 @@ class Warhammer40kEnv(gym.Env):
         self._enemy_profile_cfg = dict(
             ENEMY_PROFILE_CONFIG.get(self._enemy_game_profile, ENEMY_PROFILE_CONFIG["balanced"])
         )
+        # Свежие счётчики решений эвристики для новой партии.
+        self._heur_metric_counters = new_heur_counters(self._enemy_game_profile)
 
         if Type == "small":
             self.restarts += 1

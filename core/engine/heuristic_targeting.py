@@ -7,6 +7,8 @@ expected_damage() и вызывает allocate_shots().
 """
 from __future__ import annotations
 
+import math
+
 # Профили-«характеры» enemy для curriculum-разнообразия МЕЖДУ партиями.
 # Выбираются по seed на старте партии; смещают базовый режим движения (когда он
 # иначе схлопнулся бы в hold) и силу избегания риска / тяги к objective.
@@ -24,6 +26,102 @@ ENEMY_PROFILE_CONFIG = {
 def pick_enemy_profile(seed, profiles=ENEMY_PROFILES) -> str:
     """Детерминированный выбор профиля врага по seed (воспроизводимо)."""
     return profiles[int(seed) % len(profiles)]
+
+
+# ---- First-class heuristic metrics (счётчики в env, без скрейпинга debug-логов) ----
+
+def new_heur_counters(profile: str = "balanced") -> dict:
+    """Свежие счётчики решений эвристики за одну партию."""
+    return {
+        "profile": str(profile),
+        "mode": {"kite": 0, "hold": 0, "commit": 0},
+        "role": {"ranged": 0, "hybrid": 0, "melee": 0},
+        "risk_sum": 0.0,
+        "risk_n": 0,
+        "charge_attempts": 0,
+        "charge_success": 0,
+        "moves": 0,
+    }
+
+
+def record_heur_move(counters: dict, mode, role, risk_norm) -> None:
+    """Зафиксировать одно решение движения (режим/роль/риск). Неизвестные ключи игнорим."""
+    if not isinstance(counters, dict):
+        return
+    m = str(mode)
+    r = str(role)
+    if m in counters["mode"]:
+        counters["mode"][m] += 1
+    if r in counters["role"]:
+        counters["role"][r] += 1
+    try:
+        counters["risk_sum"] += float(risk_norm)
+        counters["risk_n"] += 1
+    except (TypeError, ValueError):
+        pass
+    counters["moves"] += 1
+
+
+def record_heur_charge(counters: dict, success: bool) -> None:
+    """Зафиксировать объявление чарджа и его исход."""
+    if not isinstance(counters, dict):
+        return
+    counters["charge_attempts"] += 1
+    if success:
+        counters["charge_success"] += 1
+
+
+def aggregate_heur_records(records: list[dict]) -> dict:
+    """Свести список покадровых счётчиков (по партиям) в итоговую сводку.
+
+    Возвращает распределение режимов, нормированную энтропию стилей, средний риск,
+    success-rate чарджа и счётчик профилей.
+    """
+    mode_totals = {"kite": 0, "hold": 0, "commit": 0}
+    role_totals = {"ranged": 0, "hybrid": 0, "melee": 0}
+    profile_counts: dict[str, int] = {}
+    risk_sum = 0.0
+    risk_n = 0
+    charge_attempts = 0
+    charge_success = 0
+    games = 0
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        games += 1
+        for k in mode_totals:
+            mode_totals[k] += int(rec.get("mode", {}).get(k, 0))
+        for k in role_totals:
+            role_totals[k] += int(rec.get("role", {}).get(k, 0))
+        prof = str(rec.get("profile", "balanced"))
+        profile_counts[prof] = profile_counts.get(prof, 0) + 1
+        risk_sum += float(rec.get("risk_sum", 0.0))
+        risk_n += int(rec.get("risk_n", 0))
+        charge_attempts += int(rec.get("charge_attempts", 0))
+        charge_success += int(rec.get("charge_success", 0))
+
+    total_modes = sum(mode_totals.values())
+    entropy = 0.0
+    if total_modes > 0:
+        for c in mode_totals.values():
+            if c <= 0:
+                continue
+            p = c / total_modes
+            entropy -= p * math.log2(p)
+    n_modes = len(mode_totals)
+    max_entropy = math.log2(n_modes) if n_modes > 1 else 1.0
+    entropy_norm = (entropy / max_entropy) if max_entropy > 0 else 0.0
+
+    return {
+        "games": games,
+        "mode_totals": mode_totals,
+        "role_totals": role_totals,
+        "profile_counts": profile_counts,
+        "style_entropy_norm": entropy_norm,
+        "avg_risk": (risk_sum / risk_n) if risk_n > 0 else 0.0,
+        "charge_success_rate": (charge_success / charge_attempts) if charge_attempts > 0 else 0.0,
+        "charge_attempts": charge_attempts,
+    }
 
 
 # P(2d6 >= n): число исходов из 36, дающих сумму >= n (n от 2 до 12).

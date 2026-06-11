@@ -283,6 +283,10 @@ ENEMY_HEUR_THREAT_MAP_CACHE = 1
 # Phase 7: профили-«характеры» врага между партиями (balanced/kiter/aggressor/
 # objective/turtle), выбор по seed на reset. Curriculum-разнообразие стилей движения.
 ENEMY_HEUR_PROFILE_RANDOMIZATION_ENABLED = 1
+# First-class метрики эвристики: env копит счётчики решений (mode/role/risk/charge) и
+# пишет per-game JSONL в artifacts/metrics/heur_decisions/. Не зависит от HEURISTIC_DEBUG.
+# Отчёт: python tools/heur_metrics_report.py
+ENEMY_HEUR_METRICS_ENABLED = 1
 # LoS-гейт risk/threat: огонь model-стрелка учитывается только при реальной линии
 # видимости до клетки (террейн/стены укрывают). Лечит гибель эвристики вайпаутом.
 ENEMY_HEUR_LOS_GATE_ENABLED = 1
