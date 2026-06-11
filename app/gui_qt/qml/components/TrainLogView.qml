@@ -51,10 +51,8 @@ ColumnLayout {
             sev = "warn"
         }
 
-        // Итоги эпизодов — разделители «глав»: AZ ([AZ] ep=), DQN ([TRAIN][EP]),
-        // PPO ([PPO][METRICS] ep= и [PPO] ep=N/M done в actor-learner).
-        if (/^\[AZ\] ep=\d+/.test(line) || /^\[TRAIN\]\[EP\]/.test(line)
-                || /^\[PPO\]\[METRICS\] ep=/.test(line) || /^\[PPO\] ep=\d+/.test(line)) {
+        // Итоги эпизодов: единый [TRAIN][EP] (все алгоритмы). Старые [AZ] ep= — совместимость.
+        if (/^\[TRAIN\]\[EP\]/.test(line) || /^\[AZ\] ep=\d+/.test(line)) {
             return { group: "ep", sev: sev, kind: "ep" }
         }
 
@@ -124,7 +122,7 @@ ColumnLayout {
         if (line.length === 0)
             return
         if (/^ep=\d+\/\d+\s*$/.test(line))
-            return // служебный дубль для прогресс-бара — полноценная строка есть в [AZ] ep=
+            return // служебный дубль для прогресс-бара — полноценная строка в [TRAIN][EP]
         var meta = _classify(line)
         var entry = {
             html: _renderHtml(line, meta, Qt.formatTime(new Date(), "hh:mm:ss")),

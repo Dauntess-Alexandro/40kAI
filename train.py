@@ -1192,6 +1192,70 @@ def _gmz_episode_result_row(*, info: dict, ep_reward: float, ep_len: int) -> dic
     }
 
 
+def format_train_ep_log_line(
+    *,
+    ep: int,
+    total: int | None,
+    algo: str = "",
+    actor_idx: int | None = None,
+    result: str = "draw",
+    end_reason: str = "unknown",
+    vp_diff: int | float = 0,
+    ep_reward: float = 0.0,
+    turns: int = 0,
+) -> str:
+    """Единая строка итога эпизода для вкладки «Эпизоды» в GUI."""
+    pieces = ["[TRAIN][EP]"]
+    if total is not None and int(total) > 0:
+        pieces.append(f"ep={int(ep)}/{int(total)}")
+    else:
+        pieces.append(f"ep={int(ep)}")
+    if algo:
+        pieces.append(f"algo={algo}")
+    if actor_idx is not None and int(actor_idx) >= 0:
+        pieces.append(f"actor={int(actor_idx)}")
+    pieces.extend(
+        [
+            f"result={result or 'draw'}",
+            f"end_reason={end_reason or 'unknown'}",
+            f"vp_diff={int(vp_diff)}",
+            f"ep_reward={float(ep_reward):.4f}",
+            f"turns={int(turns)}",
+        ]
+    )
+    return " ".join(pieces)
+
+
+def log_train_episode_line(
+    row: dict,
+    *,
+    ep: int | None = None,
+    total: int | None = None,
+    algo: str = "",
+    actor_idx: int | None = None,
+) -> None:
+    """Печатает [TRAIN][EP] в лог-файл и stdout (если включено в TRAIN_LOG_*)."""
+    if not TRAIN_LOG_ENABLED:
+        return
+    actor_raw = actor_idx if actor_idx is not None else row.get("actor_idx")
+    actor_out = int(actor_raw) if actor_raw is not None and int(actor_raw) >= 0 else None
+    line = format_train_ep_log_line(
+        ep=int(ep if ep is not None else row.get("episode") or 0),
+        total=total,
+        algo=algo,
+        actor_idx=actor_out,
+        result=str(row.get("result") or "draw"),
+        end_reason=str(row.get("end_reason") or "unknown"),
+        vp_diff=int(row.get("vp_diff", 0) or 0),
+        ep_reward=float(row.get("ep_reward", 0.0) or 0.0),
+        turns=int(row.get("turn", row.get("ep_len", 0)) or 0),
+    )
+    if TRAIN_LOG_TO_FILE:
+        append_agent_log(line)
+    if TRAIN_LOG_TO_CONSOLE:
+        print(line, flush=True)
+
+
 def _train_window_payload_from_rows(
     rows: list[dict],
     *,
@@ -3281,6 +3345,7 @@ def run_ppo_training(
             f"entropy={ppo_metrics['entropy']:.6f} approx_kl={ppo_metrics['approx_kl']:.6f} "
             f"clip_fraction={ppo_metrics['clip_fraction']:.6f} global_step={global_step} update_step={ppo_update_step}"
         )
+        log_train_episode_line(episode_row, total=int(totLifeT), algo="ppo")
         if (
             DET_EVAL_ENABLED
             and b_len > 0
@@ -3519,7 +3584,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                 final_info = info or {}
 
                 # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
-                print(f"[PPO] ep={episodes_finished}/{totLifeT} done", flush=True)
+                print(f"ep={episodes_finished}/{totLifeT}", flush=True)
 
                 model_vp = float(final_info.get("model VP", 0.0) or 0.0)
                 player_vp = float(final_info.get("player VP", 0.0) or 0.0)
@@ -3582,6 +3647,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                     },
                     metrics_dir=METRICS_DIR,
                 )
+                log_train_episode_line(episode_row, total=int(totLifeT), algo="ppo")
 
                 # reset env сразу после done
                 ctx["conn"].send(("reset", None))
@@ -5059,20 +5125,18 @@ def main():
                         f"shoot_windows={{with_targets:{ctx.get('shoot_windows_with_targets', 0)},without_targets:{ctx.get('shoot_windows_without_targets', 0)}}}"
                     )
 
-                if TRAIN_LOG_ENABLED:
-                    win_flag = 1 if result == "win" else 0
-                    train_ep_line = (
-                        "[TRAIN][EP] "
-                        f"ep={numLifeT + 1} "
-                        f"ep_reward={ep_reward:.6f} "
-                        f"win={win_flag} "
-                        f"vp_diff={vp_diff} "
-                        f"end_reason={end_reason}"
-                    )
-                    if TRAIN_LOG_TO_FILE:
-                        append_agent_log(train_ep_line)
-                    if TRAIN_LOG_TO_CONSOLE:
-                        print(train_ep_line)
+                log_train_episode_line(
+                    {
+                        "episode": int(numLifeT + 1),
+                        "ep_reward": float(ep_reward),
+                        "result": str(result),
+                        "vp_diff": int(vp_diff),
+                        "end_reason": str(end_reason),
+                        "turn": int(info.get("turn", ctx.get("ep_len", 0)) or 0),
+                    },
+                    total=int(totLifeT),
+                    algo="dqn",
+                )
 
                 eval_window.append(
                     {
@@ -6475,22 +6539,13 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         print(f"ep={episodes_finished}/{totLifeT}", flush=True)
                     except Exception:
                         pass
-                # Богатая строка эпизода для журнала/лог-файла (служебный ep=N/M GUI скрывает).
-                if TRAIN_LOG_ENABLED:
-                    train_ep_line = (
-                        "[TRAIN][EP] "
-                        f"ep={episodes_finished}/{int(totLifeT)} "
-                        f"actor={int(payload.get('actor_idx', -1) or -1)} "
-                        f"result={payload.get('result', '')} "
-                        f"end_reason={payload.get('end_reason', '')} "
-                        f"vp_diff={int(payload.get('vp_diff', 0) or 0)} "
-                        f"ep_reward={float(payload.get('ep_reward', 0.0) or 0.0):.4f} "
-                        f"turns={int(payload.get('turn', 0) or 0)}"
-                    )
-                    if TRAIN_LOG_TO_FILE:
-                        append_agent_log(train_ep_line)
-                    if TRAIN_LOG_TO_CONSOLE:
-                        print(train_ep_line, flush=True)
+                log_train_episode_line(
+                    payload,
+                    ep=int(episodes_finished),
+                    total=int(totLifeT),
+                    algo="dqn",
+                    actor_idx=int(payload.get("actor_idx", -1) or -1),
+                )
 
                 # Periodic DET-like eval для Actor-Learner (аналог DET_EVAL в основном loop).
                 if (
@@ -7195,12 +7250,16 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 ep_rows.append(payload)
                 episodes_finished = len(ep_rows)
                 # GUI прогресс читает stdout и парсит шаблон ep=X/Y.
-                print(f"[PPO] ep={episodes_finished}/{totLifeT} done", flush=True)
+                print(f"ep={episodes_finished}/{totLifeT}", flush=True)
                 metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
                 metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+                ep_row = {k: payload.get(k) for k in (
+                    "episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp",
+                    "vp_diff", "result", "end_reason", "end_code",
+                )}
                 append_episode_diagnostics(
                     run_id=run_id,
-                    episode_row={k: payload.get(k) for k in ("episode","ep_reward","ep_len","turn","model_vp","player_vp","vp_diff","result","end_reason","end_code")},
+                    episode_row=ep_row,
                     diagnostics={
                         "algo": "ppo",
                         "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
@@ -7216,6 +7275,13 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         "update_step": int(ppo_update_step),
                     },
                     metrics_dir=METRICS_DIR,
+                )
+                log_train_episode_line(
+                    ep_row,
+                    ep=int(episodes_finished),
+                    total=int(totLifeT),
+                    algo="ppo",
+                    actor_idx=int(payload.get("actor_idx", -1) or -1),
                 )
 
                 # Periodic DET-like eval для PPO Actor-Learner (как в DQN actor-learner).
@@ -9278,16 +9344,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             # Всегда в stdout: GUI парсит ep= для прогресс-бара.
             print(f"ep={episodes_finished}/{totLifeT}", flush=True)
 
-            ep_line = (
-                f"[AZ] ep={episodes_finished}/{totLifeT} actor={int(payload.get('actor_idx', -1))} "
-                f"result={payload.get('result','')} end_reason={payload.get('end_reason','')} "
-                f"vp_diff={int(payload.get('vp_diff',0) or 0)} "
-                f"loss={float(last_loss):.6f} replay={len(replay)} "
-                f"staleness_guard={AZ_MAX_POLICY_STALENESS_UPDATES}"
+            log_train_episode_line(
+                payload,
+                ep=int(episodes_finished),
+                total=int(totLifeT),
+                algo="az",
+                actor_idx=int(payload.get("actor_idx", -1) or -1),
             )
-            append_agent_log(ep_line)
-            if TRAIN_LOG_TO_CONSOLE:
-                print(ep_line, flush=True)
 
             if (
                 ACTOR_DET_EVAL_ENABLED
@@ -10499,22 +10562,13 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 pbar.update(target_n - int(pbar.n))
             if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
                 print(f"ep={episodes_finished}/{totLifeT}", flush=True)
-            # Богатая строка эпизода для журнала/лог-файла (служебный ep=N/M GUI скрывает).
-            if TRAIN_LOG_ENABLED:
-                train_ep_line = (
-                    "[TRAIN][EP] "
-                    f"ep={episodes_finished}/{int(totLifeT)} "
-                    f"actor={int(payload.get('actor_idx', -1) or -1)} "
-                    f"result={payload.get('result', '')} "
-                    f"end_reason={payload.get('end_reason', '')} "
-                    f"vp_diff={int(payload.get('vp_diff', 0) or 0)} "
-                    f"ep_reward={float(payload.get('ep_reward', 0.0) or 0.0):.4f} "
-                    f"turns={int(payload.get('turn', 0) or 0)}"
-                )
-                if TRAIN_LOG_TO_FILE:
-                    append_agent_log(train_ep_line)
-                if TRAIN_LOG_TO_CONSOLE:
-                    print(train_ep_line, flush=True)
+            log_train_episode_line(
+                payload,
+                ep=int(episodes_finished),
+                total=int(totLifeT),
+                algo="gmz",
+                actor_idx=int(payload.get("actor_idx", -1) or -1),
+            )
             _maybe_train_progress_heartbeat(force=True)
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
                 last_checkpoint = _save_checkpoint(episodes_finished)

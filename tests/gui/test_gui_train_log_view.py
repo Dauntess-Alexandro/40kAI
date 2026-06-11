@@ -74,8 +74,8 @@ class TestTrainEpLineContract(unittest.TestCase):
 
     def test_train_ep_emitted_in_all_loops(self):
         train_src = Path("train.py").read_text(encoding="utf-8")
-        # sync-DQN + actor-learner DQN (dist) + actor-learner GMZ.
-        self.assertGreaterEqual(train_src.count('"[TRAIN][EP] "'), 3)
+        # DQN/PPO sync + actor-learner DQN/PPO/AZ/GMZ через log_train_episode_line.
+        self.assertGreaterEqual(train_src.count("log_train_episode_line("), 6)
 
     def test_gui_explains_learner_queue_lag(self):
         # Полоски сбора полные, а верхний бар идёт по обработанным эпизодам —
@@ -119,7 +119,7 @@ class TestTrainLogViewBehavior(unittest.TestCase):
         v = self._new()
         self._append(v, "[AZ][ACTOR] actor=0 move=5 mcts_mode=tree")
         self._append(v, "ep=5/300")  # служебный дубль для прогресс-бара — в журнал не попадает
-        self._append(v, "[AZ] ep=5/300 actor=4 result=draw end_reason=turn_limit vp_diff=0 loss=0.000000 replay=0")
+        self._append(v, "[TRAIN][EP] ep=5/300 algo=az actor=4 result=draw end_reason=turn_limit vp_diff=0 ep_reward=0.0000 turns=10")
         self.assertEqual(v.property("lineCount"), 2)
         self.assertEqual(v.property("visibleCount"), 2)
 
@@ -149,14 +149,14 @@ class TestTrainLogViewBehavior(unittest.TestCase):
 
     def test_episode_filter(self):
         v = self._new()
-        self._append(v, "[AZ] ep=7/300 actor=3 result=draw end_reason=turn_limit vp_diff=0 loss=0.0 replay=40")
+        self._append(v, "[TRAIN][EP] ep=7/300 algo=az actor=3 result=draw end_reason=turn_limit vp_diff=0 ep_reward=0.0000 turns=12")
         self._append(v, "[AZ][ENV_WORKER] worker=3 local_ep=3/38 starting")
         v.setProperty("activeFilter", "episodes")
         self.assertEqual(v.property("visibleCount"), 1)
 
     def test_dqn_lines_classified(self):
         v = self._new()
-        self._append(v, "[TRAIN][EP] ep=12 ep_reward=1.250000 win=1 vp_diff=3 end_reason=wipeout_enemy")
+        self._append(v, "[TRAIN][EP] ep=12/300 algo=dqn result=win end_reason=wipeout_enemy vp_diff=3 ep_reward=1.2500 turns=15")
         self._append(v, "[TRAIN][EVAL_WINDOW] ep=100 window=100 win_rate=0.640")
         self._append(v, "[DQN][DIST] ПК2 готов: workers=8/8")
         self._append(v, "[DQN][ACTOR] actor=2 stop.flag — выход")
@@ -169,11 +169,11 @@ class TestTrainLogViewBehavior(unittest.TestCase):
 
     def test_ppo_episode_lines(self):
         v = self._new()
+        self._append(v, "[TRAIN][EP] ep=20/300 algo=ppo result=win end_reason=wipeout_enemy vp_diff=2 ep_reward=0.5000 turns=14")
         self._append(v, "[PPO][METRICS] ep=20/300 reward=0.5000 loss=0.1")
-        self._append(v, "[PPO] ep=21/300 done")
         self._append(v, "[PPO][UPDATE] kl=0.01")
         v.setProperty("activeFilter", "episodes")
-        self.assertEqual(v.property("visibleCount"), 2)
+        self.assertEqual(v.property("visibleCount"), 1)
         v.setProperty("activeFilter", "train")
         self.assertEqual(v.property("visibleCount"), 3)
 
