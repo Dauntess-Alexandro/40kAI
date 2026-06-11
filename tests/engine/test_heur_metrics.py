@@ -1,5 +1,5 @@
 # tests/engine/test_heur_metrics.py
-import math
+import json
 import unittest
 
 from core.engine.heuristic_targeting import (
@@ -78,6 +78,32 @@ class TestAggregateHeurRecords(unittest.TestCase):
         agg = aggregate_heur_records([])
         self.assertEqual(agg["games"], 0)
         self.assertEqual(agg["style_entropy_norm"], 0.0)
+
+
+def test_flush_skips_empty_and_writes_nonempty(monkeypatch, tmp_path):
+    import types
+
+    import core.envs.warhamEnv as we
+    from core.envs.warhamEnv import Warhammer40kEnv
+
+    monkeypatch.setattr(we, "ARTIFACTS_METRICS_DIR", tmp_path)
+    out_dir = tmp_path / "heur_decisions"
+
+    # 1) пустые счётчики (moves==0) -> ничего не пишется
+    stub = types.SimpleNamespace(_heur_metric_counters=new_heur_counters("kiter"))
+    Warhammer40kEnv._flush_heur_metrics(stub)
+    assert not out_dir.exists() or not list(out_dir.glob("*.jsonl"))
+
+    # 2) есть ход -> пишется одна JSONL-строка с профилем
+    record_heur_move(stub._heur_metric_counters, "kite", "ranged", 0.5)
+    Warhammer40kEnv._flush_heur_metrics(stub)
+    files = list(out_dir.glob("heur_dec_*.jsonl"))
+    assert len(files) == 1
+    lines = [line for line in files[0].read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 1
+    rec = json.loads(lines[0])
+    assert rec["profile"] == "kiter"
+    assert rec["mode"]["kite"] == 1
 
 
 if __name__ == "__main__":

@@ -5153,12 +5153,15 @@ class Warhammer40kEnv(gym.Env):
                     movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
                     advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
                     # First-class метрики: режим/роль/риск этого решения (без debug-зависимости).
-                    record_heur_move(
-                        getattr(self, "_heur_metric_counters", None),
-                        mode_pref,
-                        str(matchup.get("enemy_role", "hybrid")),
-                        float(best_details.get("risk_norm", 0.0)),
-                    )
+                    # Гейт по simulation_mode: не считаем MCTS-роллаутные ходы (AZ/GMZ),
+                    # иначе метрики отражали бы симуляцию, а не реальную партию.
+                    if not self._in_simulation_mode():
+                        record_heur_move(
+                            getattr(self, "_heur_metric_counters", None),
+                            mode_pref,
+                            str(matchup.get("enemy_role", "hybrid")),
+                            float(best_details.get("risk_norm", 0.0)),
+                        )
                     if _heuristic_debug_enabled():
                         self._heur_log(
                             f"[ENEMY][HEUR][MOVE] unit={i + 11} target={idOfM + 21} mode={mode_pref} "
@@ -6296,8 +6299,9 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Charge объявлен по цели {self._format_unit_label('model', idOfM)}. Дистанция: {dist:.1f}. Бросок 2D6: {diceRoll}.",
                         )
-                        # First-class метрики: объявленный чардж и его исход.
-                        record_heur_charge(getattr(self, "_heur_metric_counters", None), bool(diceRoll >= required))
+                        # First-class метрики: объявленный чардж и его исход (не в симуляции).
+                        if not self._in_simulation_mode():
+                            record_heur_charge(getattr(self, "_heur_metric_counters", None), bool(diceRoll >= required))
                         if diceRoll >= required:
                             if self.trunc is False:
                                 self._log(
