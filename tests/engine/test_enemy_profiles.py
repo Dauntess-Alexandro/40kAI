@@ -74,6 +74,13 @@ class TestProfileModeBias(unittest.TestCase):
         s = self._stub(ENEMY_PROFILE_CONFIG["balanced"], ranged_score=2.0)
         self.assertIsNone(Warhammer40kEnv._enemy_profile_mode_bias(s, 0, "hold"))
 
+    def test_turtle_hold_bias_is_noop_at_natural_hold(self):
+        from core.envs.warhamEnv import Warhammer40kEnv
+
+        # turtle mode_bias='hold' при natural 'hold' не должен маркировать смещение
+        s = self._stub(ENEMY_PROFILE_CONFIG["turtle"], ranged_score=2.0)
+        self.assertIsNone(Warhammer40kEnv._enemy_profile_mode_bias(s, 0, "hold"))
+
 
 class TestProfileWiringContract(unittest.TestCase):
     def test_env_uses_profile(self):

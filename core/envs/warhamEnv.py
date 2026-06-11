@@ -3223,6 +3223,8 @@ class Warhammer40kEnv(gym.Env):
         bias = cfg.get("mode_bias")
         if not bias or str(natural_mode) != "hold":
             return None
+        if str(bias) == str(natural_mode):
+            return None  # turtle('hold') при natural hold — не маркируем мнимое смещение
         if bias == "kite" and self._unit_ranged_score("enemy", int(enemy_idx)) <= 0.1:
             return None  # кайтить без дальнобоя бессмысленно
         return str(bias)
