@@ -65,8 +65,13 @@ def summarize(parsed: dict, *, heuristic_side: str = "p2") -> dict:
     }
 
 
-def run_benchmark(games: int, seed: int) -> dict:
-    """Гоняет eval.py как subprocess с HEURISTIC_DEBUG=1 и агрегирует результат."""
+def run_benchmark(games: int) -> dict:
+    """Гоняет eval.py как subprocess с HEURISTIC_DEBUG=1 и агрегирует результат.
+
+    Без явного opponent-agent eval.py ведёт врага как heuristic_auto (см. eval.py:605)
+    — это ровно наша enemy-эвристика. eval.py НЕ поддерживает --seed, поэтому он не
+    передаётся; вариативность даёт встроенный RNG движка.
+    """
     env = dict(os.environ)
     env["HEURISTIC_DEBUG"] = "1"
     cmd = [
@@ -74,10 +79,6 @@ def run_benchmark(games: int, seed: int) -> dict:
         "eval.py",
         "--games",
         str(games),
-        "--opponent-policy",
-        "random",
-        "--seed",
-        str(seed),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
@@ -88,9 +89,8 @@ def run_benchmark(games: int, seed: int) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Бенчмарк силы и разнообразия enemy-эвристики")
     ap.add_argument("--games", type=int, default=30)
-    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
-    summary = run_benchmark(args.games, args.seed)
+    summary = run_benchmark(args.games)
     print(
         "[HEUR-BENCH] "
         f"games={summary['games']} "
