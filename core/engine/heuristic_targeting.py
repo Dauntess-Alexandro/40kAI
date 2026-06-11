@@ -31,6 +31,76 @@ def pick_enemy_profile(seed, profiles=ENEMY_PROFILES) -> str:
     return profiles[int(seed) % len(profiles)]
 
 
+def _objective_owner(model_oc: int, enemy_oc: int) -> str:
+    if int(enemy_oc) > int(model_oc):
+        return "enemy"
+    if int(model_oc) > int(enemy_oc):
+        return "model"
+    if int(model_oc) > 0 and int(enemy_oc) > 0:
+        return "contested"
+    return "none"
+
+
+def classify_objective_control(
+    *,
+    model_oc: int,
+    enemy_oc_without_unit: int,
+    unit_oc: int,
+    candidate_in_radius: bool,
+    enemy_oc_before: int | None = None,
+) -> dict:
+    """Оценить, что кандидатная клетка меняет в контроле одного objective.
+
+    enemy_oc_without_unit — текущий enemy OC на objective без двигающегося юнита.
+    enemy_oc_before опционален: env передаёт фактический OC до движения, чтобы stay
+    юнита, который сам держит точку, классифицировался как hold, а не capture.
+    """
+    model = int(model_oc)
+    enemy_without = max(0, int(enemy_oc_without_unit))
+    unit = max(0, int(unit_oc))
+    if unit <= 0:
+        before_enemy = enemy_without if enemy_oc_before is None else max(0, int(enemy_oc_before))
+        before_owner = _objective_owner(model, before_enemy)
+        return {
+            "kind": "none",
+            "score": 0.0,
+            "before_owner": before_owner,
+            "after_owner": _objective_owner(model, enemy_without),
+            "enemy_oc_after": enemy_without,
+            "model_oc": model,
+        }
+
+    before_enemy = enemy_without if enemy_oc_before is None else max(0, int(enemy_oc_before))
+    enemy_after = enemy_without + (unit if bool(candidate_in_radius) else 0)
+    before_owner = _objective_owner(model, before_enemy)
+    after_owner = _objective_owner(model, enemy_after)
+
+    kind = "none"
+    score = 0.0
+    if bool(candidate_in_radius):
+        if before_owner == "model" and after_owner == "enemy":
+            kind = "flip"
+            score = 1.0
+        elif before_owner != "enemy" and after_owner == "enemy":
+            kind = "capture"
+            score = 0.8
+        elif after_owner == "contested" and model > 0:
+            kind = "contest"
+            score = 0.45
+        elif before_owner == "enemy" and after_owner == "enemy":
+            kind = "hold"
+            score = 0.25
+
+    return {
+        "kind": kind,
+        "score": float(score),
+        "before_owner": before_owner,
+        "after_owner": after_owner,
+        "enemy_oc_after": int(enemy_after),
+        "model_oc": model,
+    }
+
+
 # ---- First-class heuristic metrics (счётчики в env, без скрейпинга debug-логов) ----
 
 def new_heur_counters(profile: str = "balanced") -> dict:

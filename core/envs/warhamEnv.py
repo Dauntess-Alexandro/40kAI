@@ -38,6 +38,7 @@ from ..engine import utils as engine_utils
 from ..engine.heuristic_targeting import (
     ENEMY_PROFILE_CONFIG,
     allocate_shots,
+    classify_objective_control,
     melee_trade_value,
     new_heur_counters,
     pick_enemy_profile,
@@ -3265,6 +3266,71 @@ class Warhammer40kEnv(gym.Env):
             for obj in self.coordsOfOM
         )
 
+    def _enemy_effective_oc(self, enemy_idx: int) -> int:
+        """OC enemy-юнита тем же способом, что refresh_objective_control()."""
+        idx = int(enemy_idx)
+        if not (0 <= idx < len(self.enemy_health)) or self.enemy_health[idx] <= 0:
+            return 0
+        try:
+            wounds = self.enemy_data[idx]["W"]
+            if wounds <= 0:
+                return 0
+            remaining_models = (self.enemy_health[idx] + wounds - 1) // wounds
+            return int(self.enemyOC[idx] * remaining_models)
+        except Exception:
+            return 0
+
+    def _enemy_objective_control_score(self, enemy_idx: int, cell_x: int, cell_y: int) -> dict:
+        """Прогноз контроля objective, если enemy-юнит встанет в клетку (cell_x, cell_y)."""
+        base = {
+            "kind": "none",
+            "score": 0.0,
+            "before_owner": "none",
+            "after_owner": "none",
+            "enemy_oc_after": 0,
+            "model_oc": 0,
+            "objective_idx": -1,
+            "unit_oc": 0,
+        }
+        if not self._objective_positions_available():
+            return dict(base)
+        idx = int(enemy_idx)
+        unit_oc = self._enemy_effective_oc(idx)
+        if unit_oc <= 0 or not (0 <= idx < len(self.enemy_coords)):
+            out = dict(base)
+            out["unit_oc"] = int(unit_oc)
+            return out
+
+        model_totals = getattr(self, "model_obj_oc", None)
+        enemy_totals = getattr(self, "enemy_obj_oc", None)
+        if model_totals is None or enemy_totals is None:
+            self.refresh_objective_control()
+            model_totals = getattr(self, "model_obj_oc", [])
+            enemy_totals = getattr(self, "enemy_obj_oc", [])
+
+        old_pos = (int(self.enemy_coords[idx][0]), int(self.enemy_coords[idx][1]))
+        new_pos = (int(cell_y), int(cell_x))
+        best = dict(base)
+        best["unit_oc"] = int(unit_oc)
+        for j, obj in enumerate(self.coordsOfOM):
+            model_oc = int(model_totals[j]) if j < len(model_totals) else 0
+            enemy_current = int(enemy_totals[j]) if j < len(enemy_totals) else 0
+            old_in_radius = distance(obj, old_pos) <= 5
+            new_in_radius = distance(obj, new_pos) <= 5
+            enemy_without = max(0, enemy_current - (int(unit_oc) if old_in_radius else 0))
+            scored = classify_objective_control(
+                model_oc=model_oc,
+                enemy_oc_without_unit=enemy_without,
+                unit_oc=int(unit_oc),
+                candidate_in_radius=bool(new_in_radius),
+                enemy_oc_before=enemy_current,
+            )
+            scored["objective_idx"] = int(j)
+            scored["unit_oc"] = int(unit_oc)
+            if float(scored.get("score", 0.0)) > float(best.get("score", 0.0)):
+                best = scored
+        return best
+
     def _model_has_los_to_cell(self, model_idx: int, cell_x: int, cell_y: int) -> bool:
         """Есть ли у model-стрелка реальная LOS до гипотетической клетки (cell_x, cell_y).
 
@@ -3385,6 +3451,17 @@ class Warhammer40kEnv(gym.Env):
         dist_pref_penalty = abs(dist_to_target - desired_dist) / max(1.0, desired_dist)
         obj_dist = self._enemy_heur_objective_distance(int(cell_x), int(cell_y))
         obj_norm = obj_dist / max(1.0, float(max(self.b_len, self.b_hei)))
+        obj_control = {
+            "kind": "none",
+            "score": 0.0,
+            "objective_idx": -1,
+            "model_oc": 0,
+            "enemy_oc_after": 0,
+            "unit_oc": 0,
+        }
+        if int(getattr(reward_cfg, "ENEMY_HEUR_OBJECTIVE_CONTROL_ENABLED", 1)) == 1:
+            obj_control = self._enemy_objective_control_score(enemy_idx, int(cell_x), int(cell_y))
+        obj_control_score = float(obj_control.get("score", 0.0))
         risk = self._enemy_heur_exposure_risk(enemy_idx, int(cell_x), int(cell_y))
         risk_norm = risk / max(1.0, float(len(self.unit_health)))
         threat_score = self._enemy_cell_threat_score(int(cell_x), int(cell_y))
@@ -3407,6 +3484,7 @@ class Warhammer40kEnv(gym.Env):
         w_mode = float(getattr(reward_cfg, "ENEMY_HEUR_MODE_W", 0.10))
         w_progress = float(getattr(reward_cfg, "ENEMY_HEUR_PROGRESS_W", 0.15))
         w_obj = float(getattr(reward_cfg, "ENEMY_HEUR_OBJECTIVE_DIST_W", 0.20))
+        w_obj_control = float(getattr(reward_cfg, "ENEMY_HEUR_OBJECTIVE_CONTROL_W", 0.42))
         w_risk = float(getattr(reward_cfg, "ENEMY_HEUR_RISK_W", 0.22))
         w_cover = float(getattr(reward_cfg, "ENEMY_HEUR_COVER_W", 0.18))
         w_threat = float(getattr(reward_cfg, "ENEMY_HEUR_THREAT_W", 0.20))
@@ -3464,6 +3542,7 @@ class Warhammer40kEnv(gym.Env):
             + w_matchup * dist_pref_penalty
             + (w_mode * phase_mode_mult) * mode_penalty
             + (w_obj * obj_mult * phase_obj_mult) * obj_norm
+            - (w_obj_control * obj_mult * phase_obj_mult) * obj_control_score
             + (w_risk * risk_mult * phase_risk_mult) * risk_norm
             + (w_threat * risk_mult * phase_risk_mult) * threat_norm
             + ((team_focus_penalty) * focus_mult)
@@ -3475,6 +3554,12 @@ class Warhammer40kEnv(gym.Env):
             "dist_to_target": dist_to_target,
             "dist_pref_penalty": dist_pref_penalty,
             "obj_norm": obj_norm,
+            "obj_control_score": obj_control_score,
+            "obj_control_kind": str(obj_control.get("kind", "none")),
+            "obj_control_idx": int(obj_control.get("objective_idx", -1)),
+            "obj_model_oc": int(obj_control.get("model_oc", 0)),
+            "obj_enemy_oc_after": int(obj_control.get("enemy_oc_after", 0)),
+            "obj_unit_oc": int(obj_control.get("unit_oc", 0)),
             "risk_norm": risk_norm,
             "threat_norm": threat_norm,
             "mode_penalty": mode_penalty,
@@ -5029,6 +5114,7 @@ class Warhammer40kEnv(gym.Env):
             mode_usage_counter = {"kite": 0, "hold": 0, "commit": 0}
             mode_decisions = 0
             team_tactic, tactic_reason = self._enemy_team_tactic()
+            self.refresh_objective_control()
             if _heuristic_debug_enabled():
                 self._heur_log(f"[ENEMY][HEUR][TEAM] tactic={team_tactic} reason={tactic_reason}")
             for i in range(len(self.enemy_health)):
@@ -5049,6 +5135,7 @@ class Warhammer40kEnv(gym.Env):
                         self.unitInAttack[idOfM][0] = 0
                         self.unitInAttack[idOfM][1] = 0
                         self.enemyInAttack[i] = [0, 0]
+                        self.refresh_objective_control()
                     continue
 
                 if self.enemyInAttack[i][0] == 0 and self.enemy_health[i] > 0:
@@ -5123,6 +5210,7 @@ class Warhammer40kEnv(gym.Env):
                     for base_score, x, y, mode, details in top_candidates:
                         future_shootable = 0
                         future_obj_term = 0.0
+                        future_obj_kind = "none"
                         future_risk = 0.0
                         for model_idx in range(len(self.unit_health)):
                             if self.unit_health[model_idx] <= 0:
@@ -5131,8 +5219,13 @@ class Warhammer40kEnv(gym.Env):
                             dist_next = float(self._grid_distance_euclid((int(y), int(x)), (int(self.unit_coords[model_idx][0]), int(self.unit_coords[model_idx][1]))))
                             if range_limit > 0 and dist_next <= range_limit:
                                 future_shootable += 1
-                        if self._is_position_near_objective((int(y), int(x))):
+                        if int(getattr(reward_cfg, "ENEMY_HEUR_OBJECTIVE_CONTROL_ENABLED", 1)) == 1:
+                            future_obj = self._enemy_objective_control_score(i, int(x), int(y))
+                            future_obj_term = float(future_obj.get("score", 0.0))
+                            future_obj_kind = str(future_obj.get("kind", "none"))
+                        elif self._is_position_near_objective((int(y), int(x))):
                             future_obj_term = 1.0
+                            future_obj_kind = "near"
                         future_risk = self._enemy_cell_threat_score(int(x), int(y)) / max(1.0, float(len(self.unit_health)))
                         lookahead_bonus = -lookahead_w * min(2.0, float(future_shootable))
                         if int(getattr(reward_cfg, "ENEMY_HEUR_LOOK2_ENABLED", 1)) == 1:
@@ -5143,13 +5236,35 @@ class Warhammer40kEnv(gym.Env):
                             look2_term = 0.0
                         total_eval = float(base_score) + float(lookahead_bonus) + float(look2_term)
                         if best_eval is None or total_eval < best_eval[0]:
-                            best_eval = (total_eval, x, y, mode, details, lookahead_bonus, float(look2_term))
+                            best_eval = (
+                                total_eval,
+                                x,
+                                y,
+                                mode,
+                                details,
+                                lookahead_bonus,
+                                float(look2_term),
+                                float(future_obj_term),
+                                future_obj_kind,
+                            )
                     if best_eval is None:
                         best_score, best_x, best_y, best_mode, best_details = scored_candidates[0]
                         lookahead_bonus = 0.0
                         look2_term = 0.0
+                        look2_obj_term = 0.0
+                        look2_obj_kind = "none"
                     else:
-                        best_score, best_x, best_y, best_mode, best_details, lookahead_bonus, look2_term = best_eval
+                        (
+                            best_score,
+                            best_x,
+                            best_y,
+                            best_mode,
+                            best_details,
+                            lookahead_bonus,
+                            look2_term,
+                            look2_obj_term,
+                            look2_obj_kind,
+                        ) = best_eval
                     movement = int(self._grid_distance_chebyshev((int(self.enemy_coords[i][0]), int(self.enemy_coords[i][1])), (int(best_y), int(best_x))))
                     advanced = str(best_mode) == "advance" or int(movement) > int(base_m)
                     # First-class метрики: режим/роль/риск этого решения (без debug-зависимости).
@@ -5171,6 +5286,9 @@ class Warhammer40kEnv(gym.Env):
                             f"obj={float(best_details.get('obj_norm', 0.0)):.3f} risk={float(best_details.get('risk_norm', 0.0)):.3f} "
                             f"cover={float(best_details.get('cover_bonus', 0.0)):.3f} "
                             f"threat={float(best_details.get('threat_norm', 0.0)):.3f} obj_press={float(best_details.get('obj_pressure', 0.0)):.3f} "
+                            f"obj_ctrl={float(best_details.get('obj_control_score', 0.0)):.3f} "
+                            f"obj_kind={best_details.get('obj_control_kind', 'none')} "
+                            f"obj_oc={int(best_details.get('obj_enemy_oc_after', 0))}/{int(best_details.get('obj_model_oc', 0))} "
                             f"effective_role={best_details.get('effective_role', matchup.get('enemy_role'))} "
                             f"phase={best_details.get('phase_profile', 'neutral')} "
                             f"team_tactic={best_details.get('team_tactic', team_tactic)} "
@@ -5184,7 +5302,8 @@ class Warhammer40kEnv(gym.Env):
                         )
                         self._heur_log(
                             f"[ENEMY][HEUR][LOOK2] unit={i + 11} base={float(best_score):.3f} "
-                            f"lookahead={float(lookahead_bonus):.3f} look2={float(look2_term):.3f}"
+                            f"lookahead={float(lookahead_bonus):.3f} look2={float(look2_term):.3f} "
+                            f"obj_ctrl={float(look2_obj_term):.3f} obj_kind={look2_obj_kind}"
                         )
                     if str(best_mode) == "stay":
                         self._heur_log(f"[ENEMY][HEUR][MOVE] unit={i + 11} chosen_mode=stay distance=0")
@@ -5197,6 +5316,7 @@ class Warhammer40kEnv(gym.Env):
                         if self.enemy_coords[i] == self.unit_coords[j]:
                             self.enemy_coords[i][0] -= 1
                     self._adjust_end_move_from_terrain("enemy", i, pos_before, "movement_phase:enemy")
+                    self.refresh_objective_control()
                     advanced_flags[i] = advanced
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll) if advance_roll is not None else None

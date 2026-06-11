@@ -88,6 +88,7 @@ from project_paths import (
     ARTIFACTS_MODELS_DIR,
     BOARD_PATH,
     PROJECT_ROOT,
+    RESPONSE_PATH,
     RESULTS_PATH,
     RUNTIME_STATE_DIR,
     TRAIN_DATA_PATH,
@@ -4354,12 +4355,14 @@ class GUIController(QtCore.QObject):
             self._clear_cache_files()
             self._emit_status(
                 "Кэш моделей (папка artifacts/models/actor_sync сохранена, файлы в ней удалены), "
+                "artifacts/metrics/ (включая heur_decisions), runtime/state/response.txt, "
                 "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, "
                 "runtime/logs/LOGS_FOR_AGENTS_PLAY.md, runtime/logs/LOGS_FOR_AGENTS_EVAL.md и "
                 "artifacts/results/results.txt очищены."
             )
             self._emit_log(
                 "[GUI] Кэш моделей (папка artifacts/models/actor_sync сохранена, файлы в ней удалены), "
+                "artifacts/metrics/ (включая heur_decisions), runtime/state/response.txt, "
                 "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, "
                 "runtime/logs/LOGS_FOR_AGENTS_PLAY.md, runtime/logs/LOGS_FOR_AGENTS_EVAL.md и "
                 "artifacts/results/results.txt очищены."
@@ -4368,7 +4371,8 @@ class GUIController(QtCore.QObject):
             message = (
                 "Не удалось очистить кэш и логи. "
                 "Где: gui_qt/main.py (clear_model_cache). "
-                "Что делать: проверьте права доступа к artifacts/models/, artifacts/metrics/, "
+                "Что делать: проверьте права доступа к artifacts/models/, artifacts/metrics/ "
+                "(heur_decisions), runtime/state/response.txt, "
                 "runtime/logs/LOGS_FOR_AGENTS_TRAIN.md, runtime/logs/LOGS_FOR_AGENTS_PLAY.md, "
                 "runtime/logs/LOGS_FOR_AGENTS_EVAL.md и artifacts/results/results.txt, затем повторите."
             )
@@ -8083,13 +8087,16 @@ class GUIController(QtCore.QObject):
     def _clear_cache_files(self) -> None:
         models_path = str(ARTIFACTS_MODELS_DIR)
         metrics_path = str(ARTIFACTS_METRICS_DIR)
+        heur_decisions_path = str(ARTIFACTS_METRICS_DIR / "heur_decisions")
         gui_img_path = os.path.join(str(RUNTIME_STATE_DIR), "img")
         # Полная очистка моделей/кеша (включая agents/registry).
         # actor_sync: папку оставляем (SMB share), файлы внутри — удаляем.
         self._remove_contents(models_path, keep_dirs={"actor_sync"})
         actor_sync_path = os.path.join(models_path, "actor_sync")
         self._remove_contents(actor_sync_path, keep_files={"gmz_remote_search_cfg.json"})
+        self._remove_contents(heur_decisions_path)
         self._remove_contents(metrics_path)
+        self._truncate_runtime_file(RESPONSE_PATH)
         if os.path.isdir(gui_img_path):
             keep = {"epLen.png", "reward.png", "loss.png", "icon.png"}
             for name in os.listdir(gui_img_path):
@@ -8125,6 +8132,14 @@ class GUIController(QtCore.QObject):
                 shutil.rmtree(target)
             else:
                 os.remove(target)
+
+    def _truncate_runtime_file(self, path: Path | str) -> None:
+        target = str(path)
+        parent = os.path.dirname(target)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(target, "w", encoding="utf-8"):
+            pass
 
     def _clear_runtime_logs(
         self,

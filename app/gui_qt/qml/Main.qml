@@ -6106,7 +6106,8 @@ ApplicationWindow {
         onAccepted: controller.clear_model_cache()
 
         contentItem: Text {
-            text: "Вы действительно хотите удалить все сохранённые модели и метрики?"
+            text: "Вы действительно хотите удалить все сохранённые модели, метрики "
+                + "(включая heur_decisions), игровой лог response.txt и служебные логи?"
             wrapMode: Text.WordWrap
         }
     }

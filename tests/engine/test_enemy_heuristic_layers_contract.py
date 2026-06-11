@@ -8,10 +8,15 @@ class TestEnemyHeuristicLayersContract(unittest.TestCase):
         self.assertIn("def _enemy_team_tactic(", source)
         self.assertIn("def _enemy_effective_role(", source)
         self.assertIn("def _enemy_cell_threat_score(", source)
+        self.assertIn("def _enemy_objective_control_score(", source)
         self.assertIn("ENEMY_HEUR_LOOK2_ENABLED", source)
+        self.assertIn("ENEMY_HEUR_OBJECTIVE_CONTROL_W", source)
+        self.assertIn("refresh_objective_control()", source)
         self.assertIn("[ENEMY][HEUR][TEAM]", source)
         self.assertIn("[ENEMY][HEUR][ROLE]", source)
         self.assertIn("[ENEMY][HEUR][LOOK2]", source)
+        self.assertIn("obj_control_score", source)
+        self.assertIn("obj_control_kind", source)
 
     def test_ev_targeting_fields_present(self):
         source = Path("core/envs/warhamEnv.py").read_text(encoding="utf-8")
