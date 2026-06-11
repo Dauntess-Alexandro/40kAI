@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from core.models.gumbel_muzero_selfplay import play_episode_with_gumbel_muzero
 
@@ -174,25 +173,17 @@ def test_run_gmz_honest_eval_returns_rows(
     net.train.assert_called()
 
 
-@patch("train._run_gmz_honest_eval")
-def test_gmz_build_actor_det_payload(mock_honest):
-    from train import _gmz_build_actor_det_payload
+def test_gmz_train_window_payload_from_rows():
+    # DET-прогоны удалены: GMZ-точка метрик строится из окна тренировочных эпизодов.
+    from train import _gmz_det_payload_from_rows
 
-    mock_honest.return_value = [
-        {"result": "win", "end_reason": "wipeout_enemy", "vp_diff": 1, "model_vp": 2, "player_vp": 1, "ep_len": 5, "ep_reward": 1.0},
+    rows = [
+        {"result": "win", "end_reason": "wipeout_enemy", "vp_diff": 1, "model_vp": 2,
+         "player_vp": 1, "ep_len": 5, "ep_reward": 1.0},
     ]
-    net = MagicMock()
-    payload = _gmz_build_actor_det_payload(
-        gmz_net=net,
-        device=MagicMock(),
-        roster_config={},
-        b_len=10,
-        b_hei=10,
-        episodes_finished=300,
-        last_loss=4.0,
-        self_play_enabled=False,
-        opponent_spec=None,
+    payload = _gmz_det_payload_from_rows(
+        rows, episode_idx=300, train_loss=4.0, eval_tag="train_window"
     )
-    mock_honest.assert_called_once()
-    assert payload["eval_tag"] == "actor_learner_search_eval"
+    assert payload["eval_tag"] == "train_window"
     assert payload["win_rate"] == 1.0
+    assert payload["training_loss"] == 4.0

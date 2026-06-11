@@ -963,18 +963,19 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(int, constant=True)
     def detEvalEpisodes(self) -> int:
-        # Параметры DET-eval для actor-learner (по умолчанию).
+        # Размер скользящего окна точки метрик (реальные тренировочные эпизоды).
         try:
-            return max(1, int(os.getenv("ACTOR_DET_EVAL_EPISODES", "50")))
+            return max(1, int(os.getenv("TRAIN_METRICS_WINDOW_EPISODES", "100")))
         except ValueError:
-            return 50
+            return 100
 
     @QtCore.Property(int, constant=True)
     def detEvalEvery(self) -> int:
+        # Шаг точек метрик тренировки (DET-прогоны удалены, точка дешёвая).
         try:
-            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "300")))
+            return max(1, int(os.getenv("ACTOR_DET_EVAL_EVERY_EPISODES", "50")))
         except ValueError:
-            return 300
+            return 50
 
     @QtCore.Property(bool, constant=True)
     def selfPlayEnabled(self) -> bool:
@@ -5205,10 +5206,10 @@ class GUIController(QtCore.QObject):
             self._apply_draining_display(detail="Завершение воркеров ПК2…")
         elif phase == "evaluating":
             self._progress_value = 0.97
-            self._progress_text = "97% · оценка модели (DET)"
+            self._progress_text = "97% · финализация метрик"
             self.progressValueChanged.emit(self._progress_value)
             self.progressTextChanged.emit(self._progress_text)
-            self._set_progress_detail("Оценка модели на ПК1 (≈2–3 мин)…")
+            self._set_progress_detail("Финализация метрик и сохранение модели…")
         elif phase == "done":
             self._progress_value = 1.0
             self._progress_text = "100%"
@@ -6637,7 +6638,7 @@ class GUIController(QtCore.QObject):
         except Exception:
             self._metrics_meta = {}
 
-        if str(payload.get("metrics_mode", "") or "") == "det_eval" or payload.get("det_winrate"):
+        if str(payload.get("metrics_mode", "") or "") in ("train_window", "det_eval") or payload.get("det_winrate"):
             updated = {
                 "reward": self._resolve_metric_path(payload.get("det_reward"), self._metrics_defaults["reward"]),
                 "loss": self._resolve_metric_path(payload.get("det_loss"), self._metrics_defaults["loss"]),
@@ -6722,7 +6723,7 @@ class GUIController(QtCore.QObject):
                     }
                     self._set_metrics_files(updated)
                     self._refresh_metrics_summaries()
-                    self._metrics_label = f"DET latest: run {run_id}"
+                    self._metrics_label = f"Метрики тренировки: run {run_id}"
                     self.metricsLabelChanged.emit(self._metrics_label)
                     return True
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
@@ -7005,13 +7006,13 @@ class GUIController(QtCore.QObject):
                 summaries["reward"] = self._format_metric_summary(rewards)
                 summaries["epLen"] = self._format_metric_summary(ep_len)
                 summaries["hpdiff"] = self._format_metric_summary(vp_diff)
-                summaries["killdiff"] = "Нет DET kill diff (нужен actor_det_eval_*.jsonl)."
+                summaries["killdiff"] = "Нет kill diff (нужен actor_det_eval_*.jsonl с точками тренировки)."
                 summaries["winrate"] = self._format_metric_summary(wins, percent=True)
                 if losses:
                     summaries["loss"] = self._format_metric_summary(losses)
                 summaries["endreasons"] = "Нет actor_det_eval_*.jsonl — сводка по старым train-данным (CSV)."
             elif run_id:
-                summaries["endreasons"] = f"Нет файла actor_det_eval_{run_id}.jsonl (DET-eval не писался)."
+                summaries["endreasons"] = f"Нет файла actor_det_eval_{run_id}.jsonl (точки метрик ещё не писались)."
 
         total, heuristic, snapshot, fixed = self._parse_training_counters()
         resume = self._extract_latest_resume_meta()

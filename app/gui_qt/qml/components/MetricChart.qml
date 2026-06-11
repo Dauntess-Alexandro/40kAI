@@ -208,7 +208,7 @@ Item {
             Text {
                 id: emptyLabel
                 anchors.centerIn: parent
-                text: "Нет DET-eval данных"
+                text: "Нет данных метрик"
                 color: card.textMuted
                 font.pixelSize: card.captionSize
                 visible: false

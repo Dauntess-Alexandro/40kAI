@@ -3892,7 +3892,7 @@ ApplicationWindow {
                         }
 
                         Label {
-                            text: "Оценка DET: детерминированные прогоны против эвристики/настроенного оппонента. Не сырые тренировочные партии."
+                            text: "Метрики тренировки: каждая точка — окно реальных тренировочных эпизодов (DET-прогоны удалены). Честное сравнение моделей — вкладка «Оценка»."
                             width: parent.width
                             wrapMode: Text.WordWrap
                             color: root.uiTextMuted
@@ -3957,7 +3957,7 @@ ApplicationWindow {
                                     anchors.margins: root.spacingSm
                                     spacing: 4
 
-                                    Text { text: "Последний DET-eval"; font.bold: true; color: root.uiTextMain }
+                                    Text { text: "Последнее окно тренировки"; font.bold: true; color: root.uiTextMain }
                                     Text { text: "Эпизод: " + controller.detEpisodeLast; color: root.uiTextMuted }
                                     Text { text: "Winrate: " + controller.detWinrateLast; color: root.uiTextMuted }
                                     Text { text: "Reward: " + controller.detRewardLast + " | Ep_len: " + controller.detEpLenLast; color: root.uiTextMuted }
@@ -3985,7 +3985,7 @@ ApplicationWindow {
                             }
                         }
 
-                        // --- Новый дашборд DET-eval: живые графики QtCharts ---
+                        // --- Дашборд метрик тренировки: живые графики по окнам эпизодов ---
                         ColumnLayout {
                             id: metricsDash
                             width: parent.width
@@ -4038,8 +4038,8 @@ ApplicationWindow {
 
                                 Repeater {
                                     model: [
-                                        { label: "WINRATE (DET)", value: controller.detWinrateLast, accent: root.accentPrimaryAction },
-                                        { label: "REWARD (DET)", value: controller.detRewardLast, accent: root.accentP1 },
+                                        { label: "WINRATE (ОКНО)", value: controller.detWinrateLast, accent: root.accentPrimaryAction },
+                                        { label: "REWARD (ОКНО)", value: controller.detRewardLast, accent: root.accentP1 },
                                         { label: "ДЛИНА ЭПИЗОДА", value: controller.detEpLenLast, accent: "#9b8cff" },
                                         { label: "ЭПИЗОД-ЯКОРЬ", value: controller.detEpisodeLast, accent: root.accentGhost }
                                     ]
@@ -4097,7 +4097,7 @@ ApplicationWindow {
                                 spacing: root.spacingMd
 
                                 Text {
-                                    text: "Графики DET-eval"
+                                    text: "Графики тренировки (окна эпизодов)"
                                     color: root.uiTextMain
                                     font.bold: true
                                     font.pixelSize: root.evalSectionTitleSize
@@ -4143,14 +4143,14 @@ ApplicationWindow {
                                     anchors.centerIn: parent
                                     spacing: root.spacingSm
                                     Text {
-                                        text: "Нет DET-eval данных"
+                                        text: "Нет данных метрик"
                                         color: root.uiTextMain
                                         font.bold: true
                                         font.pixelSize: root.evalSectionTitleSize
                                         Layout.alignment: Qt.AlignHCenter
                                     }
                                     Text {
-                                        text: "Запусти обучение — графики появятся после первого DET-eval чекпоинта."
+                                        text: "Запусти обучение — графики появятся после первого окна эпизодов."
                                         color: root.uiTextMuted
                                         font.pixelSize: root.evalCaptionSize
                                         Layout.alignment: Qt.AlignHCenter

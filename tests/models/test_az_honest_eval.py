@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from core.models.alphazero_selfplay import play_episode_with_mcts
 
@@ -164,34 +163,38 @@ def test_run_az_honest_eval_tree_and_proxy(
         assert call.kwargs.get("policy_argmax") is True
 
 
-@patch("train._run_az_honest_eval")
-def test_az_build_actor_det_payload(mock_honest):
-    from train import _az_build_actor_det_payload
+def test_train_window_payload_from_rows():
+    # DET-прогоны удалены: точка метрик строится из окна реальных тренировочных эпизодов.
+    from train import _train_window_payload_from_rows
 
-    mock_honest.return_value = [
-        {
-            "result": "win",
-            "end_reason": "wipeout_enemy",
-            "vp_diff": 1,
-            "model_vp": 2,
-            "player_vp": 1,
-            "ep_len": 5,
-            "ep_reward": 1.0,
-        }
+    rows = [
+        {"result": "win", "end_reason": "wipeout_enemy", "vp_diff": 2, "model_vp": 3,
+         "player_vp": 1, "ep_len": 10, "ep_reward": 1.5,
+         "model_hp_total": 12.0, "enemy_hp_total": 4.0},
+        {"result": "draw", "end_reason": "turn_limit", "vp_diff": 0, "model_vp": 1,
+         "player_vp": 1, "ep_len": 20, "ep_reward": 0.0,
+         "model_hp_total": 6.0, "enemy_hp_total": 6.0},
     ]
-    payload = _az_build_actor_det_payload(
-        az_net=MagicMock(),
-        device=MagicMock(),
-        roster_config={},
-        b_len=10,
-        b_hei=10,
-        episodes_finished=600,
-        last_loss=3.5,
-        train_algo="alphazero_proxy",
-        mcts_mode="proxy",
-        self_play_enabled=False,
-        opponent_spec=None,
+    payload = _train_window_payload_from_rows(
+        rows, episode_idx=600, algo="dqn", training_loss=3.5, window=100
     )
-    mock_honest.assert_called_once()
-    assert payload["mcts_mode"] == "proxy"
+    assert payload["eval_tag"] == "train_window"
+    assert payload["metrics_source"] == "train_window"
+    assert payload["eval_episodes"] == 2
+    assert payload["win_rate"] == 0.5
+    assert payload["draw_rate"] == 0.5
+    assert payload["turn_limit_rate"] == 0.5
+    assert payload["hp_diff_mean"] == 4.0
+    assert payload["episode"] == 600
+    assert payload["training_loss"] == 3.5
+
+
+def test_train_window_payload_respects_window():
+    from train import _train_window_payload_from_rows
+
+    rows = [{"result": "loss", "end_reason": "wipeout_model"}] * 50 + [
+        {"result": "win", "end_reason": "wipeout_enemy"}
+    ] * 10
+    payload = _train_window_payload_from_rows(rows, episode_idx=60, algo="dqn", window=10)
+    assert payload["eval_episodes"] == 10
     assert payload["win_rate"] == 1.0
