@@ -27,6 +27,26 @@ class TestResolveAgentAlgo(unittest.TestCase):
         )
         self.assertEqual(algo, "dqn")
 
+    def test_resolve_ppo_policy_heads_trusts_meta(self):
+        # PPO и AlphaZero-tree делят архитектуру (policy_heads/value_heads),
+        # поэтому инференс по весам выдаёт az. Но meta.algo="ppo" её пишет тренер —
+        # для этой неоднозначности meta авторитетна, иначе PPO грузится как AZ-tree.
+        sd = {
+            "input_fc.weight": torch.zeros(4, 3),
+            "policy_heads.0.weight": torch.zeros(2, 4),
+            "value_heads.0.weight": torch.zeros(1, 4),
+            "value_head.weight": torch.zeros(1, 4),
+        }
+        # инференс сам по себе не различает ppo/az по этим ключам:
+        self.assertEqual(infer_algo_from_policy_state(sd), "alphazero_tree")
+        algo = resolve_agent_algo(
+            meta={"algo": "ppo", "agent_id": "ppo_test"},
+            policy_state=sd,
+            target_state=None,
+            agent_id="ppo_test",
+        )
+        self.assertEqual(algo, "ppo")
+
     def test_resolve_az_from_policy_heads(self):
         sd = {
             "input_fc.weight": torch.zeros(4, 3),

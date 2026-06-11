@@ -247,6 +247,12 @@ def resolve_agent_algo(
     inferred = infer_algo_from_policy_state(policy_state)
     if inferred is not None:
         resolved = _refine_az_algo_from_meta(inferred, meta)
+        # PPO и AlphaZero (tree/proxy) делят одну архитектуру сети
+        # (input_fc/blocks/policy_heads/value_heads) — инференс по state_dict их не
+        # различает и для PPO-весов даёт az-семейство. В этой неоднозначности
+        # meta.algo авторитетна (её пишет тренер), иначе PPO грузится как AZ-tree.
+        if resolved in {"alphazero_tree", "alphazero_proxy"} and meta_algo == "ppo":
+            return "ppo"
         if meta_algo in _VALID_AGENT_ALGOS and meta_algo != resolved:
             aid = str(agent_id or (meta or {}).get("agent_id", "") or "").strip()
             prefix = f"agent '{aid}'" if aid else "agent"
