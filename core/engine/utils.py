@@ -1,6 +1,7 @@
-import numpy as np
-import math
 import inspect
+import math
+
+import numpy as np
 
 
 def is_num(maybeNum):
@@ -94,6 +95,117 @@ def _wound_target(strength: int, toughness: int) -> int:
     if strength * 2 <= toughness:
         return 6
     return 5
+
+
+def _attacks_expr_ev(expr) -> float:
+    """EV числа атак: int / numeric-str напрямую, D3=2.0, D6=3.5."""
+    if isinstance(expr, (int, np.integer)):
+        return float(expr)
+    if isinstance(expr, str):
+        e = expr.strip().upper()
+        if e == "D3":
+            return 2.0
+        if e == "D6":
+            return 3.5
+        v = _to_int(e, default=None)
+        if v is not None:
+            return float(v)
+    return 1.0
+
+
+def _damage_expr_ev(expr) -> float:
+    """EV урона за неспасённую рану: int напрямую, D3=2.0, D6=3.5, иначе 1.0."""
+    if isinstance(expr, (int, np.integer)):
+        return float(expr)
+    if isinstance(expr, str):
+        e = expr.strip().upper()
+        if e == "D3":
+            return 2.0
+        if e == "D6":
+            return 3.5
+    return 1.0
+
+
+def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_data,
+                    rangeOfComb="Ranged", distance_to_target=None, effects=None,
+                    hit_on_6: bool = False) -> float:
+    """Аналитический ожидаемый урон одной атаки attacker -> attackee.
+
+    Точно зеркалит механику attack() из этого же модуля (10e-стиль), но без бросков:
+    hit -> wound -> save -> damage, с LETHAL HITS и RAPID FIRE X. Используется
+    эвристикой врага для выбора цели и определения «добью/не добью». Возвращает
+    float (НЕ обрезается по HP цели — обрезание делает вызывающий код).
+    """
+    # --- профиль защитника / сейв ---
+    sv_base = _to_int(attackee_data.get("Sv"), default=7)
+    inv = _to_int(attackee_data.get("IVSave"), default=0)
+    ap = _to_int(attacker_weapon.get("AP"), default=0)
+    cover_bonus = 1 if (effects == "benefit of cover" and rangeOfComb == "Ranged") else 0
+    save_target = sv_base - cover_bonus - ap
+    if save_target < 2:
+        save_target = 2
+    if save_target > 6:
+        save_target = 7
+    if inv and inv > 0:
+        save_target = min(save_target, inv)
+    p_save = (7 - save_target) / 6.0 if save_target <= 6 else 0.0
+    p_unsaved = 1.0 - p_save
+
+    # --- to-hit ---
+    bs = _to_int(attacker_weapon.get("BS") if rangeOfComb == "Ranged" else attacker_weapon.get("WS"), default=7)
+    if hit_on_6:
+        bs = 6
+    if 2 <= bs <= 6:
+        p_hit = (7 - bs) / 6.0
+    elif bs >= 7:
+        p_hit = 1.0 / 6.0  # только натуральная 6 (crit) попадает
+    else:
+        p_hit = 1.0
+    p_crit = 1.0 / 6.0
+
+    # --- to-wound ---
+    s = _to_int(attacker_weapon.get("S"), default=0)
+    t = _to_int(attackee_data.get("T"), default=0)
+    wt = _wound_target(s, t) if (s and t) else 7
+    p_wound = (7 - wt) / 6.0 if wt <= 6 else 0.0
+
+    # --- число атак (зеркалит attack()) ---
+    n_models_raw = attacker_data.get("#OfModels")
+    n_models = int(n_models_raw) if n_models_raw is not None else None
+    if n_models is not None and n_models < 1:
+        n_models = 1
+    model_w = _to_int(attacker_data.get("W"), default=0)
+    remaining_models = None
+    if model_w and model_w > 0 and attacker_health and attacker_health > 0:
+        remaining_models = int(np.ceil(attacker_health / model_w))
+    if n_models is None:
+        n_models = remaining_models if remaining_models is not None else 1
+    elif remaining_models is not None:
+        n_models = max(1, min(n_models, remaining_models))
+
+    attacks_per_model = _attacks_expr_ev(_weapon_attacks_expr(attacker_weapon, default=1))
+    if rangeOfComb == "Ranged":
+        rf = _weapon_rapid_fire_x(attacker_weapon)
+        if rf and distance_to_target is not None:
+            w_range = _to_int(attacker_weapon.get("Range"), default=None)
+            if w_range is not None and distance_to_target <= (w_range / 2):
+                attacks_per_model += int(rf)
+    if attacks_per_model < 1:
+        attacks_per_model = 1
+    attacks = float(n_models) * float(attacks_per_model)
+    if attacks < 1:
+        attacks = 1.0
+
+    # --- свод EV ---
+    ev_hits = attacks * p_hit
+    if _weapon_has_lethal_hits(attacker_weapon):
+        ev_crit = attacks * p_crit
+        ev_wound_rolls = max(0.0, ev_hits - ev_crit)
+        ev_wounds = ev_crit + ev_wound_rolls * p_wound
+    else:
+        ev_wounds = ev_hits * p_wound
+    ev_unsaved = ev_wounds * p_unsaved
+    return float(ev_unsaved * _damage_expr_ev(attacker_weapon.get("Damage")))
 
 
 
