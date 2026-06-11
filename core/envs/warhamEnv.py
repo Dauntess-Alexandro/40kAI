@@ -3497,7 +3497,11 @@ class Warhammer40kEnv(gym.Env):
             obj_term = 1.0 if self._is_position_near_objective(self.unit_coords[int(target_idx)]) else 0.0
             lock_value = 1.0 if str(plan.get("model_role", "hybrid")) == "ranged" else 0.35
             if charge_ev_v2:
-                # Реальная вероятность успеха: в движке чардж удаётся при diceRoll >= dist-5.
+                # Реальная вероятность успеха по 2d6. Берём порог dist-5 (фильтр chargeAble и
+                # action/manual-пути: успех ⟺ diceRoll>=dist-5). ВНИМАНИЕ: авто-чардж-путь врага
+                # дополнительно гейтит исполнение порогом dist-1 (required=dist-1) — это известное
+                # расхождение самого движка, не баг пикера. На РАНЖИРОВАНИЕ целей не влияет
+                # (обе оценки монотонны по dist), поэтому используем dist-5 как канон большинства путей.
                 p_success = prob_2d6_at_least(int(math.ceil(dist - 5.0)))
                 trade = self._enemy_melee_trade_value(int(enemy_idx), int(target_idx))
                 counter_risk = max(0.0, -trade)

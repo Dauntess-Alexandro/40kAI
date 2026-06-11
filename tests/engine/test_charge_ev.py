@@ -36,6 +36,39 @@ class TestMeleeTradeValue(unittest.TestCase):
         self.assertAlmostEqual(melee_trade_value(3.0, 6.0, 3.0, 6.0), 0.0, places=6)
 
 
+class TestEnemyMeleeTradeValue(unittest.TestCase):
+    def _stub(self, e_melee, t_melee):
+        import types
+
+        s = types.SimpleNamespace()
+        s.enemy_melee = [e_melee]
+        s.unit_melee = [t_melee]
+        s.enemy_health = [10.0]
+        s.unit_health = [6.0]
+        s.enemy_data = [{"#OfModels": 1, "W": 10, "T": 4, "Sv": 3}]
+        s.unit_data = [{"#OfModels": 1, "W": 6, "T": 4, "Sv": 4}]
+        return s
+
+    def test_strong_enemy_melee_gives_positive_trade(self):
+        from core.envs.warhamEnv import Warhammer40kEnv
+
+        s = self._stub(
+            e_melee={"WS": 3, "S": 8, "AP": -2, "Damage": 3, "Attacks": 4},  # сильная рукопашка
+            t_melee={"WS": 4, "S": 3, "AP": 0, "Damage": 1, "Attacks": 1},   # слабая
+        )
+        self.assertGreater(Warhammer40kEnv._enemy_melee_trade_value(s, 0, 0), 0.0)
+
+    def test_no_enemy_melee_weapon_gives_nonpositive_trade(self):
+        from core.envs.warhamEnv import Warhammer40kEnv
+
+        # у врага нет рукопашного оружия ({}), у цели есть -> размен невыгоден
+        s = self._stub(
+            e_melee={},
+            t_melee={"WS": 3, "S": 6, "AP": -1, "Damage": 2, "Attacks": 3},
+        )
+        self.assertLess(Warhammer40kEnv._enemy_melee_trade_value(s, 0, 0), 0.0)
+
+
 class TestChargeEvWiringContract(unittest.TestCase):
     def test_charge_picker_uses_real_prob_and_trade(self):
         from pathlib import Path
