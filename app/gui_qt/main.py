@@ -2092,17 +2092,10 @@ class GUIController(QtCore.QObject):
         if not self.remoteIsEnabled:
             return True
         algo = str(self._training_algo or "").strip().lower()
-        if algo in {"alphazero_tree", "alphazero_proxy"}:
-            # У AlphaZero свой Inference Server (вкладка AlphaZero Tree, поля inference_* в
-            # hyperparams). GMZ-флаг remote_is к нему не относится — молча игнорируем, без шума.
-            return True
         if algo != "gumbel_muzero":
-            self._emit_log(
-                "[GUI][REMOTE_IS] LAN Inference server включён в настройках, но выбран алгоритм "
-                f"«{algo}» — remote IS используется только для Gumbel MuZero. "
-                "Для обычного обучения на одном ПК выключите LAN в Настройки → Gumbel MuZero.",
-                level="WARN",
-            )
+            # Флаг remote_is относится только к Gumbel MuZero: у AlphaZero свой Inference
+            # Server (поля inference_* в hyperparams), а DQN/PPO LAN не используют вовсе —
+            # молча игнорируем, без WARN-шума в журнале.
             return True
         from core.models.gmz_inference_transport import remote_health_check
 
@@ -5905,6 +5898,7 @@ class GUIController(QtCore.QObject):
         allowed_prefixes = (
             "[EVAL]",
             "[TRAIN][PROGRESS]",
+            "[TRAIN][SUMMARY]",
             "[TRAIN8] Старт",
             "[TRAIN] Старт",
             "[SELFPLAY] Старт",

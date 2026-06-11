@@ -1690,6 +1690,46 @@ def save_training_summary(run_id: str, model_tag: str, ep_rows: list[dict], elap
     with open(results_path, "a", encoding="utf-8") as f:
         f.write(summary_line + "\n")
     print(f"[results] запись в {results_path}: {summary_line}")
+    _log_train_summary(ep_rows, elapsed_s)
+
+
+def _log_train_summary(ep_rows: list[dict], elapsed_s: float | None) -> None:
+    """Итоговая сводка тренировки в журнал GUI (stdout) и лог-файл:
+    winrate/reward по всем эпизодам прогона + общее время и скорость."""
+    n = len(ep_rows or [])
+    if n <= 0:
+        return
+    wins = sum(1 for r in ep_rows if str(r.get("result", "")) == "win")
+    draws = sum(1 for r in ep_rows if str(r.get("result", "")) == "draw")
+    reward_mean = sum(float(r.get("ep_reward", 0.0) or 0.0) for r in ep_rows) / n
+    vp_diff_mean = sum(float(r.get("vp_diff", 0) or 0) for r in ep_rows) / n
+    lines = [
+        "[TRAIN][SUMMARY] "
+        f"episodes={n} "
+        f"win_rate={wins / n:.3f} "
+        f"draw_rate={draws / n:.3f} "
+        f"loss_rate={(n - wins - draws) / n:.3f} "
+        f"reward_mean={reward_mean:.4f} "
+        f"vp_diff_mean={vp_diff_mean:.3f}"
+    ]
+    if elapsed_s is not None and float(elapsed_s) > 0:
+        sec_per_ep = float(elapsed_s) / n
+        hh = int(elapsed_s // 3600)
+        mm = int((elapsed_s % 3600) // 60)
+        ss = int(elapsed_s % 60)
+        lines.append(
+            "[TRAIN][SUMMARY] "
+            f"elapsed={hh:02d}:{mm:02d}:{ss:02d} "
+            f"sec_per_ep={sec_per_ep:.2f} "
+            f"it_per_s={(1.0 / sec_per_ep) if sec_per_ep > 0 else 0.0:.2f}"
+        )
+    for ln in lines:
+        append_agent_log(ln)
+        try:
+            print(ln, flush=True)
+        except Exception:
+            pass
+
 
 def append_agent_log(line: str) -> None:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -3110,6 +3150,7 @@ def run_ppo_training(
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
     metrics_obj = metrics(os.path.join(MODELS_DIR, "ppo"), run_id, model_name)
     ep_rows = []
+    train_t0_summary = time.perf_counter()
     last_det_eval_ep = 0
     ppo_kw = ppo_kwargs_from_env()
     append_agent_log(
@@ -3350,6 +3391,7 @@ def run_ppo_training(
                 "[PPO][METRICS][WARN] Не удалось сохранить метрики/графики. "
                 f"Где: train.py run_ppo_training. Ошибка: {exc}"
             )
+    _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
     append_agent_log(f"[PPO] Training завершён. Последний checkpoint: {last_checkpoint}")
 
 
@@ -3375,6 +3417,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
     metrics_obj = metrics(MODELS_DIR, run_id, model_name)
     ep_rows = []
+    train_t0_summary = time.perf_counter()
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
 
     episodes_finished = 0
@@ -3618,6 +3661,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                 "[PPO][METRICS][WARN] Не удалось сохранить метрики/графики. "
                 f"Где: train.py run_ppo_training_subproc. Ошибка: {exc}"
             )
+    _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
     append_agent_log(f"[PPO] Training(subproc) завершён. Последний checkpoint: {last_checkpoint}")
 
 
@@ -6910,6 +6954,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     model_name = datetime.datetime.now().strftime("%d-%H%M%S")
     metrics_obj = metrics(MODELS_DIR, run_id, model_name)
     ep_rows: list[dict] = []
+    train_t0_summary = time.perf_counter()
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
     adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
     tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.72"))
@@ -7255,6 +7300,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 "[PPO][ACTOR_LEARNER][METRICS][WARN] Не удалось сохранить метрики/графики. "
                 f"Где: train.py _main_actor_learner_ppo. Ошибка: {exc}"
             )
+    _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
     append_agent_log(f"[PPO][ACTOR_LEARNER] done: episodes={totLifeT} steps={global_step} updates={ppo_update_step} checkpoint={last_checkpoint}")
 
     # Финальный снапшот в registry (чтобы GUI мог выбрать PPO как оппонента).
@@ -8581,6 +8627,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     )
 
     ep_rows: list[dict] = []
+    train_t0_summary = time.perf_counter()
     loss_trace: list[float] = []
     last_checkpoint = ""
     last_actor_det_eval_ep = 0
@@ -9257,6 +9304,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         )
         save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
         append_agent_log(f"[AZ][METRICS] saved run_id={run_id}")
+        _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
         try:
             det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
             if det_gui:
@@ -9999,6 +10047,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     )
 
     ep_rows: list[dict] = []
+    train_t0_summary = time.perf_counter()
     last_checkpoint = ""
     last_loss = 0.0
 
@@ -10473,6 +10522,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 extra={"algo": "gumbel_muzero", "mode": "actor_learner", "det_eval_note": "нет точек DET-eval"},
             )
         append_agent_log(f"[GMZ][METRICS] saved run_id={run_id}")
+        _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
 
     final_episode = int(max(episodes_finished, resume_episode_base))
     final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
