@@ -345,7 +345,7 @@ def optimize_model(
     dev = next(policy_net.parameters()).device
     amp_enabled = bool(use_amp and dev.type == "cuda")
 
-    def _to_device(tensor):
+    def _to_device_batch(tensor):
         if tensor is None:
             return None
         if tensor.device == dev:
@@ -353,6 +353,18 @@ def optimize_model(
         if pin_memory and tensor.device.type == "cpu" and dev.type == "cuda":
             return tensor.pin_memory().to(dev, non_blocking=True)
         return tensor.to(dev)
+
+    def _as_cpu_tensor(value, *, dtype=None):
+        if value is None:
+            return None
+        if torch.is_tensor(value):
+            tensor = value.detach()
+            if tensor.device.type != "cpu":
+                tensor = tensor.cpu()
+            if dtype is not None and tensor.dtype != dtype:
+                tensor = tensor.to(dtype=dtype)
+            return tensor
+        return torch.as_tensor(value, dtype=dtype)
 
     sample_start = perf_counter()
     if per_enabled:
@@ -369,28 +381,33 @@ def optimize_model(
     desired_shape = (1, n_obs)
 
     # ---- state_batch ----
-    state_tensors = []
+    state_tensors_cpu = []
     for s in batch.state:
         if s is None:
-            state_tensors.append(torch.zeros(desired_shape, device=dev, dtype=torch.float32))
+            state_tensors_cpu.append(torch.zeros(desired_shape, device="cpu", dtype=torch.float32))
         else:
-            state_tensors.append(_to_device(s).view(desired_shape))
-    state_batch = torch.cat(state_tensors, dim=0)  # [B, n_obs]
+            state_tensors_cpu.append(_as_cpu_tensor(s, dtype=torch.float32).reshape(desired_shape))
+    state_batch = _to_device_batch(torch.cat(state_tensors_cpu, dim=0))  # [B, n_obs]
 
     # ---- action_batch / reward_batch (на тот же dev!) ----
-    action_tensors = [_to_device(a) for a in batch.action]
-    reward_tensors = [_to_device(r) for r in batch.reward]
-    action_batch = torch.cat(action_tensors).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
-    reward_batch = torch.cat(reward_tensors).float().view(-1)  # [B]
-    n_step_batch = torch.tensor(batch.n_step, device=dev, dtype=torch.float32)  # [B]
+    action_tensors_cpu = [_as_cpu_tensor(a, dtype=torch.long).reshape(1, -1) for a in batch.action]
+    reward_tensors_cpu = [_as_cpu_tensor(r, dtype=torch.float32).reshape(-1) for r in batch.reward]
+    action_batch = _to_device_batch(torch.cat(action_tensors_cpu, dim=0)).long()  # индексы ОБЯЗАТЕЛЬНО long и на dev
+    reward_batch = _to_device_batch(torch.cat(reward_tensors_cpu, dim=0)).float().view(-1)  # [B]
+    n_step_batch = _to_device_batch(torch.as_tensor(batch.n_step, dtype=torch.float32))  # [B]
 
     # ---- next states ----
-    non_final_mask = torch.tensor([s is not None for s in batch.next_state], device=dev, dtype=torch.bool)
+    non_final_mask = _to_device_batch(torch.as_tensor([s is not None for s in batch.next_state], dtype=torch.bool))
 
     non_final_next_states = None
     non_final_next_shoot_masks = None
     if non_final_mask.any():
-        non_final_next_states = torch.cat([_to_device(s) for s in batch.next_state if s is not None], dim=0)
+        non_final_next_states = _to_device_batch(
+            torch.cat(
+                [_as_cpu_tensor(s, dtype=torch.float32).reshape(desired_shape) for s in batch.next_state if s is not None],
+                dim=0,
+            )
+        )
         non_final_next_shoot_masks = [
             m for m, s in zip(batch.next_shoot_mask, batch.next_state) if s is not None
         ]

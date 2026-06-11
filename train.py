@@ -399,6 +399,13 @@ _REWARD_CFG_ENV_KEYS = (
     "VP_OBJECTIVE_STREAK_BONUS",
     "VP_OBJECTIVE_STREAK_LINEAR_CAP",
     "VP_OBJECTIVE_OC_MARGIN_SCALE",
+    "VP_DIFF_REWARD_SCALE",
+    "VP_DIFF_PENALTY_SCALE",
+    "OBJECTIVE_PROGRESS_STEP_SCALE",
+    "OBJECTIVE_PROGRESS_STEP_CAP",
+    "SHOOT_REWARD_DAMAGE_SCALE",
+    "DAMAGE_TAKEN_SCALE",
+    "TURN_LIMIT_DRAW_PENALTY",
     "MISSION_NO_CONTEST_PENALTY",
     "MISSION_NO_CONTEST_LATE_MULT",
     "NO_TARGET_NO_CONTEST_PENALTY",
@@ -5801,6 +5808,100 @@ def main():
         initFile.delFile()
 
 
+def _push_dqn_batch_steps_to_memory(memory, batch_steps) -> int:
+    """Push one actor batch into DQN replay as isolated CPU tensors."""
+    steps = list(batch_steps or [])
+    if not steps:
+        return 0
+
+    states_np = np.stack(
+        [np.asarray(s_np, dtype=np.float32) for (s_np, _a, _r, _ns, _done, _n) in steps],
+        axis=0,
+    )
+    state_batch_t = torch.tensor(states_np, device="cpu", dtype=torch.float32)
+    action_batch_t = torch.tensor(
+        [a_list for (_s, a_list, _r, _ns, _done, _n) in steps],
+        device="cpu",
+        dtype=torch.long,
+    )
+    reward_batch_t = torch.tensor(
+        [float(r_sum) for (_s, _a, r_sum, _ns, _done, _n) in steps],
+        device="cpu",
+        dtype=torch.float32,
+    )
+
+    next_pos_by_step: dict[int, int] = {}
+    next_rows = []
+    for idx, (_s, _a, _r, ns_np, _done, _n) in enumerate(steps):
+        if ns_np is not None:
+            next_pos_by_step[idx] = len(next_rows)
+            next_rows.append(np.asarray(ns_np, dtype=np.float32))
+
+    next_batch_t = None
+    if next_rows:
+        next_batch_t = torch.tensor(np.stack(next_rows, axis=0), device="cpu", dtype=torch.float32)
+
+    for idx, (_s, _a, _r, ns_np, _done, n_count) in enumerate(steps):
+        next_state_t = None
+        if ns_np is not None and next_batch_t is not None:
+            next_idx = next_pos_by_step[idx]
+            next_state_t = next_batch_t[next_idx : next_idx + 1]
+        memory.push(
+            state_batch_t[idx : idx + 1].clone(),
+            action_batch_t[idx : idx + 1].clone(),
+            next_state_t.clone() if next_state_t is not None else None,
+            reward_batch_t[idx : idx + 1].clone(),
+            int(n_count),
+            None,
+        )
+
+    return len(steps)
+
+
+def _resolve_dqn_updates_per_batch(
+    base_updates: int,
+    *,
+    num_local_actors: int,
+    num_remote_actors: int = 0,
+    distributed_enabled: bool = False,
+    adapt_enabled: bool = True,
+) -> int:
+    base = max(1, int(base_updates))
+    local = max(1, int(num_local_actors))
+    remote = max(0, int(num_remote_actors))
+    if not distributed_enabled or not adapt_enabled or remote <= 0:
+        return base
+    total = max(1, local + remote)
+    return max(1, int(round(float(base) * float(local) / float(total))))
+
+
+def _format_dqn_queue_metrics(
+    *,
+    qsize: int | None,
+    dropped_batches: int,
+    push_batch_ms: float,
+    optimize_ms: float,
+    updates_per_sec: float,
+    batches: int,
+    transitions: int,
+    updates: int,
+    interval_s: float,
+) -> str:
+    qsize_text = "unknown" if qsize is None else str(int(qsize))
+    return (
+        "[DQN][PERF] "
+        f"qsize={qsize_text} "
+        f"dropped_batches={int(dropped_batches)} "
+        f"push_batch_ms={float(push_batch_ms):.2f} "
+        f"optimize_ms={float(optimize_ms):.2f} "
+        f"updates/sec={float(updates_per_sec):.2f} "
+        f"batches={int(batches)} "
+        f"transitions={int(transitions)} "
+        f"updates={int(updates)} "
+        f"interval_s={float(interval_s):.1f}"
+    )
+
+
 def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
     """
     Actor-Learner MVP (Windows-friendly, spawn):
@@ -5823,7 +5924,20 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             f"actors_pc1={num_actors} actors_pc2={DQN_DIST_PC2_NUM_WORKERS}"
         )
     batch_send = max(8, int(os.getenv("ACTOR_BATCH_SEND", "32")))
-    updates_per_batch = max(1, int(os.getenv("UPDATES_PER_BATCH", "8")))
+    base_updates_per_batch = max(1, int(os.getenv("UPDATES_PER_BATCH", "8")))
+    adapt_updates_per_batch = os.getenv("DQN_DIST_ADAPT_UPDATES_PER_BATCH", "1").strip().lower() in {"1", "true", "yes"}
+    updates_per_batch = _resolve_dqn_updates_per_batch(
+        base_updates_per_batch,
+        num_local_actors=num_actors,
+        num_remote_actors=DQN_DIST_PC2_NUM_WORKERS if DQN_DISTRIBUTED_ACTORS else 0,
+        distributed_enabled=bool(DQN_DISTRIBUTED_ACTORS),
+        adapt_enabled=adapt_updates_per_batch,
+    )
+    if DQN_DISTRIBUTED_ACTORS and updates_per_batch != base_updates_per_batch:
+        append_agent_log(
+            f"[DQN][DIST] adaptive updates_per_batch={updates_per_batch} "
+            f"(base={base_updates_per_batch}, actors_pc1={num_actors}, actors_pc2={DQN_DIST_PC2_NUM_WORKERS})"
+        )
     queue_max = max(64, int(os.getenv("ACTOR_QUEUE_MAX", "256")))
     if DQN_DISTRIBUTED_ACTORS:
         queue_max = max(
@@ -5975,6 +6089,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             zmq_hwm=DQN_DIST_ZMQ_HWM,
             log_fn=append_agent_log,
             bind_retry_sec=DQN_DIST_BIND_RETRY_SEC,
+            log_prefix="[DQN][DIST]",
             # Своевременный прогресс ПК2 для GUI: маркер в stdout (GUI читает stdout,
             # не log-файл), эмитится потоком приёмника сразу при приёме ep — не ждёт,
             # пока learner добьёт backlog ep из data_q. Префикс не в GUI-allowlist —
@@ -6096,6 +6211,17 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
 
     started = time.perf_counter()
     pbar = tqdm(total=int(totLifeT), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
+    try:
+        dqn_perf_log_every_sec = max(1.0, float(os.getenv("DQN_QUEUE_METRICS_EVERY_SEC", "30")))
+    except Exception:
+        dqn_perf_log_every_sec = 30.0
+    perf_interval_started = time.perf_counter()
+    perf_push_ms_total = 0.0
+    perf_opt_ms_total = 0.0
+    perf_batches = 0
+    perf_transitions = 0
+    perf_opt_calls = 0
+    perf_updates = 0
 
     dist_draining = False
     dist_stop_sent = False
@@ -6107,6 +6233,70 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     )
     dist_topup_proc: mp.Process | None = None
     dist_idle_since_mono: float | None = None
+
+    def _dqn_queue_size() -> int | None:
+        try:
+            return max(0, int(data_q.qsize()))
+        except Exception:
+            return None
+
+    def _dqn_dropped_batches() -> int:
+        if rollout_receiver is None:
+            return 0
+        try:
+            return int(rollout_receiver.dropped_queue_count())
+        except Exception:
+            try:
+                return int(getattr(rollout_receiver, "_dropped_queue", 0))
+            except Exception:
+                return 0
+
+    def _emit_dqn_perf_metrics(*, force: bool = False) -> None:
+        nonlocal perf_interval_started
+        nonlocal perf_push_ms_total, perf_opt_ms_total
+        nonlocal perf_batches, perf_transitions, perf_opt_calls, perf_updates
+
+        now = time.perf_counter()
+        interval_s = max(0.000001, now - perf_interval_started)
+        if not force and interval_s < dqn_perf_log_every_sec:
+            return
+
+        qsize = _dqn_queue_size()
+        dropped_batches = _dqn_dropped_batches()
+        has_signal = (
+            perf_batches > 0
+            or perf_opt_calls > 0
+            or dropped_batches > 0
+            or (qsize is not None and qsize > 0)
+        )
+        if not has_signal:
+            perf_interval_started = now
+            return
+
+        push_batch_ms = perf_push_ms_total / float(perf_batches) if perf_batches > 0 else 0.0
+        optimize_ms = perf_opt_ms_total / float(perf_opt_calls) if perf_opt_calls > 0 else 0.0
+        updates_per_sec = float(perf_updates) / interval_s
+        append_agent_log(
+            _format_dqn_queue_metrics(
+                qsize=qsize,
+                dropped_batches=dropped_batches,
+                push_batch_ms=push_batch_ms,
+                optimize_ms=optimize_ms,
+                updates_per_sec=updates_per_sec,
+                batches=perf_batches,
+                transitions=perf_transitions,
+                updates=perf_updates,
+                interval_s=interval_s,
+            )
+        )
+
+        perf_interval_started = now
+        perf_push_ms_total = 0.0
+        perf_opt_ms_total = 0.0
+        perf_batches = 0
+        perf_transitions = 0
+        perf_opt_calls = 0
+        perf_updates = 0
 
     def _dqn_dist_remote_alive() -> int:
         if rollout_receiver is None:
@@ -6197,6 +6387,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         try:
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
+            _emit_dqn_perf_metrics()
             if DQN_DISTRIBUTED_ACTORS and dist_draining:
                 _remote_alive = _dqn_dist_remote_alive()
                 _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
@@ -6474,8 +6665,10 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         )
                 except Exception:
                     pass
+            _emit_dqn_perf_metrics()
             continue
         if kind != "batch":
+            _emit_dqn_perf_metrics()
             continue
 
         # Локальный actor шлёт голый список; remote (ПК2) — dict {"steps":..,"priority":..}.
@@ -6487,16 +6680,13 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         else:
             batch_steps = payload
 
-        for (s_np, a_list, r_sum, ns_np, done_flag, n_count) in batch_steps:
-            dev = next(policy_net.parameters()).device
-            state_t = torch.tensor(np.asarray(s_np, dtype=np.float32), device=dev).unsqueeze(0)
-            action_t = torch.tensor([a_list], device="cpu")
-            reward_t = torch.tensor([float(r_sum)], device=dev, dtype=torch.float32)
-            next_state_t = None
-            if ns_np is not None:
-                next_state_t = torch.tensor(np.asarray(ns_np, dtype=np.float32), device=dev).unsqueeze(0)
-            memory.push(state_t, action_t, next_state_t, reward_t, int(n_count), None)
-            global_step += 1
+        push_started = time.perf_counter()
+        pushed_steps = _push_dqn_batch_steps_to_memory(memory, batch_steps)
+        push_batch_ms = (time.perf_counter() - push_started) * 1000.0
+        global_step += pushed_steps
+        perf_push_ms_total += float(push_batch_ms)
+        perf_batches += 1
+        perf_transitions += int(pushed_steps)
 
         for _ in range(updates_per_batch):
             per_beta = PER_BETA_START
@@ -6505,6 +6695,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     1.0,
                     PER_BETA_START + (1.0 - PER_BETA_START) * (optimize_steps / float(PER_BETA_FRAMES)),
                 )
+            opt_started = time.perf_counter()
             result = optimize_model(
                 policy_net,
                 target_net,
@@ -6520,9 +6711,12 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 pin_memory=PIN_MEMORY,
                 prefetch=PREFETCH,
             )
+            perf_opt_ms_total += (time.perf_counter() - opt_started) * 1000.0
+            perf_opt_calls += 1
             if result and result.get("loss") is not None:
                 last_loss = float(result["loss"])
                 optimize_steps += 1
+                perf_updates += 1
                 loss_trace.append(float(last_loss))
                 if lr_scheduler is not None:
                     if DQN_LR_SCHEDULER == "plateau":
@@ -6563,7 +6757,9 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     p_tgt.data.mul_(1.0 - TAU)
                     p_tgt.data.add_(p.data, alpha=TAU)
 
-        # прогресс по ep_rows (приходит отдельными сообщениями "ep")
+        _emit_dqn_perf_metrics()
+
+    _emit_dqn_perf_metrics(force=True)
 
     if DQN_DISTRIBUTED_ACTORS:
         try:

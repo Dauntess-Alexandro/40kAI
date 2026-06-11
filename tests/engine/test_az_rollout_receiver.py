@@ -131,6 +131,33 @@ def test_enqueue_batch_dropped_on_queue_full():
     assert any("queue_full" in line for line in logs)
 
 
+def test_enqueue_batch_uses_custom_log_prefix_when_queue_full():
+    import queue as std_queue
+
+    class _FullQueue:
+        def put_nowait(self, _item) -> None:
+            raise std_queue.Full
+
+        def put(self, *_args, **_kwargs) -> None:
+            raise AssertionError("batch must not block")
+
+    logs: list[str] = []
+    q = _FullQueue()
+    receiver = RolloutReceiver(
+        q,
+        bind_host="127.0.0.1",
+        bind_port=15564,
+        log_fn=logs.append,
+        log_prefix="[DQN][DIST]",
+    )
+
+    receiver._enqueue("batch", {"steps": []})
+
+    assert receiver.dropped_queue_count() == 1
+    assert any(line.startswith("[DQN][DIST] queue_full") for line in logs)
+    assert not any(line.startswith("[AZ][DIST] queue_full") for line in logs)
+
+
 def test_active_remote_workers_counts_recent_heartbeats():
     import multiprocessing as mp
 

@@ -24,6 +24,7 @@ class RolloutReceiver:
         log_fn: Callable[[str], None] | None = None,
         bind_retry_sec: float = 25.0,
         ep_marker_fn: Callable[[int], None] | None = None,
+        log_prefix: str = "[AZ][DIST]",
     ) -> None:
         self._data_q = data_q
         self._bind_host = str(bind_host or "0.0.0.0")
@@ -32,6 +33,8 @@ class RolloutReceiver:
         self._auth = str(auth_token or "")
         self._hwm = max(1, int(zmq_hwm))
         self._log = log_fn or (lambda _msg: None)
+        self._log_prefix = str(log_prefix or "[AZ][DIST]").strip() or "[AZ][DIST]"
+        self._receiver_prefix = f"{self._log_prefix}[RECEIVER]"
         # Колбэк своевременного прогресса: дёргается из потока приёмника на каждый ep
         # с накопительным счётчиком. Нужен GUI ПК1, чтобы прогресс ПК2 не зависел от
         # пропускной способности обучения learner'а (TRACE эмитится только при drain ep).
@@ -58,7 +61,7 @@ class RolloutReceiver:
         self._thread = threading.Thread(target=self._run, name="az-rollout-receiver", daemon=True)
         self._thread.start()
         self._log(
-            f"[AZ][DIST][RECEIVER] started bind=tcp://{self._bind_host}:{self._bind_port} "
+            f"{self._receiver_prefix} started bind=tcp://{self._bind_host}:{self._bind_port} "
             f"contract_hash={self._contract_hash or '-'}"
         )
 
@@ -75,12 +78,15 @@ class RolloutReceiver:
             now = time.time()
             return sum(1 for ts in self._last_heartbeat.values() if (now - ts) <= float(stale_sec))
 
+    def dropped_queue_count(self) -> int:
+        return int(self._dropped_queue)
+
     def stop(self, *, join_timeout: float = 2.0) -> None:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=float(join_timeout))
         self._log(
-            f"[AZ][DIST][RECEIVER] stopped eps={self._received_eps} rollouts={self._received_rollouts} "
+            f"{self._receiver_prefix} stopped eps={self._received_eps} rollouts={self._received_rollouts} "
             f"dropped_contract={self._dropped_contract} dropped_queue={self._dropped_queue}"
         )
 
@@ -112,7 +118,7 @@ class RolloutReceiver:
                         f"(netstat -ano | findstr :{self._bind_port}) и перезапустите."
                     ) from exc
                 self._log(
-                    f"[AZ][DIST][RECEIVER] порт {self._bind_port} занят — повтор через 1 с "
+                    f"{self._receiver_prefix} порт {self._bind_port} занят — повтор через 1 с "
                     f"(осталось ~{max(0, int(deadline - time.monotonic()))} с)"
                 )
                 time.sleep(1.0)
@@ -153,7 +159,7 @@ class RolloutReceiver:
         except Exception as exc:
             self._dropped_contract += 1
             self._log(
-                f"[AZ][DIST][RECEIVER] drop invalid message: {exc}. "
+                f"{self._receiver_prefix} drop invalid message: {exc}. "
                 "Где: RolloutReceiver._handle_message. "
                 "Что делать: проверьте auth_token, protocol_version и env_contract_hash PC1↔PC2."
             )
@@ -164,7 +170,7 @@ class RolloutReceiver:
             with self._workers_lock:
                 self._remote_workers.add(wid)
                 self._last_heartbeat[wid] = time.time()
-            self._log(f"[AZ][DIST][RECEIVER] hello worker={wid} hash={payload.get('env_contract_hash', '')}")
+            self._log(f"{self._receiver_prefix} hello worker={wid} hash={payload.get('env_contract_hash', '')}")
             return
 
         if kind in ("heartbeat",):
@@ -208,6 +214,6 @@ class RolloutReceiver:
         except queue.Full:
             self._dropped_queue += 1
             self._log(
-                f"[AZ][DIST] queue_full — data_q переполнена, {kind} отброшен. "
+                f"{self._log_prefix} queue_full — data_q переполнена, {kind} отброшен. "
                 "Где: RolloutReceiver. Что делать: увеличьте ACTOR_QUEUE_MAX или снизьте нагрузку PC2."
             )
