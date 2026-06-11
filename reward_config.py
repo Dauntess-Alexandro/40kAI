@@ -297,6 +297,13 @@ ENEMY_HEUR_CHARGE_OBJECTIVE_W = 0.25
 ENEMY_HEUR_SHOOT_EV_KILL_VALUE_W = 1.00
 ENEMY_HEUR_SHOOT_EV_DMG_VALUE_W = 0.95
 ENEMY_HEUR_SHOOT_EV_RETURN_RISK_W = 0.45
+# Charge-EV v2: реальная 2d6-вероятность успеха + EV рукопашного размена
+# (expected_damage melee в обе стороны) вместо фейковой кривой и абстрактного delta.
+ENEMY_HEUR_CHARGE_EV_V2_ENABLED = 1
+# Skip явно суицидального чарджа (best trade < TRADE_MIN). DEFAULT OFF — это
+# поведенческое изменение, требует A/B (включать вместе с замером). Нужен EV_V2.
+ENEMY_HEUR_CHARGE_SKIP_BAD_ENABLED = 0
+ENEMY_HEUR_CHARGE_SKIP_TRADE_MIN = -0.5
 ENEMY_HEUR_CHARGE_EV_SUCCESS_W = 1.15
 ENEMY_HEUR_CHARGE_EV_LOCK_W = 0.35
 ENEMY_HEUR_CHARGE_EV_COUNTER_W = 0.25

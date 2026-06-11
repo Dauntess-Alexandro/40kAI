@@ -34,7 +34,7 @@ from core.engine.state_export import write_state_json
 from project_paths import BOARD_PATH, RUNTIME_STATE_DIR
 
 from ..engine import utils as engine_utils
-from ..engine.heuristic_targeting import allocate_shots
+from ..engine.heuristic_targeting import allocate_shots, melee_trade_value, prob_2d6_at_least
 from ..engine.utils import *
 from ..engine.visibility import visibility_report
 
@@ -3465,6 +3465,21 @@ class Warhammer40kEnv(gym.Env):
         scored.sort(key=lambda item: item[1], reverse=True)
         return int(scored[0][0]), scored
 
+    def _enemy_melee_trade_value(self, enemy_idx: int, target_idx: int) -> float:
+        """EV рукопашного размена enemy_idx -> target_idx (через expected_damage, Melee).
+
+        >0 — выгодный чардж (сношу больше доли HP цели, чем теряю своего в ответ),
+        <0 — лезу под убой. Использует melee-оружие обеих сторон (enemy_melee/unit_melee).
+        """
+        e, t = int(enemy_idx), int(target_idx)
+        e_melee = self.enemy_melee[e] if 0 <= e < len(self.enemy_melee) else {}
+        t_melee = self.unit_melee[t] if 0 <= t < len(self.unit_melee) else {}
+        e_melee = e_melee if isinstance(e_melee, dict) else {}
+        t_melee = t_melee if isinstance(t_melee, dict) else {}
+        my_dmg = expected_damage(self.enemy_health[e], e_melee, self.enemy_data[e], self.unit_data[t], rangeOfComb="Melee")
+        their_dmg = expected_damage(self.unit_health[t], t_melee, self.unit_data[t], self.enemy_data[e], rangeOfComb="Melee")
+        return melee_trade_value(my_dmg, float(self.unit_health[t]), their_dmg, float(self.enemy_health[e]))
+
     def _enemy_heur_pick_charge_target(self, enemy_idx: int, target_ids: list[int]) -> tuple[int, list[tuple[int, float, dict[str, float]]]]:
         scored: list[tuple[int, float, dict[str, float]]] = []
         matchup_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_MATCHUP_W", 0.40))
@@ -3473,15 +3488,23 @@ class Warhammer40kEnv(gym.Env):
         ev_success_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_SUCCESS_W", 1.00))
         ev_lock_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_LOCK_W", 0.35))
         ev_counter_w = float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_COUNTER_W", 0.40))
+        charge_ev_v2 = int(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_EV_V2_ENABLED", 1)) == 1
         for target_idx in target_ids:
             plan = self._enemy_matchup_distance_plan(int(enemy_idx), int(target_idx))
             delta = float(plan.get("delta", 0.0))
             dist = float(distance(self.enemy_coords[int(enemy_idx)], self.unit_coords[int(target_idx)]))
             dist_term = 1.0 / max(1.0, dist)
             obj_term = 1.0 if self._is_position_near_objective(self.unit_coords[int(target_idx)]) else 0.0
-            p_success = max(0.05, min(0.95, (12.0 - max(2.0, dist - 5.0)) / 12.0))
             lock_value = 1.0 if str(plan.get("model_role", "hybrid")) == "ranged" else 0.35
-            counter_risk = max(0.0, -delta)
+            if charge_ev_v2:
+                # Реальная вероятность успеха: в движке чардж удаётся при diceRoll >= dist-5.
+                p_success = prob_2d6_at_least(int(math.ceil(dist - 5.0)))
+                trade = self._enemy_melee_trade_value(int(enemy_idx), int(target_idx))
+                counter_risk = max(0.0, -trade)
+            else:
+                p_success = max(0.05, min(0.95, (12.0 - max(2.0, dist - 5.0)) / 12.0))
+                trade = 0.0
+                counter_risk = max(0.0, -delta)
             ev_charge = (ev_success_w * p_success) + (ev_lock_w * lock_value) - (ev_counter_w * counter_risk)
             total = matchup_w * delta + dist_w * dist_term + obj_w * obj_term + 0.25 * ev_charge
             scored.append((int(target_idx), float(total), {
@@ -3491,6 +3514,7 @@ class Warhammer40kEnv(gym.Env):
                 "ev": float(ev_charge),
                 "p_success": float(p_success),
                 "counter_risk": float(counter_risk),
+                "trade": float(trade),
             }))
         scored.sort(key=lambda item: item[1], reverse=True)
         return int(scored[0][0]), scored
@@ -6165,6 +6189,20 @@ class Warhammer40kEnv(gym.Env):
                                 chargeAble.append(j)
                     if len(chargeAble) > 0:
                         idOfM, charge_scored = self._enemy_heur_pick_charge_target(i, [int(v) for v in chargeAble])
+                        # Skip явно суицидального чарджа (best trade слишком отрицательный).
+                        # DEFAULT OFF (флаг), т.к. меняет поведение и требует A/B-замера.
+                        if (
+                            int(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_SKIP_BAD_ENABLED", 0)) == 1
+                            and charge_scored
+                            and float(charge_scored[0][2].get("trade", 0.0))
+                            < float(getattr(reward_cfg, "ENEMY_HEUR_CHARGE_SKIP_TRADE_MIN", -0.5))
+                        ):
+                            if _heuristic_debug_enabled():
+                                self._heur_log(
+                                    f"[ENEMY][HEUR][CHARGE] unit={i + 11} skip_bad_trade "
+                                    f"trade={float(charge_scored[0][2].get('trade', 0.0)):.3f}"
+                                )
+                            continue
                         dist = distance(self.enemy_coords[i], self.unit_coords[idOfM])
                         required = max(0, dist - 1)
                         if _heuristic_debug_enabled():

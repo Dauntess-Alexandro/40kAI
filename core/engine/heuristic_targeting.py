@@ -7,6 +7,29 @@ expected_damage() и вызывает allocate_shots().
 """
 from __future__ import annotations
 
+# P(2d6 >= n): число исходов из 36, дающих сумму >= n (n от 2 до 12).
+_2D6_GE_COUNTS = {2: 36, 3: 35, 4: 33, 5: 30, 6: 26, 7: 21, 8: 15, 9: 10, 10: 6, 11: 3, 12: 1}
+
+
+def prob_2d6_at_least(n) -> float:
+    """Вероятность броска 2d6 >= n (для расчёта успеха чарджа в движке: diceRoll >= dist-5)."""
+    ni = int(n)
+    if ni <= 2:
+        return 1.0
+    if ni > 12:
+        return 0.0
+    return _2D6_GE_COUNTS[ni] / 36.0
+
+
+def melee_trade_value(my_dmg: float, their_hp: float, their_dmg: float, my_hp: float) -> float:
+    """Выгодность рукопашного размена: доля HP цели, что я снесу, минус доля моего HP в ответ.
+
+    >0 — выгодный чардж (я сношу больше, чем теряю), <0 — лезу под убой.
+    """
+    my_frac = float(my_dmg) / max(1.0, float(their_hp))
+    their_frac = float(their_dmg) / max(1.0, float(my_hp))
+    return my_frac - their_frac
+
 
 def allocate_shots(
     shooters: list[int],
