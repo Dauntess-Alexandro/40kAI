@@ -10,15 +10,18 @@
 from __future__ import annotations
 
 import argparse
-import glob
-import json
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.engine.heuristic_targeting import aggregate_heur_records
+# load_heur_records/outcomes_by_profile живут в core (DRY: их же использует GUI).
+from core.engine.heuristic_targeting import (
+    aggregate_heur_records,
+    load_heur_records,
+    outcomes_by_profile,
+)
 
 try:
     from project_paths import ARTIFACTS_METRICS_DIR
@@ -28,53 +31,12 @@ except Exception:
     _DEFAULT_DIR = os.path.join("artifacts", "metrics", "heur_decisions")
 
 
-def load_records(metrics_dir: str = _DEFAULT_DIR) -> list[dict]:
-    """Считать все записи (по партиям) из per-pid JSONL-файлов."""
-    records: list[dict] = []
-    for path in glob.glob(os.path.join(metrics_dir, "heur_dec_*.jsonl")):
-        try:
-            with open(path, encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        records.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        except OSError:
-            continue
-    return records
-
-
-def outcomes_by_profile(records: list[dict]) -> dict:
-    """Разбивка исходов по профилям: games / draws / heur_wins / model_wins.
-
-    draw = winner не 'model' и не 'enemy' (turn_limit/ничья). heur_win = winner=='enemy'.
-    """
-    out: dict[str, dict] = {}
-    for rec in records or []:
-        if not isinstance(rec, dict):
-            continue
-        prof = str(rec.get("profile", "balanced"))
-        d = out.setdefault(prof, {"games": 0, "draws": 0, "heur_wins": 0, "model_wins": 0})
-        d["games"] += 1
-        winner = str(rec.get("winner", "") or "").strip().lower()
-        if winner == "enemy":
-            d["heur_wins"] += 1
-        elif winner == "model":
-            d["model_wins"] += 1
-        else:
-            d["draws"] += 1
-    return out
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description="Отчёт по first-class метрикам enemy-эвристики")
     ap.add_argument("--dir", type=str, default=_DEFAULT_DIR)
     args = ap.parse_args()
 
-    records = load_records(args.dir)
+    records = load_heur_records(args.dir)
     agg = aggregate_heur_records(records)
     by_prof = outcomes_by_profile(records)
 

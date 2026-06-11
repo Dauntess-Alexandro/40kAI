@@ -7,7 +7,10 @@ expected_damage() и вызывает allocate_shots().
 """
 from __future__ import annotations
 
+import glob
+import json
 import math
+import os
 
 # Профили-«характеры» enemy для curriculum-разнообразия МЕЖДУ партиями.
 # Выбираются по seed на старте партии; смещают базовый режим движения (когда он
@@ -122,6 +125,47 @@ def aggregate_heur_records(records: list[dict]) -> dict:
         "charge_success_rate": (charge_success / charge_attempts) if charge_attempts > 0 else 0.0,
         "charge_attempts": charge_attempts,
     }
+
+
+def outcomes_by_profile(records: list[dict]) -> dict:
+    """Разбивка исходов по профилям: games / draws / heur_wins / model_wins.
+
+    draw = winner не 'model' и не 'enemy' (turn_limit/ничья). heur_win = winner=='enemy'.
+    """
+    out: dict[str, dict] = {}
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        prof = str(rec.get("profile", "balanced"))
+        d = out.setdefault(prof, {"games": 0, "draws": 0, "heur_wins": 0, "model_wins": 0})
+        d["games"] += 1
+        winner = str(rec.get("winner", "") or "").strip().lower()
+        if winner == "enemy":
+            d["heur_wins"] += 1
+        elif winner == "model":
+            d["model_wins"] += 1
+        else:
+            d["draws"] += 1
+    return out
+
+
+def load_heur_records(metrics_dir) -> list[dict]:
+    """Считать все записи (по партиям) из per-pid JSONL-файлов heur_dec_*.jsonl."""
+    records: list[dict] = []
+    for path in glob.glob(os.path.join(str(metrics_dir), "heur_dec_*.jsonl")):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            continue
+    return records
 
 
 # P(2d6 >= n): число исходов из 36, дающих сумму >= n (n от 2 до 12).

@@ -7054,6 +7054,41 @@ class GUIController(QtCore.QObject):
         run_id = str(self._heuristic_metrics.get("run_id", "-"))
         updated_at = str(self._heuristic_metrics.get("updated_at", "-"))
 
+        # First-class метрики (env-счётчики из JSONL) — достовернее лог-скрейпинга.
+        # Перекрывают нулевые mode/role/risk/charge и добавляют энтропию стилей +
+        # разбивку исходов по профилям (видно, какой профиль чаще даёт draw).
+        fc_lines: list[str] = []
+        try:
+            from core.engine.heuristic_targeting import (
+                aggregate_heur_records,
+                load_heur_records,
+                outcomes_by_profile,
+            )
+
+            fc_records = load_heur_records(ARTIFACTS_METRICS_DIR / "heur_decisions")
+            if fc_records:
+                agg = aggregate_heur_records(fc_records)
+                by_prof = outcomes_by_profile(fc_records)
+                mode_usage = agg.get("mode_totals", mode_usage) or mode_usage
+                role_usage = agg.get("role_totals", role_usage) or role_usage
+                self._heuristic_metrics["avg_risk"] = float(agg.get("avg_risk", 0.0))
+                self._heuristic_metrics["charge_success_rate"] = float(agg.get("charge_success_rate", 0.0))
+                fc_lines.append("")
+                fc_lines.append(
+                    f"Разнообразие стилей (энтропия 0..1): {float(agg.get('style_entropy_norm', 0.0)):.3f}"
+                    f"  [партий: {int(agg.get('games', 0))}]"
+                )
+                fc_lines.append("Исходы по профилям (win/draw эвристики):")
+                for prof in sorted(by_prof):
+                    d = by_prof[prof]
+                    g = max(1, int(d.get("games", 0)))
+                    fc_lines.append(
+                        f"  {prof}: игр={int(d.get('games', 0))}, "
+                        f"win={int(d.get('heur_wins', 0)) / g:.2f}, draw={int(d.get('draws', 0)) / g:.2f}"
+                    )
+        except Exception:
+            fc_lines = []
+
         lines = [
             f"Последний ран: {run_id}",
             f"Обновлено: {updated_at}",
@@ -7074,6 +7109,7 @@ class GUIController(QtCore.QObject):
             "Role usage: "
             f"ranged={int(role_usage.get('ranged', 0))}, hybrid={int(role_usage.get('hybrid', 0))}, melee={int(role_usage.get('melee', 0))}",
         ]
+        lines.extend(fc_lines)
         self._heuristic_metrics_text = "\n".join(lines)
         self.heuristicMetricsChanged.emit()
 
