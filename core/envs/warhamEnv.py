@@ -3067,6 +3067,7 @@ class Warhammer40kEnv(gym.Env):
         """Обобщённая оценка угрозы клетки от model-стороны (стрельба + чардж)."""
         threat = 0.0
         target_cell = (int(cell_y), int(cell_x))
+        los_gate = int(getattr(reward_cfg, "ENEMY_HEUR_LOS_GATE_ENABLED", 1)) == 1
         for model_idx in range(len(self.unit_health)):
             if self.unit_health[model_idx] <= 0:
                 continue
@@ -3078,7 +3079,9 @@ class Warhammer40kEnv(gym.Env):
             charge_term = 0.0
             range_limit = max(0.0, self._stat_float(mweapon, ["Range"], default=0.0))
             if range_limit > 0 and dist <= range_limit:
-                shoot_term = max(0.0, 1.0 - (dist / max(1.0, range_limit)))
+                # Стрельба требует LoS; чардж (ниже) — нет, он про дистанцию хода.
+                if (not los_gate) or self._model_has_los_to_cell(int(model_idx), int(cell_x), int(cell_y)):
+                    shoot_term = max(0.0, 1.0 - (dist / max(1.0, range_limit)))
             model_move = max(0.0, self._stat_float(mdata, ["Movement", "M"], default=6.0))
             charge_reach = model_move + 7.0
             if dist <= charge_reach:
@@ -3210,8 +3213,34 @@ class Warhammer40kEnv(gym.Env):
             for obj in self.coordsOfOM
         )
 
+    def _model_has_los_to_cell(self, model_idx: int, cell_x: int, cell_y: int) -> bool:
+        """Есть ли у model-стрелка реальная LOS до гипотетической клетки (cell_x, cell_y).
+
+        В отличие от _unit_has_los (между двумя реальными юнитами), здесь цель —
+        произвольная клетка, куда враг рассматривает ход. Используется для LoS-гейта
+        risk/threat: огонь сквозь непрозрачный террейн не должен «пугать» эвристику.
+        """
+        attacker_cells = self._unit_cells_for_los("model", int(model_idx))
+        if not attacker_cells:
+            return False
+        target_cell = (int(cell_y), int(cell_x))
+        obscuring = self.get_terrain_obscuring_cells_set()
+        for ac in attacker_cells:
+            report = visibility_report(
+                ac,
+                target_cell,
+                opaque_cells_set=self.terrain_opaque_cells,
+                obscuring_cells_set=obscuring,
+                target_cover_cells_set=set(),
+                visibility_mode=self.visibility_mode,
+            )
+            if bool(report.get("los", False)):
+                return True
+        return False
+
     def _enemy_heur_exposure_risk(self, enemy_idx: int, cell_x: int, cell_y: int) -> float:
         risk = 0.0
+        los_gate = int(getattr(reward_cfg, "ENEMY_HEUR_LOS_GATE_ENABLED", 1)) == 1
         for model_idx in range(len(self.unit_health)):
             if self.unit_health[model_idx] <= 0:
                 continue
@@ -3221,6 +3250,9 @@ class Warhammer40kEnv(gym.Env):
                 continue
             dist = float(self._grid_distance_euclid((int(cell_y), int(cell_x)), (int(self.unit_coords[model_idx][0]), int(self.unit_coords[model_idx][1]))))
             if dist <= model_range:
+                # LoS-гейт: стрелок без линии видимости до клетки не создаёт риска.
+                if los_gate and not self._model_has_los_to_cell(int(model_idx), int(cell_x), int(cell_y)):
+                    continue
                 proximity = 1.0 - (dist / max(1.0, model_range))
                 risk += max(0.0, proximity)
         return float(risk)

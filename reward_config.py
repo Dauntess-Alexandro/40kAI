@@ -280,6 +280,9 @@ ENEMY_HEUR_LOOK2_TOP_K = 3
 ENEMY_HEUR_LOOK2_FUTURE_W = 0.35
 ENEMY_HEUR_LOOK2_RISK_W = 0.20
 ENEMY_HEUR_THREAT_MAP_CACHE = 1
+# LoS-гейт risk/threat: огонь model-стрелка учитывается только при реальной линии
+# видимости до клетки (террейн/стены укрывают). Лечит гибель эвристики вайпаутом.
+ENEMY_HEUR_LOS_GATE_ENABLED = 1
 
 # Веса выбора целей для enemy heuristic (стрельба/чардж).
 ENEMY_HEUR_SHOOT_KILL_W = 0.45
