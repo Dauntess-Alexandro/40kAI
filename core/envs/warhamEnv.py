@@ -34,7 +34,13 @@ from core.engine.state_export import write_state_json
 from project_paths import BOARD_PATH, RUNTIME_STATE_DIR
 
 from ..engine import utils as engine_utils
-from ..engine.heuristic_targeting import allocate_shots, melee_trade_value, prob_2d6_at_least
+from ..engine.heuristic_targeting import (
+    ENEMY_PROFILE_CONFIG,
+    allocate_shots,
+    melee_trade_value,
+    pick_enemy_profile,
+    prob_2d6_at_least,
+)
 from ..engine.utils import *
 from ..engine.visibility import visibility_report
 
@@ -3205,6 +3211,22 @@ class Warhammer40kEnv(gym.Env):
             return "commit", f"quota_commit_deficit={need_commit}"
         return None, "quota_satisfied"
 
+    def _enemy_profile_mode_bias(self, enemy_idx: int, natural_mode: str) -> str | None:
+        """Смещение режима по профилю партии (Phase 7).
+
+        Применяется ТОЛЬКО когда естественный режим = 'hold' (иначе юнит уже играет
+        kite/commit — не трогаем) и смещение выполнимо (kite требует дальнобоя).
+        """
+        cfg = getattr(self, "_enemy_profile_cfg", None)
+        if not isinstance(cfg, dict):
+            return None
+        bias = cfg.get("mode_bias")
+        if not bias or str(natural_mode) != "hold":
+            return None
+        if bias == "kite" and self._unit_ranged_score("enemy", int(enemy_idx)) <= 0.1:
+            return None  # кайтить без дальнобоя бессмысленно
+        return str(bias)
+
     def _enemy_heur_objective_distance(self, cell_x: int, cell_y: int) -> float:
         if not self._objective_positions_available():
             return 0.0
@@ -3392,6 +3414,13 @@ class Warhammer40kEnv(gym.Env):
         elif team_tactic == "desperate_push":
             risk_mult = 0.85
             obj_mult = 1.45
+
+        # Phase 7: профиль-«характер» партии (kiter осторожнее, aggressor рискованнее,
+        # objective сильнее тянет на точки, turtle максимально риск-аверсивный).
+        _prof_cfg = getattr(self, "_enemy_profile_cfg", None)
+        if isinstance(_prof_cfg, dict):
+            risk_mult *= float(_prof_cfg.get("risk_mult", 1.0))
+            obj_mult *= float(_prof_cfg.get("obj_mult", 1.0))
 
         # Dynamic role multipliers
         if effective_role == "survive":
@@ -5027,6 +5056,12 @@ class Warhammer40kEnv(gym.Env):
                         mode_usage=mode_usage_counter,
                         decisions_done=int(mode_decisions),
                     )
+                    # Phase 7: профиль-«характер» партии смещает режим, если quota не форсила
+                    # и базовый режим иначе схлопнулся бы в hold (curriculum-разнообразие).
+                    if not forced_mode:
+                        forced_mode = self._enemy_profile_mode_bias(int(i), str(base_matchup.get("mode", "hold")))
+                        if forced_mode:
+                            quota_reason = f"profile:{getattr(self, '_enemy_game_profile', 'balanced')}"
                     matchup = self._enemy_matchup_distance_plan(i, idOfM, forced_mode=forced_mode) if forced_mode else base_matchup
                     desired_dist = float(matchup.get("desired_dist", 6.0))
                     mode_pref = str(matchup.get("mode", "hold"))
@@ -6476,6 +6511,17 @@ class Warhammer40kEnv(gym.Env):
         self.playType = playType
         self._state_flush_last_ts = 0.0
         self._state_flush_pending = False
+
+        # Phase 7: профиль-«характер» врага на эту партию (curriculum-разнообразие
+        # стилей МЕЖДУ партиями). Детерминирован по seed, иначе случаен.
+        if int(getattr(reward_cfg, "ENEMY_HEUR_PROFILE_RANDOMIZATION_ENABLED", 1)) == 1:
+            prof_seed = seed if seed is not None else int(np.random.randint(0, 1_000_000))
+            self._enemy_game_profile = pick_enemy_profile(prof_seed)
+        else:
+            self._enemy_game_profile = "balanced"
+        self._enemy_profile_cfg = dict(
+            ENEMY_PROFILE_CONFIG.get(self._enemy_game_profile, ENEMY_PROFILE_CONFIG["balanced"])
+        )
 
         if Type == "small":
             self.restarts += 1

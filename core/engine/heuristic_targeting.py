@@ -7,6 +7,25 @@ expected_damage() и вызывает allocate_shots().
 """
 from __future__ import annotations
 
+# Профили-«характеры» enemy для curriculum-разнообразия МЕЖДУ партиями.
+# Выбираются по seed на старте партии; смещают базовый режим движения (когда он
+# иначе схлопнулся бы в hold) и силу избегания риска / тяги к objective.
+ENEMY_PROFILES = ("balanced", "kiter", "aggressor", "objective", "turtle")
+
+ENEMY_PROFILE_CONFIG = {
+    "balanced":  {"mode_bias": None,     "risk_mult": 1.0, "obj_mult": 1.0},
+    "kiter":     {"mode_bias": "kite",   "risk_mult": 1.2, "obj_mult": 1.0},
+    "aggressor": {"mode_bias": "commit", "risk_mult": 0.8, "obj_mult": 1.0},
+    "objective": {"mode_bias": None,     "risk_mult": 1.0, "obj_mult": 1.4},
+    "turtle":    {"mode_bias": "hold",   "risk_mult": 1.4, "obj_mult": 0.9},
+}
+
+
+def pick_enemy_profile(seed, profiles=ENEMY_PROFILES) -> str:
+    """Детерминированный выбор профиля врага по seed (воспроизводимо)."""
+    return profiles[int(seed) % len(profiles)]
+
+
 # P(2d6 >= n): число исходов из 36, дающих сумму >= n (n от 2 до 12).
 _2D6_GE_COUNTS = {2: 36, 3: 35, 4: 33, 5: 30, 6: 26, 7: 21, 8: 15, 9: 10, 10: 6, 11: 3, 12: 1}
 

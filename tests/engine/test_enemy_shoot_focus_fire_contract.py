@@ -6,8 +6,10 @@ from pathlib import Path
 class TestEnemyShootFocusFireContract(unittest.TestCase):
     def test_auto_shooting_uses_allocate_shots(self):
         source = Path("core/envs/warhamEnv.py").read_text(encoding="utf-8")
-        # warhamEnv использует относительные импорты (from ..engine ...)
-        self.assertIn("from ..engine.heuristic_targeting import allocate_shots", source)
+        # warhamEnv импортирует allocate_shots из heuristic_targeting (импорт может быть
+        # многострочным — проверяем устойчиво: и модуль, и имя).
+        self.assertIn("from ..engine.heuristic_targeting import", source)
+        self.assertIn("allocate_shots", source)
         # EV урона считается через expected_damage (доступен через wildcard from ..engine.utils)
         self.assertIn("expected_damage(", source)
         # auto-путь стрельбы строит назначение через allocate_shots

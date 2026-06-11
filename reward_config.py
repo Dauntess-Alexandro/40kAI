@@ -280,6 +280,9 @@ ENEMY_HEUR_LOOK2_TOP_K = 3
 ENEMY_HEUR_LOOK2_FUTURE_W = 0.35
 ENEMY_HEUR_LOOK2_RISK_W = 0.20
 ENEMY_HEUR_THREAT_MAP_CACHE = 1
+# Phase 7: профили-«характеры» врага между партиями (balanced/kiter/aggressor/
+# objective/turtle), выбор по seed на reset. Curriculum-разнообразие стилей движения.
+ENEMY_HEUR_PROFILE_RANDOMIZATION_ENABLED = 1
 # LoS-гейт risk/threat: огонь model-стрелка учитывается только при реальной линии
 # видимости до клетки (террейн/стены укрывают). Лечит гибель эвристики вайпаутом.
 ENEMY_HEUR_LOS_GATE_ENABLED = 1
