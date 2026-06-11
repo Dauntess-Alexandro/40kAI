@@ -1,6 +1,7 @@
 import gymnasium as gym
-from gymnasium import spaces
 import numpy as np
+from gymnasium import spaces
+
 try:
     # Ускорение сканов целей (numba опционально).
     from core.engine.hotloops import scan_targets_in_range
@@ -10,34 +11,32 @@ import datetime
 import inspect
 import math
 import os
-import copy
 import random
 import re
 import sys
 import time
 from contextlib import contextmanager
-from typing import Optional
 
 import reward_config as reward_cfg
-from project_paths import BOARD_PATH, RUNTIME_STATE_DIR
-
-from ..engine.utils import *
-from ..engine.visibility import visibility_report
-from ..engine import utils as engine_utils
+from core.engine.event_bus import get_event_bus, get_event_recorder
+from core.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
+from core.engine.logging_utils import format_unit
 from core.engine.mission import (
     MISSION_NAME,
-    MAX_BATTLE_ROUNDS,
-    apply_mission_layout,
-    score_end_of_command_phase,
     apply_end_of_battle,
+    apply_mission_layout,
     controlled_objectives,
+    score_end_of_command_phase,
     terrain_cells_from_features,
 )
 from core.engine.skills import apply_end_of_command_phase
-from core.engine.logging_utils import format_unit
 from core.engine.state_export import write_state_json
-from core.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
-from core.engine.event_bus import get_event_bus, get_event_recorder
+from project_paths import BOARD_PATH, RUNTIME_STATE_DIR
+
+from ..engine import utils as engine_utils
+from ..engine.heuristic_targeting import allocate_shots
+from ..engine.utils import *
+from ..engine.visibility import visibility_report
 
 
 def _matplotlib_pyplot_agg():
@@ -148,7 +147,7 @@ def attack(attackerHealth, attackerWeapon, attacker_data, defenderHealth, defend
 
 
 
-def player_dice(num=1, max=6, stage: Optional[str] = None):
+def player_dice(num=1, max=6, stage: str | None = None):
     """
     Кубы игрока:
     - если MANUAL_DICE=1, просим ввод в терминале
@@ -452,7 +451,7 @@ class RollLogger:
                 "урон (damage)",
             ]
 
-    def roll(self, num=1, max=6, stage: Optional[str] = None):
+    def roll(self, num=1, max=6, stage: str | None = None):
         idx = len(self.calls)
         label = self.labels[idx] if idx < len(self.labels) else f"бросок #{idx+1}"
         stage_token = str(stage or "").strip().lower()
@@ -502,14 +501,14 @@ class RollLogger:
         defender_data: dict,
         dmg_list,
         effect=None,
-        report_title: Optional[str] = None,
-        attacker_label: Optional[str] = None,
-        defender_label: Optional[str] = None,
-        extra_rules: Optional[list[str]] = None,
-        hp_before: Optional[float] = None,
-        hp_after: Optional[float] = None,
-        models_before: Optional[int] = None,
-        models_after: Optional[int] = None,
+        report_title: str | None = None,
+        attacker_label: str | None = None,
+        defender_label: str | None = None,
+        extra_rules: list[str] | None = None,
+        hp_before: float | None = None,
+        hp_after: float | None = None,
+        models_before: int | None = None,
+        models_after: int | None = None,
     ):
         title = report_title or "ОТЧЁТ ПО БЛИЖНЕМУ БОЮ"
         self._log(f"\n📌 --- {title} ---")
@@ -700,10 +699,10 @@ class RollLogger:
         defender_data: dict,
         dmg_list,
         effect=None,
-        report_title: Optional[str] = None,
-        attacker_label: Optional[str] = None,
-        defender_label: Optional[str] = None,
-        extra_rules: Optional[list[str]] = None,
+        report_title: str | None = None,
+        attacker_label: str | None = None,
+        defender_label: str | None = None,
+        extra_rules: list[str] | None = None,
         hit_on_6: bool = False,
     ):
         title = report_title or "ОТЧЁТ ПО СТРЕЛЬБЕ"
@@ -1255,7 +1254,7 @@ class Warhammer40kEnv(gym.Env):
         # --- numpy board ---
         if "board" in snapshot:
             board = snapshot["board"]
-            setattr(_self, "board", board.copy() if isinstance(board, np.ndarray) else board)
+            _self.board = board.copy() if isinstance(board, np.ndarray) else board
 
         # --- 1-D lists of scalars: shallow copy ---
         for _k in (
@@ -1448,7 +1447,7 @@ class Warhammer40kEnv(gym.Env):
         rejected: list[dict] = []
         range_eps = self._shoot_range_epsilon()
 
-        def _add_reject(dst_side: str, dst_idx: int, reason: str, dist: Optional[float] = None, range_limit: Optional[float] = None) -> None:
+        def _add_reject(dst_side: str, dst_idx: int, reason: str, dist: float | None = None, range_limit: float | None = None) -> None:
             dst_label = self._format_unit_label(dst_side, int(dst_idx))
             entry = {
                 "target_id": self._unit_id(dst_side, int(dst_idx)),
@@ -1936,7 +1935,7 @@ class Warhammer40kEnv(gym.Env):
         bonus = int(roll) if used_advance and roll is not None else 0
         return max(0, int(base_move) + bonus)
 
-    def get_unit_reachable_cells(self, side: str, idx: int, budget: Optional[int] = None) -> list[tuple[int, int]]:
+    def get_unit_reachable_cells(self, side: str, idx: int, budget: int | None = None) -> list[tuple[int, int]]:
         coords = self.unit_coords if side == "model" else self.enemy_coords
         hp = self.unit_health if side == "model" else self.enemy_health
         if not (0 <= int(idx) < len(coords)):
@@ -2414,7 +2413,7 @@ class Warhammer40kEnv(gym.Env):
             return False
         return getattr(self, "active_side", None) == "model"
 
-    def _viewer_do_pace(self, phase_slug: str, unit_index: Optional[int], step_kind: str) -> None:
+    def _viewer_do_pace(self, phase_slug: str, unit_index: int | None, step_kind: str) -> None:
         if not self._viewer_pacing_applies_now():
             return
         self.current_action_index = int(unit_index) if unit_index is not None else int(getattr(self, "current_action_index", 0) or 0)
@@ -2879,7 +2878,7 @@ class Warhammer40kEnv(gym.Env):
             return False
         return any(distance(pos, om) <= radius for om in self.coordsOfOM)
 
-    def _min_model_obj_distance(self) -> Optional[float]:
+    def _min_model_obj_distance(self) -> float | None:
         if not self._objective_positions_available():
             return None
         distances = []
@@ -3650,13 +3649,13 @@ class Warhammer40kEnv(gym.Env):
     def _get_input(self, prompt: str) -> str:
         return str(self._ensure_io().request_choice(prompt, []))
 
-    def _request_choice(self, prompt: str, options: list[str], meta: Optional[dict] = None):
+    def _request_choice(self, prompt: str, options: list[str], meta: dict | None = None):
         return self._ensure_io().request_choice(prompt, options, meta=meta)
 
     def _request_bool(self, prompt: str):
         return self._ensure_io().request_bool(prompt)
 
-    def _request_int(self, prompt: str, min_value: Optional[int] = None, max_value: Optional[int] = None):
+    def _request_int(self, prompt: str, min_value: int | None = None, max_value: int | None = None):
         return self._ensure_io().request_int(prompt, min_value=min_value, max_value=max_value)
 
     def _request_direction(self, prompt: str, options: list[str]):
@@ -5623,6 +5622,42 @@ class Warhammer40kEnv(gym.Env):
                 else:
                     self._log("Нет доступного оружия для стрельбы.")
         elif side == "enemy":
+            # Фокус-огонь: распределяем цели по всем живым стрелкам сразу,
+            # чтобы добивать юниты и не делать овёркилл (см. allocate_shots).
+            ff_shooters: list[int] = []
+            ff_ev: dict[int, dict[int, float]] = {}
+            ff_targets: dict[int, tuple[float, float]] = {}
+            ff_obj: dict[int, float] = {}
+            for ff_i in range(len(self.enemy_health)):
+                if self.enemy_health[ff_i] <= 0 or self.enemyFellBack[ff_i]:
+                    continue
+                if self.enemy_weapon[ff_i] == "None":
+                    continue
+                adv_ff = advanced_flags[ff_i] if advanced_flags else False
+                if adv_ff and not weapon_is_assault(self.enemy_weapon[ff_i]):
+                    continue
+                targets_ff = self.get_shoot_targets_for_unit("enemy", ff_i)
+                if not targets_ff:
+                    continue
+                ff_shooters.append(ff_i)
+                ff_ev[ff_i] = {}
+                for tid in targets_ff:
+                    tid = int(tid)
+                    dist_ff = self._shooting_distance_between_units("enemy", ff_i, "model", tid)
+                    ff_ev[ff_i][tid] = expected_damage(
+                        self.enemy_health[ff_i], self.enemy_weapon[ff_i], self.enemy_data[ff_i],
+                        self.unit_data[tid], rangeOfComb="Ranged", distance_to_target=dist_ff,
+                    )
+                    if tid not in ff_targets:
+                        ff_targets[tid] = (
+                            float(self.unit_health[tid]),
+                            float(self._unit_max_hp("model", tid)),
+                        )
+                        ff_obj[tid] = 1.0 if self._is_position_near_objective(self.unit_coords[tid]) else 0.0
+            self._enemy_focus_fire_assignment = (
+                allocate_shots(ff_shooters, ff_ev, ff_targets, obj_bonus=ff_obj)
+                if ff_shooters else {}
+            )
             for i in range(len(self.enemy_health)):
                 advanced = advanced_flags[i] if advanced_flags else False
                 if self.enemyFellBack[i]:
@@ -5636,7 +5671,13 @@ class Warhammer40kEnv(gym.Env):
                     else:
                         shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                         if len(shootAbleUnits) > 0:
-                            idOfM, scored_targets = self._enemy_heur_pick_shoot_target(i, [int(v) for v in shootAbleUnits])
+                            shoot_ids = [int(v) for v in shootAbleUnits]
+                            assigned = getattr(self, "_enemy_focus_fire_assignment", {}).get(i)
+                            if assigned is not None and int(assigned) in shoot_ids:
+                                idOfM = int(assigned)
+                                _, scored_targets = self._enemy_heur_pick_shoot_target(i, shoot_ids)
+                            else:
+                                idOfM, scored_targets = self._enemy_heur_pick_shoot_target(i, shoot_ids)
                             if _heuristic_debug_enabled():
                                 top = scored_targets[:3]
                                 rendered = ", ".join(
@@ -6518,7 +6559,7 @@ class Warhammer40kEnv(gym.Env):
             if quiet is False:
                 self._log(msg)
 
-        def _remaining_models(side: str, idx: int, hp_value: Optional[float]) -> Optional[int]:
+        def _remaining_models(side: str, idx: int, hp_value: float | None) -> int | None:
             data_list = self.unit_data if side == "model" else self.enemy_data
             if not (0 <= idx < len(data_list)) or not isinstance(data_list[idx], dict):
                 return None
@@ -6708,7 +6749,7 @@ class Warhammer40kEnv(gym.Env):
 
         manual_enemy = bool(getattr(self, "playType", False))
 
-        def _prompt_enemy_target(att_idx: int) -> Optional[int]:
+        def _prompt_enemy_target(att_idx: int) -> int | None:
             def_idx = self.enemyInAttack[att_idx][1]
             targets = []
             if 0 <= def_idx < len(self.unit_health) and self.unit_health[def_idx] > 0:
