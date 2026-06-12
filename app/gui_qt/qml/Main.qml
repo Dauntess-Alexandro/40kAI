@@ -4193,49 +4193,9 @@ ApplicationWindow {
                 }
             }
 
-            Item {
+            HeurMetricsPanel {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-
-                ScrollView {
-                    anchors.fill: parent
-                    anchors.margins: root.spacingLg
-                    clip: true
-
-                    Column {
-                        width: Math.max(parent ? parent.width : 0, root.width - 2 * root.spacingLg)
-                        spacing: root.spacingMd
-
-                        Text {
-                            text: "Метрики эвристики"
-                            font.pixelSize: Math.round(20 * root.uiScale)
-                            font.bold: true
-                        }
-
-                        Label {
-                            text: "Сводка по ENEMY heuristic: роли, режимы, риски, cover, EV и стабильность."
-                            wrapMode: Text.WordWrap
-                            color: root.uiTextMuted
-                        }
-
-                        GroupBox {
-                            title: "Сводные показатели"
-                            width: parent.width
-
-                            ScrollView {
-                                width: parent.width
-                                height: Math.round(420 * root.uiScale)
-                                TextArea {
-                                    width: parent.width
-                                    text: controller.heuristicMetricsText
-                                    readOnly: true
-                                    wrapMode: Text.WordWrap
-                                    selectByMouse: true
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
             Item {
