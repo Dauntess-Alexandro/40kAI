@@ -832,9 +832,13 @@ Item {
                             TextArea {
                                 Layout.fillWidth: true
                                 height: Math.round(80 * root.uiScale)
+                                // Патч-файл пишется только при ПОЛНОМ завершении калибровки.
+                                // Стоп на середине → патча нет (видны только живые кандидаты).
                                 text: heurPanel.patchText.length > 0
                                     ? heurPanel.patchText
-                                    : "(Завершите калибровку для просмотра патча)"
+                                    : heurCalRunner.isRunning
+                                        ? "(Идёт калибровка — патч появится после прохода всех кандидатов)"
+                                        : "(Патч создаётся только при полном завершении. Остановленный прогон патча не даёт — запустите без «Стоп».)"
                                 readOnly: true
                                 color: "#7db4f5"
                                 font.pixelSize: Math.round(9 * root.uiScale)
@@ -847,16 +851,17 @@ Item {
                                 Button {
                                     text: "✓ Применить патч"
                                     font.pixelSize: root.evalCaptionSize
-                                    enabled: heurPanel.currentRunDir.length > 0 && !heurCalRunner.isRunning
-                                    onClicked: heurCalRunner.applyPatch(heurPanel.currentRunDir)
+                                    // Доступно только когда есть реальный патч (полное завершение).
+                                    enabled: !heurCalRunner.isRunning && heurPanel.patchText.length > 0
+                                    onClicked: heurCalRunner.applyPatch(heurCalRunner.currentRunDir)
                                     contentItem: Text { text: parent.text; color: parent.enabled ? "#e8c060" : "#6b5010"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     background: Rectangle { color: parent.down ? "#100e00" : "#1a1508"; border.color: parent.enabled ? (parent.hovered ? "#d0a030" : "#b88a26") : "#3a3010"; border.width: 1 }
                                 }
                                 Button {
                                     text: "Открыть папку"
                                     font.pixelSize: root.evalCaptionSize
-                                    enabled: heurPanel.currentRunDir.length > 0
-                                    onClicked: Qt.openUrlExternally("file:///" + heurPanel.currentRunDir)
+                                    enabled: heurCalRunner.currentRunDir.length > 0
+                                    onClicked: Qt.openUrlExternally("file:///" + heurCalRunner.currentRunDir)
                                     contentItem: Text { text: parent.text; color: parent.enabled ? root.textSecondary : "#3a4a5a"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
                                 }
