@@ -464,16 +464,37 @@ Item {
                                     color: index % 2 === 0 ? root.bgElevated : root.bgSurface
                                     Row {
                                         anchors.fill: parent
-                                        Repeater {
-                                            model: [model.time, model.winrate, model.entropy, model.draws, String(model.games)]
-                                            delegate: Text {
-                                                text: modelData; color: root.textPrimary
-                                                font.pixelSize: root.evalCaptionSize
-                                                font.family: "JetBrains Mono"
-                                                width: [100, 70, 70, 60, 50][index] * root.uiScale
-                                                leftPadding: root.spacingSm
-                                                verticalAlignment: Text.AlignVCenter
-                                            }
+                                        // Явные колонки (см. таблицу кандидатов: вложенный Repeater
+                                        // с [model.*] ловит коллизию имени model → пустые ячейки).
+                                        Text {
+                                            text: model.time; color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(100 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.winrate; color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(70 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.entropy; color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(70 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.draws; color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(60 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: String(model.games); color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(50 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
                                         }
                                     }
                                 }
@@ -713,22 +734,39 @@ Item {
 
                                     Row {
                                         anchors.fill: parent
-                                        Repeater {
-                                            model: [
-                                                [model.idx,     36,  model.isBest ? "#b88a26" : root.textSecondary],
-                                                [model.score,   60,  model.isBest ? "#4caf6e" : root.textPrimary],
-                                                [model.winrate, 64,  root.textPrimary],
-                                                [model.entropy, 64,  parseFloat(model.entropy) >= 0.86 ? "#4caf6e" : parseFloat(model.entropy) >= 0.84 ? "#b88a26" : "#cf3f3f"],
-                                                [model.draws,   56,  root.textPrimary],
-                                            ]
-                                            delegate: Text {
-                                                text: modelData[0]; color: modelData[2]
-                                                font.pixelSize: root.evalCaptionSize
-                                                font.family: "JetBrains Mono"
-                                                font.bold: modelData[1] === 60 && model.isBest
-                                                width: Math.round(modelData[1] * root.uiScale)
-                                                leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter
-                                            }
+                                        // Явные колонки: читаем model.* напрямую (вложенный Repeater
+                                        // с массивом [model.*] ловит коллизию имени model → пустые ячейки).
+                                        Text {
+                                            text: model.idx; color: model.isBest ? "#b88a26" : root.textSecondary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(36 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.score; color: model.isBest ? "#4caf6e" : root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; font.bold: model.isBest
+                                            width: Math.round(60 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.winrate; color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(64 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.entropy
+                                            color: parseFloat(model.entropy) >= 0.86 ? "#4caf6e"
+                                                 : parseFloat(model.entropy) >= 0.84 ? "#b88a26" : "#cf3f3f"
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(64 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+                                        Text {
+                                            text: model.draws; color: root.textPrimary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(56 * root.uiScale); leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
                                         }
                                         Rectangle {
                                             height: Math.round(16 * root.uiScale)
@@ -747,10 +785,10 @@ Item {
                                                 id: statusTagText
                                                 anchors.centerIn: parent
                                                 text: model.isBest ? "★ лучший"
-                                                    : model.status === "ok" ? "✓"
+                                                    : model.status === "ok" ? "✓ принят"
                                                     : model.status === "dry_run" ? "dry"
                                                     : model.status === "в работе" ? "⟳"
-                                                    : model.reason.length > 0 ? model.reason.substring(0, 12)
+                                                    : model.reason.length > 0 ? model.reason
                                                     : model.status
                                                 color: model.isBest ? "#4caf6e"
                                                      : model.status === "ok" ? "#4caf6e"
