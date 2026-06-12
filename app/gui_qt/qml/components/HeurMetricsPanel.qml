@@ -297,7 +297,7 @@ Item {
                                 { label: "Draw rate %",    key: "draw_rate",  good: 0,    warn: 0     },
                             ]
                             delegate: Rectangle {
-                                width: (innerStack.width - 2 * root.spacingSm) / 3
+                                width: (parent.width - 2 * root.spacingSm) / 3
                                 height: Math.round(60 * root.uiScale)
                                 color: root.bgElevated
                                 border.color: root.borderMuted
@@ -347,7 +347,9 @@ Item {
                         spacing: root.spacingSm
 
                         GroupBox {
+                            id: sumMetricsCard
                             width: (parent.width - root.spacingSm) / 2
+                            height: Math.max(sumMetricsCard.implicitHeight, sumStyleCard.implicitHeight)
                             title: "Показатели"
                             label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                             background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
@@ -386,7 +388,9 @@ Item {
                         }
 
                         GroupBox {
+                            id: sumStyleCard
                             width: (parent.width - root.spacingSm) / 2
+                            height: Math.max(sumMetricsCard.implicitHeight, sumStyleCard.implicitHeight)
                             title: "Стиль игры"
                             label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                             background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
