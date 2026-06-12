@@ -87,7 +87,7 @@ Item {
             idxNum:   row.candidate_idx !== undefined ? row.candidate_idx : -1,
             scoreNum: scoreNum,
             score:    hasScore ? _fmt(row.score, 3) : "…",
-            winrate:  _fmt(row.heur_winrate, 3),
+            winrate:  row.heur_winrate !== undefined ? _fmt(row.heur_winrate * 100, 1) + "%" : "…",
             entropy:  _fmt(row.style_entropy_norm, 3),
             draws:    row.draw_rate !== undefined ? _fmt(row.draw_rate * 100, 1) + "%" : "…",
             status:   status,
@@ -592,7 +592,12 @@ Item {
             ScrollView {
                 clip: true
                 Column {
-                    width: innerStack.width
+                    // Увеличиваем всю вкладку калибровки (на больших мониторах мелко).
+                    // distance-field текст масштабируется без размытия.
+                    property real calZoom: 1.22
+                    width: innerStack.width / calZoom
+                    scale: calZoom
+                    transformOrigin: Item.TopLeft
                     spacing: root.spacingMd
                     topPadding: root.spacingMd
 
