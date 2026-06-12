@@ -67,6 +67,8 @@ from app.gui_qt.gmz_hyperparams_defaults import (
     GMZ_VARIANT_A_BUNDLE,
     GMZ_VARIANT_B_BUNDLE,
 )
+from app.gui_qt.heur_benchmark_runner import HeurBenchmarkRunner
+from app.gui_qt.heur_calibrate_runner import HeurCalibrateRunner
 from app.gui_qt.hyperparams_cuda_hints import (
     hyperparam_cuda_field_state,
     hyperparam_cuda_tooltip_suffix,
@@ -8275,6 +8277,14 @@ def main() -> int:
     engine._controller_ref = _GUI_CONTROLLER_REF
     engine.rootContext().setContextProperty("controller", _GUI_CONTROLLER_REF)
     engine.rootContext().setContextProperty("telemetry", _GUI_CONTROLLER_REF._telemetry)
+    _heur_bench_runner = HeurBenchmarkRunner()
+    _heur_cal_runner = HeurCalibrateRunner()
+    QtQml.QQmlEngine.setObjectOwnership(_heur_bench_runner, ownership)
+    QtQml.QQmlEngine.setObjectOwnership(_heur_cal_runner, ownership)
+    app._heur_bench_runner_ref = _heur_bench_runner
+    app._heur_cal_runner_ref = _heur_cal_runner
+    engine.rootContext().setContextProperty("heurBenchRunner", _heur_bench_runner)
+    engine.rootContext().setContextProperty("heurCalRunner", _heur_cal_runner)
     if theme_flat is not None:
         engine.rootContext().setContextProperty("themeTokens", theme_flat)
 
