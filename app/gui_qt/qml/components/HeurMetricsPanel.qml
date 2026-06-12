@@ -207,7 +207,8 @@ Item {
             background: Rectangle { color: root.bgSurface; border.width: 0 }
             TabButton {
                 text: "Сводка"
-                font.pixelSize: root.evalCaptionSize
+                font.pixelSize: Math.round(15 * root.uiScale)
+                implicitHeight: Math.round(34 * root.uiScale)
                 background: Rectangle {
                     color: innerTabs.currentIndex === 0 ? root.bgElevated : "transparent"
                     border.width: 0
@@ -223,7 +224,8 @@ Item {
             }
             TabButton {
                 text: "Бенчмарк"
-                font.pixelSize: root.evalCaptionSize
+                font.pixelSize: Math.round(15 * root.uiScale)
+                implicitHeight: Math.round(34 * root.uiScale)
                 background: Rectangle {
                     color: innerTabs.currentIndex === 1 ? root.bgElevated : "transparent"
                     border.width: 0
@@ -239,7 +241,8 @@ Item {
             }
             TabButton {
                 text: "Калибровка"
-                font.pixelSize: root.evalCaptionSize
+                font.pixelSize: Math.round(15 * root.uiScale)
+                implicitHeight: Math.round(34 * root.uiScale)
                 background: Rectangle {
                     color: innerTabs.currentIndex === 2 ? root.bgElevated : "transparent"
                     border.width: 0
@@ -269,7 +272,10 @@ Item {
             ScrollView {
                 clip: true
                 Column {
-                    width: innerStack.width
+                    property real calZoom: 1.15
+                    width: innerStack.width / calZoom
+                    scale: calZoom
+                    transformOrigin: Item.TopLeft
                     spacing: root.spacingMd
                     topPadding: root.spacingMd
 
@@ -405,7 +411,10 @@ Item {
             ScrollView {
                 clip: true
                 Column {
-                    width: innerStack.width
+                    property real calZoom: 1.15
+                    width: innerStack.width / calZoom
+                    scale: calZoom
+                    transformOrigin: Item.TopLeft
                     spacing: root.spacingMd
                     topPadding: root.spacingMd
 
