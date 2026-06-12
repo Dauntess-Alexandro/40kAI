@@ -1091,36 +1091,37 @@ Item {
                             Canvas {
                                 id: sparkCanvas
                                 anchors.fill: parent
-                                property var data: heurPanel._bestHistory
-                                onDataChanged: requestPaint()
+                                property var bestData: heurPanel._bestHistory
+                                onBestDataChanged: requestPaint()
                                 onPaint: {
                                     var ctx = getContext("2d")
                                     ctx.reset()
-                                    var n = data.length
+                                    var d = bestData
+                                    var n = d.length
                                     if (n < 2) return
                                     var pad = Math.round(10 * root.uiScale)
                                     var w = width - 2 * pad
                                     var h = height - 2 * pad
-                                    var mn = data[0], mx = data[0]
-                                    for (var i = 1; i < n; i++) { mn = Math.min(mn, data[i]); mx = Math.max(mx, data[i]) }
+                                    var mn = d[0], mx = d[0]
+                                    for (var i = 1; i < n; i++) { mn = Math.min(mn, d[i]); mx = Math.max(mx, d[i]) }
                                     var flat = (mx - mn) < 1e-9
                                     var rng = flat ? 1 : (mx - mn)
                                     function px(i) { return pad + w * i / (n - 1) }
                                     function py(v) { return flat ? pad + h / 2 : pad + h * (1 - (v - mn) / rng) }
                                     // пунктирная базовая линия
-                                    ctx.beginPath(); ctx.moveTo(pad, py(data[n - 1])); ctx.lineTo(width - pad, py(data[n - 1]))
+                                    ctx.beginPath(); ctx.moveTo(pad, py(d[n - 1])); ctx.lineTo(width - pad, py(d[n - 1]))
                                     ctx.strokeStyle = "rgba(184,138,38,0.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([])
                                     // заливка под линией
                                     ctx.beginPath(); ctx.moveTo(px(0), height - pad)
-                                    for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(data[j]))
+                                    for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(d[j]))
                                     ctx.lineTo(px(n - 1), height - pad); ctx.closePath()
                                     ctx.fillStyle = "rgba(76,175,110,0.12)"; ctx.fill()
                                     // линия
-                                    ctx.beginPath(); ctx.moveTo(px(0), py(data[0]))
-                                    for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(data[k]))
+                                    ctx.beginPath(); ctx.moveTo(px(0), py(d[0]))
+                                    for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(d[k]))
                                     ctx.strokeStyle = "#4caf6e"; ctx.lineWidth = Math.max(1, Math.round(1.5 * root.uiScale)); ctx.stroke()
                                     // последняя точка
-                                    ctx.beginPath(); ctx.arc(px(n - 1), py(data[n - 1]), Math.round(2.5 * root.uiScale), 0, 2 * Math.PI)
+                                    ctx.beginPath(); ctx.arc(px(n - 1), py(d[n - 1]), Math.round(2.5 * root.uiScale), 0, 2 * Math.PI)
                                     ctx.fillStyle = "#b88a26"; ctx.fill()
                                 }
                             }
