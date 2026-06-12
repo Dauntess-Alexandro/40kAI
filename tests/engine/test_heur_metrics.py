@@ -16,14 +16,17 @@ class TestHeurCounters(unittest.TestCase):
         self.assertEqual(c["profile"], "kiter")
         self.assertEqual(c["mode"], {"kite": 0, "hold": 0, "commit": 0})
         self.assertEqual(c["role"], {"ranged": 0, "hybrid": 0, "melee": 0})
+        self.assertEqual(c["obj_kind"], {"flip": 0, "capture": 0, "contest": 0, "hold": 0, "none": 0})
         self.assertEqual(c["risk_n"], 0)
 
     def test_record_move_increments(self):
         c = new_heur_counters()
-        record_heur_move(c, "kite", "ranged", 0.4)
-        record_heur_move(c, "hold", "hybrid", 0.2)
+        record_heur_move(c, "kite", "ranged", 0.4, "flip")
+        record_heur_move(c, "hold", "hybrid", 0.2, "contest")
         self.assertEqual(c["mode"], {"kite": 1, "hold": 1, "commit": 0})
         self.assertEqual(c["role"]["ranged"], 1)
+        self.assertEqual(c["obj_kind"]["flip"], 1)
+        self.assertEqual(c["obj_kind"]["contest"], 1)
         self.assertEqual(c["moves"], 2)
         self.assertAlmostEqual(c["risk_sum"], 0.6, places=6)
 
@@ -54,6 +57,7 @@ class TestAggregateHeurRecords(unittest.TestCase):
         agg = aggregate_heur_records(recs)
         self.assertEqual(agg["games"], 3)
         self.assertEqual(agg["mode_totals"], {"kite": 3, "hold": 3, "commit": 3})
+        self.assertAlmostEqual(agg["hold_ratio"], 1 / 3, places=6)
         self.assertAlmostEqual(agg["style_entropy_norm"], 1.0, places=6)
         self.assertAlmostEqual(agg["avg_risk"], 0.5, places=6)
 
@@ -104,6 +108,24 @@ def test_flush_skips_empty_and_writes_nonempty(monkeypatch, tmp_path):
     rec = json.loads(lines[0])
     assert rec["profile"] == "kiter"
     assert rec["mode"]["kite"] == 1
+
+
+def test_flush_respects_heur_metrics_decisions_dir(monkeypatch, tmp_path):
+    import types
+
+    from core.envs.warhamEnv import Warhammer40kEnv
+
+    custom_dir = tmp_path / "phase8_decisions"
+    monkeypatch.setenv("HEUR_METRICS_DECISIONS_DIR", str(custom_dir))
+    stub = types.SimpleNamespace(_heur_metric_counters=new_heur_counters("objective"))
+    record_heur_move(stub._heur_metric_counters, "hold", "ranged", 0.1, "capture")
+
+    Warhammer40kEnv._flush_heur_metrics(stub)
+
+    files = list(custom_dir.glob("heur_dec_*.jsonl"))
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8").splitlines()[0])
+    assert rec["obj_kind"]["capture"] == 1
 
 
 if __name__ == "__main__":

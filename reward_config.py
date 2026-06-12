@@ -3,6 +3,9 @@
 Меняйте значения здесь, чтобы не лезть в код среды.
 """
 
+import json
+import os
+
 # =========================================
 # Шэйпинг наград (победа / victory points)
 # =========================================
@@ -340,3 +343,50 @@ ENEMY_HEUR_MID_MODE_MULT = 1.0
 ENEMY_HEUR_LATE_RISK_MULT = 0.97
 ENEMY_HEUR_LATE_OBJ_MULT = 1.08
 ENEMY_HEUR_LATE_MODE_MULT = 0.99
+
+
+_HEUR_CALIBRATION_BLOCKED_SUFFIXES = ("_ENABLED", "_TOP_K", "_CACHE")
+
+
+def _validate_heur_calibration_override(name: str, value) -> float:
+    key = str(name or "").strip()
+    if not key.startswith("ENEMY_HEUR_"):
+        raise ValueError(f"HEUR_CALIBRATION_OVERRIDES_JSON: key {key!r} must start with ENEMY_HEUR_.")
+    if key.endswith(_HEUR_CALIBRATION_BLOCKED_SUFFIXES):
+        raise ValueError(f"HEUR_CALIBRATION_OVERRIDES_JSON: key {key!r} is a feature flag/cache/top-k value, not a Phase 8 weight.")
+    if key not in globals():
+        raise ValueError(f"HEUR_CALIBRATION_OVERRIDES_JSON: unknown reward_config key {key!r}.")
+    current = globals()[key]
+    if isinstance(current, bool) or not isinstance(current, (int, float)):
+        raise ValueError(f"HEUR_CALIBRATION_OVERRIDES_JSON: key {key!r} is not numeric.")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"HEUR_CALIBRATION_OVERRIDES_JSON: value for {key!r} must be numeric.") from exc
+    if parsed < 0.0:
+        raise ValueError(f"HEUR_CALIBRATION_OVERRIDES_JSON: value for {key!r} must be >= 0.")
+    return parsed
+
+
+def apply_heur_calibration_overrides(raw_json: str | None = None) -> dict[str, float]:
+    raw = os.getenv("HEUR_CALIBRATION_OVERRIDES_JSON", "") if raw_json is None else str(raw_json or "")
+    raw = raw.strip()
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("HEUR_CALIBRATION_OVERRIDES_JSON: invalid JSON object.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("HEUR_CALIBRATION_OVERRIDES_JSON: expected JSON object.")
+
+    applied: dict[str, float] = {}
+    for key, value in payload.items():
+        parsed = _validate_heur_calibration_override(str(key), value)
+        current = globals()[str(key)]
+        globals()[str(key)] = int(parsed) if isinstance(current, int) and float(parsed).is_integer() else float(parsed)
+        applied[str(key)] = float(parsed)
+    return applied
+
+
+_HEUR_CALIBRATION_APPLIED_OVERRIDES = apply_heur_calibration_overrides()

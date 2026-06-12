@@ -1,8 +1,7 @@
 # tests/tools/test_heur_benchmark_parse.py
-import math
 import unittest
 
-from tools.heur_benchmark import parse_eval_output, summarize
+from tools.heur_benchmark import BenchmarkError, parse_eval_output, summarize, validate_benchmark_output
 
 
 class TestHeurBenchmarkParse(unittest.TestCase):
@@ -12,6 +11,27 @@ class TestHeurBenchmarkParse(unittest.TestCase):
         self.assertEqual(res["p1_wins"], 7)
         self.assertEqual(res["p2_wins"], 2)
         self.assertEqual(res["draws"], 1)
+
+    def test_parse_win_counts_from_summary_v2_line(self):
+        text = "[EVAL] [SUMMARY_V2] p1_wins=4 p2_wins=5 draws=1 winrate_p1_all=0.400"
+        res = parse_eval_output(text)
+        self.assertEqual(res["p1_wins"], 4)
+        self.assertEqual(res["p2_wins"], 5)
+        self.assertEqual(res["draws"], 1)
+
+    def test_validate_fails_on_eval_error(self):
+        text = "[EVAL] [ERROR] Модель не найдена."
+        with self.assertRaises(BenchmarkError):
+            validate_benchmark_output(text, requested_games=10)
+
+    def test_validate_fails_on_zero_games(self):
+        with self.assertRaises(BenchmarkError):
+            validate_benchmark_output("no summary here", requested_games=10)
+
+    def test_validate_fails_on_games_mismatch(self):
+        text = "[SUMMARY_V2] p1_wins=2 p2_wins=2 draws=0"
+        with self.assertRaises(BenchmarkError):
+            validate_benchmark_output(text, requested_games=5)
 
     def test_parse_mode_distribution_from_heur_move_lines(self):
         text = (

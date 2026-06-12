@@ -17,6 +17,7 @@ import re
 import sys
 import time
 from contextlib import contextmanager
+from pathlib import Path
 
 import reward_config as reward_cfg
 from core.engine.event_bus import get_event_bus, get_event_recorder
@@ -3247,7 +3248,8 @@ class Warhammer40kEnv(gym.Env):
         if not isinstance(counters, dict) or int(counters.get("moves", 0)) <= 0:
             return
         try:
-            out_dir = ARTIFACTS_METRICS_DIR / "heur_decisions"
+            override_dir = str(os.getenv("HEUR_METRICS_DECISIONS_DIR", "") or "").strip()
+            out_dir = Path(override_dir) if override_dir else ARTIFACTS_METRICS_DIR / "heur_decisions"
             out_dir.mkdir(parents=True, exist_ok=True)
             rec = dict(counters)
             rec["winner"] = str(getattr(self, "last_winner", "") or "")
@@ -5276,6 +5278,7 @@ class Warhammer40kEnv(gym.Env):
                             mode_pref,
                             str(matchup.get("enemy_role", "hybrid")),
                             float(best_details.get("risk_norm", 0.0)),
+                            str(best_details.get("obj_control_kind", "none")),
                         )
                     if _heuristic_debug_enabled():
                         self._heur_log(

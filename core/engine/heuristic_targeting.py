@@ -109,6 +109,7 @@ def new_heur_counters(profile: str = "balanced") -> dict:
         "profile": str(profile),
         "mode": {"kite": 0, "hold": 0, "commit": 0},
         "role": {"ranged": 0, "hybrid": 0, "melee": 0},
+        "obj_kind": {"flip": 0, "capture": 0, "contest": 0, "hold": 0, "none": 0},
         "risk_sum": 0.0,
         "risk_n": 0,
         "charge_attempts": 0,
@@ -117,7 +118,7 @@ def new_heur_counters(profile: str = "balanced") -> dict:
     }
 
 
-def record_heur_move(counters: dict, mode, role, risk_norm) -> None:
+def record_heur_move(counters: dict, mode, role, risk_norm, obj_kind=None) -> None:
     """Зафиксировать одно решение движения (режим/роль/риск). Неизвестные ключи игнорим."""
     if not isinstance(counters, dict):
         return
@@ -127,6 +128,10 @@ def record_heur_move(counters: dict, mode, role, risk_norm) -> None:
         counters["mode"][m] += 1
     if r in counters["role"]:
         counters["role"][r] += 1
+    obj_map = counters.setdefault("obj_kind", {"flip": 0, "capture": 0, "contest": 0, "hold": 0, "none": 0})
+    ok = str(obj_kind or "none")
+    if ok in obj_map:
+        obj_map[ok] += 1
     try:
         counters["risk_sum"] += float(risk_norm)
         counters["risk_n"] += 1
@@ -152,6 +157,7 @@ def aggregate_heur_records(records: list[dict]) -> dict:
     """
     mode_totals = {"kite": 0, "hold": 0, "commit": 0}
     role_totals = {"ranged": 0, "hybrid": 0, "melee": 0}
+    obj_kind_totals = {"flip": 0, "capture": 0, "contest": 0, "hold": 0, "none": 0}
     profile_counts: dict[str, int] = {}
     risk_sum = 0.0
     risk_n = 0
@@ -166,6 +172,8 @@ def aggregate_heur_records(records: list[dict]) -> dict:
             mode_totals[k] += int(rec.get("mode", {}).get(k, 0))
         for k in role_totals:
             role_totals[k] += int(rec.get("role", {}).get(k, 0))
+        for k in obj_kind_totals:
+            obj_kind_totals[k] += int(rec.get("obj_kind", {}).get(k, 0))
         prof = str(rec.get("profile", "balanced"))
         profile_counts[prof] = profile_counts.get(prof, 0) + 1
         risk_sum += float(rec.get("risk_sum", 0.0))
@@ -189,8 +197,10 @@ def aggregate_heur_records(records: list[dict]) -> dict:
         "games": games,
         "mode_totals": mode_totals,
         "role_totals": role_totals,
+        "obj_kind_totals": obj_kind_totals,
         "profile_counts": profile_counts,
         "style_entropy_norm": entropy_norm,
+        "hold_ratio": (float(mode_totals.get("hold", 0)) / float(total_modes)) if total_modes > 0 else 0.0,
         "avg_risk": (risk_sum / risk_n) if risk_n > 0 else 0.0,
         "charge_success_rate": (charge_success / charge_attempts) if charge_attempts > 0 else 0.0,
         "charge_attempts": charge_attempts,
