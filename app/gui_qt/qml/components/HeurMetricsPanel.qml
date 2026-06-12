@@ -118,7 +118,9 @@ Item {
                 isBest:   r.idxNum === heurPanel.bestCandidateIdx
             })
         }
-        heurPanel._top3 = rows.slice(0, 3)
+        // Подиум — только принятые (status ok), иначе медали у отрицательных score.
+        var okRows = rows.filter(function (r) { return r.status === "ok" })
+        heurPanel._top3 = okRows.slice(0, 3)
     }
 
     // ── сигналы runners ──────────────────────────────────────────────────
@@ -814,16 +816,19 @@ Item {
                             // Прогресс-бар с процентом по центру.
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: Math.round(12 * root.uiScale)
+                                height: Math.round(14 * root.uiScale)
                                 visible: heurCalRunner.isRunning || heurPanel.calDone > 0
-                                color: root.bgSurface
+                                color: "#0a0f1a"
                                 border.color: root.borderMuted; border.width: 1
+                                radius: Math.round(3 * root.uiScale)
                                 Rectangle {
                                     width: heurPanel.calTotal > 0
-                                        ? parent.width * heurPanel.calDone / heurPanel.calTotal
+                                        ? Math.max(height, parent.width * heurPanel.calDone / heurPanel.calTotal)
                                         : 0
                                     height: parent.height
+                                    radius: parent.radius
                                     color: heurPanel.targetWinrate >= 0.95 ? "#cf3f3f" : "#b88a26"
+                                    opacity: heurPanel.calDone > 0 ? 1.0 : 0.0
                                     Behavior on width { NumberAnimation { duration: 300 } }
                                 }
                                 Text {
@@ -858,7 +863,11 @@ Item {
                                 Repeater {
                                     model: heurPanel._top3
                                     delegate: Rectangle {
-                                        width: (parent.width - 2 * root.spacingSm) / 3
+                                        // ширина адаптируется: 1 победитель = баннер, 2-3 = колонки
+                                        width: {
+                                            var n = Math.max(1, heurPanel._top3.length)
+                                            return (parent.width - (n - 1) * root.spacingSm) / n
+                                        }
                                         height: Math.round(56 * root.uiScale)
                                         radius: 3
                                         property color medalColor: index === 0 ? "#b88a26" : index === 1 ? "#9aa7b8" : "#a06a3a"
@@ -1075,37 +1084,52 @@ Item {
                         label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                         background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
 
-                        Canvas {
-                            id: sparkCanvas
+                        Item {
                             width: parent.width
                             height: Math.round(70 * root.uiScale)
-                            property var data: heurPanel._bestHistory
-                            onDataChanged: requestPaint()
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.reset()
-                                var n = data.length
-                                if (n < 2) return
-                                var pad = Math.round(6 * root.uiScale)
-                                var w = width - 2 * pad
-                                var h = height - 2 * pad
-                                var mn = data[0], mx = data[0]
-                                for (var i = 1; i < n; i++) { mn = Math.min(mn, data[i]); mx = Math.max(mx, data[i]) }
-                                var rng = (mx - mn) || 1
-                                function px(i) { return pad + w * i / (n - 1) }
-                                function py(v) { return pad + h * (1 - (v - mn) / rng) }
-                                // заливка под линией
-                                ctx.beginPath(); ctx.moveTo(px(0), height - pad)
-                                for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(data[j]))
-                                ctx.lineTo(px(n - 1), height - pad); ctx.closePath()
-                                ctx.fillStyle = "rgba(76,175,110,0.12)"; ctx.fill()
-                                // линия
-                                ctx.beginPath(); ctx.moveTo(px(0), py(data[0]))
-                                for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(data[k]))
-                                ctx.strokeStyle = "#4caf6e"; ctx.lineWidth = Math.max(1, Math.round(1.5 * root.uiScale)); ctx.stroke()
-                                // последняя точка
-                                ctx.beginPath(); ctx.arc(px(n - 1), py(data[n - 1]), Math.round(2.5 * root.uiScale), 0, 2 * Math.PI)
-                                ctx.fillStyle = "#b88a26"; ctx.fill()
+
+                            Canvas {
+                                id: sparkCanvas
+                                anchors.fill: parent
+                                property var data: heurPanel._bestHistory
+                                onDataChanged: requestPaint()
+                                onPaint: {
+                                    var ctx = getContext("2d")
+                                    ctx.reset()
+                                    var n = data.length
+                                    if (n < 2) return
+                                    var pad = Math.round(10 * root.uiScale)
+                                    var w = width - 2 * pad
+                                    var h = height - 2 * pad
+                                    var mn = data[0], mx = data[0]
+                                    for (var i = 1; i < n; i++) { mn = Math.min(mn, data[i]); mx = Math.max(mx, data[i]) }
+                                    var flat = (mx - mn) < 1e-9
+                                    var rng = flat ? 1 : (mx - mn)
+                                    function px(i) { return pad + w * i / (n - 1) }
+                                    function py(v) { return flat ? pad + h / 2 : pad + h * (1 - (v - mn) / rng) }
+                                    // пунктирная базовая линия
+                                    ctx.beginPath(); ctx.moveTo(pad, py(data[n - 1])); ctx.lineTo(width - pad, py(data[n - 1]))
+                                    ctx.strokeStyle = "rgba(184,138,38,0.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([])
+                                    // заливка под линией
+                                    ctx.beginPath(); ctx.moveTo(px(0), height - pad)
+                                    for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(data[j]))
+                                    ctx.lineTo(px(n - 1), height - pad); ctx.closePath()
+                                    ctx.fillStyle = "rgba(76,175,110,0.12)"; ctx.fill()
+                                    // линия
+                                    ctx.beginPath(); ctx.moveTo(px(0), py(data[0]))
+                                    for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(data[k]))
+                                    ctx.strokeStyle = "#4caf6e"; ctx.lineWidth = Math.max(1, Math.round(1.5 * root.uiScale)); ctx.stroke()
+                                    // последняя точка
+                                    ctx.beginPath(); ctx.arc(px(n - 1), py(data[n - 1]), Math.round(2.5 * root.uiScale), 0, 2 * Math.PI)
+                                    ctx.fillStyle = "#b88a26"; ctx.fill()
+                                }
+                            }
+                            // подпись текущего лучшего
+                            Text {
+                                anchors.right: parent.right; anchors.top: parent.top
+                                anchors.rightMargin: root.spacingSm; anchors.topMargin: Math.round(2 * root.uiScale)
+                                text: "лучший: " + _fmt(heurPanel.bestScore, 3)
+                                color: "#4caf6e"; font.family: "JetBrains Mono"; font.pixelSize: Math.round(9 * root.uiScale)
                             }
                         }
                     }
