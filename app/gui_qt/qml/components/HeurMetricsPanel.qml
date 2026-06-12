@@ -101,7 +101,14 @@ Item {
     }
     function _rebuildLeaderboard() {
         var rows = _calRows.slice()
-        rows.sort(function(a, b) { return b.scoreNum - a.scoreNum })
+        // Принятые (ok) выше отклонённых, внутри группы — по score убыв.
+        // Иначе отклонённый с высоким score получал золото выше «лучшего».
+        rows.sort(function(a, b) {
+            var ao = a.status === "ok" ? 1 : 0
+            var bo = b.status === "ok" ? 1 : 0
+            if (ao !== bo) return bo - ao
+            return b.scoreNum - a.scoreNum
+        })
         candidatesModel.clear()
         for (var i = 0; i < rows.length; i++) {
             var r = rows[i]
@@ -1009,19 +1016,21 @@ Item {
                                         Item {
                                             width: Math.round(46 * root.uiScale); height: parent.height
                                             Rectangle {
+                                                // медаль только у принятых (ok) в топ-3; отклонённые — простой номер
+                                                property bool isMedal: model.status === "ok" && model.rank <= 3
                                                 x: root.spacingSm; anchors.verticalCenter: parent.verticalCenter
                                                 width: Math.round(16 * root.uiScale); height: Math.round(16 * root.uiScale)
                                                 radius: width / 2
-                                                color: model.rank === 1 ? "#b88a26"
-                                                     : model.rank === 2 ? "#9aa7b8"
-                                                     : model.rank === 3 ? "#a06a3a" : "transparent"
-                                                border.color: model.rank <= 3 ? "transparent" : root.borderMuted
-                                                border.width: model.rank <= 3 ? 0 : 1
+                                                color: !isMedal ? "transparent"
+                                                     : model.rank === 1 ? "#b88a26"
+                                                     : model.rank === 2 ? "#9aa7b8" : "#a06a3a"
+                                                border.color: isMedal ? "transparent" : root.borderMuted
+                                                border.width: isMedal ? 0 : 1
                                                 Text {
                                                     anchors.centerIn: parent
                                                     text: model.rank
-                                                    color: model.rank <= 3 ? "#0a0f1a" : root.textSecondary
-                                                    font.pixelSize: Math.round(9 * root.uiScale); font.bold: model.rank <= 3
+                                                    color: parent.isMedal ? "#0a0f1a" : root.textSecondary
+                                                    font.pixelSize: Math.round(9 * root.uiScale); font.bold: parent.isMedal
                                                 }
                                             }
                                         }
