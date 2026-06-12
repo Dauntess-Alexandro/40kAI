@@ -905,35 +905,32 @@ Item {
                                 Repeater {
                                     model: heurPanel._top3
                                     delegate: Rectangle {
-                                        // ширина адаптируется: 1 победитель = баннер, 2-3 = колонки
-                                        width: {
-                                            var n = Math.max(1, heurPanel._top3.length)
-                                            return (parent.width - (n - 1) * root.spacingSm) / n
-                                        }
-                                        height: Math.round(56 * root.uiScale)
-                                        radius: 3
+                                        // фиксированная ширина — 1 победитель = аккуратная карточка, не пустой баннер
+                                        width: Math.round(240 * root.uiScale)
+                                        height: Math.round(64 * root.uiScale)
+                                        radius: Math.round(4 * root.uiScale)
                                         property color medalColor: index === 0 ? "#b88a26" : index === 1 ? "#9aa7b8" : "#a06a3a"
                                         color: index === 0 ? "#15130a" : root.bgSurface
                                         border.color: medalColor; border.width: index === 0 ? 2 : 1
 
+                                        // медаль + место слева
+                                        Rectangle {
+                                            id: podMedal
+                                            x: Math.round(10 * root.uiScale); anchors.verticalCenter: parent.verticalCenter
+                                            width: Math.round(26 * root.uiScale); height: Math.round(26 * root.uiScale); radius: width / 2
+                                            color: medalColor
+                                            Text { anchors.centerIn: parent; text: index + 1; color: "#0a0f1a"
+                                                font.pixelSize: Math.round(13 * root.uiScale); font.bold: true }
+                                        }
+                                        // данные справа от медали
                                         Column {
-                                            anchors.fill: parent
-                                            anchors.margins: Math.round(6 * root.uiScale)
-                                            spacing: Math.round(2 * root.uiScale)
-                                            Row {
-                                                spacing: Math.round(5 * root.uiScale)
-                                                Rectangle {
-                                                    width: Math.round(16 * root.uiScale); height: Math.round(16 * root.uiScale); radius: width / 2
-                                                    color: medalColor
-                                                    Text { anchors.centerIn: parent; text: index + 1; color: "#0a0f1a"
-                                                        font.pixelSize: Math.round(9 * root.uiScale); font.bold: true }
-                                                }
-                                                Text {
-                                                    text: "#" + (modelData.idxNum >= 0 ? modelData.idxNum : "?")
-                                                    color: root.textSecondary; font.family: "JetBrains Mono"
-                                                    font.pixelSize: root.evalCaptionSize
-                                                    anchors.verticalCenter: parent.verticalCenter
-                                                }
+                                            anchors.left: podMedal.right; anchors.leftMargin: Math.round(10 * root.uiScale)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: Math.round(1 * root.uiScale)
+                                            Text {
+                                                text: "#" + (modelData.idxNum >= 0 ? modelData.idxNum : "?")
+                                                color: root.textSecondary; font.family: "JetBrains Mono"
+                                                font.pixelSize: Math.round(9 * root.uiScale)
                                             }
                                             Text {
                                                 text: modelData.score
