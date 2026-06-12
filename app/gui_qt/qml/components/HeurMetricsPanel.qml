@@ -634,7 +634,7 @@ Item {
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "🎲 КАНД"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "🎲 КАНД"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         TextField {
                                             id: calCandidatesInput; text: "40"
@@ -657,7 +657,7 @@ Item {
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "🎮 ИГР"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "🎮 ИГР"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         TextField {
                                             id: calGamesInput; text: "50"
@@ -680,7 +680,7 @@ Item {
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "🔑 SEED"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "🔑 SEED"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         TextField {
                                             id: calSeedInput; text: "1390520"
@@ -704,7 +704,7 @@ Item {
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: 2
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "⚔ АГЕНТ"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "⚔ АГЕНТ"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         ComboBox {
                                             id: calAgentCombo
@@ -878,7 +878,7 @@ Item {
                                         visible: heurPanel.calTotal > 0
                                         text: Math.round(100 * heurPanel.calDone / heurPanel.calTotal) + "%"
                                         color: root.textPrimary
-                                        font.pixelSize: Math.round(8 * root.uiScale); font.bold: true
+                                        font.pixelSize: Math.round(11 * root.uiScale); font.bold: true
                                     }
                                 }
                                 // спейсер, когда прогресс скрыт — кнопки прижаты влево
@@ -1109,7 +1109,7 @@ Item {
                                                      : model.status === "ok" ? "#4caf6e"
                                                      : model.status === "dry_run" ? "#7db4f5"
                                                      : "#d08a5a"
-                                                font.pixelSize: Math.round(8 * root.uiScale)
+                                                font.pixelSize: Math.round(11 * root.uiScale)
                                             }
                                             // полная причина в tooltip
                                             ToolTip.visible: tagHover.hovered && model.reason.length > 0
