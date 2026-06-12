@@ -254,8 +254,9 @@ Item {
                         label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                         background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
 
-                        property var md: controller.heuristicMetricsDict || {}
-
+                        // Каждая строка: [подпись, ключ в heuristicMetricsDict, формат].
+                        // Формат: "str" — как есть, "int" — целое, "f3"/"f4" — float с N знаков.
+                        // Значение резолвится в делегате (реактивно к controller.heuristicMetricsDict).
                         Grid {
                             columns: 2
                             columnSpacing: Math.round(24 * root.uiScale)
@@ -263,26 +264,35 @@ Item {
 
                             Repeater {
                                 model: [
-                                    ["Ран",          String(parent.parent.md.run_id || "—")],
-                                    ["Обновлено",    String(parent.parent.md.updated_at || "—")],
-                                    ["Всего игр",    String(parent.parent.md.total_games || 0)],
-                                    ["Invalid rate", _fmt(parent.parent.md.invalid_rate, 4)],
-                                    ["Avg risk",     _fmt(parent.parent.md.avg_risk, 3)],
-                                    ["Avg cover",    _fmt(parent.parent.md.avg_cover, 3)],
-                                    ["Charge succ.", _fmt(parent.parent.md.charge_success_rate, 3)],
-                                    ["Shoot overkill",_fmt(parent.parent.md.shoot_overkill_rate, 3)],
-                                    ["Fallback rate",_fmt(parent.parent.md.fallback_rate, 3)],
-                                    ["Mode kite",    String(parent.parent.md.mode_kite || 0)],
-                                    ["Mode hold",    String(parent.parent.md.mode_hold || 0)],
-                                    ["Mode commit",  String(parent.parent.md.mode_commit || 0)],
-                                    ["Role ranged",  String(parent.parent.md.role_ranged || 0)],
-                                    ["Role hybrid",  String(parent.parent.md.role_hybrid || 0)],
-                                    ["Role melee",   String(parent.parent.md.role_melee || 0)],
+                                    ["Ран",           "run_id",              "str"],
+                                    ["Обновлено",     "updated_at",          "str"],
+                                    ["Всего игр",     "total_games",         "int"],
+                                    ["Invalid rate",  "invalid_rate",        "f4"],
+                                    ["Avg risk",      "avg_risk",            "f3"],
+                                    ["Avg cover",     "avg_cover",           "f3"],
+                                    ["Charge succ.",  "charge_success_rate", "f3"],
+                                    ["Shoot overkill","shoot_overkill_rate", "f3"],
+                                    ["Fallback rate", "fallback_rate",       "f3"],
+                                    ["Mode kite",     "mode_kite",           "int"],
+                                    ["Mode hold",     "mode_hold",           "int"],
+                                    ["Mode commit",   "mode_commit",         "int"],
+                                    ["Role ranged",   "role_ranged",         "int"],
+                                    ["Role hybrid",   "role_hybrid",         "int"],
+                                    ["Role melee",    "role_melee",          "int"],
                                 ]
                                 delegate: Row {
                                     spacing: root.spacingSm
+                                    property var md: controller.heuristicMetricsDict || ({})
+                                    property var raw: md[modelData[1]]
+                                    property string valStr: {
+                                        var fmt = modelData[2]
+                                        if (fmt === "str") return String(raw !== undefined ? raw : "—")
+                                        if (fmt === "int") return String(raw !== undefined ? raw : 0)
+                                        if (fmt === "f4")  return _fmt(raw, 4)
+                                        return _fmt(raw, 3)
+                                    }
                                     Text { text: modelData[0] + ":"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; width: Math.round(110 * root.uiScale) }
-                                    Text { text: modelData[1]; color: root.textPrimary;    font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono" }
+                                    Text { text: parent.valStr; color: root.textPrimary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono" }
                                 }
                             }
                         }
@@ -420,37 +430,43 @@ Item {
                             width: parent.width
                             spacing: 0
 
-                            Row {
+                            Rectangle {
                                 width: parent.width
                                 height: Math.round(20 * root.uiScale)
-                                Rectangle { width: parent.width; height: parent.height; color: root.bgSurface }
-                                Repeater {
-                                    model: ["Время", "Winrate", "Entropy", "Draws", "Игр"]
-                                    delegate: Text {
-                                        text: modelData; color: root.textSecondary
-                                        font.pixelSize: Math.round(9 * root.uiScale)
-                                        width: [100, 70, 70, 60, 50][index] * root.uiScale
-                                        leftPadding: root.spacingSm
-                                        verticalAlignment: Text.AlignVCenter
+                                color: root.bgSurface
+                                Row {
+                                    anchors.fill: parent
+                                    Repeater {
+                                        model: ["Время", "Winrate", "Entropy", "Draws", "Игр"]
+                                        delegate: Text {
+                                            text: modelData; color: root.textSecondary
+                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                            width: [100, 70, 70, 60, 50][index] * root.uiScale
+                                            leftPadding: root.spacingSm
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
                                     }
                                 }
                             }
 
                             Repeater {
                                 model: benchHistoryModel
-                                delegate: Row {
+                                delegate: Rectangle {
                                     width: parent.width
                                     height: Math.round(22 * root.uiScale)
-                                    Rectangle { width: parent.width; height: parent.height; color: index % 2 === 0 ? root.bgElevated : root.bgSurface; z: -1 }
-                                    Repeater {
-                                        model: [model.time, model.winrate, model.entropy, model.draws, String(model.games)]
-                                        delegate: Text {
-                                            text: modelData; color: root.textPrimary
-                                            font.pixelSize: root.evalCaptionSize
-                                            font.family: "JetBrains Mono"
-                                            width: [100, 70, 70, 60, 50][index] * root.uiScale
-                                            leftPadding: root.spacingSm
-                                            verticalAlignment: Text.AlignVCenter
+                                    color: index % 2 === 0 ? root.bgElevated : root.bgSurface
+                                    Row {
+                                        anchors.fill: parent
+                                        Repeater {
+                                            model: [model.time, model.winrate, model.entropy, model.draws, String(model.games)]
+                                            delegate: Text {
+                                                text: modelData; color: root.textPrimary
+                                                font.pixelSize: root.evalCaptionSize
+                                                font.family: "JetBrains Mono"
+                                                width: [100, 70, 70, 60, 50][index] * root.uiScale
+                                                leftPadding: root.spacingSm
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
                                         }
                                     }
                                 }
@@ -608,17 +624,20 @@ Item {
                             width: parent.width
                             spacing: 0
 
-                            Row {
+                            Rectangle {
                                 width: parent.width
                                 height: Math.round(20 * root.uiScale)
-                                Rectangle { anchors.fill: parent; color: root.bgSurface }
-                                Repeater {
-                                    model: [["#", 36], ["score", 60], ["winrate", 64], ["entropy", 64], ["draws", 56], ["статус", 0]]
-                                    delegate: Text {
-                                        text: modelData[0]; color: root.textSecondary
-                                        font.pixelSize: Math.round(9 * root.uiScale)
-                                        width: modelData[1] > 0 ? Math.round(modelData[1] * root.uiScale) : parent.width - Math.round(340 * root.uiScale)
-                                        leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter
+                                color: root.bgSurface
+                                Row {
+                                    anchors.fill: parent
+                                    Repeater {
+                                        model: [["#", 36], ["score", 60], ["winrate", 64], ["entropy", 64], ["draws", 56], ["статус", 0]]
+                                        delegate: Text {
+                                            text: modelData[0]; color: root.textSecondary
+                                            font.pixelSize: Math.round(9 * root.uiScale)
+                                            width: modelData[1] > 0 ? Math.round(modelData[1] * root.uiScale) : parent.width - Math.round(340 * root.uiScale)
+                                            leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter
+                                        }
                                     }
                                 }
                             }
