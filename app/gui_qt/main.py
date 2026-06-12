@@ -7107,6 +7107,8 @@ class GUIController(QtCore.QObject):
         # Перекрывают нулевые mode/role/risk/charge и добавляют энтропию стилей +
         # разбивку исходов по профилям (видно, какой профиль чаще даёт draw).
         fc_lines: list[str] = []
+        profiles_list: list[dict] = []  # для GUI-карточек: [{name, games, win, draw}]
+        fc_entropy: float | None = None  # энтропия из first-class (достовернее train-метрики)
         try:
             from core.engine.heuristic_targeting import (
                 aggregate_heur_records,
@@ -7122,6 +7124,16 @@ class GUIController(QtCore.QObject):
                 role_usage = agg.get("role_totals", role_usage) or role_usage
                 self._heuristic_metrics["avg_risk"] = float(agg.get("avg_risk", 0.0))
                 self._heuristic_metrics["charge_success_rate"] = float(agg.get("charge_success_rate", 0.0))
+                fc_entropy = float(agg.get("style_entropy_norm", 0.0))
+                for prof in sorted(by_prof):
+                    d = by_prof[prof]
+                    g = max(1, int(d.get("games", 0)))
+                    profiles_list.append({
+                        "name": str(prof),
+                        "games": int(d.get("games", 0)),
+                        "win": float(int(d.get("heur_wins", 0)) / g),
+                        "draw": float(int(d.get("draws", 0)) / g),
+                    })
                 fc_lines.append("")
                 fc_lines.append(
                     f"Разнообразие стилей (энтропия 0..1): {float(agg.get('style_entropy_norm', 0.0)):.3f}"
@@ -7165,7 +7177,7 @@ class GUIController(QtCore.QObject):
         self._heuristic_metrics_dict = {
             "winrate": float(self._heuristic_metrics.get("train_heur_winrate", 0.0)),
             "draw_rate": float(self._heuristic_metrics.get("train_draw_rate", 0.0)),
-            "entropy": float(self._heuristic_metrics.get("style_entropy_norm", 0.0)),
+            "entropy": float(fc_entropy if fc_entropy is not None else self._heuristic_metrics.get("style_entropy_norm", 0.0)),
             "total_games": int(self._heuristic_metrics.get("train_total_games", 0)),
             "avg_risk": float(self._heuristic_metrics.get("avg_risk", 0.0)),
             "avg_cover": float(self._heuristic_metrics.get("avg_cover", 0.0)),
@@ -7179,6 +7191,7 @@ class GUIController(QtCore.QObject):
             "role_ranged": int(ru.get("ranged", 0)),
             "role_hybrid": int(ru.get("hybrid", 0)),
             "role_melee": int(ru.get("melee", 0)),
+            "profiles": profiles_list,
             "run_id": str(self._heuristic_metrics.get("run_id", "-")),
             "updated_at": str(self._heuristic_metrics.get("updated_at", "-")),
         }

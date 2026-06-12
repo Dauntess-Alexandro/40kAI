@@ -19,9 +19,9 @@ class TestHeuristicMetricsGuiContract(unittest.TestCase):
         self.assertIn("def _load_latest_heuristic_metrics(", main_py)
         # Main.qml монтирует панель метрик эвристики.
         self.assertIn("HeurMetricsPanel", main_qml)
-        # Заголовок и привязка текста живут в самой панели.
+        # Заголовок и привязка данных живут в самой панели.
         self.assertIn("Метрики эвристики", panel_qml)
-        self.assertIn("controller.heuristicMetricsText", panel_qml)
+        self.assertIn("controller.heuristicMetricsDict", panel_qml)
 
 
 if __name__ == "__main__":

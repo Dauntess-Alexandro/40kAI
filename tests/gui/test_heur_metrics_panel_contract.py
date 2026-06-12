@@ -80,6 +80,13 @@ class TestHeurMetricsPanelContract(unittest.TestCase):
         self.assertIn("ToolTip", self.src)
         self.assertIn("_statusShort", self.src)
 
+    def test_summary_style_and_profiles(self):
+        # Сводка: блок «Стиль игры» (бары режимов/ролей) и таблица профилей.
+        self.assertIn("Стиль игры", self.src)
+        self.assertIn("Исходы по профилям", self.src)
+        self.assertIn("profiles", self.src)
+        self.assertIn("modeTotal", self.src)
+
 
 if __name__ == "__main__":
     unittest.main()
