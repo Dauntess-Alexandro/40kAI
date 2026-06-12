@@ -680,9 +680,10 @@ Item {
                                         }
                                     }
                                 }
-                                // пилюля: АГЕНТ (растягивается)
+                                // пилюля: АГЕНТ (растягивается, но с потолком)
                                 Rectangle {
                                     Layout.fillWidth: true
+                                    Layout.maximumWidth: Math.round(560 * root.uiScale)
                                     implicitHeight: Math.round(28 * root.uiScale)
                                     color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
                                     radius: Math.round(4 * root.uiScale)
@@ -720,6 +721,7 @@ Item {
                                     implicitWidth: Math.round(30 * root.uiScale)
                                     implicitHeight: Math.round(28 * root.uiScale)
                                 }
+                                Item { Layout.fillWidth: true }
                             }
 
                             // ── Режим цели: пресеты + ручной target winrate ──────────
@@ -775,14 +777,15 @@ Item {
                                         if (!isNaN(v) && v >= 0.0 && v <= 1.0) heurPanel.targetWinrate = v
                                     }
                                 }
-                                Item { Layout.fillWidth: true }
                                 Text {
+                                    Layout.leftMargin: root.spacingSm
                                     color: root.textSecondary; font.pixelSize: Math.round(9 * root.uiScale)
                                     font.family: "JetBrains Mono"
                                     text: heurPanel.targetWinrate >= 0.95
                                         ? "макс. сила · эвристика " + _heuristicSide()
                                         : "цель winrate=" + heurPanel.targetWinrate.toFixed(2) + " · эвристика " + _heuristicSide()
                                 }
+                                Item { Layout.fillWidth: true }
                             }
 
                             RowLayout {
