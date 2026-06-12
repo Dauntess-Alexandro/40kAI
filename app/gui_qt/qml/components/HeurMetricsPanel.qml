@@ -20,6 +20,10 @@ Item {
     property string patchText:        ""
     property real   targetWinrate:    0.50   // цель калибровки (0.50 спарринг, 0.65 хард, 1.0 максимум)
     property var    _calRows:         []     // сырые строки кандидатов для живой сортировки
+    property var    _top3:            []     // топ-3 по score для подиума
+    property var    _bestHistory:     []     // лучший score после каждого кандидата (спарклайн)
+    property real   _calStartMs:      0
+    property int    _calElapsed:      0      // сек с начала прогона (тикает таймером)
 
     // ── helpers ──────────────────────────────────────────────────────────
     function _colorForValue(val, good, warn) {
@@ -44,9 +48,31 @@ Item {
         return (a && a.side === "P2") ? "P1" : "P2"
     }
 
+    // ETA по уже пройденным кандидатам.
+    function _etaText() {
+        if (calDone <= 0 || calDone >= calTotal || _calElapsed <= 0) return ""
+        var per = _calElapsed / calDone
+        var rem = Math.round(per * (calTotal - calDone))
+        return rem < 60 ? "≈" + rem + " сек" : "≈" + Math.round(rem / 60) + " мин"
+    }
+    // Короткий тег статуса (полная причина — в tooltip).
+    function _statusShort(status, reason, isBest) {
+        if (isBest) return "★ лучший"
+        if (status === "ok") return "✓ принят"
+        if (status === "dry_run") return "dry"
+        if (reason && reason.indexOf("entropy") >= 0) return "⚠ entropy"
+        if (reason && reason.indexOf("winrate") >= 0) return "⚠ winrate"
+        if (reason && reason.indexOf("draw") >= 0) return "⚠ draws"
+        if (reason && reason.indexOf("invalid") >= 0) return "⚠ invalid"
+        if (reason && reason.indexOf("fallback") >= 0) return "⚠ fallback"
+        return status
+    }
+
     // ── лидерборд кандидатов (живая сортировка по score) ──────────────────
     function _resetLeaderboard() {
         _calRows = []
+        _top3 = []
+        _bestHistory = []
         candidatesModel.clear()
     }
     function _addCandidate(row) {
@@ -67,6 +93,10 @@ Item {
             status:   status,
             reason:   (row.reject_reasons || []).join(", ")
         })
+        // история лучшего score (для спарклайна) — реассайн для перерисовки.
+        var h = _bestHistory.slice()
+        h.push(heurPanel.bestScore)
+        _bestHistory = h
         _rebuildLeaderboard()
     }
     function _rebuildLeaderboard() {
@@ -88,6 +118,7 @@ Item {
                 isBest:   r.idxNum === heurPanel.bestCandidateIdx
             })
         }
+        heurPanel._top3 = rows.slice(0, 3)
     }
 
     // ── сигналы runners ──────────────────────────────────────────────────
@@ -138,6 +169,13 @@ Item {
             patchStatusText.text = "Ошибка патча: " + error
             patchStatusText.color = "#cf3f3f"
         }
+    }
+
+    // Тик ETA во время прогона калибровки.
+    Timer {
+        running: heurCalRunner.isRunning
+        interval: 1000; repeat: true
+        onTriggered: heurPanel._calElapsed = Math.round((Date.now() - heurPanel._calStartMs) / 1000)
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -650,31 +688,35 @@ Item {
                                 spacing: root.spacingSm
                                 Text { text: "Цель:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
 
-                                Repeater {
-                                    model: [
-                                        { label: "Спарринг 0.50", val: 0.50 },
-                                        { label: "Хард 0.65",     val: 0.65 },
-                                        { label: "Максимум",      val: 1.00 },
-                                    ]
-                                    delegate: Button {
-                                        enabled: !heurCalRunner.isRunning
-                                        text: modelData.label
-                                        font.pixelSize: root.evalCaptionSize
-                                        property bool active: Math.abs(heurPanel.targetWinrate - modelData.val) < 0.001
-                                        onClicked: {
-                                            heurPanel.targetWinrate = modelData.val
-                                            calTargetInput.text = modelData.val.toFixed(2)
-                                        }
-                                        contentItem: Text {
-                                            text: parent.text
-                                            color: parent.active ? "#e8c060" : root.textSecondary
-                                            font: parent.font
-                                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                                        }
-                                        background: Rectangle {
-                                            color: parent.active ? "#1a1508" : root.bgSurface
-                                            border.color: parent.active ? "#b88a26" : root.borderMuted
-                                            border.width: 1
+                                // Сегментированный переключатель (кнопки слитно).
+                                Row {
+                                    spacing: 0
+                                    Repeater {
+                                        model: [
+                                            { label: "Спарринг 0.50", val: 0.50 },
+                                            { label: "Хард 0.65",     val: 0.65 },
+                                            { label: "Максимум",      val: 1.00 },
+                                        ]
+                                        delegate: Button {
+                                            enabled: !heurCalRunner.isRunning
+                                            text: modelData.label
+                                            font.pixelSize: root.evalCaptionSize
+                                            property bool active: Math.abs(heurPanel.targetWinrate - modelData.val) < 0.001
+                                            onClicked: {
+                                                heurPanel.targetWinrate = modelData.val
+                                                calTargetInput.text = modelData.val.toFixed(2)
+                                            }
+                                            contentItem: Text {
+                                                text: parent.text
+                                                color: parent.active ? "#e8c060" : root.textSecondary
+                                                font: parent.font
+                                                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: Rectangle {
+                                                color: parent.active ? "#1a1508" : root.bgSurface
+                                                border.color: parent.active ? "#b88a26" : root.borderMuted
+                                                border.width: 1
+                                            }
                                         }
                                     }
                                 }
@@ -718,6 +760,8 @@ Item {
                                         heurPanel.patchText = ""
                                         heurPanel.calDone = 0
                                         heurPanel.calTotal = parseInt(calCandidatesInput.text)
+                                        heurPanel._calStartMs = Date.now()
+                                        heurPanel._calElapsed = 0
                                         var a = _selectedAgent()
                                         heurCalRunner.run(parseInt(calCandidatesInput.text),
                                                           parseInt(calGamesInput.text),
@@ -736,6 +780,8 @@ Item {
                                         heurPanel.bestCandidateIdx = -1
                                         heurPanel.calDone = 0
                                         heurPanel.calTotal = parseInt(calCandidatesInput.text)
+                                        heurPanel._calStartMs = Date.now()
+                                        heurPanel._calElapsed = 0
                                         var a = _selectedAgent()
                                         heurCalRunner.run(parseInt(calCandidatesInput.text),
                                                           parseInt(calGamesInput.text),
@@ -756,16 +802,19 @@ Item {
 
                                 Item { Layout.fillWidth: true }
                                 Text {
-                                    visible: heurCalRunner.isRunning
+                                    visible: heurCalRunner.isRunning || heurPanel.calDone > 0
                                     text: heurPanel.calDone + " / " + heurPanel.calTotal
+                                        + (heurPanel._etaText() ? " · " + heurPanel._etaText() : "")
+                                        + (heurPanel.bestCandidateIdx >= 0 ? " · лучший " + _fmt(heurPanel.bestScore, 3) : "")
                                     color: root.textSecondary; font.pixelSize: root.evalCaptionSize
                                     font.family: "JetBrains Mono"
                                 }
                             }
 
+                            // Прогресс-бар с процентом по центру.
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: Math.round(8 * root.uiScale)
+                                height: Math.round(12 * root.uiScale)
                                 visible: heurCalRunner.isRunning || heurPanel.calDone > 0
                                 color: root.bgSurface
                                 border.color: root.borderMuted; border.width: 1
@@ -774,8 +823,15 @@ Item {
                                         ? parent.width * heurPanel.calDone / heurPanel.calTotal
                                         : 0
                                     height: parent.height
-                                    color: "#b88a26"
+                                    color: heurPanel.targetWinrate >= 0.95 ? "#cf3f3f" : "#b88a26"
                                     Behavior on width { NumberAnimation { duration: 300 } }
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    visible: heurPanel.calTotal > 0
+                                    text: Math.round(100 * heurPanel.calDone / heurPanel.calTotal) + "%"
+                                    color: root.textPrimary
+                                    font.pixelSize: Math.round(8 * root.uiScale); font.bold: true
                                 }
                             }
                         }
@@ -792,6 +848,57 @@ Item {
                         Column {
                             width: parent.width
                             spacing: 0
+
+                            // ── Подиум топ-3 ───────────────────────────────────
+                            Row {
+                                width: parent.width
+                                spacing: root.spacingSm
+                                visible: heurPanel._top3.length > 0
+                                bottomPadding: root.spacingMd
+                                Repeater {
+                                    model: heurPanel._top3
+                                    delegate: Rectangle {
+                                        width: (parent.width - 2 * root.spacingSm) / 3
+                                        height: Math.round(56 * root.uiScale)
+                                        radius: 3
+                                        property color medalColor: index === 0 ? "#b88a26" : index === 1 ? "#9aa7b8" : "#a06a3a"
+                                        color: index === 0 ? "#15130a" : root.bgSurface
+                                        border.color: medalColor; border.width: index === 0 ? 2 : 1
+
+                                        Column {
+                                            anchors.fill: parent
+                                            anchors.margins: Math.round(6 * root.uiScale)
+                                            spacing: Math.round(2 * root.uiScale)
+                                            Row {
+                                                spacing: Math.round(5 * root.uiScale)
+                                                Rectangle {
+                                                    width: Math.round(16 * root.uiScale); height: Math.round(16 * root.uiScale); radius: width / 2
+                                                    color: medalColor
+                                                    Text { anchors.centerIn: parent; text: index + 1; color: "#0a0f1a"
+                                                        font.pixelSize: Math.round(9 * root.uiScale); font.bold: true }
+                                                }
+                                                Text {
+                                                    text: "#" + (modelData.idxNum >= 0 ? modelData.idxNum : "?")
+                                                    color: root.textSecondary; font.family: "JetBrains Mono"
+                                                    font.pixelSize: root.evalCaptionSize
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
+                                            }
+                                            Text {
+                                                text: modelData.score
+                                                color: index === 0 ? "#4caf6e" : root.textPrimary
+                                                font.family: "JetBrains Mono"; font.bold: true
+                                                font.pixelSize: Math.round(18 * root.uiScale)
+                                            }
+                                            Text {
+                                                text: "wr " + modelData.winrate + " · ent " + modelData.entropy
+                                                color: root.textSecondary; font.family: "JetBrains Mono"
+                                                font.pixelSize: Math.round(9 * root.uiScale)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             Rectangle {
                                 width: parent.width
@@ -813,16 +920,24 @@ Item {
 
                             ListView {
                                 width: parent.width
-                                height: Math.min(candidatesModel.count * Math.round(22 * root.uiScale), Math.round(260 * root.uiScale))
+                                height: Math.min(candidatesModel.count * Math.round(28 * root.uiScale), Math.round(360 * root.uiScale))
                                 model: candidatesModel
                                 clip: true
                                 ScrollBar.vertical: ScrollBar {}
 
                                 delegate: Rectangle {
                                     width: ListView.view.width
-                                    height: Math.round(22 * root.uiScale)
+                                    height: Math.round(28 * root.uiScale)
                                     color: model.isBest ? "#0d2010"
                                          : index % 2 === 0 ? root.bgElevated : root.bgSurface
+
+                                    // акцент-полоса слева у лучшего
+                                    Rectangle {
+                                        visible: model.isBest
+                                        anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+                                        width: Math.round(3 * root.uiScale)
+                                        color: "#4caf6e"
+                                    }
 
                                     Row {
                                         anchors.fill: parent
@@ -863,16 +978,23 @@ Item {
                                                 text: model.score; color: model.isBest ? "#4caf6e" : root.textPrimary
                                                 font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; font.bold: model.isBest
                                             }
+                                            // трек + заливка мини-бара score
                                             Rectangle {
                                                 anchors.left: parent.left; anchors.leftMargin: root.spacingSm
-                                                anchors.bottom: parent.bottom; anchors.bottomMargin: Math.round(2 * root.uiScale)
-                                                height: Math.round(2 * root.uiScale)
-                                                width: {
-                                                    var b = heurPanel.bestScore > 0.001 ? heurPanel.bestScore : 1.0
-                                                    var f = Math.max(0, Math.min(1, model.scoreNum / b))
-                                                    return f * Math.round(44 * root.uiScale)
+                                                anchors.bottom: parent.bottom; anchors.bottomMargin: Math.round(3 * root.uiScale)
+                                                height: Math.round(4 * root.uiScale)
+                                                width: Math.round(44 * root.uiScale)
+                                                color: "#0a0f1a"; radius: 1
+                                                Rectangle {
+                                                    anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+                                                    radius: 1
+                                                    width: {
+                                                        var b = heurPanel.bestScore > 0.001 ? heurPanel.bestScore : 1.0
+                                                        var f = Math.max(0, Math.min(1, model.scoreNum / b))
+                                                        return f * parent.width
+                                                    }
+                                                    color: model.isBest ? "#4caf6e" : "#3a5a8a"
                                                 }
-                                                color: model.isBest ? "#4caf6e" : "#3a5a8a"
                                             }
                                         }
                                         Text {
@@ -883,8 +1005,9 @@ Item {
                                         }
                                         Text {
                                             text: model.entropy
+                                            // мягкий терракот для «низко», ярко-красный только для совсем плохого
                                             color: parseFloat(model.entropy) >= 0.86 ? "#4caf6e"
-                                                 : parseFloat(model.entropy) >= 0.84 ? "#b88a26" : "#cf3f3f"
+                                                 : parseFloat(model.entropy) >= 0.84 ? "#b88a26" : "#b5654a"
                                             font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
                                             width: Math.round(60 * root.uiScale); leftPadding: root.spacingSm
                                             verticalAlignment: Text.AlignVCenter
@@ -899,30 +1022,37 @@ Item {
                                             height: Math.round(16 * root.uiScale)
                                             width: statusTagText.implicitWidth + Math.round(10 * root.uiScale)
                                             anchors.verticalCenter: parent.verticalCenter
+                                            radius: 2
                                             color: model.isBest ? "#0d2918"
                                                  : model.status === "ok" ? "#0d2918"
                                                  : model.status === "dry_run" ? "#0e1f3a"
-                                                 : "#1a0808"
+                                                 : "#1f1208"
                                             border.color: model.isBest ? "#1f5030"
                                                         : model.status === "ok" ? "#1f5030"
                                                         : model.status === "dry_run" ? "#2f6ed8"
-                                                        : "#5a1515"
+                                                        : "#6b4a20"
                                             border.width: 1
+                                            // лёгкое свечение у лучшего
+                                            Rectangle {
+                                                visible: model.isBest
+                                                anchors.fill: parent; anchors.margins: -1
+                                                radius: 3; color: "transparent"
+                                                border.color: "#2f7a48"; border.width: 1
+                                            }
                                             Text {
                                                 id: statusTagText
                                                 anchors.centerIn: parent
-                                                text: model.isBest ? "★ лучший"
-                                                    : model.status === "ok" ? "✓ принят"
-                                                    : model.status === "dry_run" ? "dry"
-                                                    : model.status === "в работе" ? "⟳"
-                                                    : model.reason.length > 0 ? model.reason
-                                                    : model.status
+                                                text: _statusShort(model.status, model.reason, model.isBest)
                                                 color: model.isBest ? "#4caf6e"
                                                      : model.status === "ok" ? "#4caf6e"
                                                      : model.status === "dry_run" ? "#7db4f5"
-                                                     : "#cf3f3f"
+                                                     : "#d08a5a"
                                                 font.pixelSize: Math.round(8 * root.uiScale)
                                             }
+                                            // полная причина в tooltip
+                                            ToolTip.visible: tagHover.hovered && model.reason.length > 0
+                                            ToolTip.text: model.reason
+                                            HoverHandler { id: tagHover }
                                         }
                                     }
                                 }
@@ -933,6 +1063,49 @@ Item {
                                 text: "Нет данных. Запустите калибровку."
                                 color: root.textSecondary; font.pixelSize: root.evalCaptionSize
                                 leftPadding: root.spacingSm; topPadding: root.spacingSm
+                            }
+                        }
+                    }
+
+                    // ── Динамика лучшего score (спарклайн) ───────────────────
+                    GroupBox {
+                        width: parent.width
+                        visible: heurPanel._bestHistory.length >= 2
+                        title: "Динамика лучшего score"
+                        label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+                        background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
+
+                        Canvas {
+                            id: sparkCanvas
+                            width: parent.width
+                            height: Math.round(70 * root.uiScale)
+                            property var data: heurPanel._bestHistory
+                            onDataChanged: requestPaint()
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                var n = data.length
+                                if (n < 2) return
+                                var pad = Math.round(6 * root.uiScale)
+                                var w = width - 2 * pad
+                                var h = height - 2 * pad
+                                var mn = data[0], mx = data[0]
+                                for (var i = 1; i < n; i++) { mn = Math.min(mn, data[i]); mx = Math.max(mx, data[i]) }
+                                var rng = (mx - mn) || 1
+                                function px(i) { return pad + w * i / (n - 1) }
+                                function py(v) { return pad + h * (1 - (v - mn) / rng) }
+                                // заливка под линией
+                                ctx.beginPath(); ctx.moveTo(px(0), height - pad)
+                                for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(data[j]))
+                                ctx.lineTo(px(n - 1), height - pad); ctx.closePath()
+                                ctx.fillStyle = "rgba(76,175,110,0.12)"; ctx.fill()
+                                // линия
+                                ctx.beginPath(); ctx.moveTo(px(0), py(data[0]))
+                                for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(data[k]))
+                                ctx.strokeStyle = "#4caf6e"; ctx.lineWidth = Math.max(1, Math.round(1.5 * root.uiScale)); ctx.stroke()
+                                // последняя точка
+                                ctx.beginPath(); ctx.arc(px(n - 1), py(data[n - 1]), Math.round(2.5 * root.uiScale), 0, 2 * Math.PI)
+                                ctx.fillStyle = "#b88a26"; ctx.fill()
                             }
                         }
                     }

@@ -65,6 +65,21 @@ class TestHeurMetricsPanelContract(unittest.TestCase):
         self.assertIn("scoreNum", self.src)
         self.assertIn("model.rank", self.src)
 
+    def test_podium_top3(self):
+        # Подиум топ-3 над таблицей.
+        self.assertIn("_top3", self.src)
+
+    def test_progress_eta_and_sparkline(self):
+        # Прогресс с ETA и спарклайн динамики лучшего score.
+        self.assertIn("_etaText", self.src)
+        self.assertIn("_bestHistory", self.src)
+        self.assertIn("Canvas", self.src)
+
+    def test_status_tooltip(self):
+        # Полная причина reject — в tooltip.
+        self.assertIn("ToolTip", self.src)
+        self.assertIn("_statusShort", self.src)
+
 
 if __name__ == "__main__":
     unittest.main()
