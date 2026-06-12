@@ -94,7 +94,11 @@ class _CalibrateWorker(QtCore.QThread):
             cmd.append("--dry-run")
         try:
             self._proc = subprocess.Popen(
-                cmd, capture_output=True, text=True, cwd=str(_PROJECT_ROOT)
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(_PROJECT_ROOT),
             )
             _, stderr = self._proc.communicate()
             if self._proc.returncode != 0:

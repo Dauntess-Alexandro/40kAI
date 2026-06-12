@@ -55,7 +55,11 @@ class _BenchmarkWorker(QtCore.QThread):
         ]
         try:
             self._proc = subprocess.Popen(
-                cmd, capture_output=True, text=True, cwd=_PROJECT_ROOT
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=_PROJECT_ROOT,
             )
             stdout, stderr = self._proc.communicate()
             if self._proc.returncode != 0:
