@@ -89,7 +89,14 @@ def validate_overrides(candidate: dict[str, float]) -> None:
         validator(str(key), value)
 
 
-def score_candidate(metrics: dict[str, Any]) -> float:
+DEFAULT_TARGET_WINRATE = 0.50
+# Порог режима «Максимум»: при target >= этого снимаем верхний winrate-reject
+# и окно winrate в acceptance (лучший = просто макс. score среди качественных).
+MAX_MODE_TARGET = 0.95
+
+
+def score_candidate(metrics: dict[str, Any], target_winrate: float = DEFAULT_TARGET_WINRATE) -> float:
+    target = float(target_winrate)
     heur_winrate = float(metrics.get("heur_winrate", metrics.get("heur_winrate_all", 0.0)))
     draw_rate = float(metrics.get("draw_rate", 0.0))
     invalid_rate = float(metrics.get("invalid_rate", 0.0))
@@ -97,8 +104,8 @@ def score_candidate(metrics: dict[str, Any]) -> float:
     hold_ratio = float(metrics.get("hold_ratio", 0.0))
     fallback_rate = float(metrics.get("fallback_rate", 0.0))
     return (
-        1.00 * min(heur_winrate, 0.54)
-        - 0.50 * abs(heur_winrate - 0.50)
+        1.00 * min(heur_winrate, target + 0.04)
+        - 0.50 * abs(heur_winrate - target)
         - 0.70 * max(0.0, draw_rate - 0.015)
         - 1.50 * invalid_rate
         - 0.60 * max(0.0, 0.86 - entropy)
@@ -107,7 +114,10 @@ def score_candidate(metrics: dict[str, Any]) -> float:
     )
 
 
-def reject_reasons(metrics: dict[str, Any], *, requested_games: int) -> list[str]:
+def reject_reasons(
+    metrics: dict[str, Any], *, requested_games: int, target_winrate: float = DEFAULT_TARGET_WINRATE
+) -> list[str]:
+    target = float(target_winrate)
     reasons: list[str] = []
     actual_games = int(metrics.get("actual_games", metrics.get("games", 0)))
     if actual_games != int(requested_games):
@@ -118,16 +128,20 @@ def reject_reasons(metrics: dict[str, Any], *, requested_games: int) -> list[str
         reasons.append("style_entropy_norm < 0.84")
     if float(metrics.get("draw_rate", 0.0)) > 0.03:
         reasons.append("draw_rate > 0.03")
-    if float(metrics.get("heur_winrate", metrics.get("heur_winrate_all", 0.0))) > 0.56:
-        reasons.append("heur_winrate > 0.56")
+    heur_winrate = float(metrics.get("heur_winrate", metrics.get("heur_winrate_all", 0.0)))
+    if target < MAX_MODE_TARGET and heur_winrate > target + 0.06:
+        reasons.append(f"heur_winrate > {target + 0.06:.2f}")
     if float(metrics.get("fallback_rate", 0.0)) > 0.02:
         reasons.append("fallback_rate > 0.02")
     return reasons
 
 
-def acceptance_reasons(metrics: dict[str, Any], *, baseline_score: float) -> list[str]:
+def acceptance_reasons(
+    metrics: dict[str, Any], *, baseline_score: float, target_winrate: float = DEFAULT_TARGET_WINRATE
+) -> list[str]:
+    target = float(target_winrate)
     reasons: list[str] = []
-    score = float(metrics.get("score", score_candidate(metrics)))
+    score = float(metrics.get("score", score_candidate(metrics, target)))
     heur_winrate = float(metrics.get("heur_winrate", metrics.get("heur_winrate_all", 0.0)))
     if score <= baseline_score:
         reasons.append("score <= baseline_score")
@@ -135,8 +149,8 @@ def acceptance_reasons(metrics: dict[str, Any], *, baseline_score: float) -> lis
         reasons.append("style_entropy_norm < 0.86")
     if float(metrics.get("draw_rate", 0.0)) > 0.02:
         reasons.append("draw_rate > 0.02")
-    if not (0.46 <= heur_winrate <= 0.54):
-        reasons.append("heur_winrate outside 0.46..0.54")
+    if target < MAX_MODE_TARGET and not (target - 0.04 <= heur_winrate <= target + 0.04):
+        reasons.append(f"heur_winrate outside {target - 0.04:.2f}..{target + 0.04:.2f}")
     return reasons
 
 
@@ -217,8 +231,9 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
 
     learner_agent_id = resolve_learner_agent_id(args.learner_agent_id)
     learner_side = resolve_learner_side(learner_agent_id, getattr(args, "learner_side", ""))
+    target_winrate = float(getattr(args, "target_winrate", DEFAULT_TARGET_WINRATE) or DEFAULT_TARGET_WINRATE)
     baseline_weights = current_weight_vector()
-    baseline_score = score_candidate(BASELINE)
+    baseline_score = score_candidate(BASELINE, target_winrate)
     candidates = generate_candidates(args.candidates, seed=args.seed, baseline=baseline_weights)
 
     rows: list[dict[str, Any]] = []
@@ -255,10 +270,10 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
                 logs_dir.mkdir(parents=True, exist_ok=True)
                 (logs_dir / "stdout.txt").write_text(stdout, encoding="utf-8")
                 (logs_dir / "stderr.txt").write_text(stderr, encoding="utf-8")
-                score = score_candidate(summary)
+                score = score_candidate(summary, target_winrate)
                 summary["score"] = score
-                rejects = reject_reasons(summary, requested_games=args.games)
-                accepts = acceptance_reasons(summary, baseline_score=baseline_score)
+                rejects = reject_reasons(summary, requested_games=args.games, target_winrate=target_winrate)
+                accepts = acceptance_reasons(summary, baseline_score=baseline_score, target_winrate=target_winrate)
                 status = "ok" if not rejects else "rejected"
                 row.update(summary)
                 row.update({"status": status, "reject_reasons": rejects, "acceptance_reasons": accepts})
@@ -288,6 +303,7 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
         "seed": int(args.seed),
         "learner_agent_id": learner_agent_id,
         "learner_side": learner_side,
+        "target_winrate": target_winrate,
         "model": str(args.model or ""),
         "opponent_policy": str(args.opponent_policy),
         "baseline": BASELINE,
@@ -318,6 +334,12 @@ def main() -> None:
         type=str,
         default="",
         help="Сторона learner (P1/P2). Пусто = вывести из агента, иначе P1.",
+    )
+    ap.add_argument(
+        "--target-winrate",
+        type=float,
+        default=DEFAULT_TARGET_WINRATE,
+        help="Целевой winrate эвристики (0..1). 0.50=спарринг, 0.65=хард, >=0.95=максимум силы.",
     )
     ap.add_argument("--opponent-agent-id", type=str, default="")
     ap.add_argument("--opponent-policy", type=str, default="heuristic_auto")

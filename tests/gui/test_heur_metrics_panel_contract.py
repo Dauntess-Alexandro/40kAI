@@ -47,6 +47,24 @@ class TestHeurMetricsPanelContract(unittest.TestCase):
         for metric in ["winrate", "entropy", "draw_rate"]:
             self.assertIn(metric, self.src)
 
+    def test_target_mode_presets_and_custom(self):
+        # Режим цели: пресеты + ручной target winrate.
+        self.assertIn("targetWinrate", self.src)
+        self.assertIn("Спарринг", self.src)
+        self.assertIn("Хард", self.src)
+        self.assertIn("Максимум", self.src)
+        self.assertIn("calTargetInput", self.src)
+
+    def test_run_passes_target_winrate(self):
+        # run() вызывается с targetWinrate шестым/седьмым аргументом.
+        self.assertIn("heurPanel.targetWinrate)", self.src)
+
+    def test_leaderboard_live_sort(self):
+        # Лидерборд с живой сортировкой по score и рангом/медалью.
+        self.assertIn("_rebuildLeaderboard", self.src)
+        self.assertIn("scoreNum", self.src)
+        self.assertIn("model.rank", self.src)
+
 
 if __name__ == "__main__":
     unittest.main()

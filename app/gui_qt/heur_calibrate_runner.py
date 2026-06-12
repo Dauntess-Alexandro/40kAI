@@ -67,6 +67,7 @@ class _CalibrateWorker(QtCore.QThread):
         run_id: str,
         learner_agent_id: str = "",
         learner_side: str = "",
+        target_winrate: float = 0.50,
     ) -> None:
         super().__init__()
         self._candidates = candidates
@@ -76,6 +77,7 @@ class _CalibrateWorker(QtCore.QThread):
         self._run_id = run_id
         self._learner_agent_id = str(learner_agent_id or "").strip()
         self._learner_side = str(learner_side or "").strip().upper()
+        self._target_winrate = float(target_winrate)
         self._proc: subprocess.Popen | None = None  # type: ignore[type-arg]
 
     def run(self) -> None:
@@ -85,6 +87,7 @@ class _CalibrateWorker(QtCore.QThread):
             "--games", str(self._games),
             "--seed", str(self._seed),
             "--run-id", self._run_id,
+            "--target-winrate", f"{self._target_winrate:.4f}",
         ]
         if self._learner_agent_id:
             cmd.extend(["--learner-agent-id", self._learner_agent_id])
@@ -159,6 +162,7 @@ class HeurCalibrateRunner(QtCore.QObject):
 
     @Slot(int, int, int, bool)
     @Slot(int, int, int, bool, str, str)
+    @Slot(int, int, int, bool, str, str, float)
     def run(
         self,
         candidates: int,
@@ -167,6 +171,7 @@ class HeurCalibrateRunner(QtCore.QObject):
         dry_run: bool,
         learner_agent_id: str = "",
         learner_side: str = "",
+        target_winrate: float = 0.50,
     ) -> None:
         if self._is_running:
             return
@@ -181,6 +186,7 @@ class HeurCalibrateRunner(QtCore.QObject):
         self._worker = _CalibrateWorker(
             int(candidates), int(games), int(seed), bool(dry_run), run_id,
             learner_agent_id=str(learner_agent_id), learner_side=str(learner_side),
+            target_winrate=float(target_winrate),
         )
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)

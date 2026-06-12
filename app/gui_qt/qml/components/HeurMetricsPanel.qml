@@ -18,6 +18,8 @@ Item {
     property real   bestScore:        0.0
     property string currentRunDir:    ""
     property string patchText:        ""
+    property real   targetWinrate:    0.50   // цель калибровки (0.50 спарринг, 0.65 хард, 1.0 максимум)
+    property var    _calRows:         []     // сырые строки кандидатов для живой сортировки
 
     // ── helpers ──────────────────────────────────────────────────────────
     function _colorForValue(val, good, warn) {
@@ -35,6 +37,57 @@ Item {
         var i = calAgentCombo.currentIndex
         if (list && i >= 0 && i < list.length) return list[i]
         return { agent_id: "", side: "" }
+    }
+    // Сторона эвристики = противоположна стороне learner.
+    function _heuristicSide() {
+        var a = _selectedAgent()
+        return (a && a.side === "P2") ? "P1" : "P2"
+    }
+
+    // ── лидерборд кандидатов (живая сортировка по score) ──────────────────
+    function _resetLeaderboard() {
+        _calRows = []
+        candidatesModel.clear()
+    }
+    function _addCandidate(row) {
+        var status = row.status || "…"
+        var hasScore = row.score !== undefined && row.score !== null
+        var scoreNum = hasScore ? row.score : -1e9
+        if (status === "ok" && scoreNum > heurPanel.bestScore) {
+            heurPanel.bestScore = scoreNum
+            heurPanel.bestCandidateIdx = row.candidate_idx !== undefined ? row.candidate_idx : 0
+        }
+        _calRows.push({
+            idxNum:   row.candidate_idx !== undefined ? row.candidate_idx : -1,
+            scoreNum: scoreNum,
+            score:    hasScore ? _fmt(row.score, 3) : "…",
+            winrate:  _fmt(row.heur_winrate, 3),
+            entropy:  _fmt(row.style_entropy_norm, 3),
+            draws:    row.draw_rate !== undefined ? _fmt(row.draw_rate * 100, 1) + "%" : "…",
+            status:   status,
+            reason:   (row.reject_reasons || []).join(", ")
+        })
+        _rebuildLeaderboard()
+    }
+    function _rebuildLeaderboard() {
+        var rows = _calRows.slice()
+        rows.sort(function(a, b) { return b.scoreNum - a.scoreNum })
+        candidatesModel.clear()
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i]
+            candidatesModel.append({
+                rank:     i + 1,
+                idx:      "" + (r.idxNum >= 0 ? r.idxNum : "?"),
+                score:    r.score,
+                scoreNum: r.scoreNum,
+                winrate:  r.winrate,
+                entropy:  r.entropy,
+                draws:    r.draws,
+                status:   r.status,
+                reason:   r.reason,
+                isBest:   r.idxNum === heurPanel.bestCandidateIdx
+            })
+        }
     }
 
     // ── сигналы runners ──────────────────────────────────────────────────
@@ -63,28 +116,7 @@ Item {
     Connections {
         target: heurCalRunner
         function onCandidateResult(row) {
-            var status = row.status || "…"
-            var reasons = (row.reject_reasons || []).join(", ")
-            var isBest = false
-            var score = row.score !== undefined && row.score !== null ? row.score : -1
-            if (status === "ok" && score > heurPanel.bestScore) {
-                heurPanel.bestScore = score
-                heurPanel.bestCandidateIdx = row.candidate_idx || 0
-                for (var i = 0; i < candidatesModel.count; i++) {
-                    candidatesModel.setProperty(i, "isBest", false)
-                }
-                isBest = true
-            }
-            candidatesModel.append({
-                idx:      "" + (row.candidate_idx !== undefined ? row.candidate_idx : "?"),
-                score:    score >= 0 ? _fmt(score, 3) : "…",
-                winrate:  _fmt(row.heur_winrate, 3),
-                entropy:  _fmt(row.style_entropy_norm, 3),
-                draws:    row.draw_rate !== undefined ? _fmt(row.draw_rate * 100, 1) + "%" : "…",
-                status:   status,
-                reason:   reasons,
-                isBest:   isBest
-            })
+            heurPanel._addCandidate(row)
         }
         function onCalibrationFinished(summary) {
             heurPanel.currentRunDir = summary.run_dir || heurCalRunner.currentRunDir
@@ -93,6 +125,7 @@ Item {
             if (idx !== null && idx !== undefined) {
                 heurPanel.bestCandidateIdx = idx
             }
+            heurPanel._rebuildLeaderboard()
         }
         function onCalibrationFailed(error) {
             benchStatusText = "Калибровка: ошибка — " + error
@@ -611,6 +644,65 @@ Item {
                                 }
                             }
 
+                            // ── Режим цели: пресеты + ручной target winrate ──────────
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Text { text: "Цель:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+
+                                Repeater {
+                                    model: [
+                                        { label: "Спарринг 0.50", val: 0.50 },
+                                        { label: "Хард 0.65",     val: 0.65 },
+                                        { label: "Максимум",      val: 1.00 },
+                                    ]
+                                    delegate: Button {
+                                        enabled: !heurCalRunner.isRunning
+                                        text: modelData.label
+                                        font.pixelSize: root.evalCaptionSize
+                                        property bool active: Math.abs(heurPanel.targetWinrate - modelData.val) < 0.001
+                                        onClicked: {
+                                            heurPanel.targetWinrate = modelData.val
+                                            calTargetInput.text = modelData.val.toFixed(2)
+                                        }
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: parent.active ? "#e8c060" : root.textSecondary
+                                            font: parent.font
+                                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                                        }
+                                        background: Rectangle {
+                                            color: parent.active ? "#1a1508" : root.bgSurface
+                                            border.color: parent.active ? "#b88a26" : root.borderMuted
+                                            border.width: 1
+                                        }
+                                    }
+                                }
+
+                                Text { text: "свой:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+                                TextField {
+                                    id: calTargetInput
+                                    text: "0.50"
+                                    validator: DoubleValidator { bottom: 0.0; top: 1.0; decimals: 2; notation: DoubleValidator.StandardNotation }
+                                    font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                    color: root.textPrimary; enabled: !heurCalRunner.isRunning
+                                    implicitWidth: Math.round(50 * root.uiScale)
+                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                                    onEditingFinished: {
+                                        var v = parseFloat(text)
+                                        if (!isNaN(v) && v >= 0.0 && v <= 1.0) heurPanel.targetWinrate = v
+                                    }
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    color: root.textSecondary; font.pixelSize: Math.round(9 * root.uiScale)
+                                    font.family: "JetBrains Mono"
+                                    text: heurPanel.targetWinrate >= 0.95
+                                        ? "макс. сила · эвристика " + _heuristicSide()
+                                        : "цель winrate=" + heurPanel.targetWinrate.toFixed(2) + " · эвристика " + _heuristicSide()
+                                }
+                            }
+
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: root.spacingSm
@@ -620,7 +712,7 @@ Item {
                                     text: "▶ Калибровать"
                                     font.pixelSize: root.evalCaptionSize
                                     onClicked: {
-                                        candidatesModel.clear()
+                                        heurPanel._resetLeaderboard()
                                         heurPanel.bestCandidateIdx = -1
                                         heurPanel.bestScore = 0.0
                                         heurPanel.patchText = ""
@@ -630,7 +722,7 @@ Item {
                                         heurCalRunner.run(parseInt(calCandidatesInput.text),
                                                           parseInt(calGamesInput.text),
                                                           parseInt(calSeedInput.text), false,
-                                                          a.agent_id, a.side)
+                                                          a.agent_id, a.side, heurPanel.targetWinrate)
                                     }
                                     contentItem: Text { text: parent.text; color: "#e8c060"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     background: Rectangle { color: parent.down ? "#100e00" : "#1a1508"; border.color: parent.hovered ? "#d0a030" : "#b88a26"; border.width: 1 }
@@ -640,7 +732,7 @@ Item {
                                     text: "Dry run"
                                     font.pixelSize: root.evalCaptionSize
                                     onClicked: {
-                                        candidatesModel.clear()
+                                        heurPanel._resetLeaderboard()
                                         heurPanel.bestCandidateIdx = -1
                                         heurPanel.calDone = 0
                                         heurPanel.calTotal = parseInt(calCandidatesInput.text)
@@ -648,7 +740,7 @@ Item {
                                         heurCalRunner.run(parseInt(calCandidatesInput.text),
                                                           parseInt(calGamesInput.text),
                                                           parseInt(calSeedInput.text), true,
-                                                          a.agent_id, a.side)
+                                                          a.agent_id, a.side, heurPanel.targetWinrate)
                                     }
                                     contentItem: Text { text: parent.text; color: root.textSecondary; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
@@ -708,11 +800,11 @@ Item {
                                 Row {
                                     anchors.fill: parent
                                     Repeater {
-                                        model: [["#", 36], ["score", 60], ["winrate", 64], ["entropy", 64], ["draws", 56], ["статус", 0]]
+                                        model: [["место", 46], ["#", 32], ["score", 58], ["winrate", 60], ["entropy", 60], ["draws", 52], ["статус", 0]]
                                         delegate: Text {
                                             text: modelData[0]; color: root.textSecondary
                                             font.pixelSize: Math.round(9 * root.uiScale)
-                                            width: modelData[1] > 0 ? Math.round(modelData[1] * root.uiScale) : parent.width - Math.round(340 * root.uiScale)
+                                            width: modelData[1] > 0 ? Math.round(modelData[1] * root.uiScale) : parent.width - Math.round(308 * root.uiScale)
                                             leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter
                                         }
                                     }
@@ -736,22 +828,57 @@ Item {
                                         anchors.fill: parent
                                         // Явные колонки: читаем model.* напрямую (вложенный Repeater
                                         // с массивом [model.*] ловит коллизию имени model → пустые ячейки).
-                                        Text {
-                                            text: model.idx; color: model.isBest ? "#b88a26" : root.textSecondary
-                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            width: Math.round(36 * root.uiScale); leftPadding: root.spacingSm
-                                            verticalAlignment: Text.AlignVCenter
+                                        // место — медаль ранга
+                                        Item {
+                                            width: Math.round(46 * root.uiScale); height: parent.height
+                                            Rectangle {
+                                                x: root.spacingSm; anchors.verticalCenter: parent.verticalCenter
+                                                width: Math.round(16 * root.uiScale); height: Math.round(16 * root.uiScale)
+                                                radius: width / 2
+                                                color: model.rank === 1 ? "#b88a26"
+                                                     : model.rank === 2 ? "#9aa7b8"
+                                                     : model.rank === 3 ? "#a06a3a" : "transparent"
+                                                border.color: model.rank <= 3 ? "transparent" : root.borderMuted
+                                                border.width: model.rank <= 3 ? 0 : 1
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: model.rank
+                                                    color: model.rank <= 3 ? "#0a0f1a" : root.textSecondary
+                                                    font.pixelSize: Math.round(9 * root.uiScale); font.bold: model.rank <= 3
+                                                }
+                                            }
                                         }
                                         Text {
-                                            text: model.score; color: model.isBest ? "#4caf6e" : root.textPrimary
-                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; font.bold: model.isBest
-                                            width: Math.round(60 * root.uiScale); leftPadding: root.spacingSm
+                                            text: "#" + model.idx; color: model.isBest ? "#b88a26" : root.textSecondary
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            width: Math.round(32 * root.uiScale); leftPadding: root.spacingSm
                                             verticalAlignment: Text.AlignVCenter
+                                        }
+                                        // score + мини-бар
+                                        Item {
+                                            width: Math.round(58 * root.uiScale); height: parent.height
+                                            Text {
+                                                anchors.left: parent.left; anchors.leftMargin: root.spacingSm
+                                                anchors.top: parent.top; anchors.topMargin: Math.round(2 * root.uiScale)
+                                                text: model.score; color: model.isBest ? "#4caf6e" : root.textPrimary
+                                                font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; font.bold: model.isBest
+                                            }
+                                            Rectangle {
+                                                anchors.left: parent.left; anchors.leftMargin: root.spacingSm
+                                                anchors.bottom: parent.bottom; anchors.bottomMargin: Math.round(2 * root.uiScale)
+                                                height: Math.round(2 * root.uiScale)
+                                                width: {
+                                                    var b = heurPanel.bestScore > 0.001 ? heurPanel.bestScore : 1.0
+                                                    var f = Math.max(0, Math.min(1, model.scoreNum / b))
+                                                    return f * Math.round(44 * root.uiScale)
+                                                }
+                                                color: model.isBest ? "#4caf6e" : "#3a5a8a"
+                                            }
                                         }
                                         Text {
                                             text: model.winrate; color: root.textPrimary
                                             font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            width: Math.round(64 * root.uiScale); leftPadding: root.spacingSm
+                                            width: Math.round(60 * root.uiScale); leftPadding: root.spacingSm
                                             verticalAlignment: Text.AlignVCenter
                                         }
                                         Text {
@@ -759,13 +886,13 @@ Item {
                                             color: parseFloat(model.entropy) >= 0.86 ? "#4caf6e"
                                                  : parseFloat(model.entropy) >= 0.84 ? "#b88a26" : "#cf3f3f"
                                             font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            width: Math.round(64 * root.uiScale); leftPadding: root.spacingSm
+                                            width: Math.round(60 * root.uiScale); leftPadding: root.spacingSm
                                             verticalAlignment: Text.AlignVCenter
                                         }
                                         Text {
                                             text: model.draws; color: root.textPrimary
                                             font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            width: Math.round(56 * root.uiScale); leftPadding: root.spacingSm
+                                            width: Math.round(52 * root.uiScale); leftPadding: root.spacingSm
                                             verticalAlignment: Text.AlignVCenter
                                         }
                                         Rectangle {
