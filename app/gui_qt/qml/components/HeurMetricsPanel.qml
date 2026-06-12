@@ -614,13 +614,13 @@ Item {
                                 // пилюля: КАНД
                                 Rectangle {
                                     implicitHeight: Math.round(28 * root.uiScale)
-                                    implicitWidth: Math.round(96 * root.uiScale)
+                                    implicitWidth: Math.round(112 * root.uiScale)
                                     color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
                                     radius: Math.round(4 * root.uiScale)
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "КАНД"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "🎲 КАНД"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         TextField {
                                             id: calCandidatesInput; text: "40"
@@ -637,13 +637,13 @@ Item {
                                 // пилюля: ИГР
                                 Rectangle {
                                     implicitHeight: Math.round(28 * root.uiScale)
-                                    implicitWidth: Math.round(86 * root.uiScale)
+                                    implicitWidth: Math.round(100 * root.uiScale)
                                     color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
                                     radius: Math.round(4 * root.uiScale)
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "ИГР"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "🎮 ИГР"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         TextField {
                                             id: calGamesInput; text: "50"
@@ -660,13 +660,13 @@ Item {
                                 // пилюля: SEED
                                 Rectangle {
                                     implicitHeight: Math.round(28 * root.uiScale)
-                                    implicitWidth: Math.round(130 * root.uiScale)
+                                    implicitWidth: Math.round(146 * root.uiScale)
                                     color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
                                     radius: Math.round(4 * root.uiScale)
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "SEED"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "🔑 SEED"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         TextField {
                                             id: calSeedInput; text: "1390520"
@@ -690,7 +690,7 @@ Item {
                                     Row {
                                         anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: 2
                                         spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "АГЕНТ"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
+                                        Text { text: "⚔ АГЕНТ"; color: root.textSecondary; font.pixelSize: Math.round(8 * root.uiScale)
                                             font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
                                         ComboBox {
                                             id: calAgentCombo
@@ -728,7 +728,7 @@ Item {
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: root.spacingSm
-                                Text { text: "Цель:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+                                Text { text: "🎯 Цель:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
 
                                 // Сегментированный переключатель (кнопки слитно).
                                 Row {
