@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
 import sys
 import time
@@ -85,7 +84,7 @@ def overrides_json(candidate: dict[str, float]) -> str:
 
 
 def validate_overrides(candidate: dict[str, float]) -> None:
-    validator = getattr(reward_cfg, "_validate_heur_calibration_override")
+    validator = reward_cfg._validate_heur_calibration_override
     for key, value in candidate.items():
         validator(str(key), value)
 
@@ -155,6 +154,24 @@ def resolve_learner_agent_id(agent_id: str) -> str:
     return str(selected.get("agent_id", "") or "").strip()
 
 
+def resolve_learner_side(learner_agent_id: str, explicit_side: str = "") -> str:
+    """Сторона learner: явный override → сторона агента из registry → P1.
+
+    Эвристика играет противоположную сторону (см. heuristic_side_for_learner).
+    """
+    side = str(explicit_side or "").strip().upper()
+    if side in {"P1", "P2"}:
+        return side
+    target = str(learner_agent_id or "").strip()
+    if target:
+        for rec in collect_registered_agents_meta():
+            if str(rec.get("agent_id", "")).strip() == target:
+                rec_side = str(rec.get("side", "")).strip().upper()
+                if rec_side in {"P1", "P2"}:
+                    return rec_side
+    return "P1"
+
+
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -199,6 +216,7 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
         candidates_path.unlink()
 
     learner_agent_id = resolve_learner_agent_id(args.learner_agent_id)
+    learner_side = resolve_learner_side(learner_agent_id, getattr(args, "learner_side", ""))
     baseline_weights = current_weight_vector()
     baseline_score = score_candidate(BASELINE)
     candidates = generate_candidates(args.candidates, seed=args.seed, baseline=baseline_weights)
@@ -224,6 +242,7 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
                     args.games,
                     model=args.model or None,
                     learner_agent_id=learner_agent_id,
+                    learner_side=learner_side,
                     opponent_agent_id=args.opponent_agent_id,
                     opponent_policy=args.opponent_policy,
                     run_id=f"{run_id}_candidate_{idx:03d}",
@@ -268,6 +287,7 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
         "candidates": int(args.candidates),
         "seed": int(args.seed),
         "learner_agent_id": learner_agent_id,
+        "learner_side": learner_side,
         "model": str(args.model or ""),
         "opponent_policy": str(args.opponent_policy),
         "baseline": BASELINE,
@@ -293,6 +313,12 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1390520)
     ap.add_argument("--model", type=str, default="")
     ap.add_argument("--learner-agent-id", type=str, default="")
+    ap.add_argument(
+        "--learner-side",
+        type=str,
+        default="",
+        help="Сторона learner (P1/P2). Пусто = вывести из агента, иначе P1.",
+    )
     ap.add_argument("--opponent-agent-id", type=str, default="")
     ap.add_argument("--opponent-policy", type=str, default="heuristic_auto")
     ap.add_argument("--run-id", type=str, default="")

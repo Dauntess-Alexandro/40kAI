@@ -109,6 +109,15 @@ def summarize(parsed: dict, *, heuristic_side: str = "p2", metrics: dict | None 
     return result
 
 
+def heuristic_side_for_learner(learner_side: str) -> str:
+    """Сторона эвристики противоположна стороне learner.
+
+    learner P1 → эвристика p2 (по умолчанию), learner P2 → эвристика p1.
+    """
+    side = str(learner_side or "").strip().upper()
+    return "p1" if side == "P2" else "p2"
+
+
 def _default_run_id() -> str:
     return time.strftime("%Y%m%d_%H%M%S") + f"_{os.getpid()}"
 
@@ -118,6 +127,7 @@ def run_benchmark(
     *,
     model: str | None = None,
     learner_agent_id: str = "",
+    learner_side: str = "P1",
     opponent_agent_id: str = "",
     opponent_policy: str = "heuristic_auto",
     run_id: str | None = None,
@@ -127,9 +137,15 @@ def run_benchmark(
 ) -> dict:
     """Run eval.py and return a strict benchmark summary.
 
-    The learner/model is P1; the enemy heuristic is P2 when opponent_agent_id is empty.
+    learner играет на learner_side (P1 или P2); вражеская эвристика — на
+    противоположной стороне (heuristic_side_for_learner). winrate считается
+    для стороны эвристики.
     """
     requested_games = int(games)
+    norm_learner_side = str(learner_side or "P1").strip().upper()
+    if norm_learner_side not in {"P1", "P2"}:
+        norm_learner_side = "P1"
+    heuristic_side = heuristic_side_for_learner(norm_learner_side)
     rid = str(run_id or _default_run_id())
     root = Path(metrics_dir) if metrics_dir is not None else ARTIFACTS_METRICS_DIR / "heur_calibration" / rid
     decisions_dir = root / "heur_decisions"
@@ -138,6 +154,7 @@ def run_benchmark(
     env = dict(os.environ)
     env["HEUR_METRICS_DECISIONS_DIR"] = str(decisions_dir)
     env["ENEMY_HEUR_METRICS_ENABLED"] = "1"
+    env["LEARNER_SIDE"] = norm_learner_side
     if overrides_json:
         env["HEUR_CALIBRATION_OVERRIDES_JSON"] = str(overrides_json)
     if extra_env:
@@ -161,11 +178,13 @@ def run_benchmark(
 
     records = load_heur_records(decisions_dir)
     metrics = build_heur_metrics_summary(records, outcome=parsed) if records else {}
-    summary = summarize(parsed, heuristic_side="p2", metrics=metrics)
+    summary = summarize(parsed, heuristic_side=heuristic_side, metrics=metrics)
     summary.update(
         {
             "requested_games": requested_games,
             "actual_games": int(summary.get("games", 0)),
+            "learner_side": norm_learner_side,
+            "heuristic_side": heuristic_side,
             "run_id": rid,
             "run_dir": str(root),
             "decisions_dir": str(decisions_dir),
@@ -186,6 +205,7 @@ def main() -> None:
     ap.add_argument("--games", type=int, default=30)
     ap.add_argument("--model", type=str, default="")
     ap.add_argument("--learner-agent-id", type=str, default="")
+    ap.add_argument("--learner-side", type=str, default="P1", choices=["P1", "P2", "p1", "p2"])
     ap.add_argument("--opponent-agent-id", type=str, default="")
     ap.add_argument("--opponent-policy", type=str, default="heuristic_auto")
     ap.add_argument("--run-id", type=str, default="")
@@ -198,6 +218,7 @@ def main() -> None:
             args.games,
             model=args.model or None,
             learner_agent_id=args.learner_agent_id,
+            learner_side=args.learner_side,
             opponent_agent_id=args.opponent_agent_id,
             opponent_policy=args.opponent_policy,
             run_id=args.run_id or None,

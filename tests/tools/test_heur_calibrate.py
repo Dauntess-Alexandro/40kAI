@@ -13,6 +13,7 @@ def _args(**overrides):
         seed=1390520,
         model="",
         learner_agent_id="",
+        learner_side="",
         opponent_agent_id="",
         opponent_policy="heuristic_auto",
         run_id="test_phase8",

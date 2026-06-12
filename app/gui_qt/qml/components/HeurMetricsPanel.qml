@@ -29,6 +29,13 @@ Item {
         if (val === undefined || val === null) return "—"
         return Number(val).toFixed(dec !== undefined ? dec : 3)
     }
+    // Выбранный learner-агент из дропдауна калибровки (или «Авто»).
+    function _selectedAgent() {
+        var list = controller.calibrationAgents
+        var i = calAgentCombo.currentIndex
+        if (list && i >= 0 && i < list.length) return list[i]
+        return { agent_id: "", side: "" }
+    }
 
     // ── сигналы runners ──────────────────────────────────────────────────
     Connections {
@@ -538,6 +545,51 @@ Item {
                                 Item { Layout.fillWidth: true }
                             }
 
+                            // Выбор learner-агента (P1/P2). Сторона эвристики — противоположная.
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Text { text: "Learner-агент:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+                                ComboBox {
+                                    id: calAgentCombo
+                                    Layout.fillWidth: true
+                                    enabled: !heurCalRunner.isRunning
+                                    model: controller.calibrationAgents
+                                    textRole: "label"
+                                    font.pixelSize: root.evalCaptionSize
+                                    contentItem: Text {
+                                        text: calAgentCombo.displayText
+                                        color: root.textPrimary
+                                        font: calAgentCombo.font
+                                        verticalAlignment: Text.AlignVCenter
+                                        leftPadding: root.spacingSm
+                                        elide: Text.ElideRight
+                                    }
+                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                                }
+                                Button {
+                                    text: "⟳"
+                                    enabled: !heurCalRunner.isRunning
+                                    font.pixelSize: root.evalCaptionSize
+                                    onClicked: controller.refreshCalibrationAgents()
+                                    contentItem: Text { text: parent.text; color: root.textSecondary; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                                    implicitWidth: Math.round(28 * root.uiScale)
+                                }
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                color: root.textSecondary
+                                font.pixelSize: Math.round(9 * root.uiScale)
+                                text: {
+                                    var a = _selectedAgent()
+                                    if (!a || !a.agent_id) return "Эвристика играет P2 против последнего агента (по умолчанию)."
+                                    var heur = a.side === "P2" ? "P1" : "P2"
+                                    return "Learner на стороне " + a.side + " · эвристика играет " + heur
+                                }
+                            }
+
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: root.spacingSm
@@ -553,9 +605,11 @@ Item {
                                         heurPanel.patchText = ""
                                         heurPanel.calDone = 0
                                         heurPanel.calTotal = parseInt(calCandidatesInput.text)
+                                        var a = _selectedAgent()
                                         heurCalRunner.run(parseInt(calCandidatesInput.text),
                                                           parseInt(calGamesInput.text),
-                                                          parseInt(calSeedInput.text), false)
+                                                          parseInt(calSeedInput.text), false,
+                                                          a.agent_id, a.side)
                                     }
                                     contentItem: Text { text: parent.text; color: "#e8c060"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     background: Rectangle { color: parent.down ? "#100e00" : "#1a1508"; border.color: parent.hovered ? "#d0a030" : "#b88a26"; border.width: 1 }
@@ -569,9 +623,11 @@ Item {
                                         heurPanel.bestCandidateIdx = -1
                                         heurPanel.calDone = 0
                                         heurPanel.calTotal = parseInt(calCandidatesInput.text)
+                                        var a = _selectedAgent()
                                         heurCalRunner.run(parseInt(calCandidatesInput.text),
                                                           parseInt(calGamesInput.text),
-                                                          parseInt(calSeedInput.text), true)
+                                                          parseInt(calSeedInput.text), true,
+                                                          a.agent_id, a.side)
                                     }
                                     contentItem: Text { text: parent.text; color: root.textSecondary; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                     background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }

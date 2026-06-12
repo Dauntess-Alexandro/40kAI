@@ -145,6 +145,7 @@ class GUIController(QtCore.QObject):
     metricsLabelChanged = QtCore.Signal(str)
     metricsSummaryChanged = QtCore.Signal()
     heuristicMetricsChanged = QtCore.Signal()
+    calibrationAgentsChanged = QtCore.Signal()
     heuristicMetricsDictChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
@@ -1085,6 +1086,38 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantMap", notify=heuristicMetricsDictChanged)
     def heuristicMetricsDict(self) -> dict:
         return self._heuristic_metrics_dict
+
+    @QtCore.Property("QVariantList", notify=calibrationAgentsChanged)
+    def calibrationAgents(self) -> list:
+        """Список агентов для дропдауна калибровки.
+
+        Первый пункт — «Авто» (текущее поведение: learner P1, эвристика P2).
+        Далее — зарегистрированные агенты (P1 и P2), новые сверху. Сторона
+        learner берётся из агента, эвристика играет противоположную.
+        """
+        entries: list[dict] = [
+            {"label": "Авто (последний, эвристика P2)", "agent_id": "", "side": "P1"}
+        ]
+        for rec in self._collect_registered_agents_meta():
+            agent_id = str(rec.get("agent_id", "")).strip()
+            if not agent_id:
+                continue
+            side = str(rec.get("side", "")).strip().upper()
+            algo = str(rec.get("algo", "")).strip() or "?"
+            faction = str(rec.get("faction", "")).strip() or "?"
+            short = agent_id[-8:] if len(agent_id) > 8 else agent_id
+            entries.append(
+                {
+                    "label": f"{side} · {algo} · {faction} · {short}",
+                    "agent_id": agent_id,
+                    "side": side,
+                }
+            )
+        return entries
+
+    @QtCore.Slot()
+    def refreshCalibrationAgents(self) -> None:
+        self.calibrationAgentsChanged.emit()
 
     @QtCore.Property(str, notify=playModelPathChanged)
     def playModelPath(self) -> str:

@@ -58,13 +58,24 @@ class _CalibrateWorker(QtCore.QThread):
     finished = Signal(dict)
     failed = Signal(str)
 
-    def __init__(self, candidates: int, games: int, seed: int, dry_run: bool, run_id: str) -> None:
+    def __init__(
+        self,
+        candidates: int,
+        games: int,
+        seed: int,
+        dry_run: bool,
+        run_id: str,
+        learner_agent_id: str = "",
+        learner_side: str = "",
+    ) -> None:
         super().__init__()
         self._candidates = candidates
         self._games = games
         self._seed = seed
         self._dry_run = dry_run
         self._run_id = run_id
+        self._learner_agent_id = str(learner_agent_id or "").strip()
+        self._learner_side = str(learner_side or "").strip().upper()
         self._proc: subprocess.Popen | None = None  # type: ignore[type-arg]
 
     def run(self) -> None:
@@ -75,6 +86,10 @@ class _CalibrateWorker(QtCore.QThread):
             "--seed", str(self._seed),
             "--run-id", self._run_id,
         ]
+        if self._learner_agent_id:
+            cmd.extend(["--learner-agent-id", self._learner_agent_id])
+        if self._learner_side in {"P1", "P2"}:
+            cmd.extend(["--learner-side", self._learner_side])
         if self._dry_run:
             cmd.append("--dry-run")
         try:
@@ -139,7 +154,16 @@ class HeurCalibrateRunner(QtCore.QObject):
         return self._run_dir
 
     @Slot(int, int, int, bool)
-    def run(self, candidates: int, games: int, seed: int, dry_run: bool) -> None:
+    @Slot(int, int, int, bool, str, str)
+    def run(
+        self,
+        candidates: int,
+        games: int,
+        seed: int,
+        dry_run: bool,
+        learner_agent_id: str = "",
+        learner_side: str = "",
+    ) -> None:
         if self._is_running:
             return
         run_id = f"gui_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -150,7 +174,10 @@ class HeurCalibrateRunner(QtCore.QObject):
         self._seen = 0
         self._total = int(candidates)
 
-        self._worker = _CalibrateWorker(int(candidates), int(games), int(seed), bool(dry_run), run_id)
+        self._worker = _CalibrateWorker(
+            int(candidates), int(games), int(seed), bool(dry_run), run_id,
+            learner_agent_id=str(learner_agent_id), learner_side=str(learner_side),
+        )
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
         self._set_running(True)
