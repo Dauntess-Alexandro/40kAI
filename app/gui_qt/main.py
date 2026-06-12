@@ -143,6 +143,7 @@ class GUIController(QtCore.QObject):
     metricsLabelChanged = QtCore.Signal(str)
     metricsSummaryChanged = QtCore.Signal()
     heuristicMetricsChanged = QtCore.Signal()
+    heuristicMetricsDictChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
     playModelLabelChanged = QtCore.Signal(str)
     playModelMetaChanged = QtCore.Signal(str)
@@ -268,6 +269,7 @@ class GUIController(QtCore.QObject):
         }
         self._heuristic_metrics: dict[str, object] = {}
         self._heuristic_metrics_text = "Нет данных метрик эвристики."
+        self._heuristic_metrics_dict: dict = {}
         self._metric_summary_texts = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -1077,6 +1079,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=heuristicMetricsChanged)
     def heuristicMetricsText(self) -> str:
         return self._heuristic_metrics_text
+
+    @QtCore.Property("QVariantMap", notify=heuristicMetricsDictChanged)
+    def heuristicMetricsDict(self) -> dict:
+        return self._heuristic_metrics_dict
 
     @QtCore.Property(str, notify=playModelPathChanged)
     def playModelPath(self) -> str:
@@ -7042,6 +7048,8 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(path):
             self._heuristic_metrics = {}
             self._heuristic_metrics_text = "Нет данных метрик эвристики."
+            self._heuristic_metrics_dict = {}
+            self.heuristicMetricsDictChanged.emit()
             self.heuristicMetricsChanged.emit()
             return
         try:
@@ -7050,6 +7058,8 @@ class GUIController(QtCore.QObject):
         except (OSError, json.JSONDecodeError):
             self._heuristic_metrics = {}
             self._heuristic_metrics_text = f"Не удалось прочитать {path}."
+            self._heuristic_metrics_dict = {}
+            self.heuristicMetricsDictChanged.emit()
             self.heuristicMetricsChanged.emit()
             return
         self._heuristic_metrics = payload if isinstance(payload, dict) else {}
@@ -7115,6 +7125,29 @@ class GUIController(QtCore.QObject):
         ]
         lines.extend(fc_lines)
         self._heuristic_metrics_text = "\n".join(lines)
+        mu = mode_usage
+        ru = role_usage
+        self._heuristic_metrics_dict = {
+            "winrate": float(self._heuristic_metrics.get("train_heur_winrate", 0.0)),
+            "draw_rate": float(self._heuristic_metrics.get("train_draw_rate", 0.0)),
+            "entropy": float(self._heuristic_metrics.get("style_entropy_norm", 0.0)),
+            "total_games": int(self._heuristic_metrics.get("train_total_games", 0)),
+            "avg_risk": float(self._heuristic_metrics.get("avg_risk", 0.0)),
+            "avg_cover": float(self._heuristic_metrics.get("avg_cover", 0.0)),
+            "charge_success_rate": float(self._heuristic_metrics.get("charge_success_rate", 0.0)),
+            "shoot_overkill_rate": float(self._heuristic_metrics.get("shoot_overkill_rate", 0.0)),
+            "fallback_rate": float(self._heuristic_metrics.get("fallback_rate", 0.0)),
+            "invalid_rate": float(self._heuristic_metrics.get("invalid_rate_total", 0.0)),
+            "mode_kite": int(mu.get("kite", 0)),
+            "mode_hold": int(mu.get("hold", 0)),
+            "mode_commit": int(mu.get("commit", 0)),
+            "role_ranged": int(ru.get("ranged", 0)),
+            "role_hybrid": int(ru.get("hybrid", 0)),
+            "role_melee": int(ru.get("melee", 0)),
+            "run_id": str(self._heuristic_metrics.get("run_id", "-")),
+            "updated_at": str(self._heuristic_metrics.get("updated_at", "-")),
+        }
+        self.heuristicMetricsDictChanged.emit()
         self.heuristicMetricsChanged.emit()
 
     def _find_latest_model_file(self) -> str | None:
