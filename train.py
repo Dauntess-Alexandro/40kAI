@@ -9581,7 +9581,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 payload,
                 ep=int(episodes_finished),
                 total=int(totLifeT),
-                algo="az",
+                algo="gumbel_az" if is_gumbel_az_algo(TRAIN_ALGO) else "az",
                 actor_idx=int(payload.get("actor_idx", -1) or -1),
             )
 
