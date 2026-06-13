@@ -15,8 +15,8 @@ Dialog {
     property int spacingSm: rootUi ? rootUi.spacingSm : 8
     property int spacingMd: rootUi ? rootUi.spacingMd : 12
 
-    readonly property var algoColors: ["#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706"]
-    readonly property var algoTabNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ"]
+    readonly property var algoColors: ["#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706", "#0891b2"]
+    readonly property var algoTabNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ", "GAZ"]
 
     readonly property var dqnBadges: [
         { text: "Классика+",     bg: "#dbeafe", fg: "#1e40af" },
@@ -47,6 +47,12 @@ Dialog {
         { text: "Тяжёлый режим",      bg: "#fde68a", fg: "#78350f" },
         { text: "Very Compute-heavy", bg: "#fef3c7", fg: "#92400e" },
         { text: "Search+",            bg: "#fde68a", fg: "#78350f" }
+    ]
+    readonly property var gazBadges: [
+        { text: "Gumbel-план",    bg: "#cffafe", fg: "#155e75" },
+        { text: "Малый бюджет",   bg: "#a5f3fc", fg: "#164e63" },
+        { text: "Depth-1",        bg: "#cffafe", fg: "#155e75" },
+        { text: "Policy-improve", bg: "#a5f3fc", fg: "#164e63" }
     ]
 
     readonly property var dqnSections: [
@@ -121,6 +127,22 @@ Dialog {
         { icon: "★", title: "Когда выбирать",
           text: "Когда нужен максимум силы модели и есть бюджет по времени/ресурсам для обучения и оценки." }
     ]
+    readonly property var gazSections: [
+        { icon: "ⓘ", title: "Что это",
+          text: "AlphaZero с Gumbel-планированием: в корне берётся набор кандидатов (Gumbel top-k), Sequential Halving распределяет бюджет симуляций, а completed-Q даёт цель политики. Реальная модель среды (как у AlphaZero), без выученной динамики MuZero. Поиск — depth-1 (один ход вперёд + ответ врага)." },
+        { icon: "▶", title: "Как учится",
+          text: "Self-play тем же конвейером, что AlphaZero (replay, value/policy, чекпойнты). Отличается только бэкенд поиска у актёра: per-head Gumbel top-k + Sequential Halving вместо PUCT-MCTS." },
+        { icon: "✓", title: "Сильные стороны",
+          text: "• гарантирует улучшение политики даже при крошечном бюджете симуляций (16–64);\n• дешевле полного MCTS на ход;\n• сеть и чекпойнты полностью совместимы с AlphaZero (eval/play грузят greedy);\n• удобен для LAN/распределёнки (depth-1, мало симуляций)." },
+        { icon: "⚠", title: "Ограничения",
+          text: "• v1 — только depth-1 (root-only), без глубокого дерева;\n• при детерминированном ходе врага рост num_simulations почти не влияет — главный рычаг m (num_considered_actions);\n• потолок тактики ниже, чем у полного AZ Tree с большим MCTS." },
+        { icon: "◆", title: "Режимы инференса",
+          text: "• Greedy — один проход сети, без поиска (по умолчанию в eval/play/Viewer);\n• MCTS-форс — безопасный AZ-PUCT фолбэк (Gumbel-поиск на инференсе — задел на будущее)." },
+        { icon: "✦", title: "Температура",
+          text: "На дебюте ход сэмплится из улучшённой политики; дальше — детерминированный победитель Sequential Halving." },
+        { icon: "★", title: "Когда выбирать",
+          text: "Когда нужен AlphaZero-пайплайн с гарантией улучшения при малом бюджете поиска — особенно под LAN/распределённое self-play." }
+    ]
 
     title: "Подсказка по моделям обучения"
     modal: true
@@ -134,6 +156,7 @@ Dialog {
         if (a === "alphazero_tree") return 2
         if (a === "alphazero_proxy") return 3
         if (a === "gumbel_muzero") return 4
+        if (a === "gumbel_az") return 5
         return 0
     }
 
@@ -218,6 +241,7 @@ Dialog {
             AlgoHelpTabButton { text: "AZ Tree";   accentColor: dlg.algoColors[2]; rootUi: dlg.rootUi }
             AlgoHelpTabButton { text: "AZ Proxy";  accentColor: dlg.algoColors[3]; rootUi: dlg.rootUi }
             AlgoHelpTabButton { text: "GMZ";       accentColor: dlg.algoColors[4]; rootUi: dlg.rootUi }
+            AlgoHelpTabButton { text: "GAZ";       accentColor: dlg.algoColors[5]; rootUi: dlg.rootUi }
             AlgoHelpTabButton { text: "Сравнение"; accentColor: "#9ca3af";          rootUi: dlg.rootUi }
         }
 
@@ -300,6 +324,21 @@ Dialog {
                     accentColor: dlg.algoColors[4]
                     badges: dlg.gmzBadges
                     sections: dlg.gmzSections
+                }
+            }
+            ScrollView {
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                AlgoHelpCard {
+                    width: helpStack.width
+                    rootUi: dlg.rootUi
+                    algoTitle: "Gumbel AlphaZero (GAZ)"
+                    tldr: "AlphaZero с Gumbel-планированием (top-k + Sequential Halving, depth-1). Улучшение политики при малом бюджете симуляций."
+                    accentColor: dlg.algoColors[5]
+                    badges: dlg.gazBadges
+                    sections: dlg.gazSections
                 }
             }
             ScrollView {
