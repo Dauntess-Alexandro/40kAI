@@ -4181,6 +4181,42 @@ ApplicationWindow {
                                     }
                                 }
                             }
+
+                            // Детали модели и оппонента: справочно, свёрнуто.
+                            ExpanderSection {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: implicitHeight
+                                title: "Детали модели и оппонента"
+                                expanded: false
+                                uiScale: root.uiScale
+                                captionSize: root.evalCaptionSize
+                                textMain: root.uiTextMain
+                                textMuted: root.uiTextMuted
+                                panelFill: root.bgElevated
+                                panelBorder: root.borderMuted
+
+                                RowLayout {
+                                    width: parent.width
+                                    spacing: root.spacingMd
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 4
+                                        Text { text: "Модель"; font.bold: true; color: root.uiTextMain }
+                                        Text { text: "Алгоритм: " + controller.metricsAlgo; color: root.uiTextMuted }
+                                        Text { text: "Режим: " + controller.metricsMode; color: root.uiTextMuted }
+                                        Text { text: "Run ID: " + controller.metricsRunId; color: "#777777"; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 4
+                                        Text { text: "Оппонент"; font.bold: true; color: root.uiTextMain }
+                                        Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: root.uiTextMuted }
+                                        Text { text: "Источник: " + controller.opponentSource; color: root.uiTextMuted }
+                                        Text { text: "Алгоритм оппонента: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : ""); color: root.uiTextMuted; elide: Text.ElideRight; Layout.fillWidth: true }
+                                    }
+                                }
+                            }
                         }
 
                         // Model Info убрали: эта информация уже есть в верхней панели и карточке "Оппонент".
