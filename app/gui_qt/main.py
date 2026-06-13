@@ -53,6 +53,16 @@ from app.gui_qt.az_hyperparams_defaults import (
     DEFAULT_AZ_PROXY_HYPERPARAMS,
     DEFAULT_AZ_TREE_HYPERPARAMS,
 )
+from app.gui_qt.gaz_hyperparams_defaults import (
+    DEFAULT_GAZ_HYPERPARAMS,
+    GAZ_BASIC_KEYS,
+    GAZ_FIELD_TOOLTIPS,
+    GAZ_GROUPS,
+    GAZ_HYPERPARAM_KEYS,
+    GAZ_INFERENCE_PRESERVE_KEYS,
+    GAZ_PROFILE_DETECT_ORDER,
+    GAZ_PROFILE_PRESETS,
+)
 from app.gui_qt.gmz_hyperparams_defaults import (
     DEFAULT_GMZ_HYPERPARAMS,
     GMZ_BASIC_KEYS,
@@ -403,7 +413,7 @@ class GUIController(QtCore.QObject):
         self._train_context_opponent_algo_short = "Эвристика"
         self._train_context_opponent_side = "P2"
 
-        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"]
+        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
         if self._training_algo not in self._training_algo_options:
             self._training_algo = "dqn"
@@ -430,6 +440,10 @@ class GUIController(QtCore.QObject):
         self._az_proxy_profile_presets = dict(AZ_PROXY_PROFILE_PRESETS)
         self._az_tree_selected_profile = "custom"
         self._az_proxy_selected_profile = "custom"
+        self._default_gaz_hyperparams: dict[str, int | float | str] = dict(DEFAULT_GAZ_HYPERPARAMS)
+        self._gaz_profile_presets = dict(GAZ_PROFILE_PRESETS)
+        self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
+        self._gaz_selected_profile = "balanced"
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._training_cuda_available = False
@@ -2240,6 +2254,10 @@ class GUIController(QtCore.QObject):
     def hpGmzPresetLabel(self) -> str:
         return self._profile_display_label(self._gmz_selected_profile)
 
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpGazPresetLabel(self) -> str:
+        return self._profile_display_label(self._gaz_selected_profile)
+
     @QtCore.Property(bool, notify=settingsDirtyChanged)
     def settingsDirty(self) -> bool:
         return self._settings_dirty
@@ -2917,7 +2935,7 @@ class GUIController(QtCore.QObject):
             algo = str(payload.get("algo", "")).strip().lower()
             if algo == "alphazero":
                 continue
-            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
                 # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
                 # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
                 paths = payload.get("paths") if isinstance(payload, dict) else None
@@ -3228,7 +3246,7 @@ class GUIController(QtCore.QObject):
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
         learner_algo = (self._training_algo or "dqn").strip().lower()
-        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
             learner_algo = "dqn"
 
         opponent_algo = "unknown"
@@ -3443,12 +3461,18 @@ class GUIController(QtCore.QObject):
     def _refresh_gmz_profile_label(self) -> None:
         self._gmz_selected_profile = self._detect_gmz_profile()
 
+    def _refresh_gaz_profile_label(self) -> None:
+        self._gaz_selected_profile = self._detect_profile(
+            self._gaz_hyperparams, self._gaz_profile_presets
+        )
+
     def _refresh_training_profile_labels(self) -> None:
         self._refresh_dqn_profile_label()
         self._refresh_ppo_profile_label()
         self._refresh_az_tree_profile_label()
         self._refresh_az_proxy_profile_label()
         self._refresh_gmz_profile_label()
+        self._refresh_gaz_profile_label()
 
     @QtCore.Slot(str)
     def apply_gmz_profile(self, profile: str) -> None:
@@ -3555,6 +3579,47 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
         self._emit_status(f"Применен профиль AlphaZero Tree: {mode}. Сохраните настройки.")
+
+    @QtCore.Slot(str, str)
+    def set_gaz_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_gaz_hyperparams:
+            return
+        default = self._default_gaz_hyperparams[normalized_key]
+        current = self._gaz_hyperparams.get(normalized_key, default)
+        try:
+            parsed = self._coerce_az_hyperparam(normalized_key, value, default)
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение Gumbel AlphaZero '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+        if current == parsed:
+            return
+        self._gaz_hyperparams[normalized_key] = parsed
+        self._refresh_gaz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def apply_gaz_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in set(GAZ_PROFILE_DETECT_ORDER):
+            return
+        preserved = {
+            k: self._gaz_hyperparams[k]
+            for k in GAZ_INFERENCE_PRESERVE_KEYS
+            if k in self._gaz_hyperparams
+        }
+        base = dict(self._default_gaz_hyperparams)
+        base.update(self._gaz_profile_presets.get(mode, {}))
+        base.update(preserved)
+        self._gaz_hyperparams.update(base)
+        self._gaz_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль Gumbel AlphaZero: {mode}. Сохраните настройки.")
 
     @QtCore.Slot(str)
     def apply_az_proxy_profile(self, profile: str) -> None:
@@ -3725,6 +3790,7 @@ class GUIController(QtCore.QObject):
             "tree": self._default_az_tree_hyperparams,
             "proxy": self._default_az_proxy_hyperparams,
             "gmz": self._default_gmz_hyperparams,
+            "gaz": self._default_gaz_hyperparams,
         }.get(section, {})
         default = defaults.get(k)
         if default is None:
@@ -3757,6 +3823,7 @@ class GUIController(QtCore.QObject):
             "tree": (self._default_az_tree_hyperparams, self._az_tree_hyperparams, self._az_tree_profile_presets),
             "proxy": (self._default_az_proxy_hyperparams, self._az_proxy_hyperparams, self._az_proxy_profile_presets),
             "gmz": (self._default_gmz_hyperparams, self._gmz_hyperparams, self._gmz_profile_presets),
+            "gaz": (self._default_gaz_hyperparams, self._gaz_hyperparams, self._gaz_profile_presets),
         }
         return mapping.get(section)
 
@@ -3849,6 +3916,11 @@ class GUIController(QtCore.QObject):
             current = self._gmz_hyperparams
             groups = GMZ_GROUPS
             refresh = self._refresh_gmz_profile_label
+        elif section == "gaz":
+            defaults = self._default_gaz_hyperparams
+            current = self._gaz_hyperparams
+            groups = GAZ_GROUPS
+            refresh = self._refresh_gaz_profile_label
         else:
             return
 
@@ -3911,6 +3983,14 @@ class GUIController(QtCore.QObject):
     def hpGmzHyperparamKeys(self) -> list:
         return [str(k) for k in GMZ_HYPERPARAM_KEYS]
 
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpGazHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._gaz_hyperparams)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpGazHyperparamKeys(self) -> list:
+        return [str(k) for k in GAZ_HYPERPARAM_KEYS]
+
     @QtCore.Property("QVariantList", constant=True)
     def hpDqnGroups(self) -> list:
         return self._groups_for_qml(DQN_GROUPS)
@@ -3926,6 +4006,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpGmzGroups(self) -> list:
         return self._groups_for_qml(GMZ_GROUPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpGazGroups(self) -> list:
+        return self._groups_for_qml(GAZ_GROUPS)
 
     @QtCore.Property("QVariantMap", constant=True)
     def hpDqnDefaultsMap(self) -> dict:
@@ -3948,6 +4032,10 @@ class GUIController(QtCore.QObject):
         return self._az_hyperparams_map_for_qml(self._default_gmz_hyperparams)
 
     @QtCore.Property("QVariantMap", constant=True)
+    def hpGazDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_gaz_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
     def hpDqnFieldTooltips(self) -> dict:
         return self._tooltips_for_qml(DQN_FIELD_TOOLTIPS)
 
@@ -3962,6 +4050,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantMap", constant=True)
     def hpGmzFieldTooltips(self) -> dict:
         return self._tooltips_for_qml(GMZ_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpGazFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(GAZ_FIELD_TOOLTIPS)
 
     @QtCore.Property("QVariantList", constant=True)
     def hpDqnBasicKeys(self) -> list:
@@ -3982,6 +4074,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpGmzBasicKeys(self) -> list:
         return [str(k) for k in GMZ_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpGazBasicKeys(self) -> list:
+        return [str(k) for k in GAZ_BASIC_KEYS]
 
     def _load_algo_hyperparams_section(
         self,
@@ -4124,6 +4220,7 @@ class GUIController(QtCore.QObject):
         self._dqn_hyperparams = dict(self._default_dqn_hyperparams)
         self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
         self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
+        self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
         self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
         self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
         self._refresh_training_profile_labels()
@@ -4185,6 +4282,7 @@ class GUIController(QtCore.QObject):
             merged_payload["dqn"] = dict(self._dqn_hyperparams)
             merged_payload["ppo"] = dict(self._ppo_hyperparams)
             merged_payload["gumbel_muzero"] = dict(self._gmz_hyperparams)
+            merged_payload["gumbel_az"] = dict(self._gaz_hyperparams)
             merged_payload["alphazero_tree"] = dict(self._az_tree_hyperparams)
             merged_payload["alphazero_proxy"] = dict(self._az_proxy_hyperparams)
             merged_payload.pop("alphazero", None)
@@ -4345,6 +4443,7 @@ class GUIController(QtCore.QObject):
             self._dqn_hyperparams = dict(self._default_dqn_hyperparams)
             self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
             self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
+            self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
             self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
             self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
             self._refresh_training_profile_labels()
@@ -4377,6 +4476,13 @@ class GUIController(QtCore.QObject):
             "gumbel_muzero",
             self._default_gmz_hyperparams,
             GMZ_HYPERPARAM_KEYS,
+            root_fallback=False,
+        )
+        self._gaz_hyperparams = self._load_algo_hyperparams_section(
+            payload,
+            "gumbel_az",
+            self._default_gaz_hyperparams,
+            GAZ_HYPERPARAM_KEYS,
             root_fallback=False,
         )
         self._az_tree_hyperparams = self._load_az_hyperparams_section(
@@ -5653,6 +5759,27 @@ class GUIController(QtCore.QObject):
                 f"sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )
+        elif self._training_algo == "gumbel_az":
+            gaz_hp = self._gaz_hyperparams
+            d = self._default_gaz_hyperparams
+            env.insert("GAZ_NUM_SIMULATIONS", os.getenv("GAZ_NUM_SIMULATIONS", str(int(gaz_hp.get("num_simulations", d["num_simulations"])))))
+            env.insert("GAZ_NUM_CONSIDERED_ACTIONS", os.getenv("GAZ_NUM_CONSIDERED_ACTIONS", str(int(gaz_hp.get("num_considered_actions", d["num_considered_actions"])))))
+            env.insert("GAZ_MAX_DEPTH", os.getenv("GAZ_MAX_DEPTH", str(int(gaz_hp.get("max_depth", d["max_depth"])))))
+            env.insert("GAZ_VALUE_SCALE", os.getenv("GAZ_VALUE_SCALE", str(float(gaz_hp.get("value_scale", d["value_scale"])))))
+            env.insert("GAZ_C_VISIT", os.getenv("GAZ_C_VISIT", str(float(gaz_hp.get("c_visit", d["c_visit"])))))
+            env.insert("GAZ_SIMULATE_ENEMY", "1" if int(gaz_hp.get("simulate_enemy", 1)) == 1 else "0")
+            env.insert("GAZ_BATCH_EVAL_SIZE", os.getenv("GAZ_BATCH_EVAL_SIZE", str(int(gaz_hp.get("batch_eval_size", d["batch_eval_size"])))))
+            env.insert("GAZ_EVAL_CACHE_SIZE", os.getenv("GAZ_EVAL_CACHE_SIZE", str(int(gaz_hp.get("eval_cache_size", d["eval_cache_size"])))))
+            env.insert("AZ_NUM_ACTORS", os.getenv("AZ_NUM_ACTORS", env_overrides.get("NUM_ACTORS", str(int(gaz_hp.get("num_actors", 8))))))
+            env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
+            env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
+            env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
+            self._emit_log(
+                f"[GUI] [GAZ][CONFIG] train: algo=gumbel_az "
+                f"sims={env.value('GAZ_NUM_SIMULATIONS', '32')} m={env.value('GAZ_NUM_CONSIDERED_ACTIONS', '8')} "
+                f"actors={env.value('AZ_NUM_ACTORS', '8')}",
+                level="INFO",
+            )
         for key, value in env_overrides.items():
             env.insert(key, value)
         env.insert("TRAIN_PROGRESS_HEARTBEAT_SEC", os.getenv("TRAIN_PROGRESS_HEARTBEAT_SEC", "2.0"))
@@ -5717,6 +5844,16 @@ class GUIController(QtCore.QObject):
                 f"actor_device={gmz_actor_dev},actor_max_cuda={gmz_actor_max_cuda},"
                 f"vtrace={gmz_vtrace},atom={gmz_atom},tree_reuse={gmz_tree_reuse},"
                 f"reanalyze={gmz_reanalyze},batch_rec={gmz_batch_rec})."
+            )
+        elif self._training_algo == "gumbel_az":
+            gaz_hp = self._gaz_hyperparams
+            gaz_d = self._default_gaz_hyperparams
+            gaz_sims = int(gaz_hp.get("num_simulations", gaz_d["num_simulations"]))
+            gaz_m = int(gaz_hp.get("num_considered_actions", gaz_d["num_considered_actions"]))
+            gaz_actors = int(gaz_hp.get("num_actors", gaz_d["num_actors"]))
+            start_message = (
+                f"Старт {status_prefix.lower()}: Gumbel AlphaZero="
+                f"on(sims={gaz_sims},m={gaz_m},depth=1,actors={gaz_actors})."
             )
         else:
             dqn_hp = self._dqn_hyperparams
@@ -6485,6 +6622,8 @@ class GUIController(QtCore.QObject):
 
     def _format_algo_label(self, algo_key: str) -> str:
         key = str(algo_key or "").strip().lower()
+        if key == "gumbel_az":
+            return "GUMBEL ALPHAZERO"
         if key == "gumbel_muzero":
             return "GUMBEL_MUZERO"
         if key == "alphazero_tree":
