@@ -3,7 +3,6 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import Qt.labs.platform 1.1 as Platform
-import QtWebEngine
 import "components"
 
 ApplicationWindow {
@@ -6125,40 +6124,26 @@ ApplicationWindow {
         initialAlgo: controller.trainingAlgo
     }
 
-    // Встроенный просмотр TensorBoard (без внешнего браузера).
+    // TensorBoard: запускаем локальный сервер и открываем во внешнем браузере.
+    // QtWebEngine намеренно не импортируем: Chromium на части Windows/GPU шумит
+    // GLES/GPUInfo ошибками даже при выключенном GPU-рендере.
     Window {
         id: tbWindow
         title: "TensorBoard — 40kAI"
-        width: 1180
-        height: 760
+        width: 560
+        height: 180
         color: "#0F172A"
         modality: Qt.NonModal
 
-        // Стартует фоновый TB-сервер и открывает окно. Первый запуск TB долгий
-        // (несколько секунд на сборку ассетов), поэтому грузим URL с авто-повтором,
-        // пока сервер не ответит, и останавливаемся при успешной загрузке.
+        property string pendingUrl: ""
+
         function openTensorboard() {
-            tbView.pendingUrl = controller.start_tensorboard()
-            tbView.attempts = 0
-            tbView.ready = false
+            pendingUrl = controller.start_tensorboard()
+            if (pendingUrl.length > 0)
+                Qt.openUrlExternally(pendingUrl)
             show()
             raise()
             requestActivate()
-            tbRetry.restart()
-        }
-
-        Timer {
-            id: tbRetry
-            interval: 1500
-            repeat: true
-            onTriggered: {
-                if (tbView.ready) { stop(); return }
-                tbView.attempts += 1
-                // Каждую попытку — гарантированно свежая навигация (cache-buster),
-                // иначе reload() после ERR_CONNECTION_REFUSED может залипнуть на ошибке.
-                tbView.url = tbView.pendingUrl + "?_=" + tbView.attempts
-                if (tbView.attempts >= 40) stop()  // ~60 c максимум
-            }
         }
 
         onClosing: controller.stop_tensorboard()
@@ -6173,37 +6158,38 @@ ApplicationWindow {
                 spacing: 8
 
                 Button {
-                    text: "Перезагрузить"
-                    onClicked: { tbView.ready = false; tbView.reload() }
+                    text: "Открыть в браузере"
+                    onClicked: {
+                        if (tbWindow.pendingUrl.length > 0)
+                            Qt.openUrlExternally(tbWindow.pendingUrl)
+                    }
                 }
                 Button {
-                    text: "Открыть в браузере"
-                    onClicked: Qt.openUrlExternally(tbView.pendingUrl)
+                    text: "Остановить сервер"
+                    onClicked: {
+                        controller.stop_tensorboard()
+                        tbWindow.close()
+                    }
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: tbView.ready
-                          ? tbView.pendingUrl
-                          : ("Загрузка TensorBoard… " + tbView.pendingUrl + " (попытка " + tbView.attempts + ")")
+                    text: tbWindow.pendingUrl.length > 0
+                          ? tbWindow.pendingUrl
+                          : "TensorBoard ещё не запущен"
                     color: "#98a4b8"
                     elide: Text.ElideRight
                     verticalAlignment: Text.AlignVCenter
                 }
             }
 
-            WebEngineView {
-                id: tbView
+            Text {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                property string pendingUrl: ""
-                property int attempts: 0
-                property bool ready: false
-                onLoadingChanged: function(loadRequest) {
-                    if (loadRequest.status === WebEngineView.LoadSucceededStatus) {
-                        tbView.ready = true
-                        tbRetry.stop()
-                    }
-                }
+                Layout.margins: 12
+                text: "TensorBoard открыт во внешнем браузере. Это отключает QtWebEngine внутри GUI и убирает Chromium/GPUInfo сообщения в консоли."
+                color: "#cbd5e1"
+                font.pixelSize: Math.round(13 * root.uiScale)
+                wrapMode: Text.WordWrap
             }
         }
     }

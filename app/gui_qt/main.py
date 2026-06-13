@@ -8485,25 +8485,7 @@ def main() -> int:
         os.environ["QT_QUICK_CONTROLS_STYLE"] = "Fusion"
     QQuickStyle.setStyle(os.environ["QT_QUICK_CONTROLS_STYLE"])
 
-    # QtWebEngine (встроенный просмотр TensorBoard) требует общего GL-контекста ДО создания
-    # приложения и явной инициализации. Если модуль недоступен — GUI работает без вкладки TB.
-    # На части Windows/GPU аппаратный рендер WebEngine даёт белый экран (несовпадение
-    # RHI Qt Quick и GL WebEngine) — форсируем программный рендер для стабильной отрисовки.
-    if "QTWEBENGINE_CHROMIUM_FLAGS" not in os.environ:
-        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu --disable-gpu-compositing"
-    try:
-        QtCore.QCoreApplication.setAttribute(QtCore.Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
-    except Exception:
-        pass
-
     app = QtGui.QGuiApplication(sys.argv)
-
-    try:
-        from PySide6.QtWebEngineQuick import QtWebEngineQuick
-
-        QtWebEngineQuick.initialize()
-    except Exception as exc:
-        print(f"[40kAI] QtWebEngine не инициализирован (встроенный TensorBoard недоступен): {exc}", flush=True)
 
     theme_flat = None
     try:

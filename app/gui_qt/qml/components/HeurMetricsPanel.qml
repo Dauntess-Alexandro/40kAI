@@ -41,7 +41,7 @@ Item {
     }
     function _intText(val) {
         if (val === undefined || val === null || Number(val) <= 0) return "—"
-        return Number(val).toLocaleString(Qt.locale("ru_RU"))
+        return Number(val).toLocaleString(Qt.locale("ru_RU"), "f", 0)
     }
     function _runComboIndex() {
         var runs = controller.heuristicMetricsRuns || []
@@ -361,7 +361,7 @@ Item {
                                     textRole: "label"
                                     currentIndex: _runComboIndex()
                                     enabled: count > 0
-                                    onActivated: {
+                                    onActivated: function(index) {
                                         var runs = controller.heuristicMetricsRuns || []
                                         if (index >= 0 && index < runs.length) {
                                             controller.selectHeuristicMetricsRun(String(runs[index].run_id))
@@ -486,12 +486,11 @@ Item {
                                     Repeater {
                                         model: [
                                             ["Эпизодов модели", "matchup_model_episodes", "int"],
-                                            ["Оценочных игр", "total_games", "int"],
                                             ["Сторона эвристики", "heuristic_side", "str"],
                                             ["Сценарий", "matchup_scenario", "str"]
                                         ]
                                         delegate: Rectangle {
-                                            width: (parent.width - 3 * root.spacingSm) / 4
+                                            width: (parent.width - 2 * root.spacingSm) / 3
                                             height: Math.round(40 * root.uiScale)
                                             radius: 5
                                             color: root.bgSurface
