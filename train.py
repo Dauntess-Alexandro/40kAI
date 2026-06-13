@@ -2900,7 +2900,7 @@ GAZ_C_VISIT = float(os.getenv("GAZ_C_VISIT", str(GAZ_CFG.get("c_visit", 50.0))))
 GAZ_SIMULATE_ENEMY = str(os.getenv("GAZ_SIMULATE_ENEMY", str(GAZ_CFG.get("simulate_enemy", 0)))).strip() == "1"
 GAZ_EVAL_CACHE_SIZE = int(os.getenv("GAZ_EVAL_CACHE_SIZE", str(GAZ_CFG.get("eval_cache_size", 10000))))
 GAZ_BATCH_EVAL_SIZE = max(1, int(os.getenv("GAZ_BATCH_EVAL_SIZE", str(GAZ_CFG.get("batch_eval_size", 16)))))
-GAZ_JOINT_ACTION = str(os.getenv("GAZ_JOINT_ACTION", str(GAZ_CFG.get("joint_action", 0)))).strip() == "1"
+GAZ_JOINT_ACTION = str(os.getenv("GAZ_JOINT_ACTION", str(GAZ_CFG.get("joint_action", 1)))).strip() == "1"
 
 # Лог-теги/числа для AZ-семейства: у gumbel_az показываем [GAZ] и его sims/depth, а не
 # generic AZ_MCTS_* (которые для gumbel_az остаются дефолтами секции AZ и путают в логах).

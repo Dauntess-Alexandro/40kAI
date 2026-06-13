@@ -43,9 +43,7 @@
         "distributed_actors_drain_sec": 30.0,
         "distributed_wait_pc2": 1,
         "distributed_wait_pc2_timeout_sec": 600.0,
-        "distributed_bind_retry_sec": 25.0,
-        "distributed_actor_queue_max": 2048,
-        "distributed_zmq_hwm": 1024
+        "distributed_bind_retry_sec": 25.0
     },
     "ppo": {
         "learning_rate": 0.0003,
@@ -253,15 +251,12 @@
         "batch_size": 128,
         "value_loss_weight": 1.0,
         "l2_weight": 1e-06,
-        "num_simulations": 32,
-        "num_considered_actions": 8,
         "max_depth": 1,
         "value_scale": 0.1,
         "c_visit": 50.0,
         "simulate_enemy": 0,
-        "joint_action": 0,
+        "joint_action": 1,
         "eval_cache_size": 10000,
-        "batch_eval_size": 16,
         "replay_capacity": 100000,
         "num_actors": 8,
         "actor_batch_send": 32,
@@ -294,6 +289,9 @@
         "distributed_actors_enabled": 0,
         "distributed_actors_port": 5557,
         "distributed_actors_bind_host": "0.0.0.0",
-        "distributed_actors_auth_token": ""
+        "distributed_actors_auth_token": "",
+        "num_simulations": 32,
+        "num_considered_actions": 8,
+        "batch_eval_size": 16
     }
 }

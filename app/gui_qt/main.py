@@ -345,6 +345,10 @@ class GUIController(QtCore.QObject):
         self._eval_p2_az_mcts_sims = 32
         self._eval_p1_gmz_search_sims = 32
         self._eval_p2_gmz_search_sims = 32
+        self._eval_p1_gaz_temperature = 0.0
+        self._eval_p2_gaz_temperature = 0.0
+        self._eval_p1_gaz_sims = 32
+        self._eval_p2_gaz_sims = 32
         self._eval_p1_icon_text = "AI"
         self._eval_p2_icon_text = "HR"
         self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
@@ -1329,6 +1333,11 @@ class GUIController(QtCore.QObject):
                 {"value": "greedy", "label": "Greedy"},
                 {"value": "search", "label": "Search"},
             ]
+        if is_gumbel_az_algo(algo_key):
+            return [
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "gumbel", "label": "Gumbel"},
+            ]
         return []
 
     @QtCore.Property(bool, notify=evalSetupChanged)
@@ -1362,6 +1371,8 @@ class GUIController(QtCore.QObject):
             return mode == "mcts"
         if algo == "gumbel_muzero":
             return mode == "search"
+        if is_gumbel_az_algo(algo):
+            return mode == "gumbel"
         return False
 
     def _sanitize_temperature(self, raw: str, default: float) -> float:
@@ -1391,11 +1402,15 @@ class GUIController(QtCore.QObject):
                 return int(self._eval_p1_az_mcts_sims)
             if algo == "gumbel_muzero":
                 return int(self._eval_p1_gmz_search_sims)
+            if is_gumbel_az_algo(algo):
+                return int(self._eval_p1_gaz_sims)
         else:
             if is_az_algo(algo):
                 return int(self._eval_p2_az_mcts_sims)
             if algo == "gumbel_muzero":
                 return int(self._eval_p2_gmz_search_sims)
+            if is_gumbel_az_algo(algo):
+                return int(self._eval_p2_gaz_sims)
         return 32
 
     def _eval_side_search_sims_label(self, side: str) -> str:
@@ -1404,6 +1419,8 @@ class GUIController(QtCore.QObject):
             return "MCTS sims:"
         if algo == "gumbel_muzero":
             return "Search sims:"
+        if is_gumbel_az_algo(algo):
+            return "Gumbel sims:"
         return "Sims:"
 
     def _eval_side_temperature(self, side: str) -> float:
@@ -1414,11 +1431,15 @@ class GUIController(QtCore.QObject):
                 return float(self._eval_p1_az_temperature)
             if algo == "gumbel_muzero":
                 return float(self._eval_p1_gmz_temperature)
+            if is_gumbel_az_algo(algo):
+                return float(self._eval_p1_gaz_temperature)
             return 0.10
         if is_az_algo(algo):
             return float(self._eval_p2_az_temperature)
         if algo == "gumbel_muzero":
             return float(self._eval_p2_gmz_temperature)
+        if is_gumbel_az_algo(algo):
+            return float(self._eval_p2_gaz_temperature)
         return 0.10
 
     @QtCore.Property(bool, notify=evalSetupChanged)
@@ -2552,6 +2573,9 @@ class GUIController(QtCore.QObject):
         elif algo == "gumbel_muzero":
             changed = abs(parsed - float(self._eval_p1_gmz_temperature)) > 1e-9
             self._eval_p1_gmz_temperature = parsed
+        elif is_gumbel_az_algo(algo):
+            changed = abs(parsed - float(self._eval_p1_gaz_temperature)) > 1e-9
+            self._eval_p1_gaz_temperature = parsed
         if changed:
             self.evalSetupChanged.emit()
 
@@ -2566,6 +2590,9 @@ class GUIController(QtCore.QObject):
         elif algo == "gumbel_muzero":
             changed = int(parsed) != int(self._eval_p1_gmz_search_sims)
             self._eval_p1_gmz_search_sims = int(parsed)
+        elif is_gumbel_az_algo(algo):
+            changed = int(parsed) != int(self._eval_p1_gaz_sims)
+            self._eval_p1_gaz_sims = int(parsed)
         if changed:
             self.evalSetupChanged.emit()
 
@@ -2580,6 +2607,9 @@ class GUIController(QtCore.QObject):
         elif algo == "gumbel_muzero":
             changed = abs(parsed - float(self._eval_p2_gmz_temperature)) > 1e-9
             self._eval_p2_gmz_temperature = parsed
+        elif is_gumbel_az_algo(algo):
+            changed = abs(parsed - float(self._eval_p2_gaz_temperature)) > 1e-9
+            self._eval_p2_gaz_temperature = parsed
         if changed:
             self.evalSetupChanged.emit()
 
@@ -2594,6 +2624,9 @@ class GUIController(QtCore.QObject):
         elif algo == "gumbel_muzero":
             changed = int(parsed) != int(self._eval_p2_gmz_search_sims)
             self._eval_p2_gmz_search_sims = int(parsed)
+        elif is_gumbel_az_algo(algo):
+            changed = int(parsed) != int(self._eval_p2_gaz_sims)
+            self._eval_p2_gaz_sims = int(parsed)
         if changed:
             self.evalSetupChanged.emit()
 

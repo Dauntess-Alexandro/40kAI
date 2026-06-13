@@ -6,12 +6,14 @@ from app.gui_qt.gaz_hyperparams_defaults import (
 )
 
 
-def test_joint_action_default_off_and_first_in_search():
-    assert int(DEFAULT_GAZ_HYPERPARAMS["joint_action"]) == 0
+def test_joint_action_default_on_and_tucked_away():
+    # joint_action включён по умолчанию и убран с верха (не первый в search, не в basic)
+    assert int(DEFAULT_GAZ_HYPERPARAMS["joint_action"]) == 1
     assert "joint_action" in GAZ_HYPERPARAM_KEYS
     search = next(g for g in GAZ_GROUPS if g["id"] == "search")
-    assert search["keys"][0] == "joint_action"
-    assert GAZ_BASIC_KEYS[0] == "joint_action"
+    assert "joint_action" in search["keys"]
+    assert search["keys"][0] != "joint_action"
+    assert "joint_action" not in GAZ_BASIC_KEYS
 
 
 def test_load_gaz_section_preserves_remote_host_ip():
