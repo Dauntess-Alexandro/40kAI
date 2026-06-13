@@ -306,7 +306,7 @@ class GUIController(QtCore.QObject):
         self._play_gaz_mode = "greedy"
         self._play_az_temperature = 0.06
         self._play_gmz_temperature = 0.10
-        self._play_gaz_temperature = 0.0
+        self._play_gaz_temperature = 0.05
         self._play_az_mcts_sims = 32
         self._play_gmz_search_sims = 32
         self._play_gaz_sims = 32
@@ -345,8 +345,8 @@ class GUIController(QtCore.QObject):
         self._eval_p2_az_mcts_sims = 32
         self._eval_p1_gmz_search_sims = 32
         self._eval_p2_gmz_search_sims = 32
-        self._eval_p1_gaz_temperature = 0.0
-        self._eval_p2_gaz_temperature = 0.0
+        self._eval_p1_gaz_temperature = 0.05
+        self._eval_p2_gaz_temperature = 0.05
         self._eval_p1_gaz_sims = 32
         self._eval_p2_gaz_sims = 32
         self._eval_p1_icon_text = "AI"
@@ -4857,6 +4857,7 @@ class GUIController(QtCore.QObject):
         if gaz_eval_mode == "gumbel" or gaz_opponent_mode == "gumbel":
             _gaz_sims_side = learner_side if gaz_eval_mode == "gumbel" else opponent_side
             env.insert("GAZ_EVAL_SIMS", str(self._eval_side_search_sims(_gaz_sims_side)))
+            env.insert("GAZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(_gaz_sims_side):.3f}")
             env.insert("GAZ_JOINT_ACTION", "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0")
         if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
             env.insert("GMZ_EVAL_SIMS", str(self._eval_side_search_sims(learner_side)))

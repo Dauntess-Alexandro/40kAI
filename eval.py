@@ -268,7 +268,7 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
         _pi, selected, _value = search.run(
             obs=state.squeeze(0).detach().cpu().numpy(),
             legal_masks_by_head=legal_masks,
-            temperature=float(os.getenv("GAZ_EVAL_TEMPERATURE", "0.0")),
+            temperature=float(os.getenv("GAZ_EVAL_TEMPERATURE", "0.05")),
             env=env,
             len_model=len_model,
             enemy_policy_fn=None,

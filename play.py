@@ -71,7 +71,7 @@ if GAZ_PLAY_MODE not in {"greedy", "gumbel"}:
     GAZ_PLAY_MODE = "greedy"
 GAZ_PLAY_SIMS = max(1, int(os.getenv("GAZ_PLAY_SIMS", "32")))
 GAZ_PLAY_NUM_CONSIDERED = max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8")))
-GAZ_PLAY_TEMPERATURE = float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.0"))
+GAZ_PLAY_TEMPERATURE = float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.05"))
 GAZ_JOINT_ACTION_INFER = str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1"
 
 parser = argparse.ArgumentParser()

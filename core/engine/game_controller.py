@@ -698,7 +698,7 @@ class GameController:
                         _pi, selected, _value = search.run(
                             obs=state_tensor.squeeze(0).detach().cpu().numpy(),
                             legal_masks_by_head=legal_masks,
-                            temperature=float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.0")),
+                            temperature=float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.05")),
                             env=env,
                             len_model=len(model),
                             enemy_policy_fn=None,

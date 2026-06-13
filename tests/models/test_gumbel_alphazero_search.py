@@ -149,6 +149,22 @@ def test_joint_action_on_propagates_winners_to_later_heads():
     assert seen[2][1][1] == actions[1]  # голова 2 увидела победителя головы 1
 
 
+def test_inference_temperature_deterministic_vs_stochastic():
+    net = _StubNet([6], value=0.0)
+    legal = [np.ones(6, dtype=bool)]
+    obs = np.zeros(7, dtype=np.float32)
+    cfg = GumbelAZSearchConfig(num_simulations=8, num_considered_actions=6, simulate_enemy=False)
+    # инференс (move_count=None), T≈0 → детерминированный argmax улучшённой политики
+    s = GumbelAlphaZeroSearch(net, config=cfg, device=torch.device("cpu"))
+    a0 = {s.run(obs=obs, legal_masks_by_head=legal, temperature=0.0)[1][0] for _ in range(6)}
+    assert len(a0) == 1
+    # высокая T → появляется разнообразие выбора
+    np.random.seed(0)
+    s2 = GumbelAlphaZeroSearch(net, config=cfg, device=torch.device("cpu"))
+    a1 = {s2.run(obs=obs, legal_masks_by_head=legal, temperature=1.0)[1][0] for _ in range(40)}
+    assert len(a1) > 1
+
+
 def test_build_inference_search_config_and_run():
     from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 

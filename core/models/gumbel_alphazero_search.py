@@ -272,10 +272,19 @@ class GumbelAlphaZeroSearch:
                 head_idx=h, base_action=base_action, legal=legal_masks[h],
                 prior=priors[h], root_value=root_value, leaf_eval_fn=leaf_eval_fn,
             )
-            # дебютная стохастика: сэмпл из улучшенной политики
             opening = int(getattr(self.cfg, "temperature_opening_moves", 12) or 12)
-            if move_count is not None and int(move_count) < opening and float(temperature) > 1e-3:
-                a = int(np.random.choice(np.arange(pi.size), p=pi))
+            if move_count is not None:
+                # обучение: дебютная стохастика из улучшённой политики (как было)
+                if int(move_count) < opening and float(temperature) > 1e-3:
+                    a = int(np.random.choice(np.arange(pi.size), p=pi))
+            elif float(temperature) <= 1e-3:
+                # инференс, T≈0: детерминированно — argmax улучшённой политики (сильно, воспроизводимо)
+                a = int(np.argmax(pi))
+            else:
+                # инференс, T>0: сэмпл из pi^(1/T). Низкая T → почти argmax, высокая → разнообразнее
+                p = np.power(pi.astype(np.float64), 1.0 / max(1e-3, float(temperature)))
+                s = float(p.sum())
+                a = int(np.random.choice(np.arange(pi.size), p=(p / s))) if s > 0 else int(np.argmax(pi))
             policy_targets.append(pi.astype(np.float32))
             selected_actions.append(int(a))
             # joint-action (координатный): следующие головы ищут уже с учётом выбора текущей
