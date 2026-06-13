@@ -3965,9 +3965,11 @@ ApplicationWindow {
                                 return out
                             }
 
-                            property var chartSpecs: [
+                            property var mainSpecs: [
                                 { title: "Winrate", fmt: "pct", src: "series", lines: [{ key: "win_rate", name: "win", color: root.accentPrimaryAction }] },
-                                { title: "Средняя награда", fmt: "num", src: "series", lines: [{ key: "reward_mean", name: "reward", color: root.accentP1 }] },
+                                { title: "Средняя награда", fmt: "num", src: "series", lines: [{ key: "reward_mean", name: "reward", color: root.accentP1 }] }
+                            ]
+                            property var restSpecs: [
                                 { title: "Loss обучения", fmt: "num", src: "loss", lines: [{ key: "values", name: "loss", color: "#3fb950" }] },
                                 { title: "Длина эпизода", fmt: "int", src: "series", lines: [{ key: "ep_len_mean", name: "ep_len", color: "#9b8cff" }] },
                                 { title: "Avg VP (model vs enemy)", fmt: "num", src: "series", lines: [{ key: "model_vp_mean", name: "model", color: root.accentP1 }, { key: "enemy_vp_mean", name: "enemy", color: root.accentP2 }] },
@@ -4048,7 +4050,7 @@ ApplicationWindow {
                                 spacing: root.spacingMd
 
                                 Text {
-                                    text: "Графики тренировки (окна эпизодов)"
+                                    text: "Главные кривые (окна эпизодов)"
                                     color: root.uiTextMain
                                     font.bold: true
                                     font.pixelSize: root.evalSectionTitleSize
@@ -4109,7 +4111,7 @@ ApplicationWindow {
                                 }
                             }
 
-                            // Сетка живых графиков.
+                            // Главные кривые: всегда крупно, 2 колонки.
                             GridLayout {
                                 Layout.fillWidth: true
                                 columns: 2
@@ -4118,7 +4120,7 @@ ApplicationWindow {
                                 visible: (metricsDash.detData.count || 0) > 0
 
                                 Repeater {
-                                    model: metricsDash.chartSpecs
+                                    model: metricsDash.mainSpecs
                                     delegate: MetricChart {
                                         Layout.fillWidth: true
                                         Layout.preferredHeight: Math.round(258 * root.uiScale)
@@ -4134,6 +4136,48 @@ ApplicationWindow {
                                         accent: modelData.lines[0].color
                                         xs: metricsDash._xsFor(modelData)
                                         series: metricsDash._seriesFor(modelData)
+                                    }
+                                }
+                            }
+
+                            // Остальные метрики: свёрнуто по умолчанию.
+                            ExpanderSection {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: implicitHeight
+                                visible: (metricsDash.detData.count || 0) > 0
+                                title: "Остальные метрики"
+                                expanded: false
+                                uiScale: root.uiScale
+                                captionSize: root.evalCaptionSize
+                                textMain: root.uiTextMain
+                                textMuted: root.uiTextMuted
+                                panelFill: root.bgElevated
+                                panelBorder: root.borderMuted
+
+                                GridLayout {
+                                    width: parent.width
+                                    columns: 2
+                                    columnSpacing: root.spacingMd
+                                    rowSpacing: root.spacingMd
+
+                                    Repeater {
+                                        model: metricsDash.restSpecs
+                                        delegate: MetricChart {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: Math.round(258 * root.uiScale)
+                                            uiScale: root.uiScale
+                                            captionSize: root.evalCaptionSize
+                                            textMain: root.uiTextMain
+                                            textMuted: root.uiTextMuted
+                                            panelFill: root.bgElevated
+                                            panelBorder: root.borderMuted
+                                            gridColor: root.borderMuted
+                                            title: modelData.title
+                                            fmt: modelData.fmt
+                                            accent: modelData.lines[0].color
+                                            xs: metricsDash._xsFor(modelData)
+                                            series: metricsDash._seriesFor(modelData)
+                                        }
                                     }
                                 }
                             }
