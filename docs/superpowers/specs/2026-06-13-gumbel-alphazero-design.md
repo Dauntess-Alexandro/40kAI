@@ -79,6 +79,22 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
 - Голова без легальных действий → uniform-фолбэк, без падения.
 - NaN/inf в приорах → uniform по легальным (зеркало `_masked_normalize`).
 
+### Замечания по v1 (важно для реализации)
+
+- **SH при детерминированном depth-1 почти вырождается.** q-оценка кандидата детерминирована (env-шаг + ход
+  врага + value), повторные симуляции бьют в `eval_cache` → тот же q. Значит `num_simulations` сверх `m` не
+  меняет ни победителя, ни policy-target; реальный рычаг — `num_considered_actions` (m) + completed-Q.
+  «Халвинг» даёт прирост только при **стохастичном** `enemyTurn`. Это норм для v1 (корректность сохраняется),
+  но в логах/доке не подавать sims=64 как «сильнее». Тест «бюджет соблюдён» (§6.1) должен либо реально это
+  проверять, либо быть убран из критериев.
+- **Дублирование движко-кода — избегаем.** Машинерия rollout (`_terminal_value_from_info`, `_restore_env_safe`,
+  `_evaluate_net`, `_evaluate_value_batch`, тело depth-1 шага) уже есть и оттестирована в
+  `alphazero_mcts.py`. Предпочтительно вынести её в общий хелпер и звать из обоих поисков (AZ MCTS + Gumbel),
+  а не копировать verbatim — иначе будущие фиксы движка придётся вносить в двух местах (правило проекта против
+  дублей AZ↔gmz). Если копия неизбежна — синхронизировать при изменениях и пометить якорь-комментарием.
+- **Per-head аппроксимация.** Победитель головы оценивается при остальных головах = greedy-prior (`base_action`),
+  а исполняется совместное действие из всех победителей — сознательная аппроксимация Варианта A.
+
 ---
 
 ## Секция 2 — Интеграция в `train.py`
@@ -99,7 +115,9 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
   получают одинаковые `net`/`evaluator`/`device`.
 - **2.5 Чекпойнт:** формат идентичен AZ (`policy_value_net`, `optimizer`, `arch`, `episode`,
   `policy_version`, `replay_memory`), плюс `algo="gumbel_az"`, метка режима `mcts_mode="gumbel"`. Папка
-  `artifacts/models/gumbel_az/checkpoint_ep*.pth`; sync-файл `artifacts/models/actor_sync/latest_gumbel_az_policy.pth`.
+  `artifacts/models/gumbel_az/checkpoint_ep*.pth`; sync-файл
+  `artifacts/models/actor_sync/latest_az_gumbel_az_policy.pth` (паттерн `latest_az_{tag}_policy.pth`, tag=`gumbel_az`
+  — совпадает с реальным кодом `train.py`, см. строки сборки `_az_sync_tag`).
 - **2.6 Resume:** без нового кода — тот же `RESUME_CHECKPOINT`, тот же inline-загрузчик AZ (ключ
   `policy_value_net` + `arch`), та же жёсткая остановка на битых весах. Проверить, что resume-ветка
   срабатывает для `is_alphazero_net_algo`.
@@ -208,7 +226,9 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
 - **6.6 eval/play smoke:** чекпойнт `gumbel_az` грузится по пути `is_alphazero_net_algo`, greedy работает.
 
 ### Логи
-В train-цикле маркер `[GAZ]` (зеркало `[AZ]`) для триажа по `LOGS_FOR_AGENTS_TRAIN.md`.
+Отдельный маркер `[GAZ]` **не нужен**: learner общий и пишет `[AZ]`, а heartbeat актёра уже печатает
+`mcts_mode=<cfg.mode>` (`alphazero_selfplay.py`). Поскольку `GumbelAZSearchConfig.mode="gumbel"`, в
+`LOGS_FOR_AGENTS_TRAIN.md` автоматически появится `mcts_mode=gumbel` — этого достаточно для триажа.
 
 ### Критерии готовности v1
 1. **Функционал:** dropdown содержит «Gumbel AlphaZero»; выбор + любой из 3 пресетов + resume запускает

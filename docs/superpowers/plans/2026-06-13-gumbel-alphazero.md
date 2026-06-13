@@ -8,6 +8,11 @@
 
 **Tech Stack:** Python 3.12, PyTorch, NumPy, Gymnasium, PySide6/QML. Спек: `docs/superpowers/specs/2026-06-13-gumbel-alphazero-design.md`.
 
+> ⚠️ **Номера строк — до-правочные ориентиры, а не истина.** Внутри одного файла любая вставка/удаление сдвигает
+> последующие номера (особенно в `train.py`: Task 3 Step 4 вставляет блок перед ~2885 → все номера ниже уезжают).
+> **Перед каждой правкой ищи по якорной строке** (текст рядом с правкой), а не по номеру. Номера держим как
+> грубый указатель «где примерно».
+
 ---
 
 ## File Structure
@@ -896,6 +901,24 @@ _VALID_AGENT_ALGOS = frozenset(
         if resolved in {"alphazero_tree", "alphazero_proxy"} and meta_algo == "gumbel_az":
             return "gumbel_az"
 ```
+
+> Размещение важно: эта проверка должна идти **до** generic-блока `if meta_algo in _VALID_AGENT_ALGOS and
+> meta_algo != resolved:` (он печатает WARN и возвращает веса = `alphazero_tree`). Ставим сразу после PPO-кейса,
+> как и он.
+
+- [ ] **Step 3b: `collect_registered_agents_meta` + текст ошибки**
+
+В `core/engine/agent_registry.py` у `collect_registered_agents_meta` свой **отдельный** хардкод-вайтлист (~строка 379):
+```python
+        if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+```
+→ добавить `"gumbel_az"`:
+```python
+        if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+```
+Без этого `gumbel_az`-агенты будут отфильтрованы из списка зарегистрированных агентов (не появятся как
+оппонент — Step 8 повиснет вхолостую). Заодно (косметика) обновить enumeration в тексте ошибки
+`resolve_agent_algo` (~строка 271), добавив `gumbel_az`.
 
 - [ ] **Step 4: Запустить — должно пройти**
 
