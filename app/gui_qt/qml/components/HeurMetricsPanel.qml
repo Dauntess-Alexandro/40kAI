@@ -2,6 +2,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import Qt.labs.settings 1.0
 
 Item {
     id: heurPanel
@@ -24,6 +25,9 @@ Item {
     property var    _bestHistory:     []     // лучший score после каждого кандидата (спарклайн)
     property real   _calStartMs:      0
     property int    _calElapsed:      0      // сек с начала прогона (тикает таймером)
+    property bool   _advOpen:         false  // раскрыт ли блок «Дополнительно» (Seed/Агент)
+    property int    _runGames:        0      // игр в текущем прогоне (для оценки скорости)
+    property real   _secPerGame:      0.0    // средняя сек/партия по прошлым прогонам (для ETA)
 
     // ── helpers ──────────────────────────────────────────────────────────
     function _colorForValue(val, good, warn) {
@@ -85,6 +89,47 @@ Item {
     function _heuristicSide() {
         var a = _selectedAgent()
         return (a && a.side === "P2") ? "P1" : "P2"
+    }
+
+    // ── Конфигурация запуска: валидация / степперы / оценка ────────────────
+    function _numValid(t, minVal) {
+        var v = parseInt(t)
+        return t !== "" && !isNaN(v) && v >= minVal
+    }
+    // Все обязательные поля корректны (кандидаты ≥1, игр ≥1, seed ≥0).
+    function _paramsValid() {
+        return _numValid(calCandidatesInput.text, 1)
+            && _numValid(calGamesInput.text, 1)
+            && _numValid(calSeedInput.text, 0)
+    }
+    // Шаг по полю (кнопки −/+ и колесо мыши), с нижней границей.
+    function _bump(field, delta, minVal) {
+        var v = parseInt(field.text)
+        if (isNaN(v)) v = minVal
+        field.text = "" + Math.max(minVal, v + delta)
+    }
+    function _randomSeed() {
+        return "" + (Math.floor(Math.random() * 9000000) + 1000)
+    }
+    // Копирование в буфер обмена через скрытый TextEdit (в QtQuick нет прямого API).
+    function _copyToClipboard(t) {
+        clipHelper.text = t
+        clipHelper.selectAll()
+        clipHelper.copy()
+        clipHelper.text = ""
+    }
+    // «N × M = K партий · ≈ T» — оценка объёма прогона до запуска.
+    function _estimateText() {
+        var c = parseInt(calCandidatesInput.text)
+        var g = parseInt(calGamesInput.text)
+        if (isNaN(c) || isNaN(g) || c <= 0 || g <= 0) return "укажите кандидатов и игр"
+        var total = c * g
+        var s = c + " × " + g + " = " + total.toLocaleString(Qt.locale("ru_RU"), "f", 0) + " партий"
+        if (heurPanel._secPerGame > 0) {
+            var sec = Math.round(total * heurPanel._secPerGame)
+            s += " · ≈ " + (sec < 90 ? sec + " сек" : Math.round(sec / 60) + " мин")
+        }
+        return s
     }
 
     // ETA по уже пройденным кандидатам.
@@ -223,8 +268,29 @@ Item {
     Timer {
         running: heurCalRunner.isRunning
         interval: 1000; repeat: true
-        onTriggered: heurPanel._calElapsed = Math.round((Date.now() - heurPanel._calStartMs) / 1000)
+        onTriggered: {
+            heurPanel._calElapsed = Math.round((Date.now() - heurPanel._calStartMs) / 1000)
+            // учим среднюю скорость (сек/партия) для оценки следующего прогона
+            if (heurPanel.calDone > 0 && heurPanel._runGames > 0 && heurPanel._calElapsed > 0) {
+                heurPanel._secPerGame = heurPanel._calElapsed / (heurPanel.calDone * heurPanel._runGames)
+            }
+        }
     }
+
+    // Память значений между сессиями (QSettings через Qt.labs.settings).
+    Settings {
+        category: "heurCalibration"
+        property alias candidates:   calCandidatesInput.text
+        property alias games:        calGamesInput.text
+        property alias seed:         calSeedInput.text
+        property alias advancedOpen: heurPanel._advOpen
+        property alias secPerGame:   heurPanel._secPerGame
+        property alias targetCustom: calTargetInput.text
+        property alias targetWinrate: heurPanel.targetWinrate
+    }
+
+    // Скрытый помощник для копирования в буфер обмена.
+    TextEdit { id: clipHelper; visible: false; width: 0; height: 0 }
 
     // ════════════════════════════════════════════════════════════════════
     //  Layout
@@ -1010,18 +1076,29 @@ Item {
             ScrollView {
                 clip: true
                 Column {
-                    // Увеличиваем всю вкладку калибровки (на больших мониторах мелко).
+                    // Лёгкий зум всей вкладки (на больших мониторах мелко).
                     // distance-field текст масштабируется без размытия.
-                    property real calZoom: 1.22
+                    property real calZoom: 1.12
                     width: innerStack.width / calZoom
                     scale: calZoom
                     transformOrigin: Item.TopLeft
-                    spacing: root.spacingMd
                     topPadding: root.spacingMd
 
-                    GroupBox {
+                    // ═══ Двухколоночная раскладка: пульт слева, лидерборд справа ═══
+                    RowLayout {
                         width: parent.width
-                        title: "Параметры"
+                        spacing: root.spacingMd
+
+                        // ─────────────── ЛЕВАЯ КОЛОНКА: пульт запуска ───────────────
+                        ColumnLayout {
+                            Layout.preferredWidth: Math.round(parent.width * 0.35)
+                            Layout.minimumWidth: Math.round(320 * root.uiScale)
+                            Layout.alignment: Qt.AlignTop
+                            spacing: root.spacingMd
+
+                    GroupBox {
+                        Layout.fillWidth: true
+                        title: "Конфигурация запуска"
                         label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                         background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
 
@@ -1029,109 +1106,189 @@ Item {
                             width: parent.width
                             spacing: root.spacingSm
 
-                            // ── Ряд параметров-«пилюль» ──────────────────────────────
+                            // ── Профили прогона (пресеты) ─────────────────────────────
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: root.spacingSm
+                                Repeater {
+                                    model: [
+                                        { label: "Быстрый",  c: 10, g: 20  },
+                                        { label: "Стандарт", c: 40, g: 50  },
+                                        { label: "Глубокий", c: 80, g: 200 },
+                                    ]
+                                    delegate: Button {
+                                        id: presetBtn
+                                        Layout.fillWidth: true
+                                        enabled: !heurCalRunner.isRunning
+                                        implicitHeight: Math.round(34 * root.uiScale)
+                                        property bool active: parseInt(calCandidatesInput.text) === modelData.c
+                                                           && parseInt(calGamesInput.text) === modelData.g
+                                        onClicked: {
+                                            calCandidatesInput.text = "" + modelData.c
+                                            calGamesInput.text = "" + modelData.g
+                                        }
+                                        contentItem: Column {
+                                            spacing: 0
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: modelData.label
+                                                color: presetBtn.active ? "#e8c060" : root.textPrimary
+                                                font.pixelSize: Math.round(11 * root.uiScale); font.bold: presetBtn.active
+                                            }
+                                            Text {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                text: modelData.c + "×" + modelData.g
+                                                color: root.textSecondary
+                                                font.pixelSize: Math.round(9 * root.uiScale); font.family: "JetBrains Mono"
+                                            }
+                                        }
+                                        background: Rectangle {
+                                            radius: Math.round(5 * root.uiScale)
+                                            color: presetBtn.active ? "#15130a" : root.bgSurface
+                                            border.color: presetBtn.active ? "#b88a26" : root.borderMuted; border.width: 1
+                                        }
+                                    }
+                                }
+                            }
 
-                                // пилюля: КАНД
-                                Rectangle {
-                                    implicitHeight: Math.round(28 * root.uiScale)
-                                    implicitWidth: Math.round(112 * root.uiScale)
-                                    color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
-                                    radius: Math.round(4 * root.uiScale)
-                                    Row {
-                                        anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
-                                        spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "🎲 КАНД"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
-                                            font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
-                                        TextField {
-                                            id: calCandidatesInput; text: "40"
-                                            validator: IntValidator { bottom: 1; top: 999 }
-                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            color: root.textPrimary; enabled: !heurCalRunner.isRunning
-                                            implicitWidth: Math.round(40 * root.uiScale)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            padding: 0
-                                            background: Rectangle { color: "transparent" }
-                                        }
+                            // ── Кандидатов (степпер −/+, колесо мыши, валидация) ──────
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: Math.round(36 * root.uiScale)
+                                color: "#0a0f1a"; radius: Math.round(5 * root.uiScale)
+                                border.width: 1
+                                border.color: heurPanel._numValid(calCandidatesInput.text, 1) ? root.borderMuted : "#cf3f3f"
+                                HoverHandler { id: candHover }
+                                ToolTip.visible: candHover.hovered
+                                ToolTip.text: "Сколько наборов весов перебрать. Больше — точнее подбор, но дольше прогон."
+                                WheelHandler { onWheel: function(e) { if (!heurCalRunner.isRunning) heurPanel._bump(calCandidatesInput, e.angleDelta.y > 0 ? 5 : -5, 1) } }
+                                Text {
+                                    anchors.left: parent.left; anchors.leftMargin: root.spacingSm
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Кандидатов"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: Math.round(4 * root.uiScale)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: Math.round(3 * root.uiScale)
+                                    Rectangle {
+                                        width: Math.round(24 * root.uiScale); height: Math.round(26 * root.uiScale); radius: Math.round(4 * root.uiScale)
+                                        color: stepCandMinus.pressed ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1
+                                        Text { anchors.centerIn: parent; text: "−"; color: root.textPrimary; font.pixelSize: Math.round(14 * root.uiScale) }
+                                        MouseArea { id: stepCandMinus; anchors.fill: parent; enabled: !heurCalRunner.isRunning; onClicked: heurPanel._bump(calCandidatesInput, -5, 1) }
+                                    }
+                                    TextField {
+                                        id: calCandidatesInput; text: "40"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        validator: IntValidator { bottom: 1; top: 999 }
+                                        horizontalAlignment: Text.AlignHCenter
+                                        font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                        color: root.textPrimary; enabled: !heurCalRunner.isRunning
+                                        implicitWidth: Math.round(44 * root.uiScale)
+                                        padding: 0
+                                        background: Rectangle { color: "transparent" }
+                                    }
+                                    Rectangle {
+                                        width: Math.round(24 * root.uiScale); height: Math.round(26 * root.uiScale); radius: Math.round(4 * root.uiScale)
+                                        color: stepCandPlus.pressed ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1
+                                        Text { anchors.centerIn: parent; text: "+"; color: root.textPrimary; font.pixelSize: Math.round(14 * root.uiScale) }
+                                        MouseArea { id: stepCandPlus; anchors.fill: parent; enabled: !heurCalRunner.isRunning; onClicked: heurPanel._bump(calCandidatesInput, 5, 1) }
                                     }
                                 }
-                                // пилюля: ИГР
-                                Rectangle {
-                                    implicitHeight: Math.round(28 * root.uiScale)
-                                    implicitWidth: Math.round(100 * root.uiScale)
-                                    color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
-                                    radius: Math.round(4 * root.uiScale)
-                                    Row {
-                                        anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
-                                        spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "🎮 ИГР"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
-                                            font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
-                                        TextField {
-                                            id: calGamesInput; text: "50"
-                                            validator: IntValidator { bottom: 1; top: 9999 }
-                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            color: root.textPrimary; enabled: !heurCalRunner.isRunning
-                                            implicitWidth: Math.round(40 * root.uiScale)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            padding: 0
-                                            background: Rectangle { color: "transparent" }
-                                        }
+                            }
+
+                            // ── Игр (степпер −/+, колесо мыши, валидация) ─────────────
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: Math.round(36 * root.uiScale)
+                                color: "#0a0f1a"; radius: Math.round(5 * root.uiScale)
+                                border.width: 1
+                                border.color: heurPanel._numValid(calGamesInput.text, 1) ? root.borderMuted : "#cf3f3f"
+                                HoverHandler { id: gamesHover }
+                                ToolTip.visible: gamesHover.hovered
+                                ToolTip.text: "Сколько партий играет каждый кандидат. Больше — стабильнее winrate, но дольше."
+                                WheelHandler { onWheel: function(e) { if (!heurCalRunner.isRunning) heurPanel._bump(calGamesInput, e.angleDelta.y > 0 ? 10 : -10, 1) } }
+                                Text {
+                                    anchors.left: parent.left; anchors.leftMargin: root.spacingSm
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Игр"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
+                                }
+                                Row {
+                                    anchors.right: parent.right; anchors.rightMargin: Math.round(4 * root.uiScale)
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: Math.round(3 * root.uiScale)
+                                    Rectangle {
+                                        width: Math.round(24 * root.uiScale); height: Math.round(26 * root.uiScale); radius: Math.round(4 * root.uiScale)
+                                        color: stepGamesMinus.pressed ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1
+                                        Text { anchors.centerIn: parent; text: "−"; color: root.textPrimary; font.pixelSize: Math.round(14 * root.uiScale) }
+                                        MouseArea { id: stepGamesMinus; anchors.fill: parent; enabled: !heurCalRunner.isRunning; onClicked: heurPanel._bump(calGamesInput, -10, 1) }
+                                    }
+                                    TextField {
+                                        id: calGamesInput; text: "50"
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        validator: IntValidator { bottom: 1; top: 9999 }
+                                        horizontalAlignment: Text.AlignHCenter
+                                        font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                        color: root.textPrimary; enabled: !heurCalRunner.isRunning
+                                        implicitWidth: Math.round(44 * root.uiScale)
+                                        padding: 0
+                                        background: Rectangle { color: "transparent" }
+                                    }
+                                    Rectangle {
+                                        width: Math.round(24 * root.uiScale); height: Math.round(26 * root.uiScale); radius: Math.round(4 * root.uiScale)
+                                        color: stepGamesPlus.pressed ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1
+                                        Text { anchors.centerIn: parent; text: "+"; color: root.textPrimary; font.pixelSize: Math.round(14 * root.uiScale) }
+                                        MouseArea { id: stepGamesPlus; anchors.fill: parent; enabled: !heurCalRunner.isRunning; onClicked: heurPanel._bump(calGamesInput, 10, 1) }
                                     }
                                 }
-                                // пилюля: SEED
-                                Rectangle {
-                                    implicitHeight: Math.round(28 * root.uiScale)
-                                    implicitWidth: Math.round(146 * root.uiScale)
-                                    color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
-                                    radius: Math.round(4 * root.uiScale)
-                                    Row {
-                                        anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: root.spacingSm
-                                        spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "🔑 SEED"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
-                                            font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
-                                        TextField {
-                                            id: calSeedInput; text: "1390520"
-                                            validator: IntValidator { bottom: 0 }
-                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            color: root.textPrimary; enabled: !heurCalRunner.isRunning
-                                            implicitWidth: Math.round(72 * root.uiScale)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            padding: 0
-                                            background: Rectangle { color: "transparent" }
-                                        }
-                                    }
-                                }
-                                // пилюля: АГЕНТ (растягивается, но с потолком)
+                            }
+
+                            // ── Оценка объёма прогона ─────────────────────────────────
+                            Text {
+                                Layout.fillWidth: true
+                                color: heurPanel._paramsValid() ? root.textSecondary : "#cf3f3f"
+                                font.pixelSize: Math.round(10 * root.uiScale); font.family: "JetBrains Mono"
+                                wrapMode: Text.WordWrap
+                                text: heurPanel._estimateText()
+                            }
+
+                            // ── Агент (на видном месте, вне «Дополнительно») ──────────
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    Layout.maximumWidth: Math.round(560 * root.uiScale)
-                                    implicitHeight: Math.round(28 * root.uiScale)
+                                    implicitHeight: Math.round(36 * root.uiScale)
                                     color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
-                                    radius: Math.round(4 * root.uiScale)
-                                    Row {
-                                        anchors.fill: parent; anchors.leftMargin: root.spacingSm; anchors.rightMargin: 2
-                                        spacing: Math.round(5 * root.uiScale)
-                                        Text { text: "⚔ АГЕНТ"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
-                                            font.letterSpacing: 0.5; anchors.verticalCenter: parent.verticalCenter }
-                                        ComboBox {
-                                            id: calAgentCombo
-                                            width: parent.width - x - Math.round(6 * root.uiScale)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            enabled: !heurCalRunner.isRunning
-                                            model: controller.calibrationAgents
-                                            textRole: "label"
-                                            font.pixelSize: root.evalCaptionSize
-                                            contentItem: Text {
-                                                text: calAgentCombo.displayText
-                                                color: root.textPrimary
-                                                font: calAgentCombo.font
-                                                verticalAlignment: Text.AlignVCenter
-                                                elide: Text.ElideRight
-                                            }
-                                            background: Rectangle { color: "transparent" }
+                                    radius: Math.round(5 * root.uiScale)
+                                    HoverHandler { id: agentHover }
+                                    ToolTip.visible: agentHover.hovered
+                                    ToolTip.text: "Learner-агент. Эвристика калибруется на противоположной стороне."
+                                    Text {
+                                        id: agentLbl
+                                        anchors.left: parent.left; anchors.leftMargin: root.spacingSm
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Агент"; color: root.textSecondary
+                                        font.pixelSize: Math.round(11 * root.uiScale)
+                                    }
+                                    ComboBox {
+                                        id: calAgentCombo
+                                        anchors.left: agentLbl.right; anchors.leftMargin: Math.round(6 * root.uiScale)
+                                        anchors.right: parent.right; anchors.rightMargin: Math.round(4 * root.uiScale)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        enabled: !heurCalRunner.isRunning
+                                        model: controller.calibrationAgents
+                                        textRole: "label"
+                                        font.pixelSize: root.evalCaptionSize
+                                        contentItem: Text {
+                                            text: calAgentCombo.displayText
+                                            color: root.textPrimary
+                                            font: calAgentCombo.font
+                                            horizontalAlignment: Text.AlignRight
+                                            verticalAlignment: Text.AlignVCenter
+                                            elide: Text.ElideLeft
                                         }
+                                        background: Rectangle { color: "transparent" }
                                     }
                                 }
                                 Button {
@@ -1140,175 +1297,420 @@ Item {
                                     font.pixelSize: root.evalCaptionSize
                                     onClicked: controller.refreshCalibrationAgents()
                                     contentItem: Text { text: parent.text; color: root.textSecondary; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1; radius: Math.round(4 * root.uiScale) }
-                                    implicitWidth: Math.round(30 * root.uiScale)
-                                    implicitHeight: Math.round(28 * root.uiScale)
+                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1; radius: Math.round(5 * root.uiScale) }
+                                    implicitWidth: Math.round(36 * root.uiScale)
+                                    implicitHeight: Math.round(36 * root.uiScale)
                                 }
-                                Item { Layout.fillWidth: true }
                             }
 
-                            // ── Режим цели: пресеты + ручной target winrate ──────────
-                            RowLayout {
+                            // ── Дополнительно (Seed) — сворачиваемо ───────────────────
+                            Item {
                                 Layout.fillWidth: true
-                                spacing: root.spacingSm
-                                Text { text: "🎯 Цель:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
-
-                                // Сегментированный переключатель (кнопки слитно).
+                                implicitHeight: Math.round(26 * root.uiScale)
                                 Row {
-                                    spacing: 0
-                                    Repeater {
-                                        model: [
-                                            { label: "Спарринг 0.50", val: 0.50 },
-                                            { label: "Хард 0.65",     val: 0.65 },
-                                            { label: "Максимум",      val: 1.00 },
-                                        ]
-                                        delegate: Button {
-                                            enabled: !heurCalRunner.isRunning
-                                            text: modelData.label
-                                            font.pixelSize: root.evalCaptionSize
-                                            property bool active: Math.abs(heurPanel.targetWinrate - modelData.val) < 0.001
-                                            onClicked: {
-                                                heurPanel.targetWinrate = modelData.val
-                                                calTargetInput.text = modelData.val.toFixed(2)
-                                            }
-                                            contentItem: Text {
-                                                text: parent.text
-                                                color: parent.active ? "#e8c060" : root.textSecondary
-                                                font: parent.font
-                                                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                                            }
-                                            background: Rectangle {
-                                                color: parent.active ? "#1a1508" : root.bgSurface
-                                                border.color: parent.active ? "#b88a26" : root.borderMuted
-                                                border.width: 1
-                                            }
+                                    anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                                    spacing: Math.round(6 * root.uiScale)
+                                    Text { text: heurPanel._advOpen ? "▾" : "▸"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale) }
+                                    Text { text: "Дополнительно"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+                                }
+                                Text {
+                                    visible: !heurPanel._advOpen
+                                    anchors.right: parent.right; anchors.rightMargin: root.spacingSm
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "seed " + calSeedInput.text
+                                    color: "#5a6a82"; font.pixelSize: Math.round(9 * root.uiScale); font.family: "JetBrains Mono"
+                                }
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: heurPanel._advOpen = !heurPanel._advOpen }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                visible: heurPanel._advOpen
+                                spacing: root.spacingSm
+
+                                // Seed + 🎲 новый + копировать
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: Math.round(36 * root.uiScale)
+                                    color: "#0a0f1a"; radius: Math.round(5 * root.uiScale)
+                                    border.width: 1
+                                    border.color: heurPanel._numValid(calSeedInput.text, 0) ? root.borderMuted : "#cf3f3f"
+                                    Text {
+                                        anchors.left: parent.left; anchors.leftMargin: root.spacingSm
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Seed"; color: root.textSecondary; font.pixelSize: Math.round(11 * root.uiScale)
+                                    }
+                                    Row {
+                                        anchors.right: parent.right; anchors.rightMargin: Math.round(4 * root.uiScale)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: Math.round(3 * root.uiScale)
+                                        TextField {
+                                            id: calSeedInput; text: "1390520"
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            validator: IntValidator { bottom: 0 }
+                                            horizontalAlignment: Text.AlignRight
+                                            font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                            color: root.textPrimary; enabled: !heurCalRunner.isRunning
+                                            implicitWidth: Math.round(96 * root.uiScale)
+                                            padding: 0
+                                            background: Rectangle { color: "transparent" }
+                                        }
+                                        Rectangle {
+                                            width: Math.round(28 * root.uiScale); height: Math.round(26 * root.uiScale); radius: Math.round(4 * root.uiScale)
+                                            color: seedRandBtn.pressed ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1
+                                            Text { anchors.centerIn: parent; text: "🎲"; font.pixelSize: Math.round(13 * root.uiScale) }
+                                            HoverHandler { id: seedRandHover }
+                                            ToolTip.visible: seedRandHover.hovered; ToolTip.text: "Новый случайный сид"
+                                            MouseArea { id: seedRandBtn; anchors.fill: parent; enabled: !heurCalRunner.isRunning; onClicked: calSeedInput.text = heurPanel._randomSeed() }
+                                        }
+                                        Rectangle {
+                                            width: Math.round(28 * root.uiScale); height: Math.round(26 * root.uiScale); radius: Math.round(4 * root.uiScale)
+                                            color: seedCopyBtn.pressed ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1
+                                            Text { anchors.centerIn: parent; text: "⧉"; color: root.textSecondary; font.pixelSize: Math.round(13 * root.uiScale) }
+                                            HoverHandler { id: seedCopyHover }
+                                            ToolTip.visible: seedCopyHover.hovered; ToolTip.text: "Скопировать сид"
+                                            MouseArea { id: seedCopyBtn; anchors.fill: parent; onClicked: heurPanel._copyToClipboard(calSeedInput.text) }
                                         }
                                     }
                                 }
+                            }
 
-                                Text { text: "свой:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
+                            // ── Режим цели: крупные карточки ──────────────────────────
+                            Text {
+                                text: "Режим цели"; color: root.textSecondary
+                                font.pixelSize: root.evalCaptionSize
+                                Layout.topMargin: root.spacingSm
+                            }
+                            Repeater {
+                                model: [
+                                    { label: "Спарринг", val: 0.50, desc: "сбалансированный враг", icon: "⚔", danger: false },
+                                    { label: "Хард",     val: 0.65, desc: "сильнее игрока",        icon: "🛡", danger: false },
+                                    { label: "Максимум", val: 1.00, desc: "максимум давления",     icon: "💀", danger: true  },
+                                ]
+                                delegate: Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: Math.round(50 * root.uiScale)
+                                    radius: Math.round(6 * root.uiScale)
+                                    property bool active: Math.abs(heurPanel.targetWinrate - modelData.val) < 0.001
+                                    property color accent: modelData.danger ? "#cf3f3f" : "#b88a26"
+                                    color: active ? (modelData.danger ? "#1c0c0c" : "#15130a") : root.bgSurface
+                                    border.color: active ? accent : root.borderMuted
+                                    border.width: active ? 2 : 1
+
+                                    Text {
+                                        id: tgtIcon
+                                        anchors.left: parent.left; anchors.leftMargin: Math.round(12 * root.uiScale)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData.icon
+                                        color: active ? accent : root.textSecondary
+                                        font.pixelSize: Math.round(18 * root.uiScale)
+                                    }
+                                    Column {
+                                        anchors.left: tgtIcon.right; anchors.leftMargin: Math.round(12 * root.uiScale)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 0
+                                        Text { text: modelData.label; color: active ? root.textPrimary : root.textSecondary
+                                            font.pixelSize: Math.round(13 * root.uiScale); font.bold: active }
+                                        Text { text: modelData.desc; color: root.textSecondary
+                                            font.pixelSize: Math.round(10 * root.uiScale) }
+                                    }
+                                    Text {
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: active ? Math.round(36 * root.uiScale) : Math.round(14 * root.uiScale)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: modelData.val.toFixed(2)
+                                        color: active ? accent : root.textSecondary
+                                        font.pixelSize: Math.round(17 * root.uiScale); font.bold: true
+                                        font.family: "JetBrains Mono"
+                                    }
+                                    Rectangle {
+                                        visible: active
+                                        anchors.right: parent.right; anchors.rightMargin: Math.round(10 * root.uiScale)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.round(18 * root.uiScale); height: width; radius: width / 2
+                                        color: accent
+                                        Text { anchors.centerIn: parent; text: "✓"; color: "#0a0f1a"
+                                            font.pixelSize: Math.round(11 * root.uiScale); font.bold: true }
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        enabled: !heurCalRunner.isRunning
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            heurPanel.targetWinrate = modelData.val
+                                            calTargetInput.text = modelData.val.toFixed(2)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // свой target + подпись стороны эвристики
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: root.spacingSm
+                                Text { text: "свой target:"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                                 TextField {
                                     id: calTargetInput
                                     text: "0.50"
                                     validator: DoubleValidator { bottom: 0.0; top: 1.0; decimals: 2; notation: DoubleValidator.StandardNotation }
                                     font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
                                     color: root.textPrimary; enabled: !heurCalRunner.isRunning
-                                    implicitWidth: Math.round(50 * root.uiScale)
-                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                                    implicitWidth: Math.round(56 * root.uiScale)
+                                    horizontalAlignment: Text.AlignHCenter
+                                    background: Rectangle { color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1; radius: Math.round(4 * root.uiScale) }
                                     onEditingFinished: {
                                         var v = parseFloat(text)
                                         if (!isNaN(v) && v >= 0.0 && v <= 1.0) heurPanel.targetWinrate = v
                                     }
                                 }
-                                Text {
-                                    Layout.leftMargin: root.spacingSm
-                                    color: root.textSecondary; font.pixelSize: Math.round(9 * root.uiScale)
-                                    font.family: "JetBrains Mono"
-                                    text: heurPanel.targetWinrate >= 0.95
-                                        ? "макс. сила · эвристика " + _heuristicSide()
-                                        : "цель winrate=" + heurPanel.targetWinrate.toFixed(2) + " · эвристика " + _heuristicSide()
-                                }
                                 Item { Layout.fillWidth: true }
                             }
-
-                            RowLayout {
+                            Text {
                                 Layout.fillWidth: true
-                                spacing: root.spacingSm
+                                color: root.textSecondary; font.pixelSize: Math.round(10 * root.uiScale)
+                                font.family: "JetBrains Mono"
+                                wrapMode: Text.WordWrap
+                                text: heurPanel.targetWinrate >= 0.95
+                                    ? "макс. сила · эвристика " + _heuristicSide()
+                                    : "цель winrate=" + heurPanel.targetWinrate.toFixed(2) + " · эвристика " + _heuristicSide()
+                            }
 
-                                Button {
-                                    visible: !heurCalRunner.isRunning
-                                    text: "▶ Калибровать"
-                                    font.pixelSize: root.evalCaptionSize
-                                    onClicked: {
-                                        heurPanel._resetLeaderboard()
-                                        heurPanel.bestCandidateIdx = -1
-                                        heurPanel.bestScore = 0.0
-                                        heurPanel.patchText = ""
-                                        heurPanel.calDone = 0
-                                        heurPanel.calTotal = parseInt(calCandidatesInput.text)
-                                        heurPanel._calStartMs = Date.now()
-                                        heurPanel._calElapsed = 0
-                                        var a = _selectedAgent()
-                                        heurCalRunner.run(parseInt(calCandidatesInput.text),
-                                                          parseInt(calGamesInput.text),
-                                                          parseInt(calSeedInput.text), false,
-                                                          a.agent_id, a.side, heurPanel.targetWinrate)
-                                    }
-                                    contentItem: Text { text: parent.text; color: "#e8c060"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    background: Rectangle { color: parent.down ? "#100e00" : "#1a1508"; border.color: parent.hovered ? "#d0a030" : "#b88a26"; border.width: 1 }
+                            // ── Запуск: крупный CTA, затем вторичные действия ─────────
+                            Button {
+                                visible: !heurCalRunner.isRunning
+                                enabled: heurPanel._paramsValid()
+                                Layout.fillWidth: true
+                                Layout.topMargin: root.spacingSm
+                                implicitHeight: Math.round(38 * root.uiScale)
+                                text: "▶ Калибровать"
+                                font.pixelSize: Math.round(14 * root.uiScale); font.bold: true
+                                onClicked: {
+                                    heurPanel._resetLeaderboard()
+                                    heurPanel.bestCandidateIdx = -1
+                                    heurPanel.bestScore = 0.0
+                                    heurPanel.patchText = ""
+                                    heurPanel.calDone = 0
+                                    heurPanel.calTotal = parseInt(calCandidatesInput.text)
+                                    heurPanel._runGames = parseInt(calGamesInput.text)
+                                    heurPanel._calStartMs = Date.now()
+                                    heurPanel._calElapsed = 0
+                                    var a = _selectedAgent()
+                                    heurCalRunner.run(parseInt(calCandidatesInput.text),
+                                                      parseInt(calGamesInput.text),
+                                                      parseInt(calSeedInput.text), false,
+                                                      a.agent_id, a.side, heurPanel.targetWinrate)
                                 }
-                                Button {
-                                    visible: !heurCalRunner.isRunning
-                                    text: "Dry run"
-                                    font.pixelSize: root.evalCaptionSize
-                                    onClicked: {
-                                        heurPanel._resetLeaderboard()
-                                        heurPanel.bestCandidateIdx = -1
-                                        heurPanel.calDone = 0
-                                        heurPanel.calTotal = parseInt(calCandidatesInput.text)
-                                        heurPanel._calStartMs = Date.now()
-                                        heurPanel._calElapsed = 0
-                                        var a = _selectedAgent()
-                                        heurCalRunner.run(parseInt(calCandidatesInput.text),
-                                                          parseInt(calGamesInput.text),
-                                                          parseInt(calSeedInput.text), true,
-                                                          a.agent_id, a.side, heurPanel.targetWinrate)
-                                    }
-                                    contentItem: Text { text: parent.text; color: root.textSecondary; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                                contentItem: Text { text: parent.text; color: parent.enabled ? "#0a0f1a" : "#5a5230"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                background: Rectangle { radius: Math.round(5 * root.uiScale)
+                                    color: !parent.enabled ? "#2a2410" : parent.down ? "#9a7420" : parent.hovered ? "#d0a030" : "#b88a26" }
+                            }
+                            Button {
+                                visible: !heurCalRunner.isRunning
+                                enabled: heurPanel._paramsValid()
+                                Layout.fillWidth: true
+                                implicitHeight: Math.round(32 * root.uiScale)
+                                text: "Dry run"
+                                font.pixelSize: root.evalCaptionSize
+                                onClicked: {
+                                    heurPanel._resetLeaderboard()
+                                    heurPanel.bestCandidateIdx = -1
+                                    heurPanel.calDone = 0
+                                    heurPanel.calTotal = parseInt(calCandidatesInput.text)
+                                    heurPanel._runGames = parseInt(calGamesInput.text)
+                                    heurPanel._calStartMs = Date.now()
+                                    heurPanel._calElapsed = 0
+                                    var a = _selectedAgent()
+                                    heurCalRunner.run(parseInt(calCandidatesInput.text),
+                                                      parseInt(calGamesInput.text),
+                                                      parseInt(calSeedInput.text), true,
+                                                      a.agent_id, a.side, heurPanel.targetWinrate)
                                 }
-                                Button {
-                                    visible: heurCalRunner.isRunning
-                                    text: "■ Стоп"
-                                    font.pixelSize: root.evalCaptionSize
-                                    onClicked: heurCalRunner.stop()
-                                    contentItem: Text { text: parent.text; color: "#c05050"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    background: Rectangle { color: "#1a0c0c"; border.color: "#6b2020"; border.width: 1 }
-                                }
+                                contentItem: Text { text: parent.text; color: parent.enabled ? root.textSecondary : "#3a4a5a"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                background: Rectangle { radius: Math.round(5 * root.uiScale)
+                                    color: parent.down ? "#0d1422" : root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                            }
+                            Text {
+                                visible: !heurCalRunner.isRunning && !heurPanel._paramsValid()
+                                Layout.fillWidth: true
+                                text: "⚠ Заполните «Кандидатов», «Игр» и Seed корректными числами"
+                                color: "#d08a5a"; font.pixelSize: Math.round(10 * root.uiScale)
+                                wrapMode: Text.WordWrap
+                            }
+                            Button {
+                                visible: heurCalRunner.isRunning
+                                Layout.fillWidth: true
+                                Layout.topMargin: root.spacingSm
+                                implicitHeight: Math.round(38 * root.uiScale)
+                                text: "■ Стоп"
+                                font.pixelSize: Math.round(14 * root.uiScale); font.bold: true
+                                onClicked: heurCalRunner.stop()
+                                contentItem: Text { text: parent.text; color: "#e08a8a"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                background: Rectangle { radius: Math.round(5 * root.uiScale)
+                                    color: parent.down ? "#1a0808" : "#1a0c0c"; border.color: "#6b2020"; border.width: 1 }
+                            }
 
-                                // прогресс инлайн (растягивается) с процентом по центру
+                            // прогресс + ETA
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.topMargin: root.spacingSm
+                                spacing: Math.round(4 * root.uiScale)
+                                visible: heurCalRunner.isRunning || heurPanel.calDone > 0
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: "Прогресс"; color: root.textSecondary; font.pixelSize: Math.round(10 * root.uiScale) }
+                                    Item { Layout.fillWidth: true }
+                                    Text {
+                                        text: heurPanel.calTotal > 0 ? Math.round(100 * heurPanel.calDone / heurPanel.calTotal) + "%" : "0%"
+                                        color: root.textPrimary; font.pixelSize: Math.round(10 * root.uiScale)
+                                        font.bold: true; font.family: "JetBrains Mono"
+                                    }
+                                }
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: Math.round(16 * root.uiScale)
-                                    visible: heurCalRunner.isRunning || heurPanel.calDone > 0
+                                    Layout.preferredHeight: Math.round(8 * root.uiScale)
                                     color: "#0a0f1a"; border.color: root.borderMuted; border.width: 1
                                     radius: Math.round(3 * root.uiScale)
                                     Rectangle {
+                                        x: 1; y: 1
                                         width: heurPanel.calTotal > 0
-                                            ? Math.max(height, parent.width * heurPanel.calDone / heurPanel.calTotal)
+                                            ? Math.max(height, (parent.width - 2) * heurPanel.calDone / heurPanel.calTotal)
                                             : 0
-                                        height: parent.height; radius: parent.radius
+                                        height: parent.height - 2; radius: parent.radius
                                         color: heurPanel.targetWinrate >= 0.95 ? "#cf3f3f" : "#b88a26"
                                         opacity: heurPanel.calDone > 0 ? 1.0 : 0.0
                                         Behavior on width { NumberAnimation { duration: 300 } }
                                     }
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: heurPanel.calTotal > 0
-                                        text: Math.round(100 * heurPanel.calDone / heurPanel.calTotal) + "%"
-                                        color: root.textPrimary
-                                        font.pixelSize: Math.round(11 * root.uiScale); font.bold: true
-                                    }
-                                }
-                                // спейсер, когда прогресс скрыт — кнопки прижаты влево
-                                Item {
-                                    Layout.fillWidth: true
-                                    visible: !(heurCalRunner.isRunning || heurPanel.calDone > 0)
                                 }
                                 Text {
-                                    visible: heurCalRunner.isRunning || heurPanel.calDone > 0
+                                    Layout.fillWidth: true
                                     text: heurPanel.calDone + " / " + heurPanel.calTotal
                                         + (heurPanel._etaText() ? " · " + heurPanel._etaText() : "")
                                         + (heurPanel.bestCandidateIdx >= 0 ? " · лучший " + _fmt(heurPanel.bestScore, 3) : "")
-                                    color: root.textSecondary; font.pixelSize: root.evalCaptionSize
-                                    font.family: "JetBrains Mono"
+                                    color: root.textSecondary; font.pixelSize: Math.round(10 * root.uiScale)
+                                    font.family: "JetBrains Mono"; wrapMode: Text.WordWrap
                                 }
                             }
                         }
                     }
 
+                        } // ← конец ЛЕВОЙ колонки
+
+                        // ─────────────── ПРАВАЯ КОЛОНКА: лидерборд ───────────────
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignTop
+                            spacing: root.spacingMd
+
+                            // ── hero «Лучший кандидат» ──
+                            Rectangle {
+                                Layout.fillWidth: true
+                                visible: heurPanel.bestCandidateIdx >= 0
+                                radius: Math.round(6 * root.uiScale)
+                                color: "#0d2010"; border.color: "#1f5030"; border.width: 1
+                                implicitHeight: heroCol.implicitHeight + 2 * root.spacingMd
+
+                                ColumnLayout {
+                                    id: heroCol
+                                    anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                                    anchors.margins: root.spacingMd
+                                    spacing: root.spacingSm
+
+                                    Text {
+                                        text: "🏆 Лучший кандидат #" + heurPanel.bestCandidateIdx
+                                        color: "#4caf6e"; font.pixelSize: root.evalCaptionSize; font.bold: true
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingMd
+                                        Text {
+                                            text: _fmt(heurPanel.bestScore, 3); color: "#4caf6e"
+                                            font.pixelSize: Math.round(30 * root.uiScale); font.bold: true
+                                            font.family: "JetBrains Mono"
+                                        }
+                                        Text {
+                                            Layout.alignment: Qt.AlignVCenter
+                                            visible: heurPanel._top3.length > 0
+                                            text: heurPanel._top3.length > 0
+                                                ? "winrate " + heurPanel._top3[0].winrate
+                                                  + "   ·   entropy " + heurPanel._top3[0].entropy
+                                                  + "   ·   draws " + heurPanel._top3[0].draws
+                                                : ""
+                                            color: root.textSecondary; font.pixelSize: root.evalCaptionSize
+                                            font.family: "JetBrains Mono"
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                    }
+                                    TextArea {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: Math.round(74 * root.uiScale)
+                                        // Патч-файл пишется только при ПОЛНОМ завершении калибровки.
+                                        text: heurPanel.patchText.length > 0
+                                            ? heurPanel.patchText
+                                            : heurCalRunner.isRunning
+                                                ? "(Идёт калибровка — патч появится после прохода всех кандидатов)"
+                                                : "(Патч создаётся только при полном завершении. Остановленный прогон патча не даёт.)"
+                                        readOnly: true
+                                        color: "#7db4f5"
+                                        font.pixelSize: Math.round(10 * root.uiScale); font.family: "JetBrains Mono"
+                                        background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1; radius: Math.round(4 * root.uiScale) }
+                                    }
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: root.spacingSm
+                                        Button {
+                                            text: "✓ Применить патч"
+                                            font.pixelSize: root.evalCaptionSize
+                                            enabled: !heurCalRunner.isRunning && heurPanel.patchText.length > 0
+                                            onClicked: heurCalRunner.applyPatch(heurCalRunner.currentRunDir)
+                                            contentItem: Text { text: parent.text; color: parent.enabled ? "#0a0f1a" : "#6b5010"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            background: Rectangle { radius: Math.round(5 * root.uiScale)
+                                                color: parent.enabled ? (parent.down ? "#9a7420" : parent.hovered ? "#d0a030" : "#b88a26") : "#2a2410" }
+                                        }
+                                        Button {
+                                            text: "Открыть папку"
+                                            font.pixelSize: root.evalCaptionSize
+                                            enabled: heurCalRunner.currentRunDir.length > 0
+                                            onClicked: Qt.openUrlExternally("file:///" + heurCalRunner.currentRunDir)
+                                            contentItem: Text { text: parent.text; color: parent.enabled ? root.textSecondary : "#3a4a5a"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            background: Rectangle { radius: Math.round(5 * root.uiScale)
+                                                color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
+                                        }
+                                        Text {
+                                            id: patchStatusText
+                                            text: ""
+                                            font.pixelSize: root.evalCaptionSize
+                                            font.family: "JetBrains Mono"
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                    }
+                                }
+                            }
+
+                            // ── empty-state (до первого результата) ──
+                            Rectangle {
+                                Layout.fillWidth: true
+                                visible: heurPanel.bestCandidateIdx < 0
+                                implicitHeight: Math.round(96 * root.uiScale)
+                                radius: Math.round(6 * root.uiScale)
+                                color: root.bgElevated; border.color: root.borderMuted; border.width: 1
+                                Column {
+                                    anchors.centerIn: parent
+                                    spacing: Math.round(4 * root.uiScale)
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: "🏁"; font.pixelSize: Math.round(24 * root.uiScale); color: root.textSecondary
+                                    }
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: heurCalRunner.isRunning
+                                            ? "Идёт калибровка — кандидаты появятся в таблице ниже"
+                                            : "Запустите калибровку, чтобы подобрать веса эвристики"
+                                        color: root.textSecondary; font.pixelSize: root.evalCaptionSize
+                                    }
+                                }
+                            }
+
                     GroupBox {
-                        width: parent.width
+                        Layout.fillWidth: true
                         title: "Кандидаты — live"
                         label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
                         background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
@@ -1542,7 +1944,7 @@ Item {
 
                     // ── Динамика лучшего score (спарклайн) ───────────────────
                     GroupBox {
-                        width: parent.width
+                        Layout.fillWidth: true
                         visible: heurPanel._bestHistory.length >= 2
                         title: "Динамика лучшего score"
                         label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
@@ -1572,18 +1974,24 @@ Item {
                                     var rng = flat ? 1 : (mx - mn)
                                     function px(i) { return pad + w * i / (n - 1) }
                                     function py(v) { return flat ? pad + h / 2 : pad + h * (1 - (v - mn) / rng) }
-                                    // пунктирная базовая линия
-                                    ctx.beginPath(); ctx.moveTo(pad, py(d[n - 1])); ctx.lineTo(width - pad, py(d[n - 1]))
-                                    ctx.strokeStyle = "rgba(184,138,38,0.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([])
-                                    // заливка под линией
-                                    ctx.beginPath(); ctx.moveTo(px(0), height - pad)
-                                    for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(d[j]))
-                                    ctx.lineTo(px(n - 1), height - pad); ctx.closePath()
-                                    ctx.fillStyle = "rgba(76,175,110,0.12)"; ctx.fill()
+                                    // Плоская история (лучший не менялся) → только тонкая
+                                    // линия по центру, без заливки и базовой линии — иначе
+                                    // получается сплошной зелёный «брус».
+                                    if (!flat) {
+                                        // пунктирная базовая линия
+                                        ctx.beginPath(); ctx.moveTo(pad, py(d[n - 1])); ctx.lineTo(width - pad, py(d[n - 1]))
+                                        ctx.strokeStyle = "rgba(184,138,38,0.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([])
+                                        // заливка под линией
+                                        ctx.beginPath(); ctx.moveTo(px(0), height - pad)
+                                        for (var j = 0; j < n; j++) ctx.lineTo(px(j), py(d[j]))
+                                        ctx.lineTo(px(n - 1), height - pad); ctx.closePath()
+                                        ctx.fillStyle = "rgba(76,175,110,0.12)"; ctx.fill()
+                                    }
                                     // линия
                                     ctx.beginPath(); ctx.moveTo(px(0), py(d[0]))
                                     for (var k = 1; k < n; k++) ctx.lineTo(px(k), py(d[k]))
-                                    ctx.strokeStyle = "#4caf6e"; ctx.lineWidth = Math.max(1, Math.round(1.5 * root.uiScale)); ctx.stroke()
+                                    ctx.strokeStyle = flat ? "rgba(76,175,110,0.55)" : "#4caf6e"
+                                    ctx.lineWidth = Math.max(1, Math.round(1.5 * root.uiScale)); ctx.stroke()
                                     // последняя точка
                                     ctx.beginPath(); ctx.arc(px(n - 1), py(d[n - 1]), Math.round(2.5 * root.uiScale), 0, 2 * Math.PI)
                                     ctx.fillStyle = "#b88a26"; ctx.fill()
@@ -1599,70 +2007,8 @@ Item {
                         }
                     }
 
-                    GroupBox {
-                        width: parent.width
-                        visible: heurPanel.bestCandidateIdx >= 0
-                        title: "Лучший патч — кандидат #" + heurPanel.bestCandidateIdx
-                        label: Text { text: parent.title; color: "#4caf6e"; font.pixelSize: root.evalCaptionSize }
-                        background: Rectangle { color: "#0d2010"; border.color: "#1f5030"; border.width: 1 }
-
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: root.spacingSm
-
-                            Text {
-                                text: "score=" + _fmt(heurPanel.bestScore, 3)
-                                color: "#4caf6e"
-                                font.pixelSize: root.evalCaptionSize
-                                font.family: "JetBrains Mono"
-                                font.bold: true
-                            }
-
-                            TextArea {
-                                Layout.fillWidth: true
-                                height: Math.round(80 * root.uiScale)
-                                // Патч-файл пишется только при ПОЛНОМ завершении калибровки.
-                                // Стоп на середине → патча нет (видны только живые кандидаты).
-                                text: heurPanel.patchText.length > 0
-                                    ? heurPanel.patchText
-                                    : heurCalRunner.isRunning
-                                        ? "(Идёт калибровка — патч появится после прохода всех кандидатов)"
-                                        : "(Патч создаётся только при полном завершении. Остановленный прогон патча не даёт — запустите без «Стоп».)"
-                                readOnly: true
-                                color: "#7db4f5"
-                                font.pixelSize: Math.round(9 * root.uiScale)
-                                font.family: "JetBrains Mono"
-                                background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
-                            }
-
-                            RowLayout {
-                                spacing: root.spacingSm
-                                Button {
-                                    text: "✓ Применить патч"
-                                    font.pixelSize: root.evalCaptionSize
-                                    // Доступно только когда есть реальный патч (полное завершение).
-                                    enabled: !heurCalRunner.isRunning && heurPanel.patchText.length > 0
-                                    onClicked: heurCalRunner.applyPatch(heurCalRunner.currentRunDir)
-                                    contentItem: Text { text: parent.text; color: parent.enabled ? "#e8c060" : "#6b5010"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    background: Rectangle { color: parent.down ? "#100e00" : "#1a1508"; border.color: parent.enabled ? (parent.hovered ? "#d0a030" : "#b88a26") : "#3a3010"; border.width: 1 }
-                                }
-                                Button {
-                                    text: "Открыть папку"
-                                    font.pixelSize: root.evalCaptionSize
-                                    enabled: heurCalRunner.currentRunDir.length > 0
-                                    onClicked: Qt.openUrlExternally("file:///" + heurCalRunner.currentRunDir)
-                                    contentItem: Text { text: parent.text; color: parent.enabled ? root.textSecondary : "#3a4a5a"; font: parent.font; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                    background: Rectangle { color: root.bgSurface; border.color: root.borderMuted; border.width: 1 }
-                                }
-                                Text {
-                                    id: patchStatusText
-                                    text: ""
-                                    font.pixelSize: root.evalCaptionSize
-                                    font.family: "JetBrains Mono"
-                                }
-                            }
-                        }
-                    }
+                        } // ← конец ПРАВОЙ колонки
+                    } // ← конец двухколоночного RowLayout
                 }
             }
         }

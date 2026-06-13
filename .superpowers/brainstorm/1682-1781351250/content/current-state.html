@@ -1,0 +1,65 @@
+<h2>Вкладка «Метрики модели» сегодня</h2>
+<p class="subtitle">Слева — текущая раскладка (сверху вниз), справа — что я вижу как проблемы. Сначала договоримся о цели.</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Сейчас: один длинный скролл</div>
+    <div class="mockup-body" style="font-size:12px;line-height:1.5">
+      <div class="mock-nav" style="margin-bottom:8px">Метрики модели | Метрики эвристики | Играть</div>
+      <div class="placeholder" style="text-align:left;padding:6px 10px">📝 Заголовок + длинное описание-абзац</div>
+      <div class="placeholder" style="text-align:left;padding:6px 10px;margin-top:6px">[Выбрать модель] [Последняя] &nbsp; metricsLabel…</div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <div class="placeholder" style="flex:1;background:#243042">Модель<br>algo/mode/run id</div>
+        <div class="placeholder" style="flex:1;background:#1a2a40">Последнее окно<br>ep/winrate/reward/len</div>
+        <div class="placeholder" style="flex:1;background:#332b1d">Оппонент<br>selfplay/src/algo</div>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <div class="placeholder" style="flex:1">WINRATE</div>
+        <div class="placeholder" style="flex:1">REWARD</div>
+        <div class="placeholder" style="flex:1">ДЛИНА</div>
+        <div class="placeholder" style="flex:1">ЭПИЗОД</div>
+      </div>
+      <div class="placeholder" style="text-align:left;padding:6px 10px;margin-top:6px">Графики тренировки &nbsp;&nbsp; [ОТКРЫТЬ В TENSORBOARD]</div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <div class="placeholder" style="width:48%;height:46px">📈 Winrate</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 Reward</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 Loss</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 Ep_len</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 Avg VP</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 HP diff</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 Kill diff</div>
+        <div class="placeholder" style="width:48%;height:46px">📈 End reasons</div>
+      </div>
+    </div>
+  </div>
+  <div class="mockup">
+    <div class="mockup-header">Что цепляет глаз</div>
+    <div class="mockup-body" style="font-size:13px;line-height:1.6">
+      <p><span class="label">Дубль 1</span><br>Карточка «Последнее окно» и KPI-плитки показывают <b>одно и то же</b> (winrate / reward / len / эпизод) дважды подряд.</p>
+      <p><span class="label">Дубль 2</span><br>Карточка «Модель» (algo/mode/run id) дублирует то, что уже есть в верхней summary-строке.</p>
+      <p><span class="label">Шум</span><br>Длинный абзац-описание + английский заголовок «Model Metrics» на русской вкладке.</p>
+      <p><span class="label">Иерархия</span><br>8 графиков 2×4 одной плотности — нет деления «главное / детали». Всё одинаково важно = ничего не важно.</p>
+      <p><span class="label">Скролл</span><br>Чтобы дойти до графиков, надо проскроллить 3 блока шапки.</p>
+    </div>
+  </div>
+</div>
+
+<h3>Какая главная цель редизайна?</h3>
+<div class="options">
+  <div class="option" data-choice="glance" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>«Состояние модели одним взглядом»</h3><p>Убрать дубли, наверх вынести 4–5 ключевых чисел + 1–2 главных графика. Остальное — свернуть/ниже.</p></div>
+  </div>
+  <div class="option" data-choice="analysis" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>«Площадка для анализа»</h3><p>Главное — графики. Сделать их крупнее, добавить управление (сглаживание, выбор метрик, зум), шапку ужать в одну строку.</p></div>
+  </div>
+  <div class="option" data-choice="compare" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content"><h3>«Сравнение моделей»</h3><p>Дать возможность держать на экране 2 модели рядом / overlay их кривых. Сейчас вкладка строго про одну модель.</p></div>
+  </div>
+  <div class="option" data-choice="polish" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content"><h3>«Просто чище»</h3><p>Раскладка по сути ок — нужна косметика: убрать дубли, выровнять, единый стиль, без новой функциональности.</p></div>
+  </div>
+</div>

@@ -1,0 +1,69 @@
+<h2>Вариант A — детальная раскладка</h2>
+<p class="subtitle">Так будет устроена вкладка. Вопрос внизу: какие 2 графика держать крупно наверху.</p>
+
+<style>
+  .wf{font-size:12px;line-height:1.4;max-width:680px}
+  .wf .bar{background:#243042;border:1px solid #33415a;border-radius:5px;padding:6px 9px;margin-top:6px;color:#cdd6e6;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .wf .pill{background:#1b2536;border:1px solid #3a496a;border-radius:3px;padding:2px 7px;font-size:11px;color:#9fb2d6}
+  .wf .spacer{flex:1}
+  .wf .kpi{display:flex;gap:7px;margin-top:7px}
+  .wf .kpi div{flex:1;background:#161f31;border:1px solid #2f3d58;border-left:3px solid #4a78d6;border-radius:5px;padding:7px 9px}
+  .wf .kpi b{display:block;font-size:18px;color:#eaf0fb;margin-top:2px}
+  .wf .kpi span{font-size:10px;color:#8595ad;letter-spacing:.6px}
+  .wf .chart{background:#101827;border:1px solid #2a3650;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#7fa0d8;height:120px}
+  .wf .grid2{display:flex;gap:7px;margin-top:7px}
+  .wf .grid2>div{flex:1}
+  .wf .fold{background:#141d2e;border:1px solid #2a3650;border-radius:5px;padding:8px 11px;margin-top:7px;color:#aebbd4;display:flex;align-items:center;gap:8px;cursor:default}
+  .wf .fold .chev{color:#5f78a8;font-size:13px}
+  .wf .fold small{color:#7c8aa3}
+  .wf .sec{color:#9fb2d6;font-size:11px;letter-spacing:.6px;text-transform:uppercase;margin:10px 0 0}
+</style>
+
+<div class="wf">
+  <div class="bar">
+    <b style="color:#eaf0fb">Метрики модели</b>
+    <span class="pill">model_320 · DQN</span>
+    <span class="pill">selfplay</span>
+    <div class="spacer"></div>
+    <span class="pill">Выбрать</span>
+    <span class="pill">Последняя</span>
+    <span class="pill" style="border-color:#b88a26;color:#d5b15a">TensorBoard ↗</span>
+  </div>
+
+  <p class="sec">Состояние — последнее окно эпизодов</p>
+  <div class="kpi">
+    <div><span>WINRATE</span><b>62%</b></div>
+    <div><span>REWARD</span><b>+8.4</b></div>
+    <div><span>ДЛИНА ЭПИЗОДА</span><b>14</b></div>
+    <div><span>ОКНО (ЯКОРЬ)</span><b>#320</b></div>
+  </div>
+
+  <p class="sec">Главные кривые</p>
+  <div class="grid2">
+    <div class="chart">📈 Winrate &nbsp; <small style="color:#5f6f8d">(чипы: тек/ср/мин/макс)</small></div>
+    <div class="chart">📈 Reward</div>
+  </div>
+
+  <div class="fold"><span class="chev">▾</span> Остальные метрики <small>— Loss · Ep_len · Avg VP · HP diff · Kill diff · Причины завершения</small></div>
+  <div class="fold"><span class="chev">▸</span> Детали модели и оппонента <small>— algo / mode / run id · self-play / источник / алгоритм оппонента</small></div>
+</div>
+
+<h3>Какие 2 графика держать крупно наверху как «главные»?</h3>
+<div class="options">
+  <div class="option" data-choice="wr_reward" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>Winrate + Reward</h3><p>Классика «как учится». Самые понятные на глаз показатели прогресса.</p></div>
+  </div>
+  <div class="option" data-choice="wr_loss" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>Winrate + Loss</h3><p>Качество игры + здоровье обучения (не разошёлся ли лосс). Reward уходит вниз.</p></div>
+  </div>
+  <div class="option" data-choice="three" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content"><h3>Три крупных: Winrate + Reward + Loss</h3><p>Ряд из 3 вместо 2. Чуть плотнее, но сразу виден и прогресс, и стабильность.</p></div>
+  </div>
+  <div class="option" data-choice="pinnable" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content"><h3>Настраиваемо — «закрепить» любой</h3><p>По умолчанию Winrate+Reward, но у каждого графика кнопка-пин: что закрепил — то наверху. Сложнее в реализации.</p></div>
+  </div>
+</div>
