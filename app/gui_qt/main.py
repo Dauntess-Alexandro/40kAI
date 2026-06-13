@@ -8486,6 +8486,11 @@ def main() -> int:
     QQuickStyle.setStyle(os.environ["QT_QUICK_CONTROLS_STYLE"])
 
     app = QtGui.QGuiApplication(sys.argv)
+    # Идентификаторы для QSettings (нужны QML-типу Settings: запоминание
+    # параметров калибровки и т.п.). Без них QSettings не инициализируется.
+    app.setOrganizationName("40kAI")
+    app.setOrganizationDomain("40kai.local")
+    app.setApplicationName("40kAI GUI")
 
     theme_flat = None
     try:
