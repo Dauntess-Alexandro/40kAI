@@ -3896,26 +3896,27 @@ ApplicationWindow {
                                 color: root.uiTextMain
                             }
 
-                            // Чип-подсказка с прежним описанием (текст не теряем).
-                            Text {
-                                text: "?"
-                                color: root.uiTextMuted
-                                font.bold: true
-                                font.pixelSize: Math.round(14 * root.uiScale)
+                            // Иконка-подсказка ⓘ с описанием вкладки (текст не теряем).
+                            Rectangle {
+                                Layout.alignment: Qt.AlignVCenter
+                                implicitWidth: Math.round(18 * root.uiScale)
+                                implicitHeight: Math.round(18 * root.uiScale)
+                                radius: width / 2
+                                color: helpHover.hovered ? Qt.rgba(1, 1, 1, 0.06) : "transparent"
+                                border.width: 1
+                                border.color: helpHover.hovered ? root.uiTextMain : root.uiTextMuted
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "i"
+                                    font.bold: true
+                                    font.italic: true
+                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                    color: parent.border.color
+                                }
+                                HoverHandler { id: helpHover }
                                 ToolTip.visible: helpHover.hovered
                                 ToolTip.text: "Метрики тренировки: каждая точка — окно реальных тренировочных эпизодов (DET-прогоны удалены). Честное сравнение моделей — вкладка «Оценка»."
-                                HoverHandler { id: helpHover }
-                            }
-
-                            Text {
-                                text: controller.metricsAlgo
-                                color: root.uiTextMuted
-                                font.bold: true
-                                visible: controller.metricsAlgo.length > 0
-                            }
-                            Text {
-                                text: controller.selfPlayEnabled ? "selfplay" : "vs preset"
-                                color: root.uiTextMuted
                             }
 
                             Item { Layout.fillWidth: true }
