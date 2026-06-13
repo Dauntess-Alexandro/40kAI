@@ -197,7 +197,7 @@ def compatible_contracts(left: dict[str, Any], right: dict[str, Any]) -> tuple[b
 
 
 _VALID_AGENT_ALGOS = frozenset(
-    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}
+    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}
 )
 
 
@@ -253,6 +253,10 @@ def resolve_agent_algo(
         # meta.algo авторитетна (её пишет тренер), иначе PPO грузится как AZ-tree.
         if resolved in {"alphazero_tree", "alphazero_proxy"} and meta_algo == "ppo":
             return "ppo"
+        # gumbel_az шарит AZ-архитектуру (policy_heads/value_heads) — веса неотличимы
+        # от AZ-tree; meta.algo авторитетна (её пишет тренер). Проверка ДО generic-блока ниже.
+        if resolved in {"alphazero_tree", "alphazero_proxy"} and meta_algo == "gumbel_az":
+            return "gumbel_az"
         if meta_algo in _VALID_AGENT_ALGOS and meta_algo != resolved:
             aid = str(agent_id or (meta or {}).get("agent_id", "") or "").strip()
             prefix = f"agent '{aid}'" if aid else "agent"
@@ -268,7 +272,7 @@ def resolve_agent_algo(
         return "dqn"
     raise ValueError(
         f"agent '{agent_id or (meta or {}).get('agent_id', '')}': не удалось определить algo "
-        f"(meta={meta_algo!r}; ожидается dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero)."
+        f"(meta={meta_algo!r}; ожидается dqn/ppo/alphazero_tree/alphazero_proxy/gumbel_muzero/gumbel_az)."
     )
 
 
@@ -376,7 +380,7 @@ def collect_registered_agents_meta(*, agents_root: str | None = None) -> list[di
         algo = str(payload.get("algo", "")).strip().lower()
         if algo == "alphazero":
             continue
-        if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+        if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
             paths = payload.get("paths")
             if isinstance(paths, dict):
                 target_path = paths.get("target")

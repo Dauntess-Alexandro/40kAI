@@ -11,7 +11,7 @@ import torch
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id, resolve_agent_algo
 from core.models.action_contract import action_tensor_to_dict
-from core.models.alphazero_ids import az_mcts_mode_for, is_az_algo
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
@@ -157,7 +157,7 @@ def build_policy_fn(
 
         return _policy_fn
 
-    if is_az_algo(opponent.algo):
+    if is_alphazero_net_algo(opponent.algo):
         net = make_alphazero_net(n_obs, n_actions).to(torch.device("cpu"))
         load_alphazero_state_dict(net, normalize_state_dict(opponent.policy_state))
         net.eval()
@@ -166,7 +166,7 @@ def build_policy_fn(
             az_eval_mode = "greedy"
         mcts = None
         if az_eval_mode == "mcts":
-            mcts_mode = az_mcts_mode_for(opponent.algo)
+            mcts_mode = az_mcts_mode_from_payload(opponent.algo)
             mcts_cfg = MCTSConfig(
                 simulations=max(
                     1,

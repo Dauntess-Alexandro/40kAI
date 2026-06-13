@@ -5,24 +5,34 @@ import collections
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim as optim
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-import pickle
 import os
+import pickle
 import sys
-from core.envs.warhamEnv import *
 import warnings
+
+from core.envs.warhamEnv import *
+
 warnings.filterwarnings("ignore")
 
-from core.models.DQN import *
-from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
-from core.models.alphazero_ids import az_mcts_mode_from_payload, is_az_algo
-from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
+from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
+from core.engine.deployment import deploy_only_war, post_deploy_setup
+from core.engine.game_controller import n_actions_from_env
+from core.engine.game_io import ConsoleIO, set_active_io
+from core.engine.mission import normalize_mission_name
+from core.envs.warhamEnv import roll_off_attacker_defender
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
+from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
+from core.models.DQN import *
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
+from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
+from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
 from core.models.utils import (
     build_action_masks_by_head,
     build_shoot_action_mask,
@@ -30,15 +40,8 @@ from core.models.utils import (
     normalize_state_dict,
     select_action,
 )
-from core.engine.game_io import ConsoleIO, set_active_io
-from core.engine.deployment import deploy_only_war, post_deploy_setup
-from core.engine.mission import normalize_mission_name
-from core.envs.warhamEnv import roll_off_attacker_defender
-from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
-from core.engine.game_controller import n_actions_from_env
-from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
-from project_paths import ARTIFACTS_MODELS_DIR
 from eval import select_action_with_epsilon
+from project_paths import ARTIFACTS_MODELS_DIR
 
 
 def to_np_state(s):
@@ -198,9 +201,9 @@ if args.agent_id:
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
     algo = "dqn"
-if is_az_algo(algo):
+if is_alphazero_net_algo(algo):
     az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
     az_tail = f", temperature={az_temp:.3f}" if AZ_PLAY_MODE == "mcts" else ""
     _log(f"[PLAY][INFERENCE_MODE] algo={algo} mcts={az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)} play_mode={AZ_PLAY_MODE}{az_tail}")
@@ -217,7 +220,7 @@ if algo == "ppo":
     load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
     policy_net.eval()
     target_net = None
-elif is_az_algo(algo):
+elif is_alphazero_net_algo(algo):
     az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
     arch = alphazero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
     policy_net = make_alphazero_net(n_observations, n_actions, **arch).to(device)
@@ -333,7 +336,7 @@ while isdone == False:
             deterministic = (PLAY_EPS is None) or float(PLAY_EPS) <= 0.0
             action, _, _ = policy_net.act(state, masks_by_head=masks_b, deterministic=deterministic)
         action = action.to("cpu")
-    elif is_az_algo(algo):
+    elif is_alphazero_net_algo(algo):
         masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
         if AZ_PLAY_MODE == "mcts":
             legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
@@ -411,7 +414,7 @@ while isdone == False:
         inAttack = info["in attack"]
 
         board = env.render()
-        message = "Iteration {} ended with reward {}, Player health {}, Model health {}".format(i, reward, enemy_health, unit_health)
+        message = f"Iteration {i} ended with reward {reward}, Player health {enemy_health}, Model health {unit_health}"
         io.log(message)
         next_state = torch.tensor(next_observation, dtype=torch.float32, device=device).unsqueeze(0)
         state = next_state

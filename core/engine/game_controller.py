@@ -1,35 +1,38 @@
 from __future__ import annotations
 
+import importlib
 import os
 import pickle
 import queue
 import re
+import sys
 import threading
 import traceback
-import importlib
 import types
-import sys
-from typing import Optional
 
 import gymnasium as gym
 import torch
 
-from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from core.engine import Unit, initFile, unitData, weaponData
+from core.engine.agent_registry import compatible_contracts, load_agent_by_id, make_env_contract
 from core.engine.game_io import GuiIO, set_active_io
-from core.engine.state_export import DEFAULT_STATE_PATH
 from core.engine.mission import board_dims_for_mission
-from core.models.DQN import DQN
-from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
-from core.models.alphazero_ids import az_mcts_mode_from_payload, is_az_algo
-from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
+from core.engine.state_export import DEFAULT_STATE_PATH
+from core.envs.warhamEnv import roll_off_attacker_defender
+from core.models.action_contract import action_sizes_from_env
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
+from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.utils import select_action, convertToDict, build_shoot_action_mask, normalize_state_dict
-from core.models.utils import build_action_masks_by_head
-from core.models.action_contract import action_sizes_from_env
-from core.envs.warhamEnv import roll_off_attacker_defender
+from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
+from core.models.utils import (
+    build_action_masks_by_head,
+    build_shoot_action_mask,
+    convertToDict,
+    normalize_state_dict,
+    select_action,
+)
 from project_paths import ARTIFACTS_MODELS_DIR
 
 
@@ -128,7 +131,7 @@ def _build_units_from_runtime_config(b_len: int, b_hei: int):
     return enemy, model
 
 
-def resolve_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
+def resolve_checkpoint_for_pickle(pickle_path: str) -> str | None:
     """
     Находит .pth для .pickle: обычно тот же stem; если нет — базовый run
     (model-<run>-<iter>.pth) или best_eval_checkpoint.pth в той же папке.
@@ -174,13 +177,13 @@ def resolve_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
 
 
 class GameController:
-    def __init__(self, model_path: Optional[str] = None, state_path: Optional[str] = None):
+    def __init__(self, model_path: str | None = None, state_path: str | None = None):
         self.model_path = model_path or "None"
         self.state_path = state_path or os.getenv("STATE_JSON_PATH", DEFAULT_STATE_PATH)
         self._request_queue: queue.Queue = queue.Queue()
         self._answer_queue: queue.Queue = queue.Queue()
         self._io = GuiIO(self._request_queue, self._answer_queue)
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._finished = False
         self._started = False
 
@@ -284,7 +287,7 @@ class GameController:
                 optimizer_state = payload.get("optimizer_state") or {}
                 meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
                 agent_algo = str(meta.get("algo", "")).strip().lower()
-                if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+                if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
                     if any(str(k).startswith("actor.") for k in policy_state.keys()):
                         agent_algo = "ppo"
                     elif any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
@@ -299,7 +302,7 @@ class GameController:
                     )
                 if agent_algo == "ppo":
                     checkpoint = {"actor_critic": policy_state, "algo": "ppo"}
-                elif is_az_algo(agent_algo):
+                elif is_alphazero_net_algo(agent_algo):
                     checkpoint = {
                         "policy_value_net": policy_state,
                         "algo": agent_algo,
@@ -405,7 +408,7 @@ class GameController:
             optimizer_state = payload.get("optimizer_state") or {}
             meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
             agent_algo = str(meta.get("algo", "")).strip().lower()
-            if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+            if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
                 if any(str(k).startswith("actor.") for k in policy_state.keys()):
                     agent_algo = "ppo"
                 elif any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
@@ -428,7 +431,7 @@ class GameController:
                     "_viewer_bootstrap_pickle": model_path,
                     "_viewer_bootstrap_checkpoint": checkpoint_path,
                 }
-            elif is_az_algo(agent_algo):
+            elif is_alphazero_net_algo(agent_algo):
                 checkpoint = {
                     "policy_value_net": policy_state,
                     "algo": agent_algo,
@@ -510,7 +513,7 @@ class GameController:
                 )
             )
 
-            from core.engine.mission import normalize_mission_name, deploy_for_mission, post_deploy_setup
+            from core.engine.mission import deploy_for_mission, normalize_mission_name, post_deploy_setup
 
             mission_name = normalize_mission_name(getattr(env.unwrapped, "mission_name", None))
             deployment_mode = str(os.getenv("DEPLOYMENT_MODE", "auto")).strip().lower() or "auto"
@@ -558,7 +561,7 @@ class GameController:
             self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
             algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-            if is_az_algo(algo):
+            if is_alphazero_net_algo(algo):
                 az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
                 az_tail = f", temperature={az_temp:.3f}" if az_play_mode == "mcts" else ""
                 self._io.log(
@@ -579,7 +582,7 @@ class GameController:
                 load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
                 policy_net.eval()
                 target_net = None
-            elif is_az_algo(algo):
+            elif is_alphazero_net_algo(algo):
                 self._io.log(f"[MODEL] Архитектура сети: alphazero_policy_value ({algo})")
                 az_state = checkpoint.get("policy_value_net", checkpoint.get("policy_net", {}))
                 arch = alphazero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
@@ -671,7 +674,7 @@ class GameController:
                     with torch.no_grad():
                         action, _, _ = policy_net.act(state_tensor, masks_by_head=masks_b, deterministic=True)
                     action = action.to("cpu")
-                elif is_az_algo(algo):
+                elif is_alphazero_net_algo(algo):
                     masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
                     if az_play_mode == "mcts":
                         legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]

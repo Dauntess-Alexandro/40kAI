@@ -12,8 +12,10 @@ from collections import Counter
 from statistics import median
 from typing import Optional
 
+import gymnasium as gym
 import torch
 
+import core.envs  # noqa: F401 (регистрация '40kAI-v0')
 from core.engine.agent_registry import (
     compatible_contracts,
     load_agent_by_id,
@@ -23,28 +25,25 @@ from core.engine.agent_registry import (
 from core.engine.game_controller import n_actions_from_env
 from core.engine.mission import (
     check_end_of_battle,
-    normalize_mission_name,
     deploy_for_mission,
+    normalize_mission_name,
     post_deploy_setup,
 )
 from core.envs.warhamEnv import roll_off_attacker_defender
-from core.models.DQN import DQN
-from core.models.PPO import make_actor_critic, load_actor_critic_state_dict, ppo_arch_from_payload
-from core.models.alphazero_ids import is_az_algo
-from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
+from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
+from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
+from core.models.DQN import DQN
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.utils import normalize_state_dict
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
-
-import gymnasium as gym
-import core.envs  # noqa: F401 (регистрация '40kAI-v0')
+from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
+from core.models.utils import normalize_state_dict
 from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, ensure_runtime_dirs
 
 AGENT_EVAL_LOG_FILE = str(AGENT_EVAL_LOG_PATH.relative_to(AGENT_EVAL_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_EVAL_LOG_FILE)
-from core.models.utils import build_shoot_action_mask, build_action_masks_by_head, convertToDict, unwrap_env
+from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, unwrap_env
 
 
 def _append_eval_log(message: str) -> None:
@@ -91,7 +90,7 @@ def log(message: str) -> None:
     _append_eval_log(message)
 
 
-def _find_checkpoint_for_pickle(pickle_path: str) -> Optional[str]:
+def _find_checkpoint_for_pickle(pickle_path: str) -> str | None:
     stem, _ = os.path.splitext(pickle_path)
     direct_candidate = f"{stem}.pth"
     if os.path.exists(direct_candidate):
@@ -136,7 +135,7 @@ def _extract_policy_state_dict(checkpoint):
     return None
 
 
-def load_latest_model(model_path: Optional[str] = None):
+def load_latest_model(model_path: str | None = None):
     if model_path and model_path != "None":
         pickle_path = model_path
     else:
@@ -645,7 +644,7 @@ def run_episode(
                 epsilon,
                 len(model_units),
             )
-        elif is_az_algo(algo):
+        elif is_alphazero_net_algo(algo):
             action = select_action_with_epsilon_alphazero(
                 env,
                 state_tensor,
@@ -1036,7 +1035,7 @@ def main():
         policy_net = make_actor_critic(n_observations, n_actions, **arch).to(device)
         load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
         policy_net.eval()
-    elif is_az_algo(algo):
+    elif is_alphazero_net_algo(algo):
         az_state = checkpoint.get("policy_value_net") if isinstance(checkpoint, dict) else None
         if not isinstance(az_state, dict):
             az_state = policy_state
@@ -1358,7 +1357,7 @@ def main():
     )
 
     log("[DETAIL] ---------- Подробный итог оценки ----------")
-    log(f"[DETAIL] Стороны матча: P1 vs P2")
+    log("[DETAIL] Стороны матча: P1 vs P2")
     log(f"[DETAIL] Итог серии P1/P2/Draw: {p1_wins}/{p2_wins}/{draws}")
     log(f"[DETAIL] Winrate P1 (все/решающие): {winrate_p1_all:.3f}/{winrate_p1_decisive:.3f}")
     log(f"[DETAIL] Winrate P2 (все/решающие): {winrate_p2_all:.3f}/{winrate_p2_decisive:.3f}")

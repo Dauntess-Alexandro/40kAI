@@ -33,3 +33,24 @@ def test_gumbel_az_is_not_az_puct_algo():
 
 def test_gaz_section_for():
     assert gaz_section_for("gumbel_az") == "gumbel_az"
+
+
+def test_resolve_gumbel_az_meta_authoritative():
+    # веса как у AlphaZero (policy_heads.*), но meta.algo=gumbel_az → gumbel_az
+    from core.engine.agent_registry import resolve_agent_algo
+
+    policy_state = {"policy_heads.0.weight": [[0.0]], "input_fc.weight": [[0.0]]}
+    algo = resolve_agent_algo(
+        meta={"algo": "gumbel_az"}, policy_state=policy_state, agent_id="t"
+    )
+    assert algo == "gumbel_az"
+
+
+def test_resolve_az_meta_still_tree():
+    from core.engine.agent_registry import resolve_agent_algo
+
+    policy_state = {"policy_heads.0.weight": [[0.0]]}
+    algo = resolve_agent_algo(
+        meta={"algo": "alphazero_tree", "mcts_mode": "tree"}, policy_state=policy_state, agent_id="t"
+    )
+    assert algo == "alphazero_tree"
