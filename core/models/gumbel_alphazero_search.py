@@ -23,6 +23,7 @@ class GumbelAZSearchConfig:
     eval_cache_size: int = 10000
     batch_eval_size: int = 16
     simulate_enemy: bool = True
+    joint_action: bool = False     # координатный режим: следующие головы видят выбор предыдущих
     mode: str = "gumbel"
 
 
@@ -277,6 +278,9 @@ class GumbelAlphaZeroSearch:
                 a = int(np.random.choice(np.arange(pi.size), p=pi))
             policy_targets.append(pi.astype(np.float32))
             selected_actions.append(int(a))
+            # joint-action (координатный): следующие головы ищут уже с учётом выбора текущей
+            if bool(getattr(self.cfg, "joint_action", False)):
+                base_action[h] = int(a)
 
         self.last_run_stats = {
             "mode": 1.0,

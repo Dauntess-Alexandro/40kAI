@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+
 from core.models.gumbel_alphazero_search import (
     GumbelAlphaZeroSearch,
     GumbelAZSearchConfig,
@@ -104,3 +105,45 @@ def test_deterministic_with_seed():
     pi2, a2, _ = s2.run(obs=obs, legal_masks_by_head=legal, temperature=0.0)
     assert a1 == a2
     assert np.allclose(pi1[0], pi2[0])
+
+
+def test_joint_action_default_off():
+    assert GumbelAZSearchConfig().joint_action is False
+
+
+def _run_capturing_base_action(joint: bool):
+    """Прогоняет поиск, перехватывая base_action, который видит каждая голова."""
+    net = _StubNet([3, 3, 3], value=0.0)
+    legal = [np.ones(3, dtype=bool) for _ in range(3)]
+    obs = np.zeros(5, dtype=np.float32)
+    cfg = GumbelAZSearchConfig(
+        num_simulations=8, num_considered_actions=3, simulate_enemy=False, joint_action=joint
+    )
+    np.random.seed(7)
+    s = GumbelAlphaZeroSearch(net, config=cfg, device=torch.device("cpu"))
+    seen: list[tuple[int, list[int]]] = []
+    orig = s._search_head
+
+    def _wrapped(*, head_idx, base_action, **kw):
+        seen.append((int(head_idx), list(base_action)))
+        return orig(head_idx=head_idx, base_action=base_action, **kw)
+
+    s._search_head = _wrapped
+    _pi, actions, _v = s.run(obs=obs, legal_masks_by_head=legal, temperature=0.0)
+    return actions, seen
+
+
+def test_joint_action_off_keeps_greedy_context():
+    # per-head: каждая голова видит исходный greedy base_action (argmax uniform = 0)
+    _actions, seen = _run_capturing_base_action(joint=False)
+    for _head_idx, base in seen:
+        assert base == [0, 0, 0]
+
+
+def test_joint_action_on_propagates_winners_to_later_heads():
+    # joint: голова h+1 видит уже ВЫБРАННОЕ действие головы h в base_action
+    actions, seen = _run_capturing_base_action(joint=True)
+    # seen[k] = (head_idx=k, base_action на момент поиска головы k)
+    assert seen[1][1][0] == actions[0]  # голова 1 увидела победителя головы 0
+    assert seen[2][1][0] == actions[0]
+    assert seen[2][1][1] == actions[1]  # голова 2 увидела победителя головы 1

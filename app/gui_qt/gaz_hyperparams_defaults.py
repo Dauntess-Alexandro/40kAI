@@ -26,6 +26,7 @@ GAZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "value_scale",
     "c_visit",
     "simulate_enemy",
+    "joint_action",
     "eval_cache_size",
     "batch_eval_size",
     "replay_capacity",
@@ -64,6 +65,7 @@ _GAZ_BASE: dict[str, int | float | str] = {
     "value_scale": 0.1,
     "c_visit": 50.0,
     "simulate_enemy": 0,
+    "joint_action": 0,
     "eval_cache_size": 10000,
     "replay_capacity": 100000,
     "num_actors": 8,
@@ -128,6 +130,7 @@ DEFAULT_GAZ_HYPERPARAMS: dict[str, int | float | str] = {
 }
 
 GAZ_BASIC_KEYS: tuple[str, ...] = (
+    "joint_action",
     "learning_rate",
     "batch_size",
     "num_simulations",
@@ -140,6 +143,7 @@ GAZ_GROUPS: tuple[dict[str, object], ...] = (
         "id": "search",
         "title": "Поиск (Gumbel + Sequential Halving)",
         "keys": (
+            "joint_action",
             "num_simulations",
             "num_considered_actions",
             "max_depth",
@@ -214,6 +218,10 @@ GAZ_FIELD_TOOLTIPS: dict[str, str] = {
     "batch_size": "Размер батча при обновлении весов.",
     "value_loss_weight": "Вес value loss.",
     "l2_weight": "L2-регуляризация.",
+    "joint_action": "0 (дефолт) = головы выбираются независимо (per-head). 1 = координатный режим: "
+    "каждая следующая голова видит уже выбранные действия предыдущих (движение→стрельба→…), ловит связку "
+    "«куда встал ↔ кого стреляешь». Стоимость ≈ как при 0. В обучении влияет на self-play; на eval/play "
+    "действует, если выбран режим инференса Gumbel.",
     "num_simulations": "Бюджет Sequential Halving на голову (на ход).",
     "num_considered_actions": "m: размер Gumbel top-k кандидатов на голову.",
     "max_depth": "Глубина поиска (v1 = 1, root-only).",

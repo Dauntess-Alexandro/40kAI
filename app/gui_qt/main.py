@@ -5768,6 +5768,7 @@ class GUIController(QtCore.QObject):
             env.insert("GAZ_VALUE_SCALE", os.getenv("GAZ_VALUE_SCALE", str(float(gaz_hp.get("value_scale", d["value_scale"])))))
             env.insert("GAZ_C_VISIT", os.getenv("GAZ_C_VISIT", str(float(gaz_hp.get("c_visit", d["c_visit"])))))
             env.insert("GAZ_SIMULATE_ENEMY", "1" if int(gaz_hp.get("simulate_enemy", d["simulate_enemy"])) == 1 else "0")
+            env.insert("GAZ_JOINT_ACTION", "1" if int(gaz_hp.get("joint_action", d["joint_action"])) == 1 else "0")
             env.insert("GAZ_BATCH_EVAL_SIZE", os.getenv("GAZ_BATCH_EVAL_SIZE", str(int(gaz_hp.get("batch_eval_size", d["batch_eval_size"])))))
             env.insert("GAZ_EVAL_CACHE_SIZE", os.getenv("GAZ_EVAL_CACHE_SIZE", str(int(gaz_hp.get("eval_cache_size", d["eval_cache_size"])))))
             env.insert("AZ_NUM_ACTORS", os.getenv("AZ_NUM_ACTORS", env_overrides.get("NUM_ACTORS", str(int(gaz_hp.get("num_actors", 8))))))

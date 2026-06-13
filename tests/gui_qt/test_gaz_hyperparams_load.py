@@ -1,4 +1,17 @@
-from app.gui_qt.gaz_hyperparams_defaults import DEFAULT_GAZ_HYPERPARAMS, GAZ_HYPERPARAM_KEYS
+from app.gui_qt.gaz_hyperparams_defaults import (
+    DEFAULT_GAZ_HYPERPARAMS,
+    GAZ_BASIC_KEYS,
+    GAZ_GROUPS,
+    GAZ_HYPERPARAM_KEYS,
+)
+
+
+def test_joint_action_default_off_and_first_in_search():
+    assert int(DEFAULT_GAZ_HYPERPARAMS["joint_action"]) == 0
+    assert "joint_action" in GAZ_HYPERPARAM_KEYS
+    search = next(g for g in GAZ_GROUPS if g["id"] == "search")
+    assert search["keys"][0] == "joint_action"
+    assert GAZ_BASIC_KEYS[0] == "joint_action"
 
 
 def test_load_gaz_section_preserves_remote_host_ip():

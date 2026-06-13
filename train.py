@@ -2900,6 +2900,7 @@ GAZ_C_VISIT = float(os.getenv("GAZ_C_VISIT", str(GAZ_CFG.get("c_visit", 50.0))))
 GAZ_SIMULATE_ENEMY = str(os.getenv("GAZ_SIMULATE_ENEMY", str(GAZ_CFG.get("simulate_enemy", 0)))).strip() == "1"
 GAZ_EVAL_CACHE_SIZE = int(os.getenv("GAZ_EVAL_CACHE_SIZE", str(GAZ_CFG.get("eval_cache_size", 10000))))
 GAZ_BATCH_EVAL_SIZE = max(1, int(os.getenv("GAZ_BATCH_EVAL_SIZE", str(GAZ_CFG.get("batch_eval_size", 16)))))
+GAZ_JOINT_ACTION = str(os.getenv("GAZ_JOINT_ACTION", str(GAZ_CFG.get("joint_action", 0)))).strip() == "1"
 
 # Лог-теги/числа для AZ-семейства: у gumbel_az показываем [GAZ] и его sims/depth, а не
 # generic AZ_MCTS_* (которые для gumbel_az остаются дефолтами секции AZ и путают в логах).
@@ -2916,6 +2917,7 @@ def _gaz_cfg_payload() -> dict:
         "value_scale": GAZ_VALUE_SCALE,
         "c_visit": GAZ_C_VISIT,
         "simulate_enemy": GAZ_SIMULATE_ENEMY,
+        "joint_action": GAZ_JOINT_ACTION,
         "eval_cache_size": GAZ_EVAL_CACHE_SIZE,
         "batch_eval_size": GAZ_BATCH_EVAL_SIZE,
     }
@@ -2942,6 +2944,7 @@ def _build_az_search(net, payload: dict, device, *, evaluator=None):
                 eval_cache_size=int(payload.get("eval_cache_size", GAZ_EVAL_CACHE_SIZE)),
                 batch_eval_size=int(payload.get("batch_eval_size", GAZ_BATCH_EVAL_SIZE)),
                 simulate_enemy=bool(payload.get("simulate_enemy", GAZ_SIMULATE_ENEMY)),
+                joint_action=bool(payload.get("joint_action", GAZ_JOINT_ACTION)),
             ),
             device=device,
             evaluator=evaluator,
@@ -9105,6 +9108,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
         f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} mcts={_AZ_LOG_SIMS} "
+        f"{f'joint_action={int(GAZ_JOINT_ACTION)} ' if is_gumbel_az_algo(TRAIN_ALGO) else ''}"
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
         f"lr_scheduler={AZ_LR_SCHEDULER} c_puct_schedule={AZ_C_PUCT_SCHEDULE} "
