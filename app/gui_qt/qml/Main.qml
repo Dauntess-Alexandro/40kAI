@@ -3884,103 +3884,55 @@ ApplicationWindow {
                         width: Math.max(parent ? parent.width : 0, root.width - 2 * root.spacingLg)
                         spacing: root.spacingMd
 
-                        Text {
-                            text: "Model Metrics"
-                            font.pixelSize: Math.round(20 * root.uiScale)
-                            font.bold: true
-                        }
-
-                        Label {
-                            text: "Метрики тренировки: каждая точка — окно реальных тренировочных эпизодов (DET-прогоны удалены). Честное сравнение моделей — вкладка «Оценка»."
-                            width: parent.width
-                            wrapMode: Text.WordWrap
-                            color: root.uiTextMuted
-                        }
-
+                        // Шапка: одна строка — заголовок + чипы модели + действия.
                         RowLayout {
-                            spacing: root.spacingMd
                             width: parent.width
+                            spacing: root.spacingMd
 
+                            Text {
+                                text: "Метрики модели"
+                                font.pixelSize: Math.round(20 * root.uiScale)
+                                font.bold: true
+                                color: root.uiTextMain
+                            }
+
+                            // Чип-подсказка с прежним описанием (текст не теряем).
+                            Text {
+                                text: "?"
+                                color: root.uiTextMuted
+                                font.bold: true
+                                font.pixelSize: Math.round(14 * root.uiScale)
+                                ToolTip.visible: helpHover.hovered
+                                ToolTip.text: "Метрики тренировки: каждая точка — окно реальных тренировочных эпизодов (DET-прогоны удалены). Честное сравнение моделей — вкладка «Оценка»."
+                                HoverHandler { id: helpHover }
+                            }
+
+                            Text {
+                                text: controller.metricsAlgo
+                                color: root.uiTextMuted
+                                font.bold: true
+                                visible: controller.metricsAlgo.length > 0
+                            }
+                            Text {
+                                text: controller.selfPlayEnabled ? "selfplay" : "vs preset"
+                                color: root.uiTextMuted
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Label {
+                                text: controller.metricsLabel
+                                color: root.uiTextMuted
+                                elide: Label.ElideLeft
+                                Layout.maximumWidth: Math.round(260 * root.uiScale)
+                            }
                             Button {
                                 text: "Выбрать модель"
                                 onClicked: metricsFileDialog.open()
                             }
-
                             Button {
-                                text: "Последняя модель"
+                                text: "Последняя"
                                 onClicked: controller.select_latest_metrics()
-                            }
-
-                            Label {
-                                text: controller.metricsLabel
-                                Layout.fillWidth: true
-                                elide: Label.ElideRight
-                            }
-                        }
-
-                        // Верхняя summary-панель
-                        RowLayout {
-                            spacing: root.spacingMd
-                            width: parent.width
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                radius: 6
-                                color: root.bgSurface
-                                border.color: root.uiBorder
-                                border.width: 1
-                                implicitHeight: Math.round(92 * root.uiScale)
-
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: root.spacingSm
-                                    spacing: 4
-
-                                    Text { text: "Модель"; font.bold: true; color: root.uiTextMain }
-                                    Text { text: "Алгоритм: " + controller.metricsAlgo; color: root.uiTextMuted }
-                                    Text { text: "Режим: " + controller.metricsMode; color: root.uiTextMuted }
-                                    Text { text: "Run ID: " + controller.metricsRunId; color: "#777777"; elide: Text.ElideRight }
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                radius: 6
-                                color: "#1a2a40"
-                                border.color: "#2f6ed8"
-                                border.width: 1
-                                implicitHeight: Math.round(92 * root.uiScale)
-
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: root.spacingSm
-                                    spacing: 4
-
-                                    Text { text: "Последнее окно тренировки"; font.bold: true; color: root.uiTextMain }
-                                    Text { text: "Эпизод: " + controller.detEpisodeLast; color: root.uiTextMuted }
-                                    Text { text: "Winrate: " + controller.detWinrateLast; color: root.uiTextMuted }
-                                    Text { text: "Reward: " + controller.detRewardLast + " | Ep_len: " + controller.detEpLenLast; color: root.uiTextMuted }
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                radius: 6
-                                color: "#332b1d"
-                                border.color: "#b88a26"
-                                border.width: 1
-                                implicitHeight: Math.round(92 * root.uiScale)
-
-                                Column {
-                                    anchors.fill: parent
-                                    anchors.margins: root.spacingSm
-                                    spacing: 4
-
-                                    Text { text: "Оппонент"; font.bold: true; color: root.uiTextMain }
-                                    Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: root.uiTextMuted }
-                                    Text { text: "Источник оппонента: " + controller.opponentSource; color: root.uiTextMuted }
-                                    Text { text: "Алгоритм оппонента: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : ""); color: root.uiTextMuted }
-                                }
                             }
                         }
 
