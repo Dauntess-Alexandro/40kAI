@@ -75,6 +75,7 @@ from core.models.alphazero_ids import (
     az_mcts_mode_for,
     az_section_for,
     is_az_algo,
+    is_gumbel_az_algo,
 )
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import (
@@ -2541,7 +2542,12 @@ PPO_ADAPTIVE_ENTROPY = str(_ppo_cfg_raw("PPO_ADAPTIVE_ENTROPY", "adaptive_entrop
 )
 PPO_ENTROPY_TARGET = float(_ppo_cfg_raw("PPO_ENTROPY_TARGET", "entropy_target", "0.5"))
 PPO_ENTROPY_ADAPT_LR = float(_ppo_cfg_raw("PPO_ENTROPY_ADAPT_LR", "entropy_adapt_lr", "0.05"))
-_AZ_HP_SECTION = az_section_for(TRAIN_ALGO) if is_az_algo(TRAIN_ALGO) else "alphazero_tree"
+if is_az_algo(TRAIN_ALGO):
+    _AZ_HP_SECTION = az_section_for(TRAIN_ALGO)
+elif is_gumbel_az_algo(TRAIN_ALGO):
+    _AZ_HP_SECTION = "gumbel_az"
+else:
+    _AZ_HP_SECTION = "alphazero_tree"
 AZ_CFG = data.get(_AZ_HP_SECTION, {}) if isinstance(data, dict) else {}
 AZ_LR = float(AZ_CFG.get("learning_rate", LR))
 AZ_BATCH_SIZE = int(AZ_CFG.get("batch_size", 128))
@@ -2557,9 +2563,11 @@ AZ_TEMP_LATE = float(AZ_CFG.get("temperature_late_value", 0.3))
 AZ_REPLAY_CAPACITY = int(AZ_CFG.get("replay_capacity", 200000))
 if is_az_algo(TRAIN_ALGO):
     AZ_MCTS_MODE = az_mcts_mode_for(TRAIN_ALGO)
+elif is_gumbel_az_algo(TRAIN_ALGO):
+    AZ_MCTS_MODE = "gumbel"
 else:
     AZ_MCTS_MODE = str(AZ_CFG.get("mcts_mode", "tree")).strip().lower() or "tree"
-if AZ_MCTS_MODE not in {"proxy", "tree"}:
+if AZ_MCTS_MODE not in {"proxy", "tree", "gumbel"}:
     AZ_MCTS_MODE = "tree"
 AZ_MCTS_TOP_K_PER_HEAD = int(os.getenv("AZ_MCTS_TOP_K_PER_HEAD", str(AZ_CFG.get("mcts_top_k_per_head", 8))))
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
@@ -2879,6 +2887,84 @@ def _az_honest_eval_mcts_config(*, mcts_mode: str) -> MCTSConfig:
         temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
         batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
         parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
+    )
+
+
+# --- Gumbel AlphaZero (gumbel_az) search config ---
+GAZ_CFG = data.get("gumbel_az", {}) if isinstance(data, dict) else {}
+GAZ_NUM_SIMS = max(1, int(os.getenv("GAZ_NUM_SIMULATIONS", str(GAZ_CFG.get("num_simulations", 32)))))
+GAZ_NUM_CONSIDERED = max(2, int(os.getenv("GAZ_NUM_CONSIDERED_ACTIONS", str(GAZ_CFG.get("num_considered_actions", 8)))))
+GAZ_MAX_DEPTH = max(1, int(os.getenv("GAZ_MAX_DEPTH", str(GAZ_CFG.get("max_depth", 1)))))
+GAZ_VALUE_SCALE = float(os.getenv("GAZ_VALUE_SCALE", str(GAZ_CFG.get("value_scale", 0.1))))
+GAZ_C_VISIT = float(os.getenv("GAZ_C_VISIT", str(GAZ_CFG.get("c_visit", 50.0))))
+GAZ_SIMULATE_ENEMY = str(os.getenv("GAZ_SIMULATE_ENEMY", str(GAZ_CFG.get("simulate_enemy", 1)))).strip() == "1"
+GAZ_EVAL_CACHE_SIZE = int(os.getenv("GAZ_EVAL_CACHE_SIZE", str(GAZ_CFG.get("eval_cache_size", 10000))))
+GAZ_BATCH_EVAL_SIZE = max(1, int(os.getenv("GAZ_BATCH_EVAL_SIZE", str(GAZ_CFG.get("batch_eval_size", 16)))))
+
+
+def _gaz_cfg_payload() -> dict:
+    return {
+        "num_simulations": GAZ_NUM_SIMS,
+        "num_considered_actions": GAZ_NUM_CONSIDERED,
+        "max_depth": GAZ_MAX_DEPTH,
+        "value_scale": GAZ_VALUE_SCALE,
+        "c_visit": GAZ_C_VISIT,
+        "simulate_enemy": GAZ_SIMULATE_ENEMY,
+        "eval_cache_size": GAZ_EVAL_CACHE_SIZE,
+        "batch_eval_size": GAZ_BATCH_EVAL_SIZE,
+    }
+
+
+def _build_az_search(net, payload: dict, device, *, evaluator=None):
+    """Фабрика бэкенда поиска для AZ-семейства актёров.
+
+    gumbel_az → GumbelAlphaZeroSearch; alphazero_tree/proxy → AlphaZeroFactorizedMCTS.
+    payload — это dict, что уже едет в актёр (mcts_cfg_payload). Для gumbel_az он
+    содержит gaz-поля (см. _gaz_cfg_payload), для AZ — mcts-поля.
+    """
+    if is_gumbel_az_algo(TRAIN_ALGO):
+        from core.models.gumbel_alphazero_search import GumbelAlphaZeroSearch, GumbelAZSearchConfig
+        return GumbelAlphaZeroSearch(
+            net,
+            config=GumbelAZSearchConfig(
+                num_simulations=int(payload.get("num_simulations", GAZ_NUM_SIMS)),
+                num_considered_actions=int(payload.get("num_considered_actions", GAZ_NUM_CONSIDERED)),
+                max_depth=int(payload.get("max_depth", GAZ_MAX_DEPTH)),
+                value_scale=float(payload.get("value_scale", GAZ_VALUE_SCALE)),
+                c_visit=float(payload.get("c_visit", GAZ_C_VISIT)),
+                temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
+                eval_cache_size=int(payload.get("eval_cache_size", GAZ_EVAL_CACHE_SIZE)),
+                batch_eval_size=int(payload.get("batch_eval_size", GAZ_BATCH_EVAL_SIZE)),
+                simulate_enemy=bool(payload.get("simulate_enemy", GAZ_SIMULATE_ENEMY)),
+            ),
+            device=device,
+            evaluator=evaluator,
+        )
+    return AlphaZeroFactorizedMCTS(
+        net,
+        config=MCTSConfig(
+            simulations=int(payload.get("simulations", AZ_MCTS_SIMS)),
+            c_puct=float(payload.get("c_puct", AZ_C_PUCT)),
+            c_puct_min=float(payload.get("c_puct_min", AZ_C_PUCT_MIN)),
+            c_puct_max=float(payload.get("c_puct_max", AZ_C_PUCT_MAX)),
+            c_puct_schedule=str(payload.get("c_puct_schedule", AZ_C_PUCT_SCHEDULE)),
+            dirichlet_alpha=float(payload.get("dirichlet_alpha", AZ_DIR_ALPHA)),
+            dirichlet_eps=float(payload.get("dirichlet_eps", AZ_DIR_EPS)),
+            top_k_per_head=int(payload.get("top_k_per_head", AZ_MCTS_TOP_K_PER_HEAD)),
+            max_depth=int(payload.get("max_depth", AZ_MCTS_MAX_DEPTH)),
+            mode=str(payload.get("mode", AZ_MCTS_MODE)),
+            root_dirichlet_only=bool(payload.get("root_dirichlet_only", AZ_MCTS_ROOT_DIRICHLET_ONLY)),
+            eval_cache_size=int(payload.get("eval_cache_size", AZ_MCTS_EVAL_CACHE_SIZE)),
+            pw_alpha=float(payload.get("pw_alpha", AZ_PW_ALPHA)),
+            pw_beta=float(payload.get("pw_beta", AZ_PW_BETA)),
+            prior_weight_early=float(payload.get("prior_weight_early", AZ_PRIOR_WEIGHT_EARLY)),
+            temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
+            batch_eval_size=int(payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
+            parallel_simulations=int(payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
+            simulate_enemy_in_tree=bool(payload.get("simulate_enemy_in_tree", AZ_MCTS_SIMULATE_ENEMY)),
+        ),
+        device=device,
+        evaluator=evaluator,
     )
 
 
@@ -3895,7 +3981,7 @@ def main():
     # PRO actor-learner по умолчанию (для DQN и PPO).
     # Для отката на старый pipeline: PRO_ACTOR_LEARNER=0.
     if use_pro_actor_learner:
-        if is_az_algo(TRAIN_ALGO):
+        if is_az_algo(TRAIN_ALGO) or is_gumbel_az_algo(TRAIN_ALGO):
             if TRAIN_LOG_TO_CONSOLE:
                 print(f"[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (AlphaZero {TRAIN_ALGO} MCTS={AZ_MCTS_MODE} + learner)")
             _main_actor_learner_alphazero(
@@ -4228,7 +4314,7 @@ def main():
         )
         return
 
-    if is_az_algo(TRAIN_ALGO):
+    if is_az_algo(TRAIN_ALGO) or is_gumbel_az_algo(TRAIN_ALGO):
         append_agent_log(f"[AZ] Запуск AlphaZero ветки algo={TRAIN_ALGO} mcts_mode={AZ_MCTS_MODE}. episodes={totLifeT}")
         _main_actor_learner_alphazero(
             roster_config=roster_config,
@@ -8420,31 +8506,7 @@ def _actor_learner_actor_entry_alphazero(
         az_net = make_alphazero_net(n_observations=n_observations, n_actions=n_actions, **az_kw).to(cpu_device)
         load_alphazero_state_dict(az_net, normalize_state_dict(init_weights))
         az_net.eval()
-        mcts = AlphaZeroFactorizedMCTS(
-            az_net,
-            config=MCTSConfig(
-                simulations=int(mcts_cfg_payload.get("simulations", AZ_MCTS_SIMS)),
-                c_puct=float(mcts_cfg_payload.get("c_puct", AZ_C_PUCT)),
-                c_puct_min=float(mcts_cfg_payload.get("c_puct_min", AZ_C_PUCT_MIN)),
-                c_puct_max=float(mcts_cfg_payload.get("c_puct_max", AZ_C_PUCT_MAX)),
-                c_puct_schedule=str(mcts_cfg_payload.get("c_puct_schedule", AZ_C_PUCT_SCHEDULE)),
-                dirichlet_alpha=float(mcts_cfg_payload.get("dirichlet_alpha", AZ_DIR_ALPHA)),
-                dirichlet_eps=float(mcts_cfg_payload.get("dirichlet_eps", AZ_DIR_EPS)),
-                top_k_per_head=int(mcts_cfg_payload.get("top_k_per_head", AZ_MCTS_TOP_K_PER_HEAD)),
-                max_depth=int(mcts_cfg_payload.get("max_depth", AZ_MCTS_MAX_DEPTH)),
-                mode=str(mcts_cfg_payload.get("mode", AZ_MCTS_MODE)),
-                root_dirichlet_only=bool(mcts_cfg_payload.get("root_dirichlet_only", AZ_MCTS_ROOT_DIRICHLET_ONLY)),
-                eval_cache_size=int(mcts_cfg_payload.get("eval_cache_size", AZ_MCTS_EVAL_CACHE_SIZE)),
-                pw_alpha=float(mcts_cfg_payload.get("pw_alpha", AZ_PW_ALPHA)),
-                pw_beta=float(mcts_cfg_payload.get("pw_beta", AZ_PW_BETA)),
-                prior_weight_early=float(mcts_cfg_payload.get("prior_weight_early", AZ_PRIOR_WEIGHT_EARLY)),
-                temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
-                batch_eval_size=int(mcts_cfg_payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
-                parallel_simulations=int(mcts_cfg_payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
-                simulate_enemy_in_tree=bool(mcts_cfg_payload.get("simulate_enemy_in_tree", AZ_MCTS_SIMULATE_ENEMY)),
-            ),
-            device=cpu_device,
-        )
+        mcts = _build_az_search(az_net, mcts_cfg_payload, cpu_device)
         sp_cfg = SelfPlayConfig(
             temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
             temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", AZ_TEMP_OPENING)),
@@ -8460,7 +8522,12 @@ def _actor_learner_actor_entry_alphazero(
         # Путь sync должен совпадать с тем, что пишет learner (_save_az_sync, train.py ~8377):
         # learner использует тег tree/proxy по TRAIN_ALGO. Раньше актор читал untagged
         # "latest_az_policy.pth" → файл не находился, ACTOR_SYNC молча no-op (веса не обновлялись).
-        _az_sync_tag = "tree" if TRAIN_ALGO == "alphazero_tree" else "proxy"
+        if TRAIN_ALGO == "alphazero_tree":
+            _az_sync_tag = "tree"
+        elif is_gumbel_az_algo(TRAIN_ALGO):
+            _az_sync_tag = "gumbel_az"
+        else:
+            _az_sync_tag = "proxy"
         sync_path = os.path.join(MODELS_DIR, "actor_sync", f"latest_az_{_az_sync_tag}_policy.pth")
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
         last_sync_mtime = -1.0
@@ -8698,32 +8765,7 @@ def _az_env_worker_entry(
                 f"tcp://{remote_host}:{int(remote_port)}"
             )
 
-        mcts = AlphaZeroFactorizedMCTS(
-            None,  # net не используется — всё через evaluator
-            config=MCTSConfig(
-                simulations=int(mcts_cfg_payload.get("simulations", AZ_MCTS_SIMS)),
-                c_puct=float(mcts_cfg_payload.get("c_puct", AZ_C_PUCT)),
-                c_puct_min=float(mcts_cfg_payload.get("c_puct_min", AZ_C_PUCT_MIN)),
-                c_puct_max=float(mcts_cfg_payload.get("c_puct_max", AZ_C_PUCT_MAX)),
-                c_puct_schedule=str(mcts_cfg_payload.get("c_puct_schedule", AZ_C_PUCT_SCHEDULE)),
-                dirichlet_alpha=float(mcts_cfg_payload.get("dirichlet_alpha", AZ_DIR_ALPHA)),
-                dirichlet_eps=float(mcts_cfg_payload.get("dirichlet_eps", AZ_DIR_EPS)),
-                top_k_per_head=int(mcts_cfg_payload.get("top_k_per_head", AZ_MCTS_TOP_K_PER_HEAD)),
-                max_depth=int(mcts_cfg_payload.get("max_depth", AZ_MCTS_MAX_DEPTH)),
-                mode=str(mcts_cfg_payload.get("mode", AZ_MCTS_MODE)),
-                root_dirichlet_only=bool(mcts_cfg_payload.get("root_dirichlet_only", AZ_MCTS_ROOT_DIRICHLET_ONLY)),
-                eval_cache_size=int(mcts_cfg_payload.get("eval_cache_size", AZ_MCTS_EVAL_CACHE_SIZE)),
-                pw_alpha=float(mcts_cfg_payload.get("pw_alpha", AZ_PW_ALPHA)),
-                pw_beta=float(mcts_cfg_payload.get("pw_beta", AZ_PW_BETA)),
-                prior_weight_early=float(mcts_cfg_payload.get("prior_weight_early", AZ_PRIOR_WEIGHT_EARLY)),
-                temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
-                batch_eval_size=int(mcts_cfg_payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
-                parallel_simulations=int(mcts_cfg_payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
-                simulate_enemy_in_tree=bool(mcts_cfg_payload.get("simulate_enemy_in_tree", AZ_MCTS_SIMULATE_ENEMY)),
-            ),
-            device=torch.device("cpu"),
-            evaluator=evaluator,
-        )
+        mcts = _build_az_search(None, mcts_cfg_payload, torch.device("cpu"), evaluator=evaluator)
         sp_cfg = SelfPlayConfig(
             temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", AZ_TEMP_OPENING_MOVES)),
             temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", AZ_TEMP_OPENING)),
@@ -9075,7 +9117,12 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     os.makedirs(checkpoint_dir, exist_ok=True)
     sync_dir = os.path.join(MODELS_DIR, "actor_sync")
     os.makedirs(sync_dir, exist_ok=True)
-    _az_sync_tag = "tree" if TRAIN_ALGO == "alphazero_tree" else "proxy"
+    if TRAIN_ALGO == "alphazero_tree":
+        _az_sync_tag = "tree"
+    elif is_gumbel_az_algo(TRAIN_ALGO):
+        _az_sync_tag = "gumbel_az"
+    else:
+        _az_sync_tag = "proxy"
     sync_path = os.path.join(sync_dir, f"latest_az_{_az_sync_tag}_policy.pth")
 
     def _save_az_sync() -> None:
@@ -9120,26 +9167,29 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     procs = []
     inf_proc = None  # inference server process (variant B only)
 
-    _mcts_cfg_payload = {
-        "simulations": AZ_MCTS_SIMS,
-        "c_puct": AZ_C_PUCT,
-        "dirichlet_alpha": AZ_DIR_ALPHA,
-        "dirichlet_eps": AZ_DIR_EPS,
-        "top_k_per_head": AZ_MCTS_TOP_K_PER_HEAD,
-        "max_depth": AZ_MCTS_MAX_DEPTH,
-        "mode": AZ_MCTS_MODE,
-        "root_dirichlet_only": AZ_MCTS_ROOT_DIRICHLET_ONLY,
-        "eval_cache_size": AZ_MCTS_EVAL_CACHE_SIZE,
-        "c_puct_min": AZ_C_PUCT_MIN,
-        "c_puct_max": AZ_C_PUCT_MAX,
-        "c_puct_schedule": AZ_C_PUCT_SCHEDULE,
-        "pw_alpha": AZ_PW_ALPHA,
-        "pw_beta": AZ_PW_BETA,
-        "prior_weight_early": AZ_PRIOR_WEIGHT_EARLY,
-        "batch_eval_size": AZ_MCTS_BATCH_EVAL_SIZE,
-        "parallel_simulations": AZ_MCTS_PARALLEL_SIMS,
-        "simulate_enemy_in_tree": AZ_MCTS_SIMULATE_ENEMY,
-    }
+    if is_gumbel_az_algo(TRAIN_ALGO):
+        _mcts_cfg_payload = _gaz_cfg_payload()
+    else:
+        _mcts_cfg_payload = {
+            "simulations": AZ_MCTS_SIMS,
+            "c_puct": AZ_C_PUCT,
+            "dirichlet_alpha": AZ_DIR_ALPHA,
+            "dirichlet_eps": AZ_DIR_EPS,
+            "top_k_per_head": AZ_MCTS_TOP_K_PER_HEAD,
+            "max_depth": AZ_MCTS_MAX_DEPTH,
+            "mode": AZ_MCTS_MODE,
+            "root_dirichlet_only": AZ_MCTS_ROOT_DIRICHLET_ONLY,
+            "eval_cache_size": AZ_MCTS_EVAL_CACHE_SIZE,
+            "c_puct_min": AZ_C_PUCT_MIN,
+            "c_puct_max": AZ_C_PUCT_MAX,
+            "c_puct_schedule": AZ_C_PUCT_SCHEDULE,
+            "pw_alpha": AZ_PW_ALPHA,
+            "pw_beta": AZ_PW_BETA,
+            "prior_weight_early": AZ_PRIOR_WEIGHT_EARLY,
+            "batch_eval_size": AZ_MCTS_BATCH_EVAL_SIZE,
+            "parallel_simulations": AZ_MCTS_PARALLEL_SIMS,
+            "simulate_enemy_in_tree": AZ_MCTS_SIMULATE_ENEMY,
+        }
     _sp_cfg_payload = {
         "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,
         "temperature_opening_value": AZ_TEMP_OPENING,
