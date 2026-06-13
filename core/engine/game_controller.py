@@ -20,9 +20,10 @@ from core.engine.mission import board_dims_for_mission
 from core.engine.state_export import DEFAULT_STATE_PATH
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.action_contract import action_sizes_from_env
-from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo, is_gumbel_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
+from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
@@ -495,6 +496,9 @@ class GameController:
             gmz_play_mode = str(os.getenv("GMZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
             if gmz_play_mode not in {"greedy", "search"}:
                 gmz_play_mode = "greedy"
+            gaz_play_mode = str(os.getenv("GAZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+            if gaz_play_mode not in {"greedy", "gumbel"}:
+                gaz_play_mode = "greedy"
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -561,7 +565,13 @@ class GameController:
             self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
             algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-            if is_alphazero_net_algo(algo):
+            if is_gumbel_az_algo(algo):
+                gaz_joint = str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1"
+                gaz_tail = f", sims={int(os.getenv('GAZ_PLAY_SIMS', '32'))}" if gaz_play_mode == "gumbel" else ""
+                self._io.log(
+                    f"[VIEWER][INFERENCE_MODE] algo=gumbel_az mode={gaz_play_mode} joint_action={int(gaz_joint)}{gaz_tail}"
+                )
+            elif is_alphazero_net_algo(algo):
                 az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
                 az_tail = f", temperature={az_temp:.3f}" if az_play_mode == "mcts" else ""
                 self._io.log(
@@ -676,7 +686,25 @@ class GameController:
                     action = action.to("cpu")
                 elif is_alphazero_net_algo(algo):
                     masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    if az_play_mode == "mcts":
+                    if is_gumbel_az_algo(algo) and gaz_play_mode == "gumbel":
+                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                        search = build_gumbel_inference_search(
+                            policy_net,
+                            num_simulations=max(1, int(os.getenv("GAZ_PLAY_SIMS", "32"))),
+                            num_considered_actions=max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8"))),
+                            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1",
+                            device=state_tensor.device,
+                        )
+                        _pi, selected, _value = search.run(
+                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                            legal_masks_by_head=legal_masks,
+                            temperature=float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.0")),
+                            env=env,
+                            len_model=len(model),
+                            enemy_policy_fn=None,
+                        )
+                        action_list = [int(a) for a in selected]
+                    elif az_play_mode == "mcts" and not is_gumbel_az_algo(algo):
                         legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
                         az_mcts_mode = az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)
                         mcts = AlphaZeroFactorizedMCTS(

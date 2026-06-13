@@ -292,6 +292,28 @@ class GumbelAlphaZeroSearch:
         return policy_targets, selected_actions, float(root_value)
 
 
+def build_gumbel_inference_search(net, *, num_simulations: int, num_considered_actions: int,
+                                  joint_action: bool = False, value_scale: float = 0.1,
+                                  c_visit: float = 50.0, device=None, evaluator=None):
+    """Фабрика Gumbel-поиска для инференса (eval/play/Viewer).
+
+    depth-1, simulate_enemy=False (лист = оценка сети после хода модели, без тяжёлой
+    эвристики врага), без дебютной стохастики. joint_action прокидывается как при обучении.
+    Контракт run() тот же → вызывающий берёт selected_actions (победители SH).
+    """
+    cfg = GumbelAZSearchConfig(
+        num_simulations=max(1, int(num_simulations)),
+        num_considered_actions=max(2, int(num_considered_actions)),
+        max_depth=1,
+        value_scale=float(value_scale),
+        c_visit=float(c_visit),
+        temperature_opening_moves=0,
+        simulate_enemy=False,
+        joint_action=bool(joint_action),
+    )
+    return GumbelAlphaZeroSearch(net, config=cfg, device=device, evaluator=evaluator)
+
+
 def _normalize01(values: np.ndarray, idx_subset: list[int]) -> np.ndarray:
     """Min-max нормировка значений по подмножеству индексов в [0,1] (для sigma)."""
     out = np.zeros_like(values, dtype=np.float32)

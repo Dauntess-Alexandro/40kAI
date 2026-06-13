@@ -89,7 +89,7 @@ from app.gui_qt.remote_is_store import (
     load_remote_is,
     save_remote_is,
 )
-from core.models.alphazero_ids import is_az_algo
+from core.models.alphazero_ids import is_az_algo, is_gumbel_az_algo
 from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
@@ -303,10 +303,13 @@ class GUIController(QtCore.QObject):
         self._play_agent_override_id = ""
         self._play_az_mode = "greedy"
         self._play_gmz_mode = "greedy"
+        self._play_gaz_mode = "greedy"
         self._play_az_temperature = 0.06
         self._play_gmz_temperature = 0.10
+        self._play_gaz_temperature = 0.0
         self._play_az_mcts_sims = 32
         self._play_gmz_search_sims = 32
+        self._play_gaz_sims = 32
         self._play_viewer_player_role_label = "Ты: —"
         self._play_viewer_model_role_label = "ИИ: —"
         self._eval_model_path = ""
@@ -1160,7 +1163,11 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(bool, notify=playModelMetaChanged)
     def playInferenceModeVisible(self) -> bool:
-        return is_az_algo(self._play_model_algo_key) or self._play_model_algo_key == "gumbel_muzero"
+        return (
+            is_az_algo(self._play_model_algo_key)
+            or self._play_model_algo_key == "gumbel_muzero"
+            or is_gumbel_az_algo(self._play_model_algo_key)
+        )
 
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playInferenceModeLabel(self) -> str:
@@ -1168,6 +1175,8 @@ class GUIController(QtCore.QObject):
             return "Режим AZ:"
         if self._play_model_algo_key == "gumbel_muzero":
             return "Режим GMZ:"
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return "Режим GAZ:"
         return "Режим:"
 
     @QtCore.Property("QVariantList", notify=playModelMetaChanged)
@@ -1182,6 +1191,11 @@ class GUIController(QtCore.QObject):
                 {"value": "greedy", "label": "Greedy"},
                 {"value": "search", "label": "Search"},
             ]
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return [
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "gumbel", "label": "Gumbel"},
+            ]
         return []
 
     @QtCore.Property(str, notify=playModelMetaChanged)
@@ -1190,6 +1204,8 @@ class GUIController(QtCore.QObject):
             return self._play_az_mode
         if self._play_model_algo_key == "gumbel_muzero":
             return self._play_gmz_mode
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return self._play_gaz_mode
         return "greedy"
 
     @QtCore.Property(bool, notify=playModelMetaChanged)
@@ -1198,6 +1214,8 @@ class GUIController(QtCore.QObject):
             return self._play_az_mode == "mcts"
         if self._play_model_algo_key == "gumbel_muzero":
             return self._play_gmz_mode == "search"
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return self._play_gaz_mode == "gumbel"
         return False
 
     @QtCore.Property(str, notify=playModelMetaChanged)
@@ -1206,6 +1224,8 @@ class GUIController(QtCore.QObject):
             return f"{float(self._play_az_temperature):.2f}"
         if self._play_model_algo_key == "gumbel_muzero":
             return f"{float(self._play_gmz_temperature):.2f}"
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return f"{float(self._play_gaz_temperature):.2f}"
         return "0.10"
 
     @QtCore.Property(bool, notify=playModelMetaChanged)
@@ -1218,6 +1238,8 @@ class GUIController(QtCore.QObject):
             return "MCTS sims:"
         if self._play_model_algo_key == "gumbel_muzero":
             return "Search sims:"
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return "Gumbel sims:"
         return "Sims:"
 
     @QtCore.Property(str, notify=playModelMetaChanged)
@@ -1226,6 +1248,8 @@ class GUIController(QtCore.QObject):
             return str(int(self._play_az_mcts_sims))
         if self._play_model_algo_key == "gumbel_muzero":
             return str(int(self._play_gmz_search_sims))
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            return str(int(self._play_gaz_sims))
         return "32"
 
     @QtCore.Property(str, notify=playModelMetaChanged)
@@ -2593,6 +2617,15 @@ class GUIController(QtCore.QObject):
             self._play_gmz_mode = mode
             self.playModelMetaChanged.emit(self._play_model_algo_label)
             self._emit_status(f"Режим GMZ для игры: {mode}.")
+            return
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            if mode not in {"greedy", "gumbel"}:
+                mode = "greedy"
+            if mode == self._play_gaz_mode:
+                return
+            self._play_gaz_mode = mode
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            self._emit_status(f"Режим GAZ для игры: {mode}.")
 
     @QtCore.Slot(str)
     def set_play_inference_temperature(self, value: str) -> None:
@@ -2608,6 +2641,12 @@ class GUIController(QtCore.QObject):
                 return
             self._play_gmz_temperature = parsed
             self.playModelMetaChanged.emit(self._play_model_algo_label)
+            return
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            if abs(parsed - float(self._play_gaz_temperature)) <= 1e-9:
+                return
+            self._play_gaz_temperature = parsed
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
 
     @QtCore.Slot(str)
     def set_play_inference_search_sims(self, value: str) -> None:
@@ -2622,6 +2661,12 @@ class GUIController(QtCore.QObject):
             if int(parsed) == int(self._play_gmz_search_sims):
                 return
             self._play_gmz_search_sims = int(parsed)
+            self.playModelMetaChanged.emit(self._play_model_algo_label)
+            return
+        if is_gumbel_az_algo(self._play_model_algo_key):
+            if int(parsed) == int(self._play_gaz_sims):
+                return
+            self._play_gaz_sims = int(parsed)
             self.playModelMetaChanged.emit(self._play_model_algo_label)
 
     @QtCore.Slot()
@@ -4772,6 +4817,14 @@ class GUIController(QtCore.QObject):
         gmz_opponent_mode = opponent_mode if opponent_algo == "gumbel_muzero" and opponent_mode in {"greedy", "search"} else "greedy"
         env.insert("GMZ_EVAL_MODE", gmz_eval_mode)
         env.insert("GMZ_OPPONENT_MODE", gmz_opponent_mode)
+        gaz_eval_mode = learner_mode if is_gumbel_az_algo(learner_algo) and learner_mode in {"greedy", "gumbel"} else "greedy"
+        gaz_opponent_mode = opponent_mode if is_gumbel_az_algo(opponent_algo) and opponent_mode in {"greedy", "gumbel"} else "greedy"
+        env.insert("GAZ_EVAL_MODE", gaz_eval_mode)
+        env.insert("GAZ_EVAL_OPPONENT_MODE", gaz_opponent_mode)
+        if gaz_eval_mode == "gumbel" or gaz_opponent_mode == "gumbel":
+            _gaz_sims_side = learner_side if gaz_eval_mode == "gumbel" else opponent_side
+            env.insert("GAZ_EVAL_SIMS", str(self._eval_side_search_sims(_gaz_sims_side)))
+            env.insert("GAZ_JOINT_ACTION", "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0")
         if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
             env.insert("GMZ_EVAL_SIMS", str(self._eval_side_search_sims(learner_side)))
             env.insert("GMZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
@@ -4879,6 +4932,12 @@ class GUIController(QtCore.QObject):
             if self._play_gmz_mode == "search":
                 env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
                 env["GMZ_PLAY_SIMS"] = str(int(self._play_gmz_search_sims))
+        elif is_gumbel_az_algo(self._play_model_algo_key):
+            env["GAZ_PLAY_MODE"] = self._play_gaz_mode
+            if self._play_gaz_mode == "gumbel":
+                env["GAZ_PLAY_TEMPERATURE"] = f"{float(self._play_gaz_temperature):.3f}"
+                env["GAZ_PLAY_SIMS"] = str(int(self._play_gaz_sims))
+                env["GAZ_JOINT_ACTION"] = "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0"
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -4931,6 +4990,12 @@ class GUIController(QtCore.QObject):
             if self._play_gmz_mode == "search":
                 env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
                 env["GMZ_PLAY_SIMS"] = str(int(self._play_gmz_search_sims))
+        elif is_gumbel_az_algo(self._play_model_algo_key):
+            env["GAZ_PLAY_MODE"] = self._play_gaz_mode
+            if self._play_gaz_mode == "gumbel":
+                env["GAZ_PLAY_TEMPERATURE"] = f"{float(self._play_gaz_temperature):.3f}"
+                env["GAZ_PLAY_SIMS"] = str(int(self._play_gaz_sims))
+                env["GAZ_JOINT_ACTION"] = "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0"
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -4952,6 +5017,8 @@ class GUIController(QtCore.QObject):
             mode_hint = self._play_az_mode
         elif self._play_model_algo_key == "gumbel_muzero":
             mode_hint = self._play_gmz_mode
+        elif is_gumbel_az_algo(self._play_model_algo_key):
+            mode_hint = self._play_gaz_mode
         self._emit_log(f"[VIEWER] Запуск режима игры: {mode_hint} (exploration=off).", level="INFO")
         self._emit_status(f"Запуск игры в GUI через Viewer ({mode_hint}, без исследования).")
 

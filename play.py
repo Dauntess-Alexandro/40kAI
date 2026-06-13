@@ -25,10 +25,11 @@ from core.engine.game_controller import n_actions_from_env
 from core.engine.game_io import ConsoleIO, set_active_io
 from core.engine.mission import normalize_mission_name
 from core.envs.warhamEnv import roll_off_attacker_defender
-from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo, is_gumbel_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.DQN import *
+from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
@@ -65,6 +66,13 @@ if AZ_PLAY_MODE not in {"greedy", "mcts"}:
 GMZ_PLAY_MODE = str(os.getenv("GMZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
 if GMZ_PLAY_MODE not in {"greedy", "search"}:
     GMZ_PLAY_MODE = "greedy"
+GAZ_PLAY_MODE = str(os.getenv("GAZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+if GAZ_PLAY_MODE not in {"greedy", "gumbel"}:
+    GAZ_PLAY_MODE = "greedy"
+GAZ_PLAY_SIMS = max(1, int(os.getenv("GAZ_PLAY_SIMS", "32")))
+GAZ_PLAY_NUM_CONSIDERED = max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8")))
+GAZ_PLAY_TEMPERATURE = float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.0"))
+GAZ_JOINT_ACTION_INFER = str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("model", nargs="?", default="None")
@@ -203,7 +211,10 @@ if args.agent_id:
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
 if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
     algo = "dqn"
-if is_alphazero_net_algo(algo):
+if is_gumbel_az_algo(algo):
+    gaz_tail = f", temperature={GAZ_PLAY_TEMPERATURE:.3f}, sims={GAZ_PLAY_SIMS}" if GAZ_PLAY_MODE == "gumbel" else ""
+    _log(f"[PLAY][INFERENCE_MODE] algo=gumbel_az mode={GAZ_PLAY_MODE} joint_action={int(GAZ_JOINT_ACTION_INFER)}{gaz_tail}")
+elif is_alphazero_net_algo(algo):
     az_temp = float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06"))
     az_tail = f", temperature={az_temp:.3f}" if AZ_PLAY_MODE == "mcts" else ""
     _log(f"[PLAY][INFERENCE_MODE] algo={algo} mcts={az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)} play_mode={AZ_PLAY_MODE}{az_tail}")
@@ -338,7 +349,25 @@ while isdone == False:
         action = action.to("cpu")
     elif is_alphazero_net_algo(algo):
         masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-        if AZ_PLAY_MODE == "mcts":
+        if is_gumbel_az_algo(algo) and GAZ_PLAY_MODE == "gumbel":
+            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+            search = build_gumbel_inference_search(
+                policy_net,
+                num_simulations=GAZ_PLAY_SIMS,
+                num_considered_actions=GAZ_PLAY_NUM_CONSIDERED,
+                joint_action=GAZ_JOINT_ACTION_INFER,
+                device=state.device,
+            )
+            _pi, selected, _value = search.run(
+                obs=state.squeeze(0).detach().cpu().numpy(),
+                legal_masks_by_head=legal_masks,
+                temperature=GAZ_PLAY_TEMPERATURE,
+                env=env,
+                len_model=len(model),
+                enemy_policy_fn=None,
+            )
+            action_list = [int(a) for a in selected]
+        elif AZ_PLAY_MODE == "mcts" and not is_gumbel_az_algo(algo):
             legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
             az_mcts_mode = az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)
             mcts = AlphaZeroFactorizedMCTS(

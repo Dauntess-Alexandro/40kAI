@@ -147,3 +147,27 @@ def test_joint_action_on_propagates_winners_to_later_heads():
     assert seen[1][1][0] == actions[0]  # голова 1 увидела победителя головы 0
     assert seen[2][1][0] == actions[0]
     assert seen[2][1][1] == actions[1]  # голова 2 увидела победителя головы 1
+
+
+def test_build_inference_search_config_and_run():
+    from core.models.gumbel_alphazero_search import build_gumbel_inference_search
+
+    net = _StubNet([4, 3], value=0.0)
+    s = build_gumbel_inference_search(
+        net, num_simulations=16, num_considered_actions=4, joint_action=True,
+        device=torch.device("cpu"),
+    )
+    # инференс: без симуляции врага, joint прокинут, depth-1
+    assert s.cfg.simulate_enemy is False
+    assert s.cfg.joint_action is True
+    assert s.cfg.max_depth == 1
+    legal = [np.ones(4, dtype=bool), np.ones(3, dtype=bool)]
+    pi, actions, value = s.run(
+        obs=np.zeros(5, dtype=np.float32), legal_masks_by_head=legal, temperature=0.0
+    )
+    assert len(actions) == 2
+    for p in pi:
+        assert abs(float(p.sum()) - 1.0) < 1e-5
+    for a, lg in zip(actions, legal):
+        assert bool(lg[a])
+    assert -1.0 <= float(value) <= 1.0

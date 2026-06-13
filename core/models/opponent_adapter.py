@@ -11,9 +11,10 @@ import torch
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id, resolve_agent_algo
 from core.models.action_contract import action_tensor_to_dict
-from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo
+from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo, is_gumbel_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
+from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_kwargs_from_env
@@ -165,7 +166,17 @@ def build_policy_fn(
         if az_eval_mode not in {"greedy", "mcts"}:
             az_eval_mode = "greedy"
         mcts = None
-        if az_eval_mode == "mcts":
+        if is_gumbel_az_algo(opponent.algo) and str(os.getenv("GAZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() == "gumbel":
+            # Оппонент gumbel_az в Gumbel-режиме: тот же контракт run() → переиспользуем _policy_fn ниже.
+            mcts = build_gumbel_inference_search(
+                net,
+                num_simulations=max(1, int(os.getenv("GAZ_EVAL_SIMS", "32"))),
+                num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
+                joint_action=str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1",
+                device=torch.device("cpu"),
+            )
+            az_eval_mode = "mcts"
+        elif az_eval_mode == "mcts":
             mcts_mode = az_mcts_mode_from_payload(opponent.algo)
             mcts_cfg = MCTSConfig(
                 simulations=max(

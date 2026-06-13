@@ -34,6 +34,7 @@ from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.DQN import DQN
+from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
@@ -253,6 +254,26 @@ def select_action_with_epsilon_ppo(env, state, policy_net, epsilon, len_model):
 
 def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_model):
     masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+    # Gumbel-поиск на инференсе (gumbel_az): отдельный режим, дефолт greedy.
+    gaz_eval_mode = str(os.getenv("GAZ_EVAL_MODE", "greedy")).strip().lower() or "greedy"
+    if gaz_eval_mode == "gumbel":
+        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
+        search = build_gumbel_inference_search(
+            policy_net,
+            num_simulations=max(1, int(os.getenv("GAZ_EVAL_SIMS", "32"))),
+            num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
+            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1",
+            device=state.device,
+        )
+        _pi, selected, _value = search.run(
+            obs=state.squeeze(0).detach().cpu().numpy(),
+            legal_masks_by_head=legal_masks,
+            temperature=float(os.getenv("GAZ_EVAL_TEMPERATURE", "0.0")),
+            env=env,
+            len_model=len_model,
+            enemy_policy_fn=None,
+        )
+        return torch.tensor([[int(a) for a in selected]], device="cpu")
     az_eval_mode = str(os.getenv("AZ_EVAL_MODE", os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy"))).strip().lower() or "greedy"
     if az_eval_mode not in {"greedy", "mcts"}:
         az_eval_mode = "greedy"
