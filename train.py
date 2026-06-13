@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from collections import Counter
+from typing import NoReturn
 
 import gymnasium as gym
 import matplotlib.pyplot as plt
@@ -114,7 +115,12 @@ from core.models.dqn_dist import (
 )
 from core.models.gmz_inference_client import GMZInferenceClient
 from core.models.gmz_inference_server import gmz_inference_server_entry
-from core.models.gumbel_muzero_model import GumbelMuZeroNet
+from core.models.gumbel_muzero_model import (
+    GumbelMuZeroNet,
+    gumbel_muzero_arch_from_payload,
+    gumbel_muzero_kwargs_from_env,
+    load_gumbel_muzero_state_dict,
+)
 from core.models.gumbel_muzero_reanalysis import GumbelMuZeroReanalysisConfig, GumbelMuZeroReanalyzer
 from core.models.gumbel_muzero_replay import GMZTransition, GumbelMuZeroReplayBuffer
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
@@ -124,7 +130,9 @@ from core.models.memory import *
 from core.models.opponent_adapter import OpponentSpec, build_policy_fn, load_agent_opponent
 from core.models.PPO import (
     ActorCriticMultiHead,
+    load_actor_critic_state_dict,
     make_actor_critic,
+    ppo_arch_from_payload,
     ppo_kwargs_from_env,
     update_ppo_entropy_coef,
 )
@@ -751,6 +759,25 @@ def _extract_policy_state_dict(checkpoint):
     if checkpoint and all(hasattr(value, "shape") for value in checkpoint.values()):
         return checkpoint
     return None
+
+
+def _raise_resume_error(algo: str, path: str, reason: str) -> NoReturn:
+    """Громкая остановка при неудачном resume.
+
+    Зачем: если RESUME_CHECKPOINT задан явно, но веса загрузить нельзя, продолжать «с нуля»
+    молча опасно — можно впустую потратить часы обучения. Лучше остановиться с понятной
+    причиной, чем тихо обучать случайную сеть.
+    """
+    msg = (
+        f"[{algo}][RESUME][ERROR] Не удалось продолжить из чекпойнта — остановка, "
+        "чтобы не учиться с нуля незаметно. "
+        f"Причина: {reason}. Где: train.py (resume {algo}). path={path}. "
+        "Что делать: укажите корректный чекпоинт того же алгоритма и архитектуры в RESUME_CHECKPOINT "
+        "или снимите галочку resume в GUI, чтобы осознанно начать с нуля."
+    )
+    print(msg, flush=True)
+    append_agent_log(msg)
+    raise RuntimeError(msg)
 
 
 def _resume_from_checkpoint(policy_net, target_net, optimizer, memory, checkpoint_path: str) -> dict:
@@ -3148,6 +3175,8 @@ def _save_ppo_checkpoint(
     b_len: int | None = None,
     b_hei: int | None = None,
     lr_scheduler=None,
+    global_step: int = 0,
+    update_step: int = 0,
 ):
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     run_dir = os.path.join(MODELS_DIR, "ppo", f"ppo-run-{timestamp}")
@@ -3160,6 +3189,8 @@ def _save_ppo_checkpoint(
         "actor_critic": actor_critic.state_dict(),
         "optimizer": optimizer.state_dict(),
         "episode": int(episode),
+        "global_step": int(global_step),
+        "update_step": int(update_step),
         "n_actions": [int(x) for x in n_actions],
         "n_observations": int(n_observations),
         "env_contract": env_contract,
@@ -3189,6 +3220,75 @@ def _save_ppo_checkpoint(
     return checkpoint_path
 
 
+def _resume_ppo_checkpoint(actor_critic, optimizer, lr_scheduler=None) -> dict:
+    """Тёплый старт PPO из чекпоинта (resume).
+
+    Что делает: грузит веса actor-critic (strict=False), состояние optimizer и lr_scheduler,
+    возвращает базовые счётчики (episode_base/global_step/update_step) для продолжения нумерации.
+    PPO — on-policy, replay-буфера нет: «продолжение» = тёплый старт с сохранённых весов
+    плюс состояние оптимизатора/планировщика LR; роллауты собираются заново текущей сетью.
+    Если RESUME_CHECKPOINT не задан — возвращает нули (обычный старт с нуля). Если задан, но
+    веса загрузить нельзя — поднимает RuntimeError через _raise_resume_error (громкая остановка,
+    чтобы не учиться с нуля незаметно). Сбой optimizer/lr_scheduler — некритичный warning.
+    """
+    meta = {"episode_base": 0, "global_step": 0, "update_step": 0}
+    if not RESUME_CHECKPOINT:
+        return meta
+    try:
+        checkpoint = _load_checkpoint_payload(RESUME_CHECKPOINT)
+    except Exception as exc:
+        _raise_resume_error("PPO", RESUME_CHECKPOINT, f"не удалось прочитать файл: {exc}")
+    if not isinstance(checkpoint, dict):
+        _raise_resume_error("PPO", RESUME_CHECKPOINT, "payload не является словарём")
+    state = checkpoint.get("actor_critic")
+    if not isinstance(state, dict):
+        state = checkpoint.get("policy_net")
+    if not isinstance(state, dict):
+        _raise_resume_error(
+            "PPO",
+            RESUME_CHECKPOINT,
+            "в чекпойнте нет actor_critic/policy_net (нужен PPO checkpoint_ep*.pth)",
+        )
+    ckpt_arch = ppo_arch_from_payload(checkpoint)
+    cur_arch = _ppo_arch_dict(actor_critic)
+    if ckpt_arch != cur_arch:
+        append_agent_log(
+            f"[PPO][RESUME][WARN] arch mismatch checkpoint={ckpt_arch} current={cur_arch}; "
+            "strict=False load (часть весов может не загрузиться)."
+        )
+    try:
+        load_actor_critic_state_dict(actor_critic, normalize_state_dict(state), log_fn=append_agent_log)
+    except Exception as exc:
+        _raise_resume_error("PPO", RESUME_CHECKPOINT, f"не удалось загрузить веса actor-critic: {exc}")
+    opt_state = checkpoint.get("optimizer")
+    if isinstance(opt_state, dict):
+        try:
+            optimizer.load_state_dict(opt_state)
+        except Exception as exc:
+            append_agent_log(
+                "[PPO][RESUME][WARN] Не удалось загрузить optimizer state, продолжаю с чистым оптимизатором. "
+                f"Где: train.py (_resume_ppo_checkpoint/optimizer.load_state_dict). exc={exc}"
+            )
+    sched_state = checkpoint.get("lr_scheduler")
+    if lr_scheduler is not None and isinstance(sched_state, dict):
+        try:
+            lr_scheduler.load_state_dict(sched_state)
+        except Exception as exc:
+            append_agent_log(
+                "[PPO][RESUME][WARN] Не удалось загрузить lr_scheduler state, продолжаю без него. "
+                f"Где: train.py (_resume_ppo_checkpoint/lr_scheduler.load_state_dict). exc={exc}"
+            )
+    meta["episode_base"] = int(checkpoint.get("episode", 0) or 0)
+    meta["global_step"] = int(checkpoint.get("global_step", 0) or 0)
+    meta["update_step"] = int(checkpoint.get("update_step", checkpoint.get("ppo_update_step", 0)) or 0)
+    append_agent_log(
+        "[PPO][RESUME] "
+        f"path={RESUME_CHECKPOINT} episode_base={meta['episode_base']} "
+        f"global_step={meta['global_step']} update_step={meta['update_step']}"
+    )
+    return meta
+
+
 def run_ppo_training(
     env_contexts,
     totLifeT,
@@ -3213,8 +3313,10 @@ def run_ppo_training(
     _patch_optimizer_methods_no_compile(optimizer)
     ppo_lr_scheduler = _build_ppo_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 20)
     buffer = PPORolloutBuffer()
-    global_step = 0
-    ppo_update_step = 0
+    ppo_resume_meta = _resume_ppo_checkpoint(actor_critic, optimizer, ppo_lr_scheduler)
+    episode_base = int(ppo_resume_meta["episode_base"])
+    global_step = int(ppo_resume_meta["global_step"])
+    ppo_update_step = int(ppo_resume_meta["update_step"])
     entropy_coef = float(PPO_ENTROPY_COEF)
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
@@ -3369,20 +3471,23 @@ def run_ppo_training(
             except Exception as exc:
                 append_agent_log(f"[PPO][DET_EVAL][WARN] eval пропущен: {exc}")
         if SAVE_EVERY > 0 and (episode % SAVE_EVERY == 0):
+            cumulative_episode = episode_base + episode
             last_checkpoint = _save_ppo_checkpoint(
                 actor_critic=actor_critic,
                 optimizer=optimizer,
-                episode=episode,
+                episode=cumulative_episode,
                 n_actions=n_actions,
                 n_observations=n_observations,
                 model=model,
                 enemy=enemy,
                 env_contract=env_contract,
                 lr_scheduler=ppo_lr_scheduler,
+                global_step=global_step,
+                update_step=ppo_update_step,
             )
             # Снапшот в registry для GUI ("Конкретный агент" / "Последний снапшот").
             try:
-                periodic_agent_id = build_agent_id(learner_identity, f"ep{int(episode)}")
+                periodic_agent_id = build_agent_id(learner_identity, f"ep{int(cumulative_episode)}")
                 artifact_dir = save_agent_artifact(
                     identity=learner_identity,
                     agent_id=periodic_agent_id,
@@ -3392,7 +3497,7 @@ def run_ppo_training(
                     optimizer_state_dict=optimizer.state_dict(),
                     extra_meta={
                         "algo": "ppo",
-                        "episode": int(episode),
+                        "episode": int(cumulative_episode),
                         "mode": "train_loop",
                         "legacy_checkpoint_path": str(last_checkpoint).replace("\\", "/") if last_checkpoint else "",
                     },
@@ -3401,21 +3506,24 @@ def run_ppo_training(
             except Exception as exc:
                 append_agent_log(f"[PPO][SAVE][WARN] не удалось сохранить agent snapshot: {exc}")
 
+    final_cumulative_episode = episode_base + int(totLifeT)
     if not last_checkpoint:
         last_checkpoint = _save_ppo_checkpoint(
             actor_critic=actor_critic,
             optimizer=optimizer,
-            episode=totLifeT,
+            episode=final_cumulative_episode,
             n_actions=n_actions,
             n_observations=n_observations,
             model=model,
             enemy=enemy,
             env_contract=env_contract,
             lr_scheduler=ppo_lr_scheduler,
+            global_step=global_step,
+            update_step=ppo_update_step,
         )
     # Финальный снапшот в registry (чтобы GUI мог взять latest_snapshot)
     try:
-        final_agent_id = build_agent_id(learner_identity, f"final_ep{int(totLifeT)}")
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{int(final_cumulative_episode)}")
         artifact_dir = save_agent_artifact(
             identity=learner_identity,
             agent_id=final_agent_id,
@@ -3425,7 +3533,7 @@ def run_ppo_training(
             optimizer_state_dict=optimizer.state_dict(),
             extra_meta={
                 "algo": "ppo",
-                "episode": int(totLifeT),
+                "episode": int(final_cumulative_episode),
                 "mode": "train_loop",
                 "legacy_checkpoint_path": str(last_checkpoint).replace("\\", "/") if last_checkpoint else "",
             },
@@ -3481,8 +3589,10 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     ppo_lr_scheduler = _build_ppo_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 20)
     buffer = PPORolloutBuffer()
 
-    global_step = 0
-    ppo_update_step = 0
+    ppo_resume_meta = _resume_ppo_checkpoint(actor_critic, optimizer, ppo_lr_scheduler)
+    episode_base = int(ppo_resume_meta["episode_base"])
+    global_step = int(ppo_resume_meta["global_step"])
+    ppo_update_step = int(ppo_resume_meta["update_step"])
     entropy_coef = float(PPO_ENTROPY_COEF)
     last_checkpoint = ""
     run_id = str(random.randint(1000000, 9999999))
@@ -3660,13 +3770,15 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                     last_checkpoint = _save_ppo_checkpoint(
                         actor_critic=actor_critic,
                         optimizer=optimizer,
-                        episode=episodes_finished,
+                        episode=episode_base + episodes_finished,
                         n_actions=n_actions,
                         n_observations=n_observations,
                         model=None,
                         enemy=None,
                         env_contract=env_contract,
                         lr_scheduler=ppo_lr_scheduler,
+                        global_step=global_step,
+                        update_step=ppo_update_step,
                     )
 
         # Обновляем PPO по порогу шагов роллаута.
@@ -3695,13 +3807,15 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
         last_checkpoint = _save_ppo_checkpoint(
             actor_critic=actor_critic,
             optimizer=optimizer,
-            episode=episodes_finished,
+            episode=episode_base + episodes_finished,
             n_actions=n_actions,
             n_observations=n_observations,
             model=None,
             enemy=None,
             env_contract=env_contract,
             lr_scheduler=ppo_lr_scheduler,
+            global_step=global_step,
+            update_step=ppo_update_step,
         )
 
     if ep_rows:
@@ -7064,6 +7178,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     _patch_optimizer_methods_no_compile(optimizer)
     ppo_lr_scheduler = _build_ppo_lr_scheduler(optimizer, total_steps_hint=int(totLifeT) * 20)
     buffer = PPORolloutBuffer()
+    # Resume до сборки init_weights, чтобы акторы стартовали с обученных весов, а не случайных.
+    ppo_resume_meta = _resume_ppo_checkpoint(actor_critic, optimizer, ppo_lr_scheduler)
     entropy_coef = float(PPO_ENTROPY_COEF)
     ppo_kw = ppo_kwargs_from_env()
     append_agent_log(
@@ -7196,8 +7312,9 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
     done_actors = 0
     episodes_finished = 0
-    global_step = 0
-    ppo_update_step = 0
+    episode_base = int(ppo_resume_meta["episode_base"])
+    global_step = int(ppo_resume_meta["global_step"])
+    ppo_update_step = int(ppo_resume_meta["update_step"])
     last_checkpoint = ""
     last_actor_det_eval_ep = 0
 
@@ -7424,7 +7541,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                     last_checkpoint = _save_ppo_checkpoint(
                         actor_critic=actor_critic,
                         optimizer=optimizer,
-                        episode=episodes_finished,
+                        episode=episode_base + episodes_finished,
                         n_actions=n_actions,
                         n_observations=n_observations,
                         model=None,
@@ -7434,6 +7551,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         b_len=b_len,
                         b_hei=b_hei,
                         lr_scheduler=ppo_lr_scheduler,
+                        global_step=global_step,
+                        update_step=ppo_update_step,
                     )
             continue
 
@@ -7499,7 +7618,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
         last_checkpoint = _save_ppo_checkpoint(
             actor_critic=actor_critic,
             optimizer=optimizer,
-            episode=int(episodes_finished or totLifeT),
+            episode=int(episode_base + (episodes_finished or totLifeT)),
             n_actions=n_actions,
             n_observations=n_observations,
             model=None,
@@ -7509,6 +7628,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             b_len=b_len,
             b_hei=b_hei,
             lr_scheduler=ppo_lr_scheduler,
+            global_step=global_step,
+            update_step=ppo_update_step,
         )
 
     if ep_rows:
@@ -7568,7 +7689,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     # Финальный снапшот в registry (чтобы GUI мог выбрать PPO как оппонента).
     # Важно: сохраняем даже при SELF_PLAY_ENABLED=0 (PPO vs эвристика), иначе агент не появляется в GUI.
     try:
-        final_agent_id = build_agent_id(learner_identity, f"final_ep{int(episodes_finished or len(ep_rows))}")
+        final_cumulative_episode = episode_base + int(episodes_finished or len(ep_rows))
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{final_cumulative_episode}")
         artifact_dir = save_agent_artifact(
             identity=learner_identity,
             agent_id=final_agent_id,
@@ -7578,7 +7700,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             optimizer_state_dict=optimizer.state_dict(),
             extra_meta={
                 "algo": "ppo",
-                "episode": int(episodes_finished or len(ep_rows)),
+                "episode": int(final_cumulative_episode),
                 "mode": "actor_learner",
                 "num_actors": int(num_actors),
                 "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
@@ -8811,48 +8933,72 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     if RESUME_CHECKPOINT:
         try:
             checkpoint = _load_checkpoint_payload(RESUME_CHECKPOINT)
-            if isinstance(checkpoint, dict):
-                policy_state = checkpoint.get("policy_value_net")
-                if not isinstance(policy_state, dict):
-                    policy_state = _extract_policy_state_dict(checkpoint)
-                if isinstance(policy_state, dict):
-                    arch = alphazero_arch_from_payload(checkpoint)
-                    if arch != az_kw:
-                        append_agent_log(
-                            f"[AZ][RESUME][WARN] arch mismatch checkpoint={arch} current={az_kw}; strict=False load"
-                        )
-                    load_alphazero_state_dict(
-                        az_net,
-                        normalize_state_dict(policy_state),
-                        log_fn=append_agent_log,
-                    )
-                opt_state = checkpoint.get("optimizer")
-                if isinstance(opt_state, dict):
-                    optimizer.load_state_dict(opt_state)
-                sched_state = checkpoint.get("lr_scheduler")
-                if az_lr_scheduler is not None and isinstance(sched_state, dict):
-                    try:
-                        az_lr_scheduler.load_state_dict(sched_state)
-                    except Exception as exc:
-                        append_agent_log(
-                            f"[AZ][RESUME][WARN] lr_scheduler load failed: {exc}. "
-                            "Где: train.py (_main_actor_learner_alphazero). Что делать: продолжить без scheduler state."
-                        )
-                replay_state = checkpoint.get("replay_memory")
-                if replay_state is not None:
-                    replay.load_state_dict(replay_state)
-                resume_episode_base = int(checkpoint.get("episode", 0) or 0)
-                episodes_finished = int(checkpoint.get("episodes_finished", resume_episode_base) or resume_episode_base)
-                global_step = int(checkpoint.get("global_step", 0) or 0)
-                optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
-                policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
-                append_agent_log(
-                    "[AZ][RESUME] "
-                    f"path={RESUME_CHECKPOINT} episode={episodes_finished} replay={len(replay)} "
-                    f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version}"
-                )
         except Exception as exc:
-            append_agent_log(f"[AZ][RESUME][WARN] Не удалось загрузить checkpoint, старт с нуля. exc={exc}")
+            _raise_resume_error("AZ", RESUME_CHECKPOINT, f"не удалось прочитать файл: {exc}")
+        if not isinstance(checkpoint, dict):
+            _raise_resume_error("AZ", RESUME_CHECKPOINT, "payload не является словарём")
+        policy_state = checkpoint.get("policy_value_net")
+        if not isinstance(policy_state, dict):
+            policy_state = _extract_policy_state_dict(checkpoint)
+        if not isinstance(policy_state, dict):
+            _raise_resume_error(
+                "AZ",
+                RESUME_CHECKPOINT,
+                "в чекпойнте нет policy_value_net/policy state_dict (нужен AlphaZero checkpoint)",
+            )
+        arch = alphazero_arch_from_payload(checkpoint)
+        if arch != az_kw:
+            append_agent_log(
+                f"[AZ][RESUME][WARN] arch mismatch checkpoint={arch} current={az_kw}; strict=False load"
+            )
+        try:
+            load_alphazero_state_dict(
+                az_net,
+                normalize_state_dict(policy_state),
+                log_fn=append_agent_log,
+            )
+        except Exception as exc:
+            _raise_resume_error("AZ", RESUME_CHECKPOINT, f"не удалось загрузить веса policy_value_net: {exc}")
+        opt_state = checkpoint.get("optimizer")
+        if isinstance(opt_state, dict):
+            try:
+                optimizer.load_state_dict(opt_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[AZ][RESUME][WARN] optimizer load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_alphazero). Что делать: продолжить с чистым optimizer."
+                )
+        sched_state = checkpoint.get("lr_scheduler")
+        if az_lr_scheduler is not None and isinstance(sched_state, dict):
+            try:
+                az_lr_scheduler.load_state_dict(sched_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[AZ][RESUME][WARN] lr_scheduler load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_alphazero). Что делать: продолжить без scheduler state."
+                )
+        replay_state = checkpoint.get("replay_memory")
+        if replay_state is not None:
+            try:
+                replay.load_state_dict(replay_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[AZ][RESUME][WARN] replay load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_alphazero). Что делать: продолжить с пустым буфером."
+                )
+        # Семантика totLifeT — «дополнительные игры за этот запуск» (как DQN/PPO):
+        # episodes_finished считаем с нуля, а resume_episode_base держит накопительную базу
+        # для нумерации чекпоинтов и продолжения общего счётчика игр.
+        resume_episode_base = int(checkpoint.get("episode", 0) or 0)
+        global_step = int(checkpoint.get("global_step", 0) or 0)
+        optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+        policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
+        append_agent_log(
+            "[AZ][RESUME] "
+            f"path={RESUME_CHECKPOINT} episode_base={resume_episode_base} replay={len(replay)} "
+            f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version} "
+            f"(доп. игр за запуск={int(totLifeT)})"
+        )
 
     opponent_spec = None
     opponent_algo_label = "heuristic"
@@ -8922,7 +9068,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "policy_value_net": az_net.state_dict(),
             "optimizer": optimizer.state_dict(),
             "episode": int(episode_idx),
-            "episodes_finished": int(episodes_finished),
+            "episodes_finished": int(episode_idx),
             "global_step": int(global_step),
             "optimize_steps": int(optimize_steps),
             "policy_version": int(policy_version),
@@ -9421,8 +9567,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 last_guard_turn_limit_rate = float(turn_limit_rate)
 
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
-                last_checkpoint = _save_checkpoint(episodes_finished)
-                append_agent_log(f"[AZ][CHECKPOINT] ep={episodes_finished} path={last_checkpoint}")
+                last_checkpoint = _save_checkpoint(resume_episode_base + episodes_finished)
+                append_agent_log(f"[AZ][CHECKPOINT] ep={resume_episode_base + episodes_finished} path={last_checkpoint}")
 
             continue
 
@@ -9551,7 +9697,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             inf_proc.terminate()
 
     if not last_checkpoint:
-        last_checkpoint = _save_checkpoint(int(episodes_finished or resume_episode_base or totLifeT))
+        last_checkpoint = _save_checkpoint(int(resume_episode_base + (episodes_finished or totLifeT)))
         append_agent_log(f"[AZ][CHECKPOINT] final path={last_checkpoint}")
 
     if ep_rows:
@@ -9590,7 +9736,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         except Exception:
             pass
 
-    final_episode = int(max(episodes_finished, resume_episode_base))
+    final_episode = int(resume_episode_base + episodes_finished)
     final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
     save_agent_artifact(
         identity=learner_identity,
@@ -9611,7 +9757,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     )
     az_done_msg = (
         "[AZ][ACTOR_LEARNER] done "
-        f"episodes={final_episode}/{totLifeT} checkpoint={last_checkpoint} "
+        f"episodes={final_episode}/{resume_episode_base + int(totLifeT)} checkpoint={last_checkpoint} "
         f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
     )
     append_agent_log(az_done_msg)
@@ -10212,30 +10358,71 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     if RESUME_CHECKPOINT:
         try:
             checkpoint = _load_checkpoint_payload(RESUME_CHECKPOINT)
-            if isinstance(checkpoint, dict):
-                policy_state = checkpoint.get("gumbel_muzero_net")
-                if not isinstance(policy_state, dict):
-                    policy_state = _extract_policy_state_dict(checkpoint)
-                if isinstance(policy_state, dict):
-                    gmz_net.load_state_dict(normalize_state_dict(policy_state))
-                opt_state = checkpoint.get("optimizer")
-                if isinstance(opt_state, dict):
-                    optimizer.load_state_dict(opt_state)
-                replay_state = checkpoint.get("replay_memory")
-                if replay_state is not None:
-                    replay.load_state_dict(replay_state)
-                resume_episode_base = int(checkpoint.get("episode", 0) or 0)
-                episodes_finished = int(checkpoint.get("episodes_finished", resume_episode_base) or resume_episode_base)
-                global_step = int(checkpoint.get("global_step", 0) or 0)
-                optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
-                policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
-                append_agent_log(
-                    "[GMZ][RESUME] "
-                    f"path={RESUME_CHECKPOINT} episode={episodes_finished} replay={len(replay)} "
-                    f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version}"
-                )
         except Exception as exc:
-            append_agent_log(f"[GMZ][RESUME][WARN] Не удалось загрузить checkpoint, старт с нуля. exc={exc}")
+            _raise_resume_error("GMZ", RESUME_CHECKPOINT, f"не удалось прочитать файл: {exc}")
+        if not isinstance(checkpoint, dict):
+            _raise_resume_error("GMZ", RESUME_CHECKPOINT, "payload не является словарём")
+        policy_state = checkpoint.get("gumbel_muzero_net")
+        if not isinstance(policy_state, dict):
+            policy_state = _extract_policy_state_dict(checkpoint)
+        if not isinstance(policy_state, dict):
+            _raise_resume_error(
+                "GMZ",
+                RESUME_CHECKPOINT,
+                "в чекпойнте нет gumbel_muzero_net/policy state_dict (нужен Gumbel MuZero checkpoint)",
+            )
+        gmz_arch = gumbel_muzero_arch_from_payload(checkpoint)
+        cur_gmz_arch = gumbel_muzero_kwargs_from_env()
+        if gmz_arch != cur_gmz_arch:
+            append_agent_log(
+                f"[GMZ][RESUME][WARN] arch mismatch checkpoint={gmz_arch} current={cur_gmz_arch}; strict=False load"
+            )
+        try:
+            load_gumbel_muzero_state_dict(
+                gmz_net,
+                normalize_state_dict(policy_state),
+                log_fn=append_agent_log,
+            )
+        except Exception as exc:
+            _raise_resume_error("GMZ", RESUME_CHECKPOINT, f"не удалось загрузить веса gumbel_muzero_net: {exc}")
+        opt_state = checkpoint.get("optimizer")
+        if isinstance(opt_state, dict):
+            try:
+                optimizer.load_state_dict(opt_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[GMZ][RESUME][WARN] optimizer load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_gumbel_muzero). Что делать: продолжить с чистым optimizer."
+                )
+        sched_state = checkpoint.get("lr_scheduler")
+        if gmz_scheduler is not None and isinstance(sched_state, dict):
+            try:
+                gmz_scheduler.load_state_dict(sched_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[GMZ][RESUME][WARN] lr_scheduler load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_gumbel_muzero). Что делать: продолжить без scheduler state."
+                )
+        replay_state = checkpoint.get("replay_memory")
+        if replay_state is not None:
+            try:
+                replay.load_state_dict(replay_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[GMZ][RESUME][WARN] replay load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_gumbel_muzero). Что делать: продолжить с пустым буфером."
+                )
+        # Семантика totLifeT — «дополнительные игры за этот запуск» (как DQN/PPO):
+        # episodes_finished считаем с нуля, resume_episode_base — накопительная база.
+        resume_episode_base = int(checkpoint.get("episode", 0) or 0)
+        global_step = int(checkpoint.get("global_step", 0) or 0)
+        optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+        policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
+        append_agent_log(
+            "[GMZ][RESUME] "
+            f"path={RESUME_CHECKPOINT} episode_base={resume_episode_base} replay={len(replay)} "
+            f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version}"
+        )
 
     opponent_spec = None
     opponent_algo_label = "heuristic"
@@ -10330,23 +10517,24 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
 
     def _save_checkpoint(episode_idx: int) -> str:
         ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode_idx)}.pth")
-        torch.save(
-            {
-                "algo": "gumbel_muzero",
-                "gumbel_muzero_net": gmz_net.state_dict(),
-                "policy_net": gmz_net.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "episode": int(episode_idx),
-                "episodes_finished": int(episodes_finished),
-                "global_step": int(global_step),
-                "optimize_steps": int(optimize_steps),
-                "policy_version": int(policy_version),
-                "replay_memory": replay.state_dict(),
-                "env_contract": env_contract,
-                "num_actors": int(GMZ_NUM_ACTORS),
-            },
-            ckpt_path,
-        )
+        payload = {
+            "algo": "gumbel_muzero",
+            "gumbel_muzero_net": gmz_net.state_dict(),
+            "policy_net": gmz_net.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "episode": int(episode_idx),
+            "episodes_finished": int(episode_idx),
+            "global_step": int(global_step),
+            "optimize_steps": int(optimize_steps),
+            "policy_version": int(policy_version),
+            "replay_memory": replay.state_dict(),
+            "env_contract": env_contract,
+            "num_actors": int(GMZ_NUM_ACTORS),
+            "arch": gumbel_muzero_kwargs_from_env(),
+        }
+        if gmz_scheduler is not None:
+            payload["lr_scheduler"] = gmz_scheduler.state_dict()
+        torch.save(payload, ckpt_path)
         return ckpt_path
 
     gmz_sp_cfg = GumbelSelfPlayConfig(
@@ -10571,8 +10759,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             )
             _maybe_train_progress_heartbeat(force=True)
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
-                last_checkpoint = _save_checkpoint(episodes_finished)
-                append_agent_log(f"[GMZ][CHECKPOINT] ep={episodes_finished} path={last_checkpoint}")
+                last_checkpoint = _save_checkpoint(resume_episode_base + episodes_finished)
+                append_agent_log(f"[GMZ][CHECKPOINT] ep={resume_episode_base + episodes_finished} path={last_checkpoint}")
             if (
                 ACTOR_DET_EVAL_ENABLED
                 and episodes_finished > last_actor_det_eval_ep
@@ -10723,7 +10911,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             pass
 
     if not last_checkpoint:
-        last_checkpoint = _save_checkpoint(int(episodes_finished or resume_episode_base or totLifeT))
+        last_checkpoint = _save_checkpoint(int(resume_episode_base + (episodes_finished or totLifeT)))
         append_agent_log(f"[GMZ][CHECKPOINT] final path={last_checkpoint}")
 
     if ep_rows:
@@ -10774,7 +10962,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         append_agent_log(f"[GMZ][METRICS] saved run_id={run_id}")
         _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
 
-    final_episode = int(max(episodes_finished, resume_episode_base))
+    final_episode = int(resume_episode_base + episodes_finished)
     final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
     save_agent_artifact(
         identity=learner_identity,
@@ -10794,7 +10982,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     )
     append_agent_log(
         "[GMZ][ACTOR_LEARNER] done "
-        f"episodes={final_episode}/{totLifeT} checkpoint={last_checkpoint} "
+        f"episodes={final_episode}/{resume_episode_base + int(totLifeT)} checkpoint={last_checkpoint} "
         f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
     )
 
