@@ -2,13 +2,34 @@
 
 from __future__ import annotations
 
-VALID_TRAIN_ALGOS = frozenset({"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "distill"})
+VALID_TRAIN_ALGOS = frozenset(
+    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "distill"}
+)
 VALID_AZ_ALGOS = frozenset({"alphazero_tree", "alphazero_proxy"})
+GUMBEL_AZ_ALGO = "gumbel_az"
 LEGACY_AZ_ALGO = "alphazero"
 
 
 def is_az_algo(algo: str) -> bool:
     return str(algo or "").strip().lower() in VALID_AZ_ALGOS
+
+
+def is_gumbel_az_algo(algo: str) -> bool:
+    return str(algo or "").strip().lower() == GUMBEL_AZ_ALGO
+
+
+def is_alphazero_net_algo(algo: str) -> bool:
+    """True для алгоритмов, использующих AlphaZeroPolicyValueNet и AZ-формат чекпойнта
+    (ключ policy_value_net): alphazero_tree, alphazero_proxy, gumbel_az."""
+    key = str(algo or "").strip().lower()
+    return key in VALID_AZ_ALGOS or key == GUMBEL_AZ_ALGO
+
+
+def gaz_section_for(algo: str) -> str:
+    key = str(algo or "").strip().lower()
+    if key != GUMBEL_AZ_ALGO:
+        raise ValueError(f"expected gumbel_az, got {algo!r}")
+    return key
 
 
 def az_section_for(algo: str) -> str:
