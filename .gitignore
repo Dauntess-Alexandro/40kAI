@@ -61,3 +61,4 @@ app/viewer/assets/fx/_source/
 
 # Локальная память агентов (плагин remember) — не часть репозитория.
 .remember/
+.superpowers/
