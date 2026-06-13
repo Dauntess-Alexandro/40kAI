@@ -3936,6 +3936,98 @@ ApplicationWindow {
                             }
                         }
 
+                        // Карточки «Модель» и «Оппонент» — на видном месте, сразу под шапкой.
+                        RowLayout {
+                            width: parent.width
+                            spacing: root.spacingMd
+
+                            // Карточка модели.
+                            Item {
+                                Layout.fillWidth: true
+                                implicitHeight: Math.round(104 * root.uiScale)
+
+                                ChamferPanel {
+                                    anchors.fill: parent
+                                    cutSize: Math.round(8 * root.uiScale)
+                                    contentMargin: 0
+                                    fillColor: root.bgElevated
+                                    borderWidth: 1
+                                    borderColor: root.borderMuted
+                                }
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    anchors.margins: Math.round(8 * root.uiScale)
+                                    width: Math.round(3 * root.uiScale)
+                                    radius: width / 2
+                                    color: root.accentP1
+                                }
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Math.round(18 * root.uiScale)
+                                    anchors.rightMargin: Math.round(12 * root.uiScale)
+                                    anchors.topMargin: Math.round(10 * root.uiScale)
+                                    anchors.bottomMargin: Math.round(10 * root.uiScale)
+                                    spacing: Math.round(3 * root.uiScale)
+
+                                    Text { text: "МОДЕЛЬ"; font.bold: true; font.pixelSize: Math.max(8, root.evalCaptionSize - 1); color: root.uiTextMuted }
+                                    Text { text: "Алгоритм: " + controller.metricsAlgo; color: root.uiTextMain; font.bold: true }
+                                    Text { text: "Режим: " + controller.metricsMode; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                                    Text {
+                                        width: parent.width
+                                        text: "Run ID: " + controller.metricsRunId
+                                        color: root.uiTextMuted
+                                        font.pixelSize: root.evalCaptionSize
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            // Карточка оппонента.
+                            Item {
+                                Layout.fillWidth: true
+                                implicitHeight: Math.round(104 * root.uiScale)
+
+                                ChamferPanel {
+                                    anchors.fill: parent
+                                    cutSize: Math.round(8 * root.uiScale)
+                                    contentMargin: 0
+                                    fillColor: root.bgElevated
+                                    borderWidth: 1
+                                    borderColor: root.borderMuted
+                                }
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    anchors.margins: Math.round(8 * root.uiScale)
+                                    width: Math.round(3 * root.uiScale)
+                                    radius: width / 2
+                                    color: "#b88a26"
+                                }
+                                Column {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: Math.round(18 * root.uiScale)
+                                    anchors.rightMargin: Math.round(12 * root.uiScale)
+                                    anchors.topMargin: Math.round(10 * root.uiScale)
+                                    anchors.bottomMargin: Math.round(10 * root.uiScale)
+                                    spacing: Math.round(3 * root.uiScale)
+
+                                    Text { text: "ОППОНЕНТ"; font.bold: true; font.pixelSize: Math.max(8, root.evalCaptionSize - 1); color: root.uiTextMuted }
+                                    Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: root.uiTextMain; font.bold: true }
+                                    Text { text: "Источник: " + controller.opponentSource; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                                    Text {
+                                        width: parent.width
+                                        text: "Алгоритм: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : "")
+                                        color: root.uiTextMuted
+                                        font.pixelSize: root.evalCaptionSize
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+
                         // --- Дашборд метрик тренировки: живые графики по окнам эпизодов ---
                         ColumnLayout {
                             id: metricsDash
@@ -4182,41 +4274,6 @@ ApplicationWindow {
                                 }
                             }
 
-                            // Детали модели и оппонента: справочно, свёрнуто.
-                            ExpanderSection {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: implicitHeight
-                                title: "Детали модели и оппонента"
-                                expanded: false
-                                uiScale: root.uiScale
-                                captionSize: root.evalCaptionSize
-                                textMain: root.uiTextMain
-                                textMuted: root.uiTextMuted
-                                panelFill: root.bgElevated
-                                panelBorder: root.borderMuted
-
-                                RowLayout {
-                                    width: parent.width
-                                    spacing: root.spacingMd
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 4
-                                        Text { text: "Модель"; font.bold: true; color: root.uiTextMain }
-                                        Text { text: "Алгоритм: " + controller.metricsAlgo; color: root.uiTextMuted }
-                                        Text { text: "Режим: " + controller.metricsMode; color: root.uiTextMuted }
-                                        Text { text: "Run ID: " + controller.metricsRunId; color: "#777777"; elide: Text.ElideRight; Layout.fillWidth: true }
-                                    }
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 4
-                                        Text { text: "Оппонент"; font.bold: true; color: root.uiTextMain }
-                                        Text { text: "Self-play: " + (controller.selfPlayEnabled ? "включён" : "выключен"); color: root.uiTextMuted }
-                                        Text { text: "Источник: " + controller.opponentSource; color: root.uiTextMuted }
-                                        Text { text: "Алгоритм оппонента: " + controller.opponentAlgo + (controller.opponentId.length > 0 ? (" (id=" + controller.opponentId + ")") : ""); color: root.uiTextMuted; elide: Text.ElideRight; Layout.fillWidth: true }
-                                    }
-                                }
-                            }
                         }
 
                         // Model Info убрали: эта информация уже есть в верхней панели и карточке "Оппонент".
