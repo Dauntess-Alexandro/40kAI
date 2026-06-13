@@ -35,6 +35,45 @@ Item {
         if (val === undefined || val === null) return "—"
         return Number(val).toFixed(dec !== undefined ? dec : 3)
     }
+    function _pct(val, dec) {
+        if (val === undefined || val === null) return "—"
+        return _fmt(Number(val) * 100, dec !== undefined ? dec : 1) + "%"
+    }
+    function _intText(val) {
+        if (val === undefined || val === null || Number(val) <= 0) return "—"
+        return Number(val).toLocaleString(Qt.locale("ru_RU"))
+    }
+    function _runComboIndex() {
+        var runs = controller.heuristicMetricsRuns || []
+        var selected = ""
+        var d = controller.heuristicMetricsDict || {}
+        if (d.selected_run_id !== undefined) selected = String(d.selected_run_id)
+        for (var i = 0; i < runs.length; i++) {
+            if (String(runs[i].run_id) === selected) return i
+        }
+        return runs.length > 0 ? 0 : -1
+    }
+    function _profileStatus(win, draw) {
+        if (draw > 0.012) return "Ничьи"
+        if (win < 0.48) return "Проверить"
+        return "OK"
+    }
+    function _profileStatusColor(win, draw) {
+        if (draw > 0.012 || win < 0.48) return "#b88a26"
+        return "#4caf6e"
+    }
+    function _qualityBadge(key, val) {
+        if (key === "charge_success_rate") return "Справочно"
+        if (key === "avg_risk") return val >= 0.55 ? "Высокий" : val >= 0.25 ? "Средний" : "Низкий"
+        if (key === "avg_cover") return val > 0.25 ? "OK" : "Низкое"
+        return val <= 0.0001 ? "OK" : "Проверить"
+    }
+    function _qualityBadgeColor(key, val) {
+        if (key === "charge_success_rate") return root.textSecondary
+        if (key === "avg_risk") return val >= 0.55 ? "#cf3f3f" : val >= 0.25 ? "#b88a26" : "#4caf6e"
+        if (key === "avg_cover") return val > 0.25 ? "#4caf6e" : root.textSecondary
+        return val <= 0.0001 ? "#4caf6e" : "#b88a26"
+    }
     // Выбранный learner-агент из дропдауна калибровки (или «Авто»).
     function _selectedAgent() {
         var list = controller.calibrationAgents
@@ -279,7 +318,9 @@ Item {
             ScrollView {
                 clip: true
                 Column {
-                    property real calZoom: 1.15
+                    id: summaryCol
+                    property real calZoom: 1.0
+                    property var md: controller.heuristicMetricsDict || ({})
                     width: innerStack.width / calZoom
                     scale: calZoom
                     transformOrigin: Item.TopLeft
@@ -287,61 +328,268 @@ Item {
                     topPadding: root.spacingMd
 
                     Row {
+                        id: runContextRow
+                        spacing: root.spacingSm
+                        width: parent.width
+
+                        Rectangle {
+                            id: runSelectorCard
+                            width: Math.round((parent.width - root.spacingSm) * 0.36)
+                            height: Math.round(138 * root.uiScale)
+                            radius: 6
+                            color: root.bgElevated
+                            border.color: root.borderMuted
+                            border.width: 1
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingSm
+
+                                Text {
+                                    text: "Прогон эвристики"
+                                    color: "#9fbbe0"
+                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                    font.bold: true
+                                    font.letterSpacing: 0.8
+                                }
+                                ComboBox {
+                                    id: heurRunCombo
+                                    width: parent.width
+                                    height: Math.round(34 * root.uiScale)
+                                    model: controller.heuristicMetricsRuns
+                                    textRole: "label"
+                                    currentIndex: _runComboIndex()
+                                    enabled: count > 0
+                                    onActivated: {
+                                        var runs = controller.heuristicMetricsRuns || []
+                                        if (index >= 0 && index < runs.length) {
+                                            controller.selectHeuristicMetricsRun(String(runs[index].run_id))
+                                        }
+                                    }
+                                    contentItem: Text {
+                                        text: heurRunCombo.displayText.length > 0 ? heurRunCombo.displayText : "Нет сохранённых прогонов"
+                                        color: heurRunCombo.enabled ? root.textPrimary : root.textSecondary
+                                        font.pixelSize: root.evalCaptionSize
+                                        elide: Text.ElideRight
+                                        verticalAlignment: Text.AlignVCenter
+                                        leftPadding: root.spacingSm
+                                    }
+                                    background: Rectangle {
+                                        color: root.bgSurface
+                                        border.color: heurRunCombo.activeFocus ? root.accentPrimaryAction : root.borderMuted
+                                        border.width: 1
+                                        radius: 4
+                                    }
+                                }
+                                Text {
+                                    width: parent.width
+                                    text: "По умолчанию открывается последний snapshot; здесь можно выбрать любой сохранённый run."
+                                    color: root.textSecondary
+                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width - runSelectorCard.width - root.spacingSm
+                            height: Math.round(138 * root.uiScale)
+                            radius: 6
+                            color: root.bgElevated
+                            border.color: root.borderMuted
+                            border.width: 1
+                            clip: true
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                                width: 3
+                                color: "#7db4f5"
+                            }
+
+                            Column {
+                                anchors.fill: parent
+                                anchors.margins: root.spacingMd
+                                spacing: root.spacingSm
+
+                                Row {
+                                    width: parent.width
+                                    spacing: root.spacingSm
+
+                                    Rectangle {
+                                        width: Math.round(42 * root.uiScale)
+                                        height: width
+                                        radius: 6
+                                        color: "#132943"
+                                        border.color: "#2f6ed8"
+                                        border.width: 1
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: String(summaryCol.md.matchup_model_algo_label || "AI").substring(0, 3)
+                                            color: "#dcecff"
+                                            font.pixelSize: Math.round(11 * root.uiScale)
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Column {
+                                        width: parent.width - Math.round(42 * root.uiScale) - statusBadge.width - 2 * root.spacingSm
+                                        spacing: 1
+                                        Text {
+                                            text: "ОППОНЕНТ ЭВРИСТИКИ В ВЫБРАННОМ ПРОГОНЕ"
+                                            color: "#9fbbe0"
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            font.bold: true
+                                            font.letterSpacing: 0.8
+                                        }
+                                        Text {
+                                            width: parent.width
+                                            text: String(summaryCol.md.matchup_model_algo_label || "Модель") + " · " + String(summaryCol.md.matchup_model_name || "не указана")
+                                            color: root.textPrimary
+                                            font.pixelSize: Math.round(14 * root.uiScale)
+                                            font.bold: true
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            width: parent.width
+                                            text: String(summaryCol.md.matchup_model_path || "Путь к модели не найден в snapshot/data-json")
+                                            color: root.textSecondary
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            elide: Text.ElideMiddle
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: statusBadge
+                                        width: statusText.implicitWidth + Math.round(14 * root.uiScale)
+                                        height: Math.round(22 * root.uiScale)
+                                        radius: height / 2
+                                        color: "#0d2918"
+                                        border.color: "#1f5030"
+                                        border.width: 1
+                                        Text {
+                                            id: statusText
+                                            anchors.centerIn: parent
+                                            text: summaryCol.md.matchup_status || "частично"
+                                            color: "#8ee0a9"
+                                            font.pixelSize: Math.round(10 * root.uiScale)
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+
+                                Row {
+                                    width: parent.width
+                                    spacing: root.spacingSm
+                                    Repeater {
+                                        model: [
+                                            ["Эпизодов модели", "matchup_model_episodes", "int"],
+                                            ["Оценочных игр", "total_games", "int"],
+                                            ["Сторона эвристики", "heuristic_side", "str"],
+                                            ["Сценарий", "matchup_scenario", "str"]
+                                        ]
+                                        delegate: Rectangle {
+                                            width: (parent.width - 3 * root.spacingSm) / 4
+                                            height: Math.round(40 * root.uiScale)
+                                            radius: 5
+                                            color: root.bgSurface
+                                            border.color: "#24354c"
+                                            border.width: 1
+                                            Column {
+                                                anchors.fill: parent
+                                                anchors.margins: Math.round(6 * root.uiScale)
+                                                spacing: 1
+                                                Text {
+                                                    width: parent.width
+                                                    text: modelData[0]
+                                                    color: root.textSecondary
+                                                    font.pixelSize: Math.round(8 * root.uiScale)
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    width: parent.width
+                                                    text: modelData[2] === "int"
+                                                        ? _intText(summaryCol.md[modelData[1]])
+                                                        : String(summaryCol.md[modelData[1]] || "—")
+                                                    color: root.textPrimary
+                                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                                    font.bold: true
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    text: String(summaryCol.md.matchup_source_note || "")
+                                    color: root.textSecondary
+                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
+
+                    Row {
                         spacing: root.spacingSm
                         width: parent.width
 
                         Repeater {
                             model: [
-                                { label: "Winrate",        key: "winrate",    good: 0.46, warn: 0.40 },
-                                { label: "Entropy (стили)",key: "entropy",    good: 0.86, warn: 0.80 },
-                                { label: "Draw rate %",    key: "draw_rate",  good: 0,    warn: 0     },
+                                { label: "Победы", key: "winrate", note: "баланс около целевого диапазона", color: "#4caf6e", kind: "pct" },
+                                { label: "Разнообразие стилей", key: "entropy", note: "режимы не схлопнулись в один паттерн", color: "#7db4f5", kind: "raw" },
+                                { label: "Ничьи", key: "draw_rate", note: "низкий draw rate, без тревоги", color: "#b88a26", kind: "pct" },
                             ]
                             delegate: Rectangle {
                                 width: (parent.width - 2 * root.spacingSm) / 3
-                                height: Math.round(60 * root.uiScale)
+                                height: Math.round(86 * root.uiScale)
                                 color: root.bgElevated
                                 border.color: root.borderMuted
                                 border.width: 1
-                                radius: 2
+                                radius: 6
+                                property real rawVal: Number(summaryCol.md[modelData.key] || 0)
+                                property string displayVal: modelData.kind === "pct" ? _pct(rawVal, 1) : _fmt(rawVal, 3)
 
-                                property real rawVal: {
-                                    var d = controller.heuristicMetricsDict
-                                    if (!d) return 0
-                                    var v = d[modelData.key]
-                                    return v !== undefined ? (modelData.key === "draw_rate" ? v * 100 : v) : 0
-                                }
-                                property string displayVal: modelData.key === "draw_rate"
-                                    ? _fmt(rawVal, 1) + "%"
-                                    : _fmt(rawVal, 3)
-                                property color valColor: {
-                                    if (modelData.key === "draw_rate")
-                                        return rawVal < 3.0 ? "#4caf6e" : rawVal < 5.0 ? "#b88a26" : "#cf3f3f"
-                                    return _colorForValue(rawVal, modelData.good, modelData.warn)
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 3
+                                    color: modelData.color
                                 }
 
                                 Column {
-                                    anchors.centerIn: parent
-                                    spacing: 2
-                                    Text {
-                                        text: displayVal
-                                        font.pixelSize: Math.round(20 * root.uiScale)
-                                        font.bold: true
-                                        color: valColor
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                    }
+                                    anchors.fill: parent
+                                    anchors.margins: root.spacingMd
+                                    spacing: root.spacingSm
                                     Text {
                                         text: modelData.label.toUpperCase()
                                         font.pixelSize: Math.round(9 * root.uiScale)
                                         color: root.textSecondary
                                         font.letterSpacing: 0.8
-                                        anchors.horizontalCenter: parent.horizontalCenter
+                                    }
+                                    Text {
+                                        text: parent.parent.displayVal
+                                        font.pixelSize: Math.round(25 * root.uiScale)
+                                        font.bold: true
+                                        color: modelData.color
+                                    }
+                                    Text {
+                                        width: parent.width
+                                        text: modelData.note
+                                        font.pixelSize: Math.round(10 * root.uiScale)
+                                        color: root.textSecondary
+                                        elide: Text.ElideRight
                                     }
                                 }
                             }
                         }
                     }
 
-                    // ── Показатели + Стиль игры (две карточки) ───────────────
                     Row {
                         width: parent.width
                         spacing: root.spacingSm
@@ -350,38 +598,69 @@ Item {
                             id: sumMetricsCard
                             width: (parent.width - root.spacingSm) / 2
                             height: Math.max(sumMetricsCard.implicitHeight, sumStyleCard.implicitHeight)
-                            title: "Показатели"
+                            title: "Качество решений"
                             label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
-                            background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
+                            background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1; radius: 6 }
 
-                            Grid {
-                                columns: 2
-                                columnSpacing: Math.round(24 * root.uiScale)
-                                rowSpacing: Math.round(4 * root.uiScale)
+                            Column {
+                                width: parent.width
+                                spacing: Math.round(6 * root.uiScale)
                                 Repeater {
                                     model: [
-                                        ["Всего игр",     "total_games",         "int"],
-                                        ["Avg risk",      "avg_risk",            "f3"],
-                                        ["Charge succ.",  "charge_success_rate", "f3"],
-                                        ["Invalid rate",  "invalid_rate",        "f4"],
-                                        ["Fallback",      "fallback_rate",       "f3"],
-                                        ["Shoot overkill","shoot_overkill_rate", "f3"],
-                                        ["Avg cover",     "avg_cover",           "f3"],
-                                        ["Ран",           "run_id",              "str"],
+                                        ["Резервный выбор", "fallback_rate", "pct"],
+                                        ["Ошибочные действия", "invalid_rate", "pct"],
+                                        ["Избыточная стрельба", "shoot_overkill_rate", "pct"],
+                                        ["Успешные чарджи", "charge_success_rate", "pct"],
+                                        ["Средний риск", "avg_risk", "raw"],
+                                        ["Среднее укрытие", "avg_cover", "raw"],
                                     ]
-                                    delegate: Row {
-                                        spacing: root.spacingSm
-                                        property var md: controller.heuristicMetricsDict || ({})
-                                        property var raw: md[modelData[1]]
-                                        property string valStr: {
-                                            var fmt = modelData[2]
-                                            if (fmt === "str") return String(raw !== undefined ? raw : "—")
-                                            if (fmt === "int") return String(raw !== undefined ? raw : 0)
-                                            if (fmt === "f4")  return _fmt(raw, 4)
-                                            return _fmt(raw, 3)
+                                    delegate: Rectangle {
+                                        width: parent.width
+                                        height: Math.round(28 * root.uiScale)
+                                        radius: 4
+                                        color: root.bgSurface
+                                        border.color: "#24354c"
+                                        border.width: 1
+                                        property real raw: Number(summaryCol.md[modelData[1]] || 0)
+                                        Row {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: root.spacingSm
+                                            anchors.rightMargin: root.spacingSm
+                                            spacing: root.spacingSm
+                                            Text {
+                                                text: modelData[0]
+                                                color: root.textSecondary
+                                                font.pixelSize: root.evalCaptionSize
+                                                width: parent.width - Math.round(190 * root.uiScale)
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: modelData[2] === "pct" ? _pct(parent.parent.raw, 1) : _fmt(parent.parent.raw, 3)
+                                                color: root.textPrimary
+                                                font.pixelSize: root.evalCaptionSize
+                                                font.family: "JetBrains Mono"
+                                                width: Math.round(70 * root.uiScale)
+                                                verticalAlignment: Text.AlignVCenter
+                                                horizontalAlignment: Text.AlignRight
+                                            }
+                                            Rectangle {
+                                                width: Math.round(96 * root.uiScale)
+                                                height: Math.round(18 * root.uiScale)
+                                                radius: height / 2
+                                                color: "#111b2b"
+                                                border.color: _qualityBadgeColor(modelData[1], parent.parent.raw)
+                                                border.width: 1
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: _qualityBadge(modelData[1], parent.parent.parent.raw)
+                                                    color: _qualityBadgeColor(modelData[1], parent.parent.parent.raw)
+                                                    font.pixelSize: Math.round(10 * root.uiScale)
+                                                    font.bold: true
+                                                }
+                                            }
                                         }
-                                        Text { text: modelData[0] + ":"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; width: Math.round(110 * root.uiScale) }
-                                        Text { text: parent.valStr; color: root.textPrimary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono" }
                                     }
                                 }
                             }
@@ -393,17 +672,16 @@ Item {
                             height: Math.max(sumMetricsCard.implicitHeight, sumStyleCard.implicitHeight)
                             title: "Стиль игры"
                             label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
-                            background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
+                            background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1; radius: 6 }
 
                             Column {
                                 id: styleCol
                                 width: parent.width
-                                spacing: Math.round(3 * root.uiScale)
-                                property var md: controller.heuristicMetricsDict || ({})
-                                property real modeTotal: Math.max(1, (md.mode_kite || 0) + (md.mode_hold || 0) + (md.mode_commit || 0))
-                                property real roleTotal: Math.max(1, (md.role_ranged || 0) + (md.role_hybrid || 0) + (md.role_melee || 0))
+                                spacing: Math.round(6 * root.uiScale)
+                                property real modeTotal: Math.max(1, (summaryCol.md.mode_kite || 0) + (summaryCol.md.mode_hold || 0) + (summaryCol.md.mode_commit || 0))
+                                property real roleTotal: Math.max(1, (summaryCol.md.role_ranged || 0) + (summaryCol.md.role_hybrid || 0) + (summaryCol.md.role_melee || 0))
 
-                                Text { text: "Режимы"; color: root.textSecondary; font.pixelSize: Math.round(9 * root.uiScale) }
+                                Text { text: "Режимы"; color: root.textSecondary; font.pixelSize: Math.round(10 * root.uiScale); font.bold: true }
                                 Repeater {
                                     model: [
                                         ["kite",   "mode_kite",   "#7db4f5"],
@@ -413,21 +691,21 @@ Item {
                                     delegate: Column {
                                         width: styleCol.width
                                         spacing: 1
-                                        property real pct: ((styleCol.md[modelData[1]] || 0) / styleCol.modeTotal) * 100
+                                        property real pct: ((summaryCol.md[modelData[1]] || 0) / styleCol.modeTotal) * 100
                                         Row {
                                             width: parent.width
-                                            Text { text: modelData[0]; color: modelData[2]; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; width: Math.round(60 * root.uiScale) }
-                                            Text { text: _fmt(parent.parent.pct, 0) + "%"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono" }
+                                            Text { text: modelData[0]; color: modelData[2]; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; width: Math.round(70 * root.uiScale) }
+                                            Text { text: _fmt(parent.parent.pct, 0) + "%"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; width: Math.round(44 * root.uiScale); horizontalAlignment: Text.AlignRight }
                                         }
                                         Rectangle {
-                                            width: parent.width; height: Math.round(7 * root.uiScale); radius: 3; color: "#0a0f1a"
+                                            width: parent.width; height: Math.round(8 * root.uiScale); radius: 4; color: "#0a0f1a"
                                             Rectangle { width: parent.width * parent.parent.pct / 100; height: parent.height; radius: 3; color: modelData[2] }
                                         }
                                     }
                                 }
 
                                 Item { width: 1; height: Math.round(6 * root.uiScale) }
-                                Text { text: "Роли"; color: root.textSecondary; font.pixelSize: Math.round(9 * root.uiScale) }
+                                Text { text: "Роли"; color: root.textSecondary; font.pixelSize: Math.round(10 * root.uiScale); font.bold: true }
                                 Repeater {
                                     model: [
                                         ["ranged", "role_ranged", "#7db4f5"],
@@ -437,14 +715,14 @@ Item {
                                     delegate: Column {
                                         width: styleCol.width
                                         spacing: 1
-                                        property real pct: ((styleCol.md[modelData[1]] || 0) / styleCol.roleTotal) * 100
+                                        property real pct: ((summaryCol.md[modelData[1]] || 0) / styleCol.roleTotal) * 100
                                         Row {
                                             width: parent.width
-                                            Text { text: modelData[0]; color: modelData[2]; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; width: Math.round(60 * root.uiScale) }
-                                            Text { text: _fmt(parent.parent.pct, 0) + "%"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono" }
+                                            Text { text: modelData[0]; color: modelData[2]; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; width: Math.round(70 * root.uiScale) }
+                                            Text { text: _fmt(parent.parent.pct, 0) + "%"; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"; width: Math.round(44 * root.uiScale); horizontalAlignment: Text.AlignRight }
                                         }
                                         Rectangle {
-                                            width: parent.width; height: Math.round(7 * root.uiScale); radius: 3; color: "#0a0f1a"
+                                            width: parent.width; height: Math.round(8 * root.uiScale); radius: 4; color: "#0a0f1a"
                                             Rectangle { width: parent.width * parent.parent.pct / 100; height: parent.height; radius: 3; color: modelData[2] }
                                         }
                                     }
@@ -458,7 +736,7 @@ Item {
                         width: parent.width
                         title: "Исходы по профилям"
                         label: Text { text: parent.title; color: root.textSecondary; font.pixelSize: root.evalCaptionSize }
-                        background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1 }
+                        background: Rectangle { color: root.bgElevated; border.color: root.borderMuted; border.width: 1; radius: 6 }
 
                         Column {
                             id: profCol
@@ -472,11 +750,11 @@ Item {
                                 Row {
                                     anchors.fill: parent
                                     Repeater {
-                                        model: [["профиль", 120], ["игр", 70], ["win", 70], ["draw", 70], ["", 0]]
+                                        model: [["профиль", 130], ["игр", 70], ["win", 70], ["draw", 70], ["сигнал", 0], ["статус", 90]]
                                         delegate: Text {
                                             text: modelData[0]; color: root.textSecondary
                                             font.pixelSize: Math.round(9 * root.uiScale)
-                                            width: modelData[1] > 0 ? Math.round(modelData[1] * root.uiScale) : parent.width - Math.round(330 * root.uiScale)
+                                            width: modelData[1] > 0 ? Math.round(modelData[1] * root.uiScale) : parent.width - Math.round(430 * root.uiScale)
                                             leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter
                                         }
                                     }
@@ -490,21 +768,37 @@ Item {
                                     Row {
                                         anchors.fill: parent
                                         Text { text: modelData.name; color: root.textPrimary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
-                                            width: Math.round(120 * root.uiScale); leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter }
+                                            width: Math.round(130 * root.uiScale); leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter }
                                         Text { text: modelData.games; color: root.textSecondary; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
                                             width: Math.round(70 * root.uiScale); leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter }
-                                        Text { text: _fmt(modelData.win, 2); color: "#4caf6e"; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
+                                        Text { text: _pct(modelData.win, 0); color: modelData.win < 0.48 ? "#b88a26" : "#4caf6e"; font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
                                             width: Math.round(70 * root.uiScale); leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter }
-                                        Text { text: _fmt(modelData.draw * 100, 1) + "%"
-                                            color: modelData.draw > 0.015 ? "#b5654a" : root.textPrimary
+                                        Text { text: _pct(modelData.draw, 1)
+                                            color: modelData.draw > 0.012 ? "#b88a26" : root.textPrimary
                                             font.pixelSize: root.evalCaptionSize; font.family: "JetBrains Mono"
                                             width: Math.round(70 * root.uiScale); leftPadding: root.spacingSm; verticalAlignment: Text.AlignVCenter }
                                         Item {
-                                            width: parent.width - Math.round(330 * root.uiScale); height: parent.height
+                                            width: parent.width - Math.round(430 * root.uiScale); height: parent.height
                                             Rectangle {
                                                 anchors.verticalCenter: parent.verticalCenter; x: root.spacingSm
                                                 width: (parent.width - 2 * root.spacingSm) * Math.max(0, Math.min(1, modelData.win)); height: Math.round(6 * root.uiScale)
                                                 radius: 3; color: modelData.win >= 0.50 ? "#b88a26" : "#4caf6e"
+                                            }
+                                        }
+                                        Rectangle {
+                                            width: Math.round(86 * root.uiScale)
+                                            height: Math.round(18 * root.uiScale)
+                                            radius: height / 2
+                                            color: "#111b2b"
+                                            border.color: _profileStatusColor(modelData.win, modelData.draw)
+                                            border.width: 1
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: _profileStatus(modelData.win, modelData.draw)
+                                                color: _profileStatusColor(modelData.win, modelData.draw)
+                                                font.pixelSize: Math.round(10 * root.uiScale)
+                                                font.bold: true
                                             }
                                         }
                                     }

@@ -145,6 +145,7 @@ class GUIController(QtCore.QObject):
     metricsLabelChanged = QtCore.Signal(str)
     metricsSummaryChanged = QtCore.Signal()
     heuristicMetricsChanged = QtCore.Signal()
+    heuristicMetricsRunsChanged = QtCore.Signal()
     calibrationAgentsChanged = QtCore.Signal()
     heuristicMetricsDictChanged = QtCore.Signal()
     playModelPathChanged = QtCore.Signal(str)
@@ -273,6 +274,7 @@ class GUIController(QtCore.QObject):
         self._heuristic_metrics: dict[str, object] = {}
         self._heuristic_metrics_text = "Нет данных метрик эвристики."
         self._heuristic_metrics_dict: dict = {}
+        self._heuristic_metrics_runs: list[dict] = []
         self._metric_summary_texts = {
             "reward": "Текущее: — | Среднее: — | Мин: — | Макс: —",
             "loss": "Текущее: — | Среднее: — | Мин: — | Макс: —",
@@ -1086,6 +1088,17 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantMap", notify=heuristicMetricsDictChanged)
     def heuristicMetricsDict(self) -> dict:
         return self._heuristic_metrics_dict
+
+    @QtCore.Property("QVariantList", notify=heuristicMetricsRunsChanged)
+    def heuristicMetricsRuns(self) -> list:
+        return self._heuristic_metrics_runs
+
+    @QtCore.Slot(str)
+    def selectHeuristicMetricsRun(self, run_id: str) -> None:
+        selected = str(run_id or "").strip()
+        self._load_latest_heuristic_metrics(run_id=selected)
+        current = str(self._heuristic_metrics_dict.get("run_id", "") or "последний")
+        self._emit_status(f"Метрики эвристики: выбран прогон {current}.")
 
     @QtCore.Property("QVariantList", notify=calibrationAgentsChanged)
     def calibrationAgents(self) -> list:
@@ -7075,12 +7088,215 @@ class GUIController(QtCore.QObject):
         self.metricsSummaryChanged.emit()
         self._load_latest_heuristic_metrics(run_id=str(run_id))
 
+    def _read_json_object(self, path: str) -> dict:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                payload = json.load(handle)
+        except (OSError, json.JSONDecodeError, TypeError):
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _short_datetime_label(self, raw: object, fallback_mtime: float | None = None) -> str:
+        text = str(raw or "").strip().replace("T", " ")
+        if text:
+            return text[:16]
+        if fallback_mtime is not None:
+            try:
+                return time.strftime("%Y-%m-%d %H:%M", time.localtime(float(fallback_mtime)))
+            except (TypeError, ValueError, OSError):
+                pass
+        return "дата неизвестна"
+
+    def _run_id_from_heur_metrics_path(self, path: str, payload: dict | None = None) -> str:
+        if isinstance(payload, dict):
+            run_id = str(payload.get("run_id", "") or "").strip()
+            if run_id:
+                return run_id
+        base = os.path.basename(str(path or ""))
+        match = re.match(r"heur_metrics_(.+)\.json$", base)
+        if match and match.group(1) != "latest":
+            return match.group(1)
+        return ""
+
+    def _load_heuristic_companion_json(self, run_id: str) -> tuple[dict, str]:
+        candidates: list[str] = []
+        clean_run = str(run_id or "").strip()
+        if clean_run and clean_run not in {"-", "latest"}:
+            candidates.append(os.path.join(str(ARTIFACTS_MODELS_DIR), f"data_{clean_run}.json"))
+        candidates.append(os.path.join(str(ARTIFACTS_MODELS_DIR), "data_latest.json"))
+
+        seen: set[str] = set()
+        for path in candidates:
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            if not os.path.exists(path):
+                continue
+            payload = self._read_json_object(path)
+            if not payload:
+                continue
+            if clean_run and clean_run not in {"-", "latest"}:
+                payload_run = str(payload.get("run_id", "") or "").strip()
+                if payload_run and payload_run != clean_run:
+                    continue
+            return payload, path
+        return {}, ""
+
+    def _extract_model_episode_count(self, *values: object) -> int:
+        for raw in values:
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            base = os.path.basename(text.replace("\\", "/"))
+            for pattern in (
+                r"checkpoint_ep(\d+)",
+                r"final_ep(\d+)",
+                r"(?:^|[_-])ep(\d+)(?:\D|$)",
+            ):
+                match = re.search(pattern, base, flags=re.IGNORECASE)
+                if match:
+                    try:
+                        return int(match.group(1))
+                    except ValueError:
+                        pass
+        return 0
+
+    def _heuristic_matchup_info(self, payload: dict, metrics_path: str) -> dict:
+        run_id = str(payload.get("run_id", "") or "").strip()
+        companion, companion_path = self._load_heuristic_companion_json(run_id)
+        if not companion and run_id and run_id == str(self._metrics_run_id or "").strip():
+            companion = dict(self._metrics_meta)
+
+        model_algo = str(
+            payload.get("matchup_model_algo", "")
+            or companion.get("algo", "")
+            or companion.get("learner_algo", "")
+            or ""
+        ).strip().lower()
+        model_algo_label = self._format_algo_label(model_algo)
+        model_path = str(
+            payload.get("matchup_model_path", "")
+            or companion.get("model_path", "")
+            or companion.get("source_model_path", "")
+            or ""
+        ).strip()
+        model_name = str(payload.get("matchup_model_name", "") or "").strip()
+        if not model_name and model_path:
+            model_name = os.path.basename(model_path.replace("\\", "/"))
+        if not model_name:
+            model_name = f"{model_algo_label} модель" if model_algo else "Модель не указана"
+
+        episode_raw = payload.get("matchup_model_episodes", None)
+        try:
+            model_episodes = int(episode_raw or 0)
+        except (TypeError, ValueError):
+            model_episodes = 0
+        if model_episodes <= 0:
+            model_episodes = self._extract_model_episode_count(
+                model_path,
+                model_name,
+                companion.get("opponent_id", ""),
+                companion.get("agent_id", ""),
+            )
+
+        heuristic_side = str(payload.get("heuristic_side", "") or "").strip().upper()
+        train_opponent_algo = str(companion.get("opponent_algo", "") or payload.get("opponent_algo", "") or "").strip().lower()
+        if not heuristic_side and train_opponent_algo in {"", "heuristic", "heuristic_auto"}:
+            heuristic_side = str(companion.get("opponent_side", "") or payload.get("opponent_side", "") or "").strip().upper()
+        if not heuristic_side:
+            heuristic_side = "ENEMY"
+
+        model_side = str(companion.get("learner_side", "") or payload.get("learner_side", "") or "").strip().upper()
+        model_faction = str(companion.get("learner_faction", "") or payload.get("learner_faction", "") or "").strip()
+        heuristic_faction = str(companion.get("opponent_faction", "") or payload.get("opponent_faction", "") or "").strip()
+        source_file = os.path.basename(companion_path or metrics_path)
+        has_model_context = bool(model_algo or model_path or model_episodes > 0)
+        scenario = f"эвристика {heuristic_side} vs {model_algo_label}" if model_algo else f"эвристика {heuristic_side} vs модель"
+
+        return {
+            "matchup_model_algo": model_algo,
+            "matchup_model_algo_label": model_algo_label,
+            "matchup_model_name": model_name,
+            "matchup_model_path": model_path,
+            "matchup_model_episodes": int(model_episodes),
+            "matchup_model_side": model_side,
+            "matchup_model_faction": model_faction,
+            "heuristic_side": heuristic_side,
+            "heuristic_faction": heuristic_faction,
+            "matchup_scenario": scenario,
+            "matchup_status": "зафиксирован" if has_model_context else "частично",
+            "matchup_source_file": source_file,
+            "matchup_source_note": (
+                f"Источник: {source_file}"
+                if companion_path
+                else f"В {os.path.basename(metrics_path)} нет data-контекста; показан доступный минимум."
+            ),
+            "train_opponent_algo": train_opponent_algo,
+            "train_opponent_source": str(companion.get("opponent_source", "") or payload.get("opponent_source", "") or "").strip(),
+            "train_opponent_id": str(companion.get("opponent_id", "") or payload.get("opponent_id", "") or "").strip(),
+        }
+
+    def _collect_heuristic_metrics_runs(self, selected_run_id: str = "") -> list[dict]:
+        metrics_root = Path(ARTIFACTS_METRICS_DIR)
+        if not metrics_root.exists():
+            return []
+
+        latest_payload = self._read_json_object(str(metrics_root / "heur_metrics_latest.json"))
+        latest_run_id = str(latest_payload.get("run_id", "") or "").strip()
+        paths = [
+            path for path in metrics_root.glob("heur_metrics_*.json")
+            if path.name != "heur_metrics_latest.json"
+        ]
+        if not paths and latest_payload:
+            paths = [metrics_root / "heur_metrics_latest.json"]
+
+        rows: list[dict] = []
+        for path in paths:
+            payload = self._read_json_object(str(path))
+            if not payload:
+                continue
+            run_id = self._run_id_from_heur_metrics_path(str(path), payload)
+            if not run_id:
+                continue
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            matchup = self._heuristic_matchup_info(payload, str(path))
+            games = int(payload.get("train_total_games", 0) or 0)
+            date_label = self._short_datetime_label(payload.get("updated_at", ""), mtime)
+            prefix = "Последний: " if latest_run_id and run_id == latest_run_id else ""
+            vs_label = str(matchup.get("matchup_model_algo_label", "") or "МОДЕЛЬ")
+            rows.append({
+                "run_id": run_id,
+                "label": f"{prefix}Run {run_id} · {games} игр · vs {vs_label} · {date_label}",
+                "updated_at": str(payload.get("updated_at", "") or ""),
+                "total_games": games,
+                "matchup": str(matchup.get("matchup_scenario", "") or ""),
+                "selected": False,
+                "_mtime": float(mtime),
+            })
+
+        rows.sort(key=lambda item: float(item.get("_mtime", 0.0) or 0.0), reverse=True)
+        selected = str(selected_run_id or latest_run_id or "").strip()
+        if not selected and rows:
+            selected = str(rows[0].get("run_id", "") or "")
+        for row in rows:
+            row["selected"] = str(row.get("run_id", "") or "") == selected
+            row.pop("_mtime", None)
+        return rows
+
+    def _set_heuristic_metrics_runs(self, selected_run_id: str = "") -> None:
+        self._heuristic_metrics_runs = self._collect_heuristic_metrics_runs(selected_run_id)
+        self.heuristicMetricsRunsChanged.emit()
+
     def _load_latest_heuristic_metrics(self, run_id: str = "") -> None:
         preferred_run = str(run_id or "").strip()
         preferred_path = str(ARTIFACTS_METRICS_DIR / f"heur_metrics_{preferred_run}.json") if preferred_run else ""
         latest_path = str(ARTIFACTS_METRICS_DIR / "heur_metrics_latest.json")
         path = preferred_path if preferred_path and os.path.exists(preferred_path) else latest_path
         if not os.path.exists(path):
+            self._set_heuristic_metrics_runs(preferred_run)
             self._heuristic_metrics = {}
             self._heuristic_metrics_text = "Нет данных метрик эвристики."
             self._heuristic_metrics_dict = {}
@@ -7091,6 +7307,7 @@ class GUIController(QtCore.QObject):
             with open(path, encoding="utf-8", errors="replace") as handle:
                 payload = json.load(handle)
         except (OSError, json.JSONDecodeError):
+            self._set_heuristic_metrics_runs(preferred_run)
             self._heuristic_metrics = {}
             self._heuristic_metrics_text = f"Не удалось прочитать {path}."
             self._heuristic_metrics_dict = {}
@@ -7102,6 +7319,8 @@ class GUIController(QtCore.QObject):
         role_usage = self._heuristic_metrics.get("role_usage", {}) or {}
         run_id = str(self._heuristic_metrics.get("run_id", "-"))
         updated_at = str(self._heuristic_metrics.get("updated_at", "-"))
+        matchup_info = self._heuristic_matchup_info(self._heuristic_metrics, path)
+        self._set_heuristic_metrics_runs(run_id)
 
         # First-class метрики (env-счётчики из JSONL) — достовернее лог-скрейпинга.
         # Перекрывают нулевые mode/role/risk/charge и добавляют энтропию стилей +
@@ -7154,6 +7373,9 @@ class GUIController(QtCore.QObject):
             f"Последний ран: {run_id}",
             f"Обновлено: {updated_at}",
             f"Источник: {os.path.basename(path)}",
+            f"Против кого играла эвристика: {matchup_info.get('matchup_scenario', '—')}",
+            f"Модель: {matchup_info.get('matchup_model_name', '—')} "
+            f"(эпизодов: {int(matchup_info.get('matchup_model_episodes', 0) or 0) or '—'})",
             "",
             "Только метрики эвристики:",
             f"Винрейт эвристики (все train-игры): {float(self._heuristic_metrics.get('train_heur_winrate', 0.0)):.3f}",
@@ -7193,7 +7415,10 @@ class GUIController(QtCore.QObject):
             "role_melee": int(ru.get("melee", 0)),
             "profiles": profiles_list,
             "run_id": str(self._heuristic_metrics.get("run_id", "-")),
+            "selected_run_id": str(self._heuristic_metrics.get("run_id", "-")),
             "updated_at": str(self._heuristic_metrics.get("updated_at", "-")),
+            "source_file": os.path.basename(path),
+            **matchup_info,
         }
         self.heuristicMetricsDictChanged.emit()
         self.heuristicMetricsChanged.emit()

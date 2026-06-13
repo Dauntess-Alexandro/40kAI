@@ -1,0 +1,157 @@
+<h2>Редизайн вкладки «Калибровка» — 3 направления</h2>
+<p class="subtitle">Все варианты включают новый контрол «целевой winrate». Кликни тот, что нравится (можно потом смешать).</p>
+
+<style>
+  .wf { font-family: 'JetBrains Mono', monospace; }
+  .panel { background:#131b2d; border:1px solid #334155; border-radius:4px; padding:10px; margin-bottom:8px; }
+  .panel-title { color:#98a4b8; font-size:10px; text-transform:uppercase; letter-spacing:.6px; margin-bottom:6px; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; border:1px solid #334155; color:#98a4b8; margin-right:4px; }
+  .chip.on { background:#1a1508; border-color:#b88a26; color:#e8c060; }
+  .gold { color:#e8c060; } .blue{color:#7db4f5;} .green{color:#4caf6e;} .red{color:#cf3f3f;} .mut{color:#98a4b8;}
+  .bar { height:6px; background:#0F172A; border:1px solid #334155; border-radius:3px; overflow:hidden; }
+  .bar > i { display:block; height:100%; }
+  .row { display:flex; align-items:center; gap:8px; font-size:11px; color:#d7dde7; }
+  .dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
+  .scatter { position:relative; height:150px; background:#0F172A; border:1px solid #334155; border-radius:4px; overflow:hidden; }
+  .scatter .band { position:absolute; top:0; bottom:0; background:rgba(184,138,38,.12); border-left:1px dashed #b88a26; border-right:1px dashed #b88a26; }
+  .scatter .pt { position:absolute; width:10px; height:10px; border-radius:50%; transform:translate(-50%,50%); }
+  .scatter .ax { position:absolute; color:#5b6678; font-size:9px; }
+  .lead { display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:3px; font-size:11px; }
+  .medal { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:bold; }
+  table.cw { width:100%; border-collapse:collapse; font-size:10.5px; }
+  table.cw td, table.cw th { padding:3px 6px; text-align:left; color:#d7dde7; }
+  table.cw th { color:#98a4b8; font-weight:normal; font-size:9px; text-transform:uppercase; }
+</style>
+
+<div class="cards">
+
+  <!-- ===================== VARIANT A ===================== -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f1a; padding:12px;">
+      <div class="wf">
+        <!-- target control -->
+        <div class="panel">
+          <div class="panel-title">Цель калибровки</div>
+          <div style="margin-bottom:6px;">
+            <span class="chip on">Спарринг 50%</span><span class="chip">Хард 65%</span><span class="chip">Максимум</span>
+          </div>
+          <div class="row"><span class="mut">target winrate</span>
+            <div class="bar" style="flex:1;"><i style="width:50%; background:#b88a26;"></i></div>
+            <span class="gold">0.50</span>
+          </div>
+        </div>
+        <!-- hero best -->
+        <div class="panel" style="background:#0d2010; border-color:#1f5030;">
+          <div class="panel-title" style="color:#4caf6e;">★ Лучший — #19</div>
+          <div class="row" style="font-size:20px;"><span class="green" style="font-weight:bold;">score 0.350</span></div>
+          <div class="row" style="margin-top:6px;"><span class="mut">winrate</span><div class="bar" style="flex:1;"><i style="width:40%;background:#7db4f5;"></i></div><span class="blue">0.40</span></div>
+          <div class="row"><span class="mut">entropy</span><div class="bar" style="flex:1;"><i style="width:92%;background:#4caf6e;"></i></div><span class="green">0.918</span></div>
+        </div>
+        <!-- mini table -->
+        <div class="panel">
+          <div class="panel-title">Кандидаты · 19/40 · ~6 мин</div>
+          <div class="bar" style="margin-bottom:6px;"><i style="width:48%;background:#b88a26;"></i></div>
+          <div class="row"><span class="mut" style="width:18px;">#7</span><div class="bar" style="flex:1;"><i style="width:55%;background:#4caf6e;"></i></div><span class="green">0.196</span></div>
+          <div class="row"><span class="mut" style="width:18px;">#10</span><div class="bar" style="flex:1;"><i style="width:78%;background:#4caf6e;"></i></div><span class="green">0.348</span></div>
+          <div class="row"><span class="mut" style="width:18px;">#14</span><div class="bar" style="flex:1;"><i style="width:20%;background:#cf3f3f;"></i></div><span class="red">reject</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Дашборд с карточками</h3>
+      <p>Большая hero-карточка лучшего кандидата, прогресс с ETA, кандидаты строками с мини-барами score. Пресеты цели (Спарринг/Хард/Максимум) + слайдер target.</p>
+    </div>
+  </div>
+
+  <!-- ===================== VARIANT B ===================== -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f1a; padding:12px;">
+      <div class="wf">
+        <div class="panel">
+          <div class="panel-title">Цель · target winrate</div>
+          <div class="row"><span class="mut">0.30</span><div class="bar" style="flex:1;"><i style="width:50%;background:#b88a26;"></i></div><span class="gold">0.50</span><span class="mut">0.90</span></div>
+        </div>
+        <!-- scatter plot -->
+        <div class="panel">
+          <div class="panel-title">winrate × entropy · live</div>
+          <div class="scatter">
+            <div class="band" style="left:42%; width:16%;"></div>
+            <div class="ax" style="left:4px; top:4px;">entropy↑</div>
+            <div class="ax" style="right:4px; bottom:4px;">winrate→</div>
+            <!-- accepted (high entropy near target) -->
+            <div class="pt" style="left:42%; top:8%; background:#b88a26; box-shadow:0 0 6px #b88a26;" title="best"></div>
+            <div class="pt" style="left:48%; top:14%; background:#4caf6e;"></div>
+            <div class="pt" style="left:40%; top:18%; background:#4caf6e;"></div>
+            <!-- rejected (low entropy / high winrate) -->
+            <div class="pt" style="left:30%; top:60%; background:#cf3f3f;"></div>
+            <div class="pt" style="left:70%; top:55%; background:#cf3f3f;"></div>
+            <div class="pt" style="left:62%; top:30%; background:#cf3f3f;"></div>
+            <div class="pt" style="left:20%; top:75%; background:#cf3f3f;"></div>
+          </div>
+          <div class="row" style="margin-top:6px; font-size:10px;">
+            <span class="dot" style="background:#b88a26;"></span><span class="mut">лучший</span>
+            <span class="dot" style="background:#4caf6e;"></span><span class="mut">принят</span>
+            <span class="dot" style="background:#cf3f3f;"></span><span class="mut">reject</span>
+            <span class="gold">▏ зона цели</span>
+          </div>
+        </div>
+        <div class="panel" style="background:#0d2010; border-color:#1f5030;">
+          <div class="panel-title" style="color:#4caf6e;">★ #19 · score 0.350 · применить патч</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Живой scatter-график</h3>
+      <p>Точки = кандидаты на осях winrate×entropy. Видно компромисс наглядно: зелёные в «зоне цели», красные отклонены. Полоса цели двигается слайдером. Самый «прикольный» и поясняет логику score.</p>
+    </div>
+  </div>
+
+  <!-- ===================== VARIANT C ===================== -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f1a; padding:12px;">
+      <div class="wf">
+        <div class="panel">
+          <div class="panel-title">Режим цели</div>
+          <span class="chip on">Спарринг</span><span class="chip">Хард</span><span class="chip">Максимум</span>
+          <span class="chip" style="float:right;">target 0.50</span>
+        </div>
+        <!-- leaderboard -->
+        <div class="panel">
+          <div class="panel-title">Рейтинг кандидатов · по score</div>
+          <div class="lead" style="background:#0d2010; border:1px solid #1f5030;">
+            <div class="medal" style="background:#b88a26; color:#0a0f1a;">1</div>
+            <span class="green" style="font-weight:bold; width:46px;">0.350</span>
+            <span class="mut">#19</span>
+            <div class="bar" style="flex:1;"><i style="width:92%;background:#4caf6e;"></i></div>
+            <span class="green">★</span>
+          </div>
+          <div class="lead" style="background:#131b2d;">
+            <div class="medal" style="background:#334155;">2</div>
+            <span class="green" style="width:46px;">0.348</span><span class="mut">#10</span>
+            <div class="bar" style="flex:1;"><i style="width:85%;background:#4caf6e;"></i></div><span class="green">✓</span>
+          </div>
+          <div class="lead" style="background:#131b2d;">
+            <div class="medal" style="background:#334155;">3</div>
+            <span class="green" style="width:46px;">0.281</span><span class="mut">#12</span>
+            <div class="bar" style="flex:1;"><i style="width:60%;background:#b88a26;"></i></div><span class="red">ent</span>
+          </div>
+          <div class="lead" style="background:#131b2d; opacity:.6;">
+            <div class="medal" style="background:#2a0c0c; color:#cf3f3f;">·</div>
+            <span class="red" style="width:46px;">0.015</span><span class="mut">#9</span>
+            <div class="bar" style="flex:1;"><i style="width:12%;background:#cf3f3f;"></i></div><span class="red">reject</span>
+          </div>
+        </div>
+        <div class="panel" style="background:#0d2010; border-color:#1f5030;">
+          <div class="panel-title" style="color:#4caf6e;">Патч лидера → reward_config</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Лидерборд</h3>
+      <p>Кандидаты как рейтинг (медали 1/2/3, сортировка по score, бар прогресса), статус-пилюли. Игровой вид. Цель — сегментированный переключатель режимов.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:14px;">Подсказка: B нагляднее всего отвечает на твой вопрос про winrate↔entropy. A — самый информативный «дашборд». C — самый «игровой». Можно взять основу одного + детали другого.</p>

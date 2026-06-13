@@ -1,0 +1,113 @@
+<h2>Верхняя панель «Параметры» калибровки — 3 варианта</h2>
+<p class="subtitle">Сейчас контролы слева, справа пусто, прогресс «ниточкой». Кликни вариант.</p>
+
+<style>
+  .wf { font-family: 'JetBrains Mono', monospace; color:#d7dde7; }
+  .mut { color:#98a4b8; } .gold{color:#e8c060;} .blue{color:#7db4f5;} .green{color:#4caf6e;}
+  .pill { background:#0F172A; border:1px solid #334155; border-radius:4px; padding:4px 8px; display:inline-flex; align-items:center; gap:6px; font-size:11px; }
+  .pill .lbl { color:#98a4b8; font-size:9px; text-transform:uppercase; letter-spacing:.5px; }
+  .seg { display:inline-flex; border:1px solid #334155; border-radius:4px; overflow:hidden; }
+  .seg > span { padding:4px 10px; font-size:11px; color:#98a4b8; border-right:1px solid #334155; }
+  .seg > span:last-child { border-right:0; }
+  .seg > span.on { background:#1a1508; color:#e8c060; }
+  .btn { padding:5px 12px; border-radius:4px; font-size:11px; border:1px solid #b88a26; color:#e8c060; background:#1a1508; }
+  .btn.ghost { border-color:#334155; color:#98a4b8; background:#131b2d; }
+  .btn.stop { border-color:#6b2020; color:#c05050; background:#1a0c0c; }
+  .prog { height:14px; background:#0a0f1a; border:1px solid #334155; border-radius:4px; position:relative; overflow:hidden; }
+  .prog > i { display:block; height:100%; background:#b88a26; border-radius:4px; }
+  .prog .pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:bold; }
+  .panel { background:#1E293B; border:1px solid #334155; border-radius:5px; padding:12px; }
+  .divider { width:1px; align-self:stretch; background:#334155; margin:0 4px; }
+  .ic { opacity:.7; }
+</style>
+
+<div class="cards">
+
+  <!-- ===== A: компактный пульт ===== -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f1a; padding:14px;">
+      <div class="wf panel" style="max-width:820px; margin:auto;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+          <span class="pill"><span class="ic">🎲</span><span class="lbl">канд</span> 40</span>
+          <span class="pill"><span class="lbl">игр</span> 4</span>
+          <span class="pill"><span class="ic">🔑</span><span class="lbl">seed</span> 1390520</span>
+          <span class="pill" style="flex:1;"><span class="ic">⚔</span><span class="lbl">агент</span> P1 · ppo · Necrons</span>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center; margin-bottom:10px;">
+          <span class="lbl mut">🎯 ЦЕЛЬ</span>
+          <span class="seg"><span class="on">Спарринг 0.50</span><span>Хард 0.65</span><span>Максимум</span></span>
+          <span class="pill"><span class="lbl">свой</span> 0.50</span>
+          <span class="mut" style="font-size:10px; margin-left:auto;">эвристика P2</span>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span class="btn">▶ Калибровать</span>
+          <span class="btn ghost">Dry run</span>
+          <div class="prog" style="flex:1;"><i style="width:18%;"></i><span class="pct">18%</span></div>
+          <span class="mut" style="font-size:10px;">7/40 · ≈3 мин · лучший 0.350</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Компактный «пульт»</h3>
+      <p>Параметры в капсулах с иконками, блок ограничен по ширине (не растягивается на весь экран). Цель — сегмент. Запуск + прогресс + статус в одну строку.</p>
+    </div>
+  </div>
+
+  <!-- ===== B: две колонки ===== -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f1a; padding:14px;">
+      <div class="wf" style="display:flex; gap:12px;">
+        <div class="panel" style="flex:1;">
+          <div class="lbl mut" style="margin-bottom:8px;">ПРОГОН</div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <span class="pill"><span class="lbl">кандидатов</span> 40</span>
+            <span class="pill"><span class="lbl">игр/кандидат</span> 4</span>
+            <span class="pill"><span class="lbl">seed</span> 1390520</span>
+            <span class="pill"><span class="lbl">агент</span> P1 · ppo · Necrons</span>
+          </div>
+        </div>
+        <div class="panel" style="flex:1; display:flex; flex-direction:column; gap:10px;">
+          <div class="lbl mut">🎯 ЦЕЛЬ</div>
+          <div class="seg" style="font-size:12px;"><span class="on">Спарринг 0.50</span><span>Хард 0.65</span><span>Максимум</span></div>
+          <span class="mut" style="font-size:10px;">цель winrate=0.50 · эвристика P2</span>
+          <div style="display:flex; gap:8px;">
+            <span class="btn">▶ Калибровать</span><span class="btn ghost">Dry run</span>
+          </div>
+          <div class="prog"><i style="width:18%;"></i><span class="pct">18%</span></div>
+          <span class="mut" style="font-size:10px;">7/40 · ≈3 мин · лучший 0.350</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Две колонки</h3>
+      <p>Слева «что прогоняем» (настройки), справа «зачем» (цель + запуск + прогресс). Чёткое смысловое разделение, заполняет ширину.</p>
+    </div>
+  </div>
+
+  <!-- ===== C: тулбар-лента ===== -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0a0f1a; padding:14px;">
+      <div class="wf">
+        <div class="panel" style="display:flex; align-items:center; gap:8px; padding:8px 12px;">
+          <span class="pill"><span class="lbl">канд</span>40</span>
+          <span class="pill"><span class="lbl">игр</span>4</span>
+          <span class="pill"><span class="lbl">seed</span>1390520</span>
+          <div class="divider"></div>
+          <span class="pill" style="max-width:200px;"><span class="lbl">агент</span>P1·ppo·Necrons</span>
+          <div class="divider"></div>
+          <span class="seg"><span class="on">0.50</span><span>0.65</span><span>макс</span></span>
+          <div style="flex:1;"></div>
+          <span class="btn">▶</span><span class="btn ghost">dry</span>
+        </div>
+        <div class="prog" style="margin-top:8px;"><i style="width:18%;"></i><span class="pct">18% · 7/40 · ≈3 мин · лучший 0.350</span></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Тулбар-лента</h3>
+      <p>Всё в одну плотную строку-тулбар с разделителями, цель — короткий сегмент. Прогресс — широкая полоса под тулбаром со всей инфой внутри. Максимально компактно.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:14px;">Рекомендую A (пульт) — аккуратно и убирает пустоту справа. B — если любишь чёткие зоны. C — для минимума высоты.</p>
