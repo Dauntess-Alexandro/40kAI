@@ -20,6 +20,7 @@ ColumnLayout {
         if (algoSection === "tree") return "AlphaZero (Tree)"
         if (algoSection === "proxy") return "AlphaZero (Proxy)"
         if (algoSection === "gmz") return "Gumbel MuZero"
+        if (algoSection === "gaz") return "Gumbel AlphaZero"
         return algoSection
     }
 
@@ -29,6 +30,7 @@ ColumnLayout {
         if (algoSection === "ppo") return controller.hpPpoGroups
         if (algoSection === "tree" || algoSection === "proxy") return controller.hpAzGroups
         if (algoSection === "gmz") return controller.hpGmzGroups
+        if (algoSection === "gaz") return controller.hpGazGroups
         return []
     }
 
@@ -39,6 +41,7 @@ ColumnLayout {
         if (algoSection === "tree") return controller.hpAzTreeBasicKeys
         if (algoSection === "proxy") return controller.hpAzProxyBasicKeys
         if (algoSection === "gmz") return controller.hpGmzBasicKeys
+        if (algoSection === "gaz") return controller.hpGazBasicKeys
         return []
     }
 
@@ -75,6 +78,9 @@ ColumnLayout {
         } else if (algoSection === "gmz") {
             hpMap = controller.hpGmzHyperparamsMap
             defaultsMap = controller.hpGmzDefaultsMap
+        } else if (algoSection === "gaz") {
+            hpMap = controller.hpGazHyperparamsMap
+            defaultsMap = controller.hpGazDefaultsMap
         } else {
             hpMap = ({})
             defaultsMap = ({})
@@ -96,6 +102,7 @@ ColumnLayout {
         else if (algoSection === "tree") controller.set_az_tree_hyperparam(key, value)
         else if (algoSection === "proxy") controller.set_az_proxy_hyperparam(key, value)
         else if (algoSection === "gmz") controller.set_gmz_hyperparam(key, value)
+        else if (algoSection === "gaz") controller.set_gaz_hyperparam(key, value)
     }
 
     function applyProfile(name) {
@@ -105,6 +112,7 @@ ColumnLayout {
         else if (algoSection === "tree") controller.apply_az_tree_profile(name)
         else if (algoSection === "proxy") controller.apply_az_proxy_profile(name)
         else if (algoSection === "gmz") controller.apply_gmz_profile(name)
+        else if (algoSection === "gaz") controller.apply_gaz_profile(name)
     }
 
     function presetLabel() {
@@ -114,6 +122,7 @@ ColumnLayout {
         if (algoSection === "tree") return controller.hpAzTreePresetLabel
         if (algoSection === "proxy") return controller.hpAzProxyPresetLabel
         if (algoSection === "gmz") return controller.hpGmzPresetLabel
+        if (algoSection === "gaz") return controller.hpGazPresetLabel
         return "Custom"
     }
 
@@ -162,6 +171,7 @@ ColumnLayout {
         else if (algoSection === "ppo") tips = controller.hpPpoFieldTooltips
         else if (algoSection === "tree" || algoSection === "proxy") tips = controller.hpAzFieldTooltips
         else if (algoSection === "gmz") tips = controller.hpGmzFieldTooltips
+        else if (algoSection === "gaz") tips = controller.hpGazFieldTooltips
         else return ""
         if (!tips) return ""
         var base = String(tips[key] ?? "")

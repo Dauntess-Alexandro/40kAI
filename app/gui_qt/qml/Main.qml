@@ -1812,7 +1812,8 @@ ApplicationWindow {
                                                         { value: "ppo", label: "PPO" },
                                                         { value: "alphazero_tree", label: "ALPHAZERO TREE" },
                                                         { value: "alphazero_proxy", label: "ALPHAZERO PROXY" },
-                                                        { value: "gumbel_muzero", label: "GUMBEL MUZERO" }
+                                                        { value: "gumbel_muzero", label: "GUMBEL MUZERO" },
+                                                        { value: "gumbel_az", label: "GUMBEL ALPHAZERO" }
                                                     ]
                                                     textRole: "label"
                                                     valueRole: "value"
@@ -4560,6 +4561,7 @@ ApplicationWindow {
                                     TabButton { text: "AlphaZero Tree" }
                                     TabButton { text: "AlphaZero Proxy" }
                                     TabButton { text: "Gumbel MuZero" }
+                                    TabButton { text: "Gumbel AlphaZero" }
                                 }
 
                                 StackLayout {
@@ -4639,6 +4641,14 @@ ApplicationWindow {
                                                 algoSection: "gmz"
                                                 rootUi: root
                                             }
+                                        }
+                                    }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "gaz"
+                                            rootUi: root
                                         }
                                     }
                                 }
