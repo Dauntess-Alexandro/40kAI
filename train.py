@@ -6228,7 +6228,27 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     else:
         memory = ReplayMemory(replay_capacity)
 
-    target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+    # Resume до формирования init_weights, чтобы акторы (локальные и ПК2 через sync_path)
+    # стартовали с восстановленных весов, а не случайных.
+    resume_meta = {
+        "global_step": 0,
+        "optimize_steps": 0,
+        "episode": 0,
+        "replay_size": 0,
+        "epsilon": float(EPS_START),
+    }
+    if RESUME_CHECKPOINT:
+        resume_meta = _resume_from_checkpoint(policy_net, target_net, optimizer, memory, RESUME_CHECKPOINT)
+    else:
+        target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
+    if lr_scheduler is not None and isinstance(resume_meta.get("lr_scheduler_state"), dict):
+        try:
+            lr_scheduler.load_state_dict(resume_meta["lr_scheduler_state"])
+        except Exception as exc:
+            append_agent_log(
+                "[RESUME][WARN] Не удалось загрузить lr_scheduler state (DQN actor-learner). "
+                f"Где: train.py (_main_actor_learner). Детали: {exc}"
+            )
     target_net.eval()
     scaler = torch.cuda.amp.GradScaler(enabled=bool(USE_AMP and device.type == "cuda"))
 
@@ -6369,9 +6389,19 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
         procs.append(_spawn_dqn_local_actor(a_idx, episodes))
 
     done_actors = 0
-    optimize_steps = 0
-    global_step = 0
+    optimize_steps = int(resume_meta.get("optimize_steps", 0) or 0)
+    global_step = int(resume_meta.get("global_step", 0) or 0)
+    # episodes_finished — счётчик ТЕКУЩЕГО запуска (totLifeT = доп. игры за прогон).
+    # resume_episode_base — кумулятивный сдвиг из чекпойнта (для нумерации сохранений/агента).
     episodes_finished = 0
+    resume_episode_base = int(resume_meta.get("episode", 0) or 0)
+    if RESUME_CHECKPOINT:
+        append_agent_log(
+            "[RESUME] DQN actor-learner продолжение: "
+            f"episode_base={resume_episode_base} global_step={global_step} "
+            f"optimize_steps={optimize_steps} replay_size={int(resume_meta.get('replay_size', 0) or 0)} "
+            f"(доп. игр за запуск={int(totLifeT)})"
+        )
     last_actor_det_eval_ep = 0
     last_loss = None
     ep_rows: list[dict] = []
@@ -6986,7 +7016,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                 "optimizer": optimizer.state_dict(),
                 "global_step": int(global_step),
                 "optimize_steps": int(optimize_steps),
-                "episode": int(len(ep_rows)),
+                "episode": int(resume_episode_base + len(ep_rows)),
                 "replay_memory": memory.state_dict(),
             }
             actor_ckpt.update(_dqn_checkpoint_extra(policy_net, target_net, optimizer, lr_scheduler))
@@ -7054,7 +7084,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             safe_model_tag = model_path.replace("\\", "/")  # type: ignore[name-defined]
         except Exception:
             safe_model_tag = ""
-        final_agent_id = build_agent_id(learner_identity, f"final_ep{len(ep_rows)}")
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{resume_episode_base + len(ep_rows)}")
         artifact_dir = save_agent_artifact(
             identity=learner_identity,
             agent_id=final_agent_id,
@@ -7064,7 +7094,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             optimizer_state_dict=optimizer.state_dict(),
             extra_meta={
                 "algo": "dqn",
-                "episode": int(len(ep_rows)),
+                "episode": int(resume_episode_base + len(ep_rows)),
                 "legacy_model_tag": safe_model_tag,
                 "mode": "actor_learner",
                 "num_actors": int(num_actors),
