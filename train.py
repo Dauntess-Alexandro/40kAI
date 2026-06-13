@@ -2897,9 +2897,15 @@ GAZ_NUM_CONSIDERED = max(2, int(os.getenv("GAZ_NUM_CONSIDERED_ACTIONS", str(GAZ_
 GAZ_MAX_DEPTH = max(1, int(os.getenv("GAZ_MAX_DEPTH", str(GAZ_CFG.get("max_depth", 1)))))
 GAZ_VALUE_SCALE = float(os.getenv("GAZ_VALUE_SCALE", str(GAZ_CFG.get("value_scale", 0.1))))
 GAZ_C_VISIT = float(os.getenv("GAZ_C_VISIT", str(GAZ_CFG.get("c_visit", 50.0))))
-GAZ_SIMULATE_ENEMY = str(os.getenv("GAZ_SIMULATE_ENEMY", str(GAZ_CFG.get("simulate_enemy", 1)))).strip() == "1"
+GAZ_SIMULATE_ENEMY = str(os.getenv("GAZ_SIMULATE_ENEMY", str(GAZ_CFG.get("simulate_enemy", 0)))).strip() == "1"
 GAZ_EVAL_CACHE_SIZE = int(os.getenv("GAZ_EVAL_CACHE_SIZE", str(GAZ_CFG.get("eval_cache_size", 10000))))
 GAZ_BATCH_EVAL_SIZE = max(1, int(os.getenv("GAZ_BATCH_EVAL_SIZE", str(GAZ_CFG.get("batch_eval_size", 16)))))
+
+# Лог-теги/числа для AZ-семейства: у gumbel_az показываем [GAZ] и его sims/depth, а не
+# generic AZ_MCTS_* (которые для gumbel_az остаются дефолтами секции AZ и путают в логах).
+_AZ_LOG_TAG = "GAZ" if is_gumbel_az_algo(TRAIN_ALGO) else "AZ"
+_AZ_LOG_SIMS = GAZ_NUM_SIMS if is_gumbel_az_algo(TRAIN_ALGO) else AZ_MCTS_SIMS
+_AZ_LOG_DEPTH = GAZ_MAX_DEPTH if is_gumbel_az_algo(TRAIN_ALGO) else AZ_MCTS_MAX_DEPTH
 
 
 def _gaz_cfg_payload() -> dict:
@@ -8556,8 +8562,9 @@ def _actor_learner_actor_entry_alphazero(
             ep_idx_1based = int(_ep) + 1 if ep_limit > 0 else int(_ep) + 1
             ep_total_label = str(ep_limit) if ep_limit > 0 else "open"
             print(
-                f"[AZ][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{ep_total_label} starting "
-                f"mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')} sims={getattr(mcts.cfg, 'simulations', 0)}",
+                f"[{_AZ_LOG_TAG}][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{ep_total_label} starting "
+                f"mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')} "
+                f"sims={getattr(mcts.cfg, 'simulations', None) or getattr(mcts.cfg, 'num_simulations', 0)}",
                 flush=True,
             )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
@@ -9092,13 +9099,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             append_agent_log("[AZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
 
     append_agent_log(
-        "[AZ][CONFIG] "
+        f"[{_AZ_LOG_TAG}][CONFIG] "
         f"num_actors={AZ_NUM_ACTORS} actor_batch_send={AZ_ACTOR_BATCH_SEND} queue_max={AZ_ACTOR_QUEUE_MAX} "
         f"sync_every_updates={AZ_SYNC_EVERY_UPDATES} updates_per_rollout={AZ_UPDATES_PER_ROLLOUT} "
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
-        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} mcts={AZ_MCTS_SIMS} "
-        f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={AZ_MCTS_MAX_DEPTH} "
+        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} mcts={_AZ_LOG_SIMS} "
+        f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
         f"lr_scheduler={AZ_LR_SCHEDULER} c_puct_schedule={AZ_C_PUCT_SCHEDULE} "
         f"opponent_mode={opponent_source_label} opponent_algo={opponent_algo_label} "
@@ -9517,10 +9524,10 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 alive = sum(1 for p in procs if p.is_alive())
                 elapsed = int(now - wait_started)
                 wait_line = (
-                    f"[AZ][WAIT] elapsed={elapsed}s replay={len(replay)} "
+                    f"[{_AZ_LOG_TAG}][WAIT] elapsed={elapsed}s replay={len(replay)} "
                     f"actors_alive={alive}/{active_actors} mode={AZ_MCTS_MODE} "
-                    f"sims={AZ_MCTS_SIMS} depth={AZ_MCTS_MAX_DEPTH} "
-                    f"(tree-MCTS: первый ep может занять 5–20 мин, прогресс по ep=...)"
+                    f"sims={_AZ_LOG_SIMS} depth={_AZ_LOG_DEPTH} "
+                    f"(первый ep может занять несколько минут; прогресс считается по завершённым ep)"
                 )
                 print(wait_line, flush=True)
                 append_agent_log(wait_line)

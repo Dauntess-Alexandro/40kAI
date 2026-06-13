@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import torch
@@ -31,7 +32,7 @@ def play_episode_with_mcts(
     mcts,
     len_model: int,
     config: SelfPlayConfig | None = None,
-    enemy_policy_fn: Optional[Callable[[Any], dict]] = None,
+    enemy_policy_fn: Callable[[Any], dict] | None = None,
     outcome_only: bool = True,
     outcome_value_win: float = 1.0,
     outcome_value_loss: float = -1.0,
@@ -72,7 +73,8 @@ def play_episode_with_mcts(
         )
         if heartbeat_moves > 0 and steps > 0 and (steps % int(heartbeat_moves) == 0):
             print(
-                f"[AZ][ACTOR] actor={int(actor_idx)} move={int(steps)} mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')}",
+                f"[{'GAZ' if str(getattr(mcts.cfg, 'mode', '')).strip().lower() == 'gumbel' else 'AZ'}][ACTOR] "
+                f"actor={int(actor_idx)} move={int(steps)} mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')}",
                 flush=True,
             )
         pi_targets, action_list, _v = mcts.run(

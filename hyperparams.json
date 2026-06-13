@@ -258,7 +258,7 @@
         "max_depth": 1,
         "value_scale": 0.1,
         "c_visit": 50.0,
-        "simulate_enemy": 1,
+        "simulate_enemy": 0,
         "eval_cache_size": 10000,
         "batch_eval_size": 16,
         "replay_capacity": 100000,

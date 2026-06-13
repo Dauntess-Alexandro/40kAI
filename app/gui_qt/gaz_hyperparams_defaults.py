@@ -63,7 +63,7 @@ _GAZ_BASE: dict[str, int | float | str] = {
     "max_depth": 1,
     "value_scale": 0.1,
     "c_visit": 50.0,
-    "simulate_enemy": 1,
+    "simulate_enemy": 0,
     "eval_cache_size": 10000,
     "replay_capacity": 100000,
     "num_actors": 8,
@@ -219,7 +219,9 @@ GAZ_FIELD_TOOLTIPS: dict[str, str] = {
     "max_depth": "Глубина поиска (v1 = 1, root-only).",
     "value_scale": "Масштаб c_scale в sigma(Q) для completed-Q.",
     "c_visit": "Константа c_visit в sigma(Q).",
-    "simulate_enemy": "1 = симулировать ход врага в depth-1 rollout (точнее, дороже).",
+    "simulate_enemy": "0 (дефолт) = лист оценивает сеть сразу после хода модели — быстро. "
+    "1 = симулировать ход врага в depth-1 rollout (точнее, но кратно дороже: тяжёлая эвристика "
+    "вызывается на каждого кандидата каждой головы).",
     "eval_cache_size": "Размер LRU-кэша оценок сети.",
     "batch_eval_size": "Сколько листьев батчить в один forward value-сети.",
     "replay_capacity": "Ёмкость replay buffer.",

@@ -87,6 +87,12 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
   «Халвинг» даёт прирост только при **стохастичном** `enemyTurn`. Это норм для v1 (корректность сохраняется),
   но в логах/доке не подавать sims=64 как «сильнее». Тест «бюджет соблюдён» (§6.1) должен либо реально это
   проверять, либо быть убран из критериев.
+- **`simulate_enemy=0` — дефолт.** Встроенная эвристика врага тяжёлая (6 фаз), и при `simulate_enemy=1` она
+  вызывается на каждого кандидата каждой головы (per-head, depth-1) → ~60–116 серийных роллаутов на ход,
+  ~10–16 с/ход на CPU → первый эпизод не завершается минутами, replay пуст, learner не стартует. Поэтому по
+  умолчанию лист оценивается сетью сразу после хода модели (как `simulate_enemy_in_tree=False` у AZ).
+  `simulate_enemy=1` оставлен опцией для тех, кто готов платить за более точную (с ответом врага) оценку,
+  но тогда нужно резко снижать `num_simulations`/`num_considered_actions`/`num_actors`.
 - **Дублирование движко-кода — избегаем.** Машинерия rollout (`_terminal_value_from_info`, `_restore_env_safe`,
   `_evaluate_net`, `_evaluate_value_batch`, тело depth-1 шага) уже есть и оттестирована в
   `alphazero_mcts.py`. Предпочтительно вынести её в общий хелпер и звать из обоих поисков (AZ MCTS + Gumbel),
@@ -191,7 +197,7 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
 | `max_depth` | 1 | 1 | 1 |
 | `value_scale` (σ) | 0.1 | 0.1 | 0.1 |
 | `c_visit` | 50 | 50 | 50 |
-| `simulate_enemy` | 1 | 1 | 1 |
+| `simulate_enemy` | 0 | 0 | 0 |
 | `batch_eval_size` | 8 | 16 | 32 |
 
 Общие поля (во всех трёх): `learning_rate 3e-4`, `batch_size 128`, `value_loss_weight 1.0`,
@@ -226,9 +232,11 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
 - **6.6 eval/play smoke:** чекпойнт `gumbel_az` грузится по пути `is_alphazero_net_algo`, greedy работает.
 
 ### Логи
-Отдельный маркер `[GAZ]` **не нужен**: learner общий и пишет `[AZ]`, а heartbeat актёра уже печатает
-`mcts_mode=<cfg.mode>` (`alphazero_selfplay.py`). Поскольку `GumbelAZSearchConfig.mode="gumbel"`, в
-`LOGS_FOR_AGENTS_TRAIN.md` автоматически появится `mcts_mode=gumbel` — этого достаточно для триажа.
+В train-цикле для `gumbel_az` префикс `[GAZ]` (вместо `[AZ]`) на ключевых строках: `[GAZ][CONFIG]`,
+`[GAZ][WAIT]`, `[GAZ][ACTOR]` — переключается по `TRAIN_ALGO` (learner) / `cfg.mode=="gumbel"` (актёр).
+Числа `sims`/`depth` в этих строках берутся из gaz-конфига (`GAZ_NUM_SIMS`/`GAZ_MAX_DEPTH`), а не из
+generic `AZ_MCTS_*` (которые для gumbel_az остаются дефолтами секции AZ и путали бы в логах). heartbeat
+актёра дополнительно печатает `mcts_mode=gumbel`.
 
 ### Критерии готовности v1
 1. **Функционал:** dropdown содержит «Gumbel AlphaZero»; выбор + любой из 3 пресетов + resume запускает
