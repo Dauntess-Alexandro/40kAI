@@ -189,6 +189,12 @@ def test_sampled_muzero_actor_learner_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(train_mod, "MODELS_DIR", tmp_models)
     monkeypatch.setattr(train_mod, "METRICS_DIR", tmp_metrics)
 
+    # --- Изолируем agent-registry в tmp_path (иначе save_agent_artifact пишет в реальный
+    #     artifacts/models/agents/ и agents_registry.json — каталог в .gitignore, но файлы копятся) ---
+    import core.engine.agent_registry as _ar
+    monkeypatch.setattr(_ar, "AGENTS_ROOT", str(tmp_path / "agents"))
+    monkeypatch.setattr(_ar, "AGENTS_REGISTRY_PATH", str(tmp_path / "agents_registry.json"))
+
     # --- Патчим все SMZ_* globals ---
     for attr, val in _SMOKE_SMZ_OVERRIDES.items():
         monkeypatch.setattr(train_mod, attr, val)
