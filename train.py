@@ -3118,6 +3118,51 @@ else:
     else:
         GMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(GMZ_NUM_ACTORS)
 
+# === Sampled MuZero config (SMZ_*) ===
+SMZ_CFG = data.get("sampled_muzero", {}) if isinstance(data, dict) else {}
+SMZ_LR = float(SMZ_CFG.get("learning_rate", AZ_LR))
+SMZ_BATCH_SIZE = int(SMZ_CFG.get("batch_size", 160))
+SMZ_UNROLL_STEPS = int(SMZ_CFG.get("unroll_steps", 5))
+SMZ_REWARD_LOSS_WEIGHT = float(SMZ_CFG.get("reward_loss_weight", 1.0))
+SMZ_VALUE_LOSS_WEIGHT = float(SMZ_CFG.get("value_loss_weight", 1.0))
+SMZ_L2_WEIGHT = float(SMZ_CFG.get("l2_weight", 1e-6))
+SMZ_DISCOUNT = float(SMZ_CFG.get("discount", 0.997))
+SMZ_REPLAY_CAPACITY = int(SMZ_CFG.get("replay_capacity", 400000))
+SMZ_NUM_ACTORS = max(1, int(os.getenv("SMZ_NUM_ACTORS", str(SMZ_CFG.get("num_actors", AZ_NUM_ACTORS)))))
+SMZ_SYNC_EVERY_UPDATES = max(1, int(os.getenv("SMZ_SYNC_EVERY_UPDATES", str(SMZ_CFG.get("sync_every_updates", 20)))))
+SMZ_UPDATES_PER_ROLLOUT = max(1, int(os.getenv("SMZ_UPDATES_PER_ROLLOUT", str(SMZ_CFG.get("updates_per_rollout", 3)))))
+SMZ_REPLAY_MIN_SIZE = max(1, int(os.getenv("SMZ_REPLAY_MIN_SIZE", str(SMZ_CFG.get("replay_min_size", 512)))))
+SMZ_MAX_POLICY_STALENESS_UPDATES = int(os.getenv("SMZ_MAX_POLICY_STALENESS_UPDATES", str(SMZ_CFG.get("max_policy_staleness_updates", 600))))
+SMZ_LATENT_DIM = int(os.getenv("SMZ_LATENT_DIM", str(SMZ_CFG.get("latent_dim", 256))))
+SMZ_HIDDEN_DIM = int(os.getenv("SMZ_HIDDEN_DIM", str(SMZ_CFG.get("hidden_dim", 256))))
+SMZ_NUM_LAYERS = int(os.getenv("SMZ_NUM_LAYERS", str(SMZ_CFG.get("num_layers", 2))))
+SMZ_ACTION_EMBED_DIM = int(os.getenv("SMZ_ACTION_EMBED_DIM", str(SMZ_CFG.get("action_embed_dim", 64))))
+SMZ_NUM_SAMPLES = int(os.getenv("SMZ_NUM_SAMPLES", str(SMZ_CFG.get("num_samples", 24))))
+SMZ_SAMPLE_TEMP = float(os.getenv("SMZ_SAMPLE_TEMPERATURE", str(SMZ_CFG.get("sample_temperature", 1.0))))
+SMZ_SEARCH_TEMP = float(os.getenv("SMZ_SEARCH_TEMPERATURE", str(SMZ_CFG.get("search_temperature", 0.15))))
+SMZ_PRIOR_WEIGHT = float(os.getenv("SMZ_PRIOR_WEIGHT", str(SMZ_CFG.get("prior_weight", 0.0))))
+SMZ_DEDUP = str(os.getenv("SMZ_DEDUP", str(SMZ_CFG.get("dedup", 1)))).strip() == "1"
+SMZ_MAX_GRAD_NORM = float(os.getenv("SMZ_MAX_GRAD_NORM", str(SMZ_CFG.get("max_grad_norm", 0.5))))
+SMZ_TBPTT_TRUNCATE = int(os.getenv("SMZ_TBPTT_TRUNCATE", str(SMZ_CFG.get("tbptt_truncate", 3))))
+SMZ_CONSISTENCY_W = float(os.getenv("SMZ_CONSISTENCY_W", str(SMZ_CFG.get("consistency_loss_weight", "1.0"))))
+SMZ_TEMP_OPENING_MOVES = int(os.getenv("SMZ_TEMP_OPENING_MOVES", str(SMZ_CFG.get("temperature_opening_moves", 12))))
+SMZ_TEMP_OPENING = float(os.getenv("SMZ_TEMP_OPENING", str(SMZ_CFG.get("temperature_opening_value", 1.0))))
+SMZ_TEMP_LATE = float(os.getenv("SMZ_TEMP_LATE", str(SMZ_CFG.get("temperature_late_value", 0.25))))
+SMZ_OUTCOME_ONLY = str(os.getenv("SMZ_OUTCOME_ONLY", str(SMZ_CFG.get("outcome_only", 1)))).strip() == "1"
+SMZ_OUTCOME_VALUE_WIN = float(os.getenv("SMZ_OUTCOME_VALUE_WIN", str(SMZ_CFG.get("outcome_value_win", 1.0))))
+SMZ_OUTCOME_VALUE_LOSS = float(os.getenv("SMZ_OUTCOME_VALUE_LOSS", str(SMZ_CFG.get("outcome_value_loss", -1.0))))
+SMZ_OUTCOME_VALUE_DRAW = float(os.getenv("SMZ_OUTCOME_VALUE_DRAW", str(SMZ_CFG.get("outcome_value_draw", -0.25))))
+SMZ_ATOM_RANGE = str(os.getenv("SMZ_ATOM_RANGE", str(SMZ_CFG.get("atom_range", "tight")))).lower()
+SMZ_VTRACE_FULL = int(os.getenv("SMZ_VTRACE_FULL", str(SMZ_CFG.get("vtrace_full", 1))))
+SMZ_VTRACE_RHO_CLIP = float(os.getenv("SMZ_VTRACE_RHO_CLIP", str(SMZ_CFG.get("vtrace_rho_clip", 0.7))))
+SMZ_VTRACE_C_CLIP = float(os.getenv("SMZ_VTRACE_C_CLIP", str(SMZ_CFG.get("vtrace_c_clip", 0.7))))
+SMZ_REANALYZE_FRACTION = float(os.getenv("SMZ_REANALYZE_FRACTION", str(SMZ_CFG.get("reanalyze_fraction", 0.15))))
+SMZ_EMA_TAU = float(os.getenv("SMZ_EMA_TAU", str(SMZ_CFG.get("ema_tau", 0.005))))
+SMZ_LEARNER_COMPILE = str(os.getenv("SMZ_LEARNER_COMPILE", str(SMZ_CFG.get("learner_compile", 1)))).strip() == "1"
+SMZ_ACTOR_DEVICE_REQUESTED = str(os.getenv("SMZ_ACTOR_DEVICE", str(SMZ_CFG.get("actor_device", "cuda")))).strip().lower()
+if SMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda"):
+    SMZ_ACTOR_DEVICE_REQUESTED = "cuda"
+
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
 # ============================================================

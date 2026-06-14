@@ -246,6 +246,21 @@
         "outcome_value_loss": -1.0,
         "outcome_value_draw": -0.25
     },
+    "sampled_muzero": {
+        "learning_rate": 0.0003, "batch_size": 160, "unroll_steps": 5, "discount": 0.997,
+        "value_loss_weight": 1.0, "reward_loss_weight": 1.0, "consistency_loss_weight": 1.0,
+        "l2_weight": 1e-06, "max_grad_norm": 0.5, "atom_range": "tight",
+        "latent_dim": 256, "hidden_dim": 256, "num_layers": 2, "action_embed_dim": 64,
+        "num_samples": 24, "sample_temperature": 1.0, "search_temperature": 0.15,
+        "prior_weight": 0.0, "dedup": 1, "tbptt_truncate": 3,
+        "vtrace_full": 1, "vtrace_rho_clip": 0.7, "vtrace_c_clip": 0.7,
+        "reanalyze_fraction": 0.15, "ema_tau": 0.005,
+        "outcome_only": 1, "outcome_value_win": 1.0, "outcome_value_loss": -1.0, "outcome_value_draw": -0.25,
+        "temperature_opening_moves": 12, "temperature_opening_value": 1.0, "temperature_late_value": 0.25,
+        "replay_capacity": 400000, "replay_min_size": 512, "max_policy_staleness_updates": 600,
+        "num_actors": 8, "sync_every_updates": 20, "updates_per_rollout": 3,
+        "actor_device": "cuda", "learner_compile": 1
+    },
     "gumbel_az": {
         "learning_rate": 0.0003,
         "batch_size": 128,
