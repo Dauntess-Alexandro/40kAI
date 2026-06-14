@@ -138,6 +138,20 @@ from core.models.PPO import (
     update_ppo_entropy_coef,
 )
 from core.models.ppo_buffer import PPORolloutBuffer
+from core.models.sampled_muzero_model import (
+    load_sampled_muzero_state_dict,
+    make_sampled_muzero_net,
+    sampled_muzero_arch_from_payload,
+    sampled_muzero_kwargs_from_env,
+)
+from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
+from core.models.sampled_muzero_selfplay import SampledSelfPlayConfig, play_episode_with_sampled_muzero
+from core.models.sampled_muzero_trainer import (
+    SampledMuZeroEMATarget,
+    SampledMuZeroTrainConfig,
+    make_smz_lr_scheduler,
+    train_sampled_muzero_step,
+)
 from core.models.utils import *
 
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
@@ -3162,6 +3176,22 @@ SMZ_LEARNER_COMPILE = str(os.getenv("SMZ_LEARNER_COMPILE", str(SMZ_CFG.get("lear
 SMZ_ACTOR_DEVICE_REQUESTED = str(os.getenv("SMZ_ACTOR_DEVICE", str(SMZ_CFG.get("actor_device", "cuda")))).strip().lower()
 if SMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda"):
     SMZ_ACTOR_DEVICE_REQUESTED = "cuda"
+SMZ_ACTOR_DEVICE_CUDA = SMZ_ACTOR_DEVICE_REQUESTED == "cuda" and torch.cuda.is_available()
+SMZ_ACTOR_USING_CUDA_FALLBACK = SMZ_ACTOR_DEVICE_REQUESTED == "cuda" and not torch.cuda.is_available()
+SMZ_ACTOR_MAX_CUDA = max(1, int(os.getenv("SMZ_ACTOR_MAX_CUDA", str(SMZ_CFG.get("actor_max_cuda", 2)))))
+if SMZ_ACTOR_DEVICE_CUDA:
+    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = min(int(SMZ_NUM_ACTORS), int(SMZ_ACTOR_MAX_CUDA))
+else:
+    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(SMZ_NUM_ACTORS)
+if "SMZ_ACTOR_COMPILE" in os.environ:
+    SMZ_ACTOR_COMPILE = str(os.getenv("SMZ_ACTOR_COMPILE", "1")).strip() == "1"
+else:
+    SMZ_ACTOR_COMPILE = not bool(torch.cuda.is_available())
+SMZ_ACTOR_QUEUE_MAX = max(64, int(os.getenv("SMZ_ACTOR_QUEUE_MAX", str(SMZ_CFG.get("actor_queue_max", 256)))))
+SMZ_ACTOR_BATCH_SEND = max(8, int(os.getenv("SMZ_ACTOR_BATCH_SEND", str(SMZ_CFG.get("actor_batch_send", 64)))))
+SMZ_LR_SCHEDULER = str(os.getenv("SMZ_LR_SCHEDULER", str(SMZ_CFG.get("lr_scheduler", "none"))))
+SMZ_LR_WARMUP_STEPS = int(os.getenv("SMZ_LR_WARMUP_STEPS", str(SMZ_CFG.get("lr_warmup_steps", 0))))
+SMZ_LR_TOTAL_STEPS = int(os.getenv("SMZ_LR_TOTAL_STEPS", str(SMZ_CFG.get("lr_total_steps", 0))))
 
 # ============================================================
 # (C) Несколько обучающих апдейтов на один шаг среды
@@ -4085,6 +4115,20 @@ def main():
                 clip_reward_max=clip_reward_max,
             )
             return
+        if TRAIN_ALGO == "sampled_muzero":
+            if TRAIN_LOG_TO_CONSOLE:
+                print(
+                    "[TRAIN][MODE] PRO_ACTOR_LEARNER=1 "
+                    "(Sampled MuZero actors + learner GPU)"
+                )
+            _main_actor_learner_sampled_muzero(
+                roster_config=roster_config,
+                totLifeT=totLifeT,
+                clip_reward_enabled=clip_reward_enabled,
+                clip_reward_min=clip_reward_min,
+                clip_reward_max=clip_reward_max,
+            )
+            return
         if TRAIN_ALGO == "dqn":
             if TRAIN_LOG_TO_CONSOLE:
                 print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (DQN actors CPU + learner GPU)")
@@ -4383,6 +4427,18 @@ def main():
     if TRAIN_ALGO == "gumbel_muzero":
         append_agent_log(f"[GMZ] Запуск Gumbel MuZero ветки. episodes={totLifeT}")
         _main_actor_learner_gumbel_muzero(
+            roster_config=roster_config,
+            totLifeT=totLifeT,
+            clip_reward_enabled=clip_reward_enabled,
+            clip_reward_min=clip_reward_min,
+            clip_reward_max=clip_reward_max,
+        )
+        _cleanup_train_envs(env_contexts=env_contexts, subproc_envs=subproc_envs, use_subproc=USE_SUBPROC_ENVS)
+        return
+
+    if TRAIN_ALGO == "sampled_muzero":
+        append_agent_log(f"[SMZ] Запуск Sampled MuZero ветки. episodes={totLifeT}")
+        _main_actor_learner_sampled_muzero(
             roster_config=roster_config,
             totLifeT=totLifeT,
             clip_reward_enabled=clip_reward_enabled,
@@ -4866,7 +4922,7 @@ def main():
     side_tag = f"{learner_identity.side}_{learner_identity.faction}"
     safe_name = _sanitize_fs_name(f"{name}__learner_{side_tag}")
     algo_tag = str(TRAIN_ALGO or "dqn").strip().lower()
-    if algo_tag not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+    if algo_tag not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero"}:
         algo_tag = "dqn"
     models_root = os.path.join(MODELS_DIR, algo_tag)
     fold = os.path.join(models_root, safe_name)
@@ -6316,7 +6372,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             if SELF_PLAY_OPPONENT_MODE == "fixed_checkpoint" and SELF_PLAY_FIXED_PATH:
                 checkpoint = torch.load(SELF_PLAY_FIXED_PATH, map_location="cpu", weights_only=False)
                 checkpoint_algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-                if checkpoint_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+                if checkpoint_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero"}:
                     checkpoint_algo = "dqn"
                 if isinstance(checkpoint, dict) and "policy_net" in checkpoint:
                     policy_state = normalize_state_dict(checkpoint["policy_net"])
@@ -7380,9 +7436,11 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 opponent_source_label = "fixed_checkpoint"
                 if isinstance(checkpoint, dict):
                     checkpoint_meta_algo = str(checkpoint.get("algo", "") or "").strip().lower()
-                    if checkpoint_meta_algo not in ("dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"):
+                    if checkpoint_meta_algo not in ("dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero"):
                         if "actor_critic" in checkpoint:
                             checkpoint_meta_algo = "ppo"
+                        elif "sampled_muzero_net" in checkpoint:
+                            checkpoint_meta_algo = "sampled_muzero"
                         elif "gumbel_muzero_net" in checkpoint:
                             checkpoint_meta_algo = "gumbel_muzero"
                         elif "policy_value_net" in checkpoint:
@@ -7427,6 +7485,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
         "alphazero_tree",
         "alphazero_proxy",
         "gumbel_muzero",
+        "sampled_muzero",
     ):
         opponent_snapshot_sync_enabled = checkpoint_meta_algo == "ppo"
 
@@ -10348,6 +10407,215 @@ def _actor_learner_actor_entry_gumbel_muzero(
             pass
 
 
+def _actor_learner_actor_entry_sampled_muzero(
+    actor_idx: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    init_weights: dict,
+    batch_send: int,
+    data_q,
+    self_play_enabled: int,
+    opponent_spec,
+    sp_cfg_payload: dict,
+    search_cfg_payload: dict,
+    outcome_payload: dict,
+):
+    """Top-level entrypoint for Windows spawn pickling (Sampled MuZero actor)."""
+    try:
+        actor_device = torch.device("cuda" if SMZ_ACTOR_DEVICE_CUDA else "cpu")
+        smz_net = make_sampled_muzero_net(
+            obs_dim=int(n_observations),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(search_cfg_payload.get("latent_dim", SMZ_LATENT_DIM)),
+            hidden_dim=int(search_cfg_payload.get("hidden_dim", SMZ_HIDDEN_DIM)),
+            num_layers=int(search_cfg_payload.get("num_layers", SMZ_NUM_LAYERS)),
+            action_embed_dim=int(search_cfg_payload.get("action_embed_dim", SMZ_ACTION_EMBED_DIM)),
+        ).to(actor_device)
+        smz_net.load_state_dict(normalize_state_dict(init_weights))
+        smz_net.eval()
+
+        # torch.compile: только на CPU (на GPU overhead обычно не окупается)
+        if SMZ_ACTOR_COMPILE and not SMZ_ACTOR_DEVICE_CUDA and hasattr(torch, "compile"):
+            try:
+                smz_net = torch.compile(smz_net, mode="default", fullgraph=False)
+                append_agent_log("[SMZ][ACTOR] torch.compile enabled for actor inference (mode=default)")
+            except Exception as e:
+                append_agent_log(f"[SMZ][ACTOR] torch.compile skipped: {e}")
+
+        search = SampledMuZeroSearch(
+            smz_net,
+            config=SampledMuZeroSearchConfig(
+                num_samples=int(search_cfg_payload.get("num_samples", SMZ_NUM_SAMPLES)),
+                discount=float(search_cfg_payload.get("discount", SMZ_DISCOUNT)),
+                temperature=float(search_cfg_payload.get("temperature", SMZ_SEARCH_TEMP)),
+                sample_temperature=float(search_cfg_payload.get("sample_temperature", SMZ_SAMPLE_TEMP)),
+                prior_weight=float(search_cfg_payload.get("prior_weight", SMZ_PRIOR_WEIGHT)),
+                dedup=bool(int(search_cfg_payload.get("dedup", int(SMZ_DEDUP)))),
+            ),
+            device=actor_device,
+        )
+        append_agent_log(
+            f"[SMZ][ACTOR] actor={int(actor_idx)} device={actor_device.type} "
+            f"latent={search_cfg_payload.get('latent_dim', SMZ_LATENT_DIM)} "
+            f"num_samples={search_cfg_payload.get('num_samples', SMZ_NUM_SAMPLES)}"
+        )
+        sp_cfg = SampledSelfPlayConfig(
+            temperature_opening_moves=int(sp_cfg_payload.get("temperature_opening_moves", SMZ_TEMP_OPENING_MOVES)),
+            temperature_opening_value=float(sp_cfg_payload.get("temperature_opening_value", SMZ_TEMP_OPENING)),
+            temperature_late_value=float(sp_cfg_payload.get("temperature_late_value", SMZ_TEMP_LATE)),
+            outcome_only=bool(outcome_payload.get("outcome_only", SMZ_OUTCOME_ONLY)),
+            outcome_value_win=float(outcome_payload.get("outcome_value_win", SMZ_OUTCOME_VALUE_WIN)),
+            outcome_value_loss=float(outcome_payload.get("outcome_value_loss", SMZ_OUTCOME_VALUE_LOSS)),
+            outcome_value_draw=float(outcome_payload.get("outcome_value_draw", SMZ_OUTCOME_VALUE_DRAW)),
+        )
+
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        len_model = int(len(model))
+
+        sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
+        sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_smz_policy.pth")
+        sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
+        last_sync_mtime = -1.0
+        current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
+
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len_model,
+                    opponent=opponent_spec,
+                    deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                )
+            except Exception:
+                opponent_policy_fn = None
+
+        rollout_batch: list[dict] = []
+        for _ep in range(int(episodes)):
+            ep_idx_1based = int(_ep) + 1
+            if sync_enabled and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(sync_path):
+                        mtime = os.path.getmtime(sync_path)
+                        if mtime > last_sync_mtime:
+                            payload = torch.load(sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                smz_net.load_state_dict(normalize_state_dict(sd))
+                                smz_net.eval()
+                                search.net = smz_net
+                                last_sync_mtime = float(mtime)
+                                current_policy_version = int(payload.get("policy_version", current_policy_version) or current_policy_version)
+                except Exception:
+                    pass
+
+            attacker_side, defender_side = roll_off_attacker_defender(
+                manual_roll_allowed=False,
+                log_fn=None,
+            )
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+
+            transitions, info = play_episode_with_sampled_muzero(
+                env=env,
+                search=search,
+                len_model=len_model,
+                config=sp_cfg,
+                enemy_policy_fn=opponent_policy_fn,
+                policy_version=int(current_policy_version),
+            )
+            for t in transitions:
+                rollout_batch.append(
+                    _gmz_rollout_dict_from_transition(t, int(current_policy_version))
+                )
+            if len(rollout_batch) >= int(batch_send):
+                data_q.put(
+                    (
+                        "rollout",
+                        {
+                            "actor_idx": int(actor_idx),
+                            "policy_version": int(current_policy_version),
+                            "transitions": list(rollout_batch),
+                        },
+                    )
+                )
+                rollout_batch = []
+
+            info = dict(info or {})
+            end_reason = str(info.get("end reason", "") or "")
+            model_vp = int(info.get("model VP", 0) or 0)
+            player_vp = int(info.get("player VP", 0) or 0)
+            vp_diff = int(model_vp) - int(player_vp)
+            result = "loss"
+            if end_reason == "wipeout_enemy":
+                result = "win"
+            elif end_reason == "wipeout_model":
+                result = "loss"
+            elif str(end_reason).startswith("turn_limit"):
+                if vp_diff > 0:
+                    result = "win"
+                elif vp_diff == 0:
+                    result = "draw"
+            elif vp_diff > 0:
+                result = "win"
+            elif vp_diff == 0:
+                result = "draw"
+            data_q.put(
+                (
+                    "ep",
+                    {
+                        "episode": None,
+                        "actor_idx": int(actor_idx),
+                        "actor_ep": int(ep_idx_1based),
+                        "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                        "ep_len": int(info.get("turn", 0) or 0),
+                        "turn": int(info.get("turn", 0) or 0),
+                        "model_vp": int(model_vp),
+                        "player_vp": int(player_vp),
+                        "vp_diff": int(vp_diff),
+                        "result": str(result),
+                        "end_reason": str(end_reason),
+                        "end_code": int(info.get("res", 0) or 0),
+                        "policy_version": int(current_policy_version),
+                    },
+                )
+            )
+
+        if rollout_batch:
+            data_q.put(
+                (
+                    "rollout",
+                    {
+                        "actor_idx": int(actor_idx),
+                        "policy_version": int(current_policy_version),
+                        "transitions": list(rollout_batch),
+                    },
+                )
+            )
+        data_q.put(("done", int(actor_idx)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"smz_actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
+
+
 def _emit_train_progress_heartbeat(
     *,
     ep_done: int,
@@ -11121,6 +11389,653 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         f"episodes={final_episode}/{resume_episode_base + int(totLifeT)} checkpoint={last_checkpoint} "
         f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
     )
+
+
+def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
+    b_len = int(roster_config["b_len"])
+    b_hei = int(roster_config["b_hei"])
+    run_id = str(random.randint(1000000, 9999999))
+    model_name = datetime.datetime.now().strftime("%d-%H%M%S")
+    metrics_obj = metrics(MODELS_DIR, run_id, model_name)
+
+    enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+    deploy_for_mission(
+        mission_name,
+        model_units=model,
+        enemy_units=enemy,
+        b_len=b_len,
+        b_hei=b_hei,
+        attacker_side=attacker_side,
+        log_fn=None,
+    )
+    post_deploy_setup(log_fn=None)
+    env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+    env0.attacker_side = attacker_side
+    env0.defender_side = defender_side
+    state0, _ = env0.reset(options={"m": model, "e": enemy, "trunc": True})
+    if isinstance(state0, (dict, collections.OrderedDict)):
+        n_observations = len(list(state0.values()))
+    else:
+        n_observations = int(np.array(state0).shape[0])
+    len_model = int(len(model))
+    n_actions = action_sizes_from_env(env0, len_model)
+    try:
+        env0.close()
+    except Exception:
+        pass
+
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=learner_identity.ruleset_version,
+        extras={"actor_learner": 1, "train_algo": "sampled_muzero", "num_actors": int(SMZ_NUM_ACTORS)},
+    )
+
+    smz_net = make_sampled_muzero_net(
+        obs_dim=int(n_observations),
+        action_sizes=[int(x) for x in n_actions],
+        latent_dim=int(SMZ_LATENT_DIM),
+        hidden_dim=int(SMZ_HIDDEN_DIM),
+        num_layers=int(SMZ_NUM_LAYERS),
+        action_embed_dim=int(SMZ_ACTION_EMBED_DIM),
+    ).to(device)
+
+    # torch.compile for learner — ~15-30% faster training, compilation cost ~10-20s
+    if SMZ_LEARNER_COMPILE and device.type == "cuda" and hasattr(torch, "compile"):
+        try:
+            smz_net = torch.compile(smz_net, mode="reduce-overhead", fullgraph=False)
+            append_agent_log("[SMZ][LEARNER] torch.compile enabled (mode=reduce-overhead)")
+        except Exception as e:
+            append_agent_log(f"[SMZ][LEARNER] torch.compile skipped: {e}")
+
+    optimizer = optim.AdamW(smz_net.parameters(), lr=SMZ_LR, amsgrad=True)
+    _patch_optimizer_methods_no_compile(optimizer)
+    replay = GumbelMuZeroReplayBuffer(capacity=SMZ_REPLAY_CAPACITY)
+    trainer_cfg = SampledMuZeroTrainConfig(
+        lr=SMZ_LR,
+        batch_size=SMZ_BATCH_SIZE,
+        unroll_steps=SMZ_UNROLL_STEPS,
+        tbptt_truncate=SMZ_TBPTT_TRUNCATE,
+        value_loss_weight=SMZ_VALUE_LOSS_WEIGHT,
+        reward_loss_weight=SMZ_REWARD_LOSS_WEIGHT,
+        consistency_loss_weight=SMZ_CONSISTENCY_W,
+        l2_weight=SMZ_L2_WEIGHT,
+        max_grad_norm=SMZ_MAX_GRAD_NORM,
+        lr_scheduler=SMZ_LR_SCHEDULER,
+        lr_warmup_steps=SMZ_LR_WARMUP_STEPS,
+        lr_total_steps=SMZ_LR_TOTAL_STEPS,
+        max_policy_staleness_updates=int(SMZ_MAX_POLICY_STALENESS_UPDATES),
+        vtrace_full=bool(SMZ_VTRACE_FULL),
+        vtrace_rho_clip=SMZ_VTRACE_RHO_CLIP,
+        vtrace_c_clip=SMZ_VTRACE_C_CLIP,
+    )
+    smz_scheduler = make_smz_lr_scheduler(optimizer, trainer_cfg)
+
+    # B4: EMA target for SimSiam consistency loss
+    ema_target = None
+    if float(SMZ_CONSISTENCY_W) > 0.0:
+        ema_target = SampledMuZeroEMATarget(smz_net, tau=SMZ_EMA_TAU)
+        append_agent_log(f"[SMZ][EMA] tau={SMZ_EMA_TAU} consistency_w={SMZ_CONSISTENCY_W}")
+
+    # B2: Reanalyzer for real-search policy target refresh
+    reanalyze_frac = float(SMZ_REANALYZE_FRACTION)
+    smz_reanalyzer = None
+    if reanalyze_frac > 0.0:
+        _search_for_reanalyze = SampledMuZeroSearch(
+            smz_net,
+            config=SampledMuZeroSearchConfig(
+                num_samples=max(1, int(SMZ_NUM_SAMPLES) // 2),  # fast search for reanalysis
+                discount=float(SMZ_DISCOUNT),
+                temperature=float(SMZ_SEARCH_TEMP),
+                sample_temperature=float(SMZ_SAMPLE_TEMP),
+                prior_weight=float(SMZ_PRIOR_WEIGHT),
+                dedup=SMZ_DEDUP,
+            ),
+            device=device,
+        )
+        smz_reanalyzer = GumbelMuZeroReanalyzer(
+            config=GumbelMuZeroReanalysisConfig(fast_sims=max(1, int(SMZ_NUM_SAMPLES) // 2)),
+            search=_search_for_reanalyze,
+            device=device,
+        )
+        append_agent_log(f"[SMZ][REANALYZE] fraction={reanalyze_frac} fast_samples={max(1, int(SMZ_NUM_SAMPLES) // 2)}")
+
+    policy_version = 0
+    optimize_steps = 0
+    global_step = 0
+    episodes_finished = 0
+    resume_episode_base = 0
+    if RESUME_CHECKPOINT:
+        try:
+            checkpoint = _load_checkpoint_payload(RESUME_CHECKPOINT)
+        except Exception as exc:
+            _raise_resume_error("SMZ", RESUME_CHECKPOINT, f"не удалось прочитать файл: {exc}")
+        if not isinstance(checkpoint, dict):
+            _raise_resume_error("SMZ", RESUME_CHECKPOINT, "payload не является словарём")
+        policy_state = checkpoint.get("sampled_muzero_net")
+        if not isinstance(policy_state, dict):
+            policy_state = _extract_policy_state_dict(checkpoint)
+        if not isinstance(policy_state, dict):
+            _raise_resume_error(
+                "SMZ",
+                RESUME_CHECKPOINT,
+                "в чекпойнте нет sampled_muzero_net/policy state_dict (нужен Sampled MuZero checkpoint)",
+            )
+        smz_arch = sampled_muzero_arch_from_payload(checkpoint)
+        cur_smz_arch = sampled_muzero_kwargs_from_env()
+        if smz_arch != cur_smz_arch:
+            append_agent_log(
+                f"[SMZ][RESUME][WARN] arch mismatch checkpoint={smz_arch} current={cur_smz_arch}; strict=False load"
+            )
+        try:
+            load_sampled_muzero_state_dict(
+                smz_net,
+                normalize_state_dict(policy_state),
+                log_fn=append_agent_log,
+            )
+        except Exception as exc:
+            _raise_resume_error("SMZ", RESUME_CHECKPOINT, f"не удалось загрузить веса sampled_muzero_net: {exc}")
+        opt_state = checkpoint.get("optimizer")
+        if isinstance(opt_state, dict):
+            try:
+                optimizer.load_state_dict(opt_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[SMZ][RESUME][WARN] optimizer load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_sampled_muzero). Что делать: продолжить с чистым optimizer."
+                )
+        sched_state = checkpoint.get("lr_scheduler")
+        if smz_scheduler is not None and isinstance(sched_state, dict):
+            try:
+                smz_scheduler.load_state_dict(sched_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[SMZ][RESUME][WARN] lr_scheduler load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_sampled_muzero). Что делать: продолжить без scheduler state."
+                )
+        replay_state = checkpoint.get("replay_memory")
+        if replay_state is not None:
+            try:
+                replay.load_state_dict(replay_state)
+            except Exception as exc:
+                append_agent_log(
+                    f"[SMZ][RESUME][WARN] replay load failed: {exc}. "
+                    "Где: train.py (_main_actor_learner_sampled_muzero). Что делать: продолжить с пустым буфером."
+                )
+        # Семантика totLifeT — «дополнительные игры за этот запуск» (как DQN/PPO):
+        # episodes_finished считаем с нуля, resume_episode_base — накопительная база.
+        resume_episode_base = int(checkpoint.get("episode", 0) or 0)
+        global_step = int(checkpoint.get("global_step", 0) or 0)
+        optimize_steps = int(checkpoint.get("optimize_steps", 0) or 0)
+        policy_version = int(checkpoint.get("policy_version", optimize_steps) or optimize_steps)
+        append_agent_log(
+            "[SMZ][RESUME] "
+            f"path={RESUME_CHECKPOINT} episode_base={resume_episode_base} replay={len(replay)} "
+            f"global_step={global_step} optimize_steps={optimize_steps} policy_version={policy_version}"
+        )
+
+    opponent_spec = None
+    opponent_algo_label = "heuristic"
+    opponent_source_label = "heuristic_auto"
+    opponent_agent_id = ""
+    if int(SELF_PLAY_ENABLED) == 1:
+        if OPPONENT_AGENT_ID:
+            try:
+                opponent_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
+                opponent_algo_label = str(opponent_spec.algo or "unknown")
+                opponent_source_label = "snapshot_policy_fn"
+                opponent_agent_id = str(opponent_spec.agent_id or OPPONENT_AGENT_ID)
+            except Exception as exc:
+                append_agent_log(
+                    "[SMZ][SELFPLAY][WARN] "
+                    f"Не удалось загрузить оппонента agent_id={OPPONENT_AGENT_ID}; fallback на heuristic. exc={exc}"
+                )
+        else:
+            append_agent_log("[SMZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
+
+    effective_num_actors = int(SMZ_ACTOR_EFFECTIVE_NUM_ACTORS)
+    if SMZ_ACTOR_USING_CUDA_FALLBACK:
+        append_agent_log(
+            "[SMZ][CONFIG][FALLBACK] В hyperparams указан actor_device=cuda, но PyTorch не видит GPU с CUDA "
+            f"(torch.cuda.is_available()=False, device_count={int(torch.cuda.device_count()) if hasattr(torch.cuda, 'device_count') else 0}). "
+            f"Переключаемся на CPU: actor_device=cpu, num_actors={effective_num_actors} "
+            f"(вместо cuda + num_actors={SMZ_NUM_ACTORS} + actor_max_cuda={SMZ_ACTOR_MAX_CUDA}). "
+            "Чтобы включить GPU-акторов: установите драйвер NVIDIA и PyTorch с поддержкой CUDA (cu124/cu128)."
+        )
+    elif SMZ_ACTOR_DEVICE_CUDA:
+        append_agent_log(
+            f"[SMZ][CONFIG] GPU actors: {effective_num_actors} "
+            f"(capped from num_actors={SMZ_NUM_ACTORS}, actor_max_cuda={SMZ_ACTOR_MAX_CUDA})"
+        )
+
+    append_agent_log(
+        "[SMZ][CONFIG] "
+        f"num_samples={SMZ_NUM_SAMPLES} unroll={SMZ_UNROLL_STEPS} "
+        f"batch={SMZ_BATCH_SIZE} actors={SMZ_NUM_ACTORS} effective_actors={effective_num_actors} "
+        f"replay={SMZ_REPLAY_CAPACITY} "
+        f"actor_device_req={SMZ_ACTOR_DEVICE_REQUESTED} actor_device_cuda={int(SMZ_ACTOR_DEVICE_CUDA)} "
+        f"cuda_fallback={int(SMZ_ACTOR_USING_CUDA_FALLBACK)} "
+        f"vtrace_full={int(SMZ_VTRACE_FULL)} rho_clip={SMZ_VTRACE_RHO_CLIP} c_clip={SMZ_VTRACE_C_CLIP} "
+        f"atom={SMZ_ATOM_RANGE} dedup={int(SMZ_DEDUP)} "
+        f"reanalyze={SMZ_REANALYZE_FRACTION} consistency_w={SMZ_CONSISTENCY_W} "
+        f"ema_tau={SMZ_EMA_TAU} max_grad_norm={SMZ_MAX_GRAD_NORM} "
+        f"actor_compile={int(SMZ_ACTOR_COMPILE)} learner_compile={int(SMZ_LEARNER_COMPILE)} "
+        f"outcome_only={int(SMZ_OUTCOME_ONLY)} opponent={opponent_source_label}/{opponent_algo_label}"
+    )
+
+    ep_rows: list[dict] = []
+    train_t0_summary = time.perf_counter()
+    last_checkpoint = ""
+    last_loss = 0.0
+
+    checkpoint_dir = os.path.join(MODELS_DIR, "sampled_muzero")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    sync_dir = os.path.join(MODELS_DIR, "actor_sync")
+    os.makedirs(sync_dir, exist_ok=True)
+    sync_path = os.path.join(sync_dir, "latest_smz_policy.pth")
+
+    def _save_smz_sync() -> None:
+        cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(smz_net.state_dict()).items()}
+        _torch_save_atomic(
+            {
+                "policy_version": int(policy_version),
+                "optimize_steps": int(optimize_steps),
+                "state_dict": cpu_sd,
+            },
+            sync_path,
+            label="latest_smz_policy",
+        )
+
+    def _save_checkpoint(episode_idx: int) -> str:
+        ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode_idx)}.pth")
+        payload = {
+            "algo": "sampled_muzero",
+            "sampled_muzero_net": smz_net.state_dict(),
+            "policy_net": smz_net.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "episode": int(episode_idx),
+            "episodes_finished": int(episode_idx),
+            "global_step": int(global_step),
+            "optimize_steps": int(optimize_steps),
+            "policy_version": int(policy_version),
+            "replay_memory": replay.state_dict(),
+            "env_contract": env_contract,
+            "num_actors": int(SMZ_NUM_ACTORS),
+            "arch": sampled_muzero_kwargs_from_env(),
+        }
+        if smz_scheduler is not None:
+            payload["lr_scheduler"] = smz_scheduler.state_dict()
+        torch.save(payload, ckpt_path)
+        return ckpt_path
+
+    smz_sp_cfg = SampledSelfPlayConfig(
+        temperature_opening_moves=int(SMZ_TEMP_OPENING_MOVES),
+        temperature_opening_value=float(SMZ_TEMP_OPENING),
+        temperature_late_value=float(SMZ_TEMP_LATE),
+        outcome_only=bool(SMZ_OUTCOME_ONLY),
+        outcome_value_win=float(SMZ_OUTCOME_VALUE_WIN),
+        outcome_value_loss=float(SMZ_OUTCOME_VALUE_LOSS),
+        outcome_value_draw=float(SMZ_OUTCOME_VALUE_DRAW),
+    )
+    _ = smz_sp_cfg  # передаётся акторам через sp_cfg_payload; держим для совместимости с gmz-паттерном
+
+    _save_smz_sync()
+    remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
+    ctx = mp.get_context("spawn")
+    data_q: mp.Queue = ctx.Queue(maxsize=int(SMZ_ACTOR_QUEUE_MAX))
+    procs: list = []
+
+    init_weights_cpu = {
+        k: v.detach().cpu() for k, v in normalize_state_dict(smz_net.state_dict()).items()
+    }
+    sp_cfg_payload = {
+        "temperature_opening_moves": SMZ_TEMP_OPENING_MOVES,
+        "temperature_opening_value": SMZ_TEMP_OPENING,
+        "temperature_late_value": SMZ_TEMP_LATE,
+    }
+    search_cfg_payload = {
+        "num_samples": SMZ_NUM_SAMPLES,
+        "discount": SMZ_DISCOUNT,
+        "temperature": SMZ_SEARCH_TEMP,
+        "sample_temperature": SMZ_SAMPLE_TEMP,
+        "prior_weight": SMZ_PRIOR_WEIGHT,
+        "dedup": int(SMZ_DEDUP),
+        "latent_dim": SMZ_LATENT_DIM,
+        "hidden_dim": SMZ_HIDDEN_DIM,
+        "num_layers": SMZ_NUM_LAYERS,
+        "action_embed_dim": SMZ_ACTION_EMBED_DIM,
+        "obs_dim": int(n_observations),
+        "action_sizes": list(n_actions),
+    }
+    outcome_payload = {
+        "outcome_only": SMZ_OUTCOME_ONLY,
+        "outcome_value_win": SMZ_OUTCOME_VALUE_WIN,
+        "outcome_value_loss": SMZ_OUTCOME_VALUE_LOSS,
+        "outcome_value_draw": SMZ_OUTCOME_VALUE_DRAW,
+        "policy_version": int(policy_version),
+    }
+
+    if remaining_episodes > 0:
+        for a_idx in range(int(effective_num_actors)):
+            base = int(remaining_episodes) // int(effective_num_actors)
+            rem = int(remaining_episodes) % int(effective_num_actors)
+            actor_episodes = int(base + (1 if a_idx < rem else 0))
+            if actor_episodes <= 0:
+                continue
+            p = ctx.Process(
+                target=_actor_learner_actor_entry_sampled_muzero,
+                args=(
+                    int(a_idx),
+                    int(actor_episodes),
+                    roster_config,
+                    int(b_len),
+                    int(b_hei),
+                    int(n_observations),
+                    list(n_actions),
+                    init_weights_cpu,
+                    int(SMZ_ACTOR_BATCH_SEND),
+                    data_q,
+                    int(1 if SELF_PLAY_ENABLED else 0),
+                    opponent_spec,
+                    sp_cfg_payload,
+                    search_cfg_payload,
+                    outcome_payload,
+                ),
+                daemon=True,
+            )
+            p.start()
+            procs.append(p)
+
+    done_actors = 0
+    active_actors = len(procs)
+    last_sync_opt_steps = optimize_steps
+    last_actor_det_eval_ep = 0
+    last_progress_heartbeat = time.time()
+
+    def _maybe_train_progress_heartbeat(*, force: bool = False) -> None:
+        nonlocal last_progress_heartbeat
+        now = time.time()
+        if not force and (now - last_progress_heartbeat) < TRAIN_PROGRESS_HEARTBEAT_SEC:
+            return
+        last_progress_heartbeat = now
+        _emit_train_progress_heartbeat(
+            ep_done=int(episodes_finished),
+            ep_total=int(totLifeT),
+            updates=int(optimize_steps),
+            global_step=int(global_step),
+            replay_size=int(len(replay)),
+        )
+
+    pbar = tqdm(total=int(totLifeT), initial=int(episodes_finished), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
+    while done_actors < active_actors:
+        try:
+            kind, payload = data_q.get(timeout=1.0)
+        except mp_queue.Empty:
+            _maybe_train_progress_heartbeat()
+            continue
+        if kind == "error":
+            raise RuntimeError(payload)
+        if kind == "done":
+            done_actors += 1
+            continue
+        if kind == "ep":
+            if not isinstance(payload, dict):
+                continue
+            episodes_finished += 1
+            payload["episode"] = int(episodes_finished)
+            ep_rows.append(payload)
+            metrics_obj.updateRew(float(payload.get("ep_reward", 0.0) or 0.0))
+            metrics_obj.updateEpLen(int(payload.get("ep_len", 0) or 0))
+            # TensorBoard: метрики эпизода + телеметрия (no-op, если TB выключен).
+            try:
+                from core.telemetry.tb_logger import get_tb_logger
+
+                _tb = get_tb_logger(str(run_id), algo="sampled_muzero")
+                if _tb.active:
+                    _tb.log_episode(payload, step=int(episodes_finished))
+                    _tb.log_telemetry(step=int(episodes_finished))
+            except Exception:
+                pass
+            target_n = min(int(totLifeT), int(episodes_finished))
+            if target_n > int(pbar.n):
+                pbar.update(target_n - int(pbar.n))
+            if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or (episodes_finished >= int(totLifeT)):
+                print(f"ep={episodes_finished}/{totLifeT}", flush=True)
+            log_train_episode_line(
+                payload,
+                ep=int(episodes_finished),
+                total=int(totLifeT),
+                algo="smz",
+                actor_idx=int(payload.get("actor_idx", -1) or -1),
+            )
+            _maybe_train_progress_heartbeat(force=True)
+            if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
+                last_checkpoint = _save_checkpoint(resume_episode_base + episodes_finished)
+                append_agent_log(f"[SMZ][CHECKPOINT] ep={resume_episode_base + episodes_finished} path={last_checkpoint}")
+            if (
+                ACTOR_DET_EVAL_ENABLED
+                and episodes_finished > last_actor_det_eval_ep
+                and (episodes_finished % ACTOR_DET_EVAL_EVERY_EPISODES == 0 or episodes_finished == int(totLifeT))
+            ):
+                last_actor_det_eval_ep = int(episodes_finished)
+                det_payload = _gmz_det_payload_from_rows(
+                    list(ep_rows)[-int(TRAIN_METRICS_WINDOW_EPISODES):],
+                    episode_idx=int(episodes_finished),
+                    train_loss=float(last_loss),
+                    eval_tag="train_window",
+                )
+                _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
+                det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+                learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+                opponent_side = "P2" if learner_side == "P1" else "P1"
+                _write_det_eval_data_json(
+                    run_id=str(run_id),
+                    det_plot_gui_paths=det_gui or {},
+                    model_path=str(last_checkpoint or ""),
+                    metrics_mode="train_window",
+                    extra={
+                        "algo": "sampled_muzero",
+                        "mode": "actor_learner",
+                        "learner_side": learner_side,
+                        "learner_faction": str(learner_identity.faction or "Unknown"),
+                        "opponent_side": opponent_side,
+                        "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                        "opponent_algo": str(opponent_algo_label),
+                        "opponent_source": str(opponent_source_label),
+                        "opponent_id": str(opponent_agent_id),
+                    },
+                )
+            continue
+        if kind != "rollout":
+            continue
+        if not isinstance(payload, dict):
+            continue
+        raw_transitions = payload.get("transitions")
+        if not isinstance(raw_transitions, list) or not raw_transitions:
+            continue
+        transitions: list[GMZTransition] = []
+        for raw in raw_transitions:
+            if not isinstance(raw, dict):
+                continue
+            pi_raw = raw.get("policy_targets", [])
+            if not isinstance(pi_raw, list):
+                continue
+            beh_raw = raw.get("behavior_logits", [])
+            masks_raw = raw.get("legal_masks_by_head", [])
+            transitions.append(
+                GMZTransition(
+                    state=np.asarray(raw.get("state", []), dtype=np.float32),
+                    action=np.asarray(raw.get("action", []), dtype=np.int64),
+                    reward=float(raw.get("reward", 0.0) or 0.0),
+                    done=bool(raw.get("done", False)),
+                    policy_targets=[np.asarray(p, dtype=np.float32) for p in pi_raw],
+                    behavior_logits=[
+                        np.asarray(b, dtype=np.float32)
+                        for b in (beh_raw if isinstance(beh_raw, list) else [])
+                    ],
+                    legal_masks_by_head=[
+                        np.asarray(m, dtype=np.float32)
+                        for m in (masks_raw if isinstance(masks_raw, list) else [])
+                    ],
+                    value_target=float(raw.get("value_target", 0.0) or 0.0),
+                    policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
+                )
+            )
+        if not transitions:
+            continue
+        replay.push_many(transitions)
+        global_step += len(transitions)
+        for _ in range(int(SMZ_UPDATES_PER_ROLLOUT)):
+            if len(replay) < max(int(SMZ_REPLAY_MIN_SIZE), int(SMZ_BATCH_SIZE)):
+                break
+            update_info = train_sampled_muzero_step(
+                net=smz_net,
+                optimizer=optimizer,
+                replay=replay,
+                config=trainer_cfg,
+                device=device,
+                current_policy_version=int(policy_version),
+                scheduler=smz_scheduler,
+                ema_target=ema_target,
+            )
+            if update_info is None:
+                continue
+            optimize_steps += 1
+            policy_version += 1
+            last_loss = float(update_info.get("loss", 0.0) or 0.0)
+            metrics_obj.updateLoss(float(last_loss))
+            # TensorBoard: тренировочные лоссы MuZero (no-op, если TB выключен).
+            try:
+                from core.telemetry.tb_logger import get_tb_logger
+
+                _tb = get_tb_logger(str(run_id), algo="sampled_muzero")
+                if _tb.active:
+                    _tb_metrics = {
+                        "loss": float(last_loss),
+                        "policy_loss": float(update_info.get("policy_loss", 0.0) or 0.0),
+                        "value_loss": float(update_info.get("value_loss", 0.0) or 0.0),
+                        "reward_loss": float(update_info.get("reward_loss", 0.0) or 0.0),
+                        "lr": float(optimizer.param_groups[0]["lr"]),
+                    }
+                    _tb.log_train(_tb_metrics, step=int(optimize_steps))
+            except Exception:
+                pass
+            # B2: Periodic reanalysis — refresh policy targets with real search
+            if (
+                smz_reanalyzer is not None
+                and float(reanalyze_frac) > 0.0
+                and optimize_steps > 0
+                and (optimize_steps % max(1, int(1.0 / float(reanalyze_frac)))) == 0
+            ):
+                n_reanalyzed = smz_reanalyzer.update_replay_with_reanalysis(replay, smz_net)
+                if n_reanalyzed > 0:
+                    append_agent_log(f"[SMZ][REANALYZE] step={optimize_steps} updated={n_reanalyzed}")
+            append_agent_log(
+                "[SMZ][UPDATE] "
+                f"step={optimize_steps} policy_version={policy_version} "
+                f"loss={float(update_info.get('loss', 0.0)):.6f} "
+                f"policy_loss={float(update_info.get('policy_loss', 0.0)):.6f} "
+                f"value_loss={float(update_info.get('value_loss', 0.0)):.6f} "
+                f"reward_loss={float(update_info.get('reward_loss', 0.0)):.6f} replay={len(replay)}"
+            )
+            if optimize_steps - last_sync_opt_steps >= int(SMZ_SYNC_EVERY_UPDATES):
+                _save_smz_sync()
+                last_sync_opt_steps = int(optimize_steps)
+            _maybe_train_progress_heartbeat()
+
+    pbar.close()
+    _save_smz_sync()
+    for p in procs:
+        try:
+            p.join(timeout=2.0)
+        except Exception:
+            pass
+
+    if not last_checkpoint:
+        last_checkpoint = _save_checkpoint(int(resume_episode_base + (episodes_finished or totLifeT)))
+        append_agent_log(f"[SMZ][CHECKPOINT] final path={last_checkpoint}")
+
+    if ep_rows:
+        save_extra_metrics(
+            run_id=run_id,
+            ep_rows=ep_rows,
+            metrics_dir=METRICS_DIR,
+            write_legacy_gui_plots=False,
+        )
+        save_heuristic_metrics_snapshot(run_id=run_id, ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+        # Финальный снапшот метрик (окно тренировки) для надёжной привязки GUI к run_id.
+        det_payload = _gmz_det_payload_from_rows(
+            list(ep_rows)[-int(TRAIN_METRICS_WINDOW_EPISODES):],
+            episode_idx=int(max(episodes_finished, 1)),
+            train_loss=float(last_loss),
+            eval_tag="train_window",
+        )
+        _save_actor_det_eval_snapshot(run_id=str(run_id), payload=det_payload, metrics_dir=METRICS_DIR)
+        det_gui = save_actor_det_eval_plot(run_id=str(run_id), metrics_dir=METRICS_DIR)
+        if det_gui:
+            learner_side = str(learner_identity.side or "P1").strip().upper() or "P1"
+            opponent_side = "P2" if learner_side == "P1" else "P1"
+            _write_det_eval_data_json(
+                run_id=str(run_id),
+                det_plot_gui_paths=det_gui,
+                model_path=str(last_checkpoint or ""),
+                metrics_mode="train_window",
+                extra={
+                    "algo": "sampled_muzero",
+                    "mode": "actor_learner",
+                    "learner_side": learner_side,
+                    "learner_faction": str(learner_identity.faction or "Unknown"),
+                    "opponent_side": opponent_side,
+                    "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                    "opponent_algo": str(opponent_algo_label),
+                    "opponent_source": str(opponent_source_label),
+                    "opponent_id": str(opponent_agent_id),
+                },
+            )
+        else:
+            _write_det_eval_data_json(
+                run_id=str(run_id),
+                det_plot_gui_paths={},
+                model_path=str(last_checkpoint or ""),
+                metrics_mode="train_window",
+                extra={"algo": "sampled_muzero", "mode": "actor_learner", "det_eval_note": "нет точек DET-eval"},
+            )
+        append_agent_log(f"[SMZ][METRICS] saved run_id={run_id}")
+        _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
+
+    final_episode = int(resume_episode_base + episodes_finished)
+    final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
+    save_agent_artifact(
+        identity=learner_identity,
+        agent_id=final_agent_id,
+        env_contract=env_contract,
+        policy_state_dict=normalize_state_dict(smz_net.state_dict()),
+        target_state_dict={},
+        optimizer_state_dict=optimizer.state_dict(),
+        extra_meta={
+            "algo": "sampled_muzero",
+            "episode": int(final_episode),
+            "source_model_path": str(last_checkpoint or ""),
+            "mode": "actor_learner",
+            "num_actors": int(SMZ_NUM_ACTORS),
+            "policy_version": int(policy_version),
+        },
+    )
+    append_agent_log(
+        "[SMZ][ACTOR_LEARNER] done "
+        f"episodes={final_episode}/{resume_episode_base + int(totLifeT)} checkpoint={last_checkpoint} "
+        f"global_step={global_step} updates={optimize_steps} replay={len(replay)}"
+    )
+
 
 if __name__ == "__main__":
     mp.freeze_support()
