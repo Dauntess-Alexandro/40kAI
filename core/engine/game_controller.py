@@ -486,19 +486,19 @@ class GameController:
             env, model, enemy, checkpoint = self._load_game()
 
             if os.getenv("PLAY_NO_EXPLORATION", "0") == "1" or os.getenv("FORCE_GREEDY", "0") == "1":
-                self._io.log("[MODEL] Viewer запущен в greedy-режиме: exploration отключен (epsilon=0).")
+                self._io.log("[MODEL] Viewer: exploration отключен (epsilon=0); режим инференса указан ниже.")
 
             env.io = self._io
             env.playType = True
-            az_play_mode = str(os.getenv("AZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+            az_play_mode = str(os.getenv("AZ_PLAY_MODE", "mcts")).strip().lower() or "mcts"
             if az_play_mode not in {"greedy", "mcts"}:
-                az_play_mode = "greedy"
-            gmz_play_mode = str(os.getenv("GMZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+                az_play_mode = "mcts"
+            gmz_play_mode = str(os.getenv("GMZ_PLAY_MODE", "search")).strip().lower() or "search"
             if gmz_play_mode not in {"greedy", "search"}:
-                gmz_play_mode = "greedy"
-            gaz_play_mode = str(os.getenv("GAZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+                gmz_play_mode = "search"
+            gaz_play_mode = str(os.getenv("GAZ_PLAY_MODE", "gumbel")).strip().lower() or "gumbel"
             if gaz_play_mode not in {"greedy", "gumbel"}:
-                gaz_play_mode = "greedy"
+                gaz_play_mode = "gumbel"
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -692,7 +692,7 @@ class GameController:
                             policy_net,
                             num_simulations=max(1, int(os.getenv("GAZ_PLAY_SIMS", "32"))),
                             num_considered_actions=max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8"))),
-                            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1",
+                            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
                             device=state_tensor.device,
                         )
                         _pi, selected, _value = search.run(

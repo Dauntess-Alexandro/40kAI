@@ -162,20 +162,25 @@ def build_policy_fn(
         net = make_alphazero_net(n_obs, n_actions).to(torch.device("cpu"))
         load_alphazero_state_dict(net, normalize_state_dict(opponent.policy_state))
         net.eval()
-        az_eval_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
+        az_eval_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts")).strip().lower() or "mcts"
         if az_eval_mode not in {"greedy", "mcts"}:
-            az_eval_mode = "greedy"
+            az_eval_mode = "mcts"
         mcts = None
-        if is_gumbel_az_algo(opponent.algo) and str(os.getenv("GAZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() == "gumbel":
+        gaz_opponent_mode = str(os.getenv("GAZ_EVAL_OPPONENT_MODE", "gumbel")).strip().lower() or "gumbel"
+        if gaz_opponent_mode not in {"greedy", "gumbel"}:
+            gaz_opponent_mode = "gumbel"
+        if is_gumbel_az_algo(opponent.algo) and gaz_opponent_mode == "gumbel":
             # Оппонент gumbel_az в Gumbel-режиме: тот же контракт run() → переиспользуем _policy_fn ниже.
             mcts = build_gumbel_inference_search(
                 net,
                 num_simulations=max(1, int(os.getenv("GAZ_EVAL_SIMS", "32"))),
                 num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
-                joint_action=str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1",
+                joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
                 device=torch.device("cpu"),
             )
             az_eval_mode = "mcts"
+        elif is_gumbel_az_algo(opponent.algo):
+            az_eval_mode = "greedy"
         elif az_eval_mode == "mcts":
             mcts_mode = az_mcts_mode_from_payload(opponent.algo)
             mcts_cfg = MCTSConfig(

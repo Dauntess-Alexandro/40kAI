@@ -138,8 +138,8 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
 
 ## Секция 3 — Реестр агентов + eval / play / Viewer (`reuse`)
 
-**Принцип:** `gumbel_az`-модель = обычная AZ-сеть; eval/play грузят и играют greedy. Gumbel-поиск на
-инференсе — будущее.
+**Принцип:** `gumbel_az`-модель = обычная AZ-сеть; eval/play/Viewer по умолчанию играют через
+GAZ Search (`GAZ_*`), а Greedy остаётся быстрым fallback/baseline.
 
 - **3.1 `core/engine/agent_registry.py`:** `gumbel_az` → `_VALID_AGENT_ALGOS`. Веса не отличить от AZ
   (`infer_algo_from_policy_state` → `alphazero_tree`), поэтому **`meta.algo` авторитетен** (как у PPO):
@@ -147,12 +147,11 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
   Включить `gumbel_az` в `collect_registered_agents_meta`.
 - **3.2 `eval.py`:** ветки загрузки сети с `is_az_algo` → `is_alphazero_net_algo` (грузить через
   `make_alphazero_net` + `load_alphazero_state_dict`, ключ `policy_value_net`, `arch` из payload). Выбор
-  действия — дефолт greedy (`net.infer` + argmax), детерминированно при `FORCE_GREEDY=1`.
+  действия для `gumbel_az` — дефолт Gumbel Search; Greedy (`net.infer` + argmax) остаётся отдельным режимом.
 - **3.3 `core/engine/game_controller.py` и `play.py`:** те же гейты → `is_alphazero_net_algo`; чекпойнт
-  пересобирается с ключом `policy_value_net`; `AZ_PLAY_MODE` дефолт greedy; `mcts`-форс отрабатывает
-  обычным AZ-PUCT как безопасный фолбэк.
+  пересобирается с ключом `policy_value_net`; `GAZ_PLAY_MODE` дефолт `gumbel`, `GAZ_JOINT_ACTION` дефолт 1.
 - **3.4 `core/models/opponent_adapter.py`:** гейт → `is_alphazero_net_algo`, чтобы `gumbel_az` можно было
-  выбрать противником (greedy по умолчанию).
+  выбрать противником (Gumbel Search по умолчанию, Greedy по явному выбору).
 - **3.5 Аудит call-sites `is_az_algo`:** пройти все точки (eval.py, game_controller.py, play.py,
   opponent_adapter.py) и для каждой решить — «семейство сети/чекпойнта» (→ `is_alphazero_net_algo`) или
   «именно PUCT-MCTS-режим» (→ оставить `is_az_algo`), чтобы не сломать AZ tree/proxy.
@@ -229,7 +228,8 @@ balanced). Распределёнка/ПК2 — **не в v1**, но швы (hyp
 - **6.5 GUI** (`tests/gui_qt/test_gaz_hyperparams_load.py`): `_load_gaz_hyperparams_section` сохраняет
   строковый host, приводит int, фолбэчит битые значения; `apply_gaz_profile` ставит fast/balanced/heavy и
   сохраняет inference-ключи; `gumbel_az` в `_training_algo_options`.
-- **6.6 eval/play smoke:** чекпойнт `gumbel_az` грузится по пути `is_alphazero_net_algo`, greedy работает.
+- **6.6 eval/play smoke:** чекпойнт `gumbel_az` грузится по пути `is_alphazero_net_algo`, GAZ Search и
+  Greedy работают.
 
 ### Логи
 В train-цикле для `gumbel_az` префикс `[GAZ]` (вместо `[AZ]`) на ключевых строках: `[GAZ][CONFIG]`,
@@ -251,4 +251,4 @@ generic `AZ_MCTS_*` (которые для gumbel_az остаются дефол
 ## Вне scope v1 (явно)
 - ПК2 / распределённые акторы / remote inference server для `gumbel_az` (швы заложены, включение позже).
 - Варианты B (joint-action SH) и C (полное дерево depth>1).
-- Полноценный Gumbel-поиск на инференсе (eval/play/Viewer) — пока greedy-reuse.
+- Глубокое дерево GAZ depth>1 и параллельные env-clone rollout'ы для инференса.

@@ -30,7 +30,7 @@ from core.engine.mission import (
     post_deploy_setup,
 )
 from core.envs.warhamEnv import roll_off_attacker_defender
-from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo
+from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumbel_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.DQN import DQN
@@ -252,17 +252,20 @@ def select_action_with_epsilon_ppo(env, state, policy_net, epsilon, len_model):
     return actions.to("cpu")
 
 
-def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_model):
+def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_model, *, algo: str = ""):
     masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
-    # Gumbel-поиск на инференсе (gumbel_az): отдельный режим, дефолт greedy.
-    gaz_eval_mode = str(os.getenv("GAZ_EVAL_MODE", "greedy")).strip().lower() or "greedy"
-    if gaz_eval_mode == "gumbel":
+    algo_key = str(algo or "").strip().lower()
+    # Gumbel-поиск на инференсе применяем только для gumbel_az, хотя сеть общая с AlphaZero.
+    gaz_eval_mode = str(os.getenv("GAZ_EVAL_MODE", "gumbel")).strip().lower() or "gumbel"
+    if gaz_eval_mode not in {"greedy", "gumbel"}:
+        gaz_eval_mode = "gumbel"
+    if is_gumbel_az_algo(algo_key) and gaz_eval_mode == "gumbel":
         legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
         search = build_gumbel_inference_search(
             policy_net,
             num_simulations=max(1, int(os.getenv("GAZ_EVAL_SIMS", "32"))),
             num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
-            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1",
+            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
             device=state.device,
         )
         _pi, selected, _value = search.run(
@@ -274,9 +277,13 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
             enemy_policy_fn=None,
         )
         return torch.tensor([[int(a) for a in selected]], device="cpu")
-    az_eval_mode = str(os.getenv("AZ_EVAL_MODE", os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy"))).strip().lower() or "greedy"
+    az_eval_mode = (
+        "greedy"
+        if is_gumbel_az_algo(algo_key)
+        else str(os.getenv("AZ_EVAL_MODE", os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts"))).strip().lower() or "mcts"
+    )
     if az_eval_mode not in {"greedy", "mcts"}:
-        az_eval_mode = "greedy"
+        az_eval_mode = "mcts"
     if az_eval_mode == "mcts":
         legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
         mcts = AlphaZeroFactorizedMCTS(
@@ -672,6 +679,7 @@ def run_episode(
                 policy_net,
                 epsilon,
                 len(model_units),
+                algo=algo,
             )
         elif algo == "gumbel_muzero":
             action = select_action_with_epsilon_gumbel_muzero(
@@ -1096,10 +1104,24 @@ def main():
         policy_net.eval()
         target_net.eval()
 
-    az_eval_mode = str(os.getenv("AZ_EVAL_MODE", "greedy")).strip().lower() or "greedy"
-    az_opp_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "greedy")).strip().lower() or "greedy"
+    az_eval_mode = str(os.getenv("AZ_EVAL_MODE", "mcts")).strip().lower() or "mcts"
+    az_opp_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts")).strip().lower() or "mcts"
     gmz_eval_mode = str(os.getenv("GMZ_EVAL_MODE", "search")).strip().lower() or "search"
     gmz_opp_mode = str(os.getenv("GMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
+    gaz_eval_mode = str(os.getenv("GAZ_EVAL_MODE", "gumbel")).strip().lower() or "gumbel"
+    gaz_opp_mode = str(os.getenv("GAZ_EVAL_OPPONENT_MODE", "gumbel")).strip().lower() or "gumbel"
+    if az_eval_mode not in {"greedy", "mcts"}:
+        az_eval_mode = "mcts"
+    if az_opp_mode not in {"greedy", "mcts"}:
+        az_opp_mode = "mcts"
+    if gmz_eval_mode not in {"greedy", "search"}:
+        gmz_eval_mode = "search"
+    if gmz_opp_mode not in {"greedy", "search"}:
+        gmz_opp_mode = "search"
+    if gaz_eval_mode not in {"greedy", "gumbel"}:
+        gaz_eval_mode = "gumbel"
+    if gaz_opp_mode not in {"greedy", "gumbel"}:
+        gaz_opp_mode = "gumbel"
     mode_parts: list[str] = []
     if is_az_algo(algo) or is_az_algo(opponent_algo_label):
         az_eval_tail = f"az_eval_mode={az_eval_mode}"
@@ -1123,6 +1145,15 @@ def main():
             )
         mode_parts.append(gmz_eval_tail)
         mode_parts.append(gmz_opp_tail)
+    if is_gumbel_az_algo(algo) or is_gumbel_az_algo(opponent_algo_label):
+        gaz_eval_tail = f"gaz_eval_mode={gaz_eval_mode}"
+        gaz_opp_tail = f"gaz_opponent_mode={gaz_opp_mode}"
+        if is_gumbel_az_algo(algo) and gaz_eval_mode == "gumbel":
+            gaz_eval_tail += f"(temp={float(os.getenv('GAZ_EVAL_TEMPERATURE', '0.05')):.3f})"
+        if is_gumbel_az_algo(opponent_algo_label) and gaz_opp_mode == "gumbel":
+            gaz_opp_tail += f"(temp={float(os.getenv('GAZ_EVAL_TEMPERATURE', '0.05')):.3f})"
+        mode_parts.append(gaz_eval_tail)
+        mode_parts.append(gaz_opp_tail)
     modes_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
     log(
         f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "

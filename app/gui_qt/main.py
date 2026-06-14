@@ -113,6 +113,28 @@ from theme.loader import ThemeTokenError, load_tokens_flat_for_qml
 _GUI_CONTROLLER_REF = None
 
 
+def _default_inference_mode_for_algo(algo: str) -> str:
+    key = str(algo or "").strip().lower()
+    if is_az_algo(key):
+        return "mcts"
+    if key == "gumbel_muzero":
+        return "search"
+    if is_gumbel_az_algo(key):
+        return "gumbel"
+    return "greedy"
+
+
+def _valid_inference_modes_for_algo(algo: str) -> set[str]:
+    key = str(algo or "").strip().lower()
+    if is_az_algo(key):
+        return {"greedy", "mcts"}
+    if key == "gumbel_muzero":
+        return {"greedy", "search"}
+    if is_gumbel_az_algo(key):
+        return {"greedy", "gumbel"}
+    return {"greedy"}
+
+
 @dataclass
 class RosterEntry:
     name: str
@@ -301,9 +323,9 @@ class GUIController(QtCore.QObject):
         self._play_model_algo_key = ""
         self._play_model_checkpoint_label = "Checkpoint: —"
         self._play_agent_override_id = ""
-        self._play_az_mode = "greedy"
-        self._play_gmz_mode = "greedy"
-        self._play_gaz_mode = "greedy"
+        self._play_az_mode = "mcts"
+        self._play_gmz_mode = "search"
+        self._play_gaz_mode = "gumbel"
         self._play_az_temperature = 0.06
         self._play_gmz_temperature = 0.10
         self._play_gaz_temperature = 0.05
@@ -335,8 +357,8 @@ class GUIController(QtCore.QObject):
         self._eval_p2_full_agent_id = ""
         self._eval_p1_badges: list[str] = []
         self._eval_p2_badges: list[str] = []
-        self._eval_p1_inference_mode = "greedy"
-        self._eval_p2_inference_mode = "greedy"
+        self._eval_p1_inference_mode = "mcts"
+        self._eval_p2_inference_mode = "mcts"
         self._eval_p1_az_temperature = 0.06
         self._eval_p2_az_temperature = 0.06
         self._eval_p1_gmz_temperature = 0.10
@@ -1187,29 +1209,29 @@ class GUIController(QtCore.QObject):
     def playInferenceModeOptions(self):
         if is_az_algo(self._play_model_algo_key):
             return [
-                {"value": "greedy", "label": "Greedy"},
                 {"value": "mcts", "label": "MCTS"},
+                {"value": "greedy", "label": "Greedy"},
             ]
         if self._play_model_algo_key == "gumbel_muzero":
             return [
-                {"value": "greedy", "label": "Greedy"},
                 {"value": "search", "label": "Search"},
+                {"value": "greedy", "label": "Greedy"},
             ]
         if is_gumbel_az_algo(self._play_model_algo_key):
             return [
-                {"value": "greedy", "label": "Greedy"},
                 {"value": "gumbel", "label": "Search"},
+                {"value": "greedy", "label": "Greedy"},
             ]
         return []
 
     @QtCore.Property(str, notify=playModelMetaChanged)
     def playInferenceMode(self) -> str:
         if is_az_algo(self._play_model_algo_key):
-            return self._play_az_mode
+            return self._play_az_mode if self._play_az_mode in {"greedy", "mcts"} else "mcts"
         if self._play_model_algo_key == "gumbel_muzero":
-            return self._play_gmz_mode
+            return self._play_gmz_mode if self._play_gmz_mode in {"greedy", "search"} else "search"
         if is_gumbel_az_algo(self._play_model_algo_key):
-            return self._play_gaz_mode
+            return self._play_gaz_mode if self._play_gaz_mode in {"greedy", "gumbel"} else "gumbel"
         return "greedy"
 
     @QtCore.Property(bool, notify=playModelMetaChanged)
@@ -1325,18 +1347,18 @@ class GUIController(QtCore.QObject):
         algo_key = str(algo or "").strip().lower()
         if is_az_algo(algo_key):
             return [
-                {"value": "greedy", "label": "Greedy"},
                 {"value": "mcts", "label": "MCTS"},
+                {"value": "greedy", "label": "Greedy"},
             ]
         if algo_key == "gumbel_muzero":
             return [
-                {"value": "greedy", "label": "Greedy"},
                 {"value": "search", "label": "Search"},
+                {"value": "greedy", "label": "Greedy"},
             ]
         if is_gumbel_az_algo(algo_key):
             return [
-                {"value": "greedy", "label": "Greedy"},
                 {"value": "gumbel", "label": "Search"},
+                {"value": "greedy", "label": "Greedy"},
             ]
         return []
 
@@ -1358,11 +1380,15 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1InferenceMode(self) -> str:
-        return str(self._eval_p1_inference_mode or "greedy")
+        algo = self._eval_side_algo_key("P1")
+        mode = str(self._eval_p1_inference_mode or "").strip().lower()
+        return mode if mode in _valid_inference_modes_for_algo(algo) else _default_inference_mode_for_algo(algo)
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP2InferenceMode(self) -> str:
-        return str(self._eval_p2_inference_mode or "greedy")
+        algo = self._eval_side_algo_key("P2")
+        mode = str(self._eval_p2_inference_mode or "").strip().lower()
+        return mode if mode in _valid_inference_modes_for_algo(algo) else _default_inference_mode_for_algo(algo)
 
     def _eval_side_temp_visible(self, side: str) -> bool:
         algo = self._eval_side_algo_key(side)
@@ -2484,6 +2510,7 @@ class GUIController(QtCore.QObject):
         if policy == self._eval_p1_policy:
             return
         self._eval_p1_policy = policy
+        self._ensure_eval_inference_defaults()
         self._update_eval_matchup_text()
         self.evalSetupChanged.emit()
 
@@ -2495,6 +2522,7 @@ class GUIController(QtCore.QObject):
         if policy == self._eval_p2_policy:
             return
         self._eval_p2_policy = policy
+        self._ensure_eval_inference_defaults()
         self._update_eval_matchup_text()
         self.evalSetupChanged.emit()
 
@@ -2503,6 +2531,7 @@ class GUIController(QtCore.QObject):
         text = str(label or "").strip()
         if not text:
             self._eval_selected_p1_agent_id = ""
+            self._ensure_eval_inference_defaults()
             self._update_eval_matchup_text()
             self.evalSetupChanged.emit()
             return
@@ -2514,6 +2543,7 @@ class GUIController(QtCore.QObject):
             selected = self._eval_p1_agent_ids[idx]
             if selected != self._eval_selected_p1_agent_id:
                 self._eval_selected_p1_agent_id = selected
+                self._ensure_eval_inference_defaults()
                 self._update_eval_matchup_text()
                 self.evalSetupChanged.emit()
 
@@ -2522,6 +2552,7 @@ class GUIController(QtCore.QObject):
         text = str(label or "").strip()
         if not text:
             self._eval_selected_p2_agent_id = ""
+            self._ensure_eval_inference_defaults()
             self._update_eval_matchup_text()
             self.evalSetupChanged.emit()
             return
@@ -2533,6 +2564,7 @@ class GUIController(QtCore.QObject):
             selected = self._eval_p2_agent_ids[idx]
             if selected != self._eval_selected_p2_agent_id:
                 self._eval_selected_p2_agent_id = selected
+                self._ensure_eval_inference_defaults()
                 self._update_eval_matchup_text()
                 self.evalSetupChanged.emit()
 
@@ -2542,7 +2574,7 @@ class GUIController(QtCore.QObject):
         algo = self._eval_side_algo_key("P1")
         allowed = {str(item.get("value", "")).strip().lower() for item in self._eval_inference_options_for_algo(algo)}
         if mode not in allowed:
-            mode = "greedy"
+            mode = _default_inference_mode_for_algo(algo)
         if mode == self._eval_p1_inference_mode:
             return
         self._eval_p1_inference_mode = mode
@@ -2555,7 +2587,7 @@ class GUIController(QtCore.QObject):
         algo = self._eval_side_algo_key("P2")
         allowed = {str(item.get("value", "")).strip().lower() for item in self._eval_inference_options_for_algo(algo)}
         if mode not in allowed:
-            mode = "greedy"
+            mode = _default_inference_mode_for_algo(algo)
         if mode == self._eval_p2_inference_mode:
             return
         self._eval_p2_inference_mode = mode
@@ -2635,7 +2667,7 @@ class GUIController(QtCore.QObject):
         mode = str(value or "").strip().lower()
         if is_az_algo(self._play_model_algo_key):
             if mode not in {"greedy", "mcts"}:
-                mode = "greedy"
+                mode = "mcts"
             if mode == self._play_az_mode:
                 return
             self._play_az_mode = mode
@@ -2644,7 +2676,7 @@ class GUIController(QtCore.QObject):
             return
         if self._play_model_algo_key == "gumbel_muzero":
             if mode not in {"greedy", "search"}:
-                mode = "greedy"
+                mode = "search"
             if mode == self._play_gmz_mode:
                 return
             self._play_gmz_mode = mode
@@ -2653,7 +2685,7 @@ class GUIController(QtCore.QObject):
             return
         if is_gumbel_az_algo(self._play_model_algo_key):
             if mode not in {"greedy", "gumbel"}:
-                mode = "greedy"
+                mode = "gumbel"
             if mode == self._play_gaz_mode:
                 return
             self._play_gaz_mode = mode
@@ -3078,8 +3110,20 @@ class GUIController(QtCore.QObject):
         if self._eval_p2_policy == "agent" and not self._eval_selected_p2_agent_id:
             self._eval_p2_policy = "heuristic"
 
+        self._ensure_eval_inference_defaults()
+
         self._update_eval_matchup_text()
         self.evalSetupChanged.emit()
+
+    def _ensure_eval_inference_defaults(self) -> None:
+        p1_algo = self._eval_side_algo_key("P1")
+        p2_algo = self._eval_side_algo_key("P2")
+        p1_mode = str(self._eval_p1_inference_mode or "").strip().lower()
+        p2_mode = str(self._eval_p2_inference_mode or "").strip().lower()
+        if p1_mode not in _valid_inference_modes_for_algo(p1_algo):
+            self._eval_p1_inference_mode = _default_inference_mode_for_algo(p1_algo)
+        if p2_mode not in _valid_inference_modes_for_algo(p2_algo):
+            self._eval_p2_inference_mode = _default_inference_mode_for_algo(p2_algo)
 
     def _extract_epoch_tag(self, agent_id: str) -> str:
         text = str(agent_id or "")
@@ -3170,7 +3214,7 @@ class GUIController(QtCore.QObject):
         else:
             self._eval_scenario_text = "Сценарий: обе стороны эвристика (недоступно для запуска)."
 
-        self._eval_mini_summary = f"Игр: {self._eval_games} • deterministic • epsilon=0 • AZ-opponent=greedy"
+        self._eval_mini_summary = f"Игр: {self._eval_games} • deterministic • epsilon=0 • AZ/GMZ/GAZ search по умолчанию"
         self._eval_matchup_text = (
             f"{self._eval_p1_display_name}\n"
             f"{self._eval_p2_display_name}\n"
@@ -4784,6 +4828,7 @@ class GUIController(QtCore.QObject):
         opponent_agent_id = str(cfg.get("opponent_agent_id", "")).strip()
         learner_side = str(cfg.get("learner_side", "P1")).strip().upper() or "P1"
         opponent_side = "P2" if learner_side == "P1" else "P1"
+        self._ensure_eval_inference_defaults()
         learner_algo = self._eval_side_algo_key(learner_side)
         opponent_algo = self._eval_side_algo_key(opponent_side)
         learner_mode = self._eval_p1_inference_mode if learner_side == "P1" else self._eval_p2_inference_mode
@@ -4831,8 +4876,8 @@ class GUIController(QtCore.QObject):
         env.insert("LEARNER_SIDE", learner_side)
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
         env.insert("LEAGUE_ENABLE", "1")
-        az_eval_mode = learner_mode if is_az_algo(learner_algo) and learner_mode in {"greedy", "mcts"} else "greedy"
-        az_opponent_mode = "greedy"
+        az_eval_mode = learner_mode if is_az_algo(learner_algo) and learner_mode in {"greedy", "mcts"} else "mcts"
+        az_opponent_mode = "mcts"
         if is_az_algo(opponent_algo) and opponent_mode in {"greedy", "mcts"}:
             az_opponent_mode = opponent_mode
         env.insert("AZ_EVAL_MODE", az_eval_mode)
@@ -4846,19 +4891,19 @@ class GUIController(QtCore.QObject):
                 env.insert("AZ_EVAL_OPPONENT_MCTS_SIMS", str(self._eval_side_search_sims(opponent_side)))
             env.insert("AZ_EVAL_MCTS_DIR_EPS", "0.0")
         env.insert("GMZ_EVAL_ROOT_TOP_K", "8")
-        gmz_eval_mode = learner_mode if learner_algo == "gumbel_muzero" and learner_mode in {"greedy", "search"} else "greedy"
-        gmz_opponent_mode = opponent_mode if opponent_algo == "gumbel_muzero" and opponent_mode in {"greedy", "search"} else "greedy"
+        gmz_eval_mode = learner_mode if learner_algo == "gumbel_muzero" and learner_mode in {"greedy", "search"} else "search"
+        gmz_opponent_mode = opponent_mode if opponent_algo == "gumbel_muzero" and opponent_mode in {"greedy", "search"} else "search"
         env.insert("GMZ_EVAL_MODE", gmz_eval_mode)
         env.insert("GMZ_OPPONENT_MODE", gmz_opponent_mode)
-        gaz_eval_mode = learner_mode if is_gumbel_az_algo(learner_algo) and learner_mode in {"greedy", "gumbel"} else "greedy"
-        gaz_opponent_mode = opponent_mode if is_gumbel_az_algo(opponent_algo) and opponent_mode in {"greedy", "gumbel"} else "greedy"
+        gaz_eval_mode = learner_mode if is_gumbel_az_algo(learner_algo) and learner_mode in {"greedy", "gumbel"} else "gumbel"
+        gaz_opponent_mode = opponent_mode if is_gumbel_az_algo(opponent_algo) and opponent_mode in {"greedy", "gumbel"} else "gumbel"
         env.insert("GAZ_EVAL_MODE", gaz_eval_mode)
         env.insert("GAZ_EVAL_OPPONENT_MODE", gaz_opponent_mode)
         if gaz_eval_mode == "gumbel" or gaz_opponent_mode == "gumbel":
             _gaz_sims_side = learner_side if gaz_eval_mode == "gumbel" else opponent_side
             env.insert("GAZ_EVAL_SIMS", str(self._eval_side_search_sims(_gaz_sims_side)))
             env.insert("GAZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(_gaz_sims_side):.3f}")
-            env.insert("GAZ_JOINT_ACTION", "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0")
+            env.insert("GAZ_JOINT_ACTION", "1" if int(self._gaz_hyperparams.get("joint_action", 1)) == 1 else "0")
         if learner_algo == "gumbel_muzero" and gmz_eval_mode == "search":
             env.insert("GMZ_EVAL_SIMS", str(self._eval_side_search_sims(learner_side)))
             env.insert("GMZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
@@ -4915,6 +4960,21 @@ class GUIController(QtCore.QObject):
                 )
             mode_parts.append(gmz_eval_tail)
             mode_parts.append(gmz_opp_tail)
+        if is_gumbel_az_algo(learner_algo) or is_gumbel_az_algo(opponent_algo):
+            gaz_eval_tail = f"GAZ-eval={gaz_eval_mode}"
+            gaz_opp_tail = f"GAZ-opponent={gaz_opponent_mode}"
+            if is_gumbel_az_algo(learner_algo) and gaz_eval_mode == "gumbel":
+                gaz_eval_tail += (
+                    f"(sims={self._eval_side_search_sims(learner_side)},"
+                    f"temp={self._eval_side_temperature(learner_side):.2f},joint={int(self._gaz_hyperparams.get('joint_action', 1))})"
+                )
+            if is_gumbel_az_algo(opponent_algo) and gaz_opponent_mode == "gumbel":
+                gaz_opp_tail += (
+                    f"(sims={self._eval_side_search_sims(opponent_side)},"
+                    f"temp={self._eval_side_temperature(opponent_side):.2f},joint={int(self._gaz_hyperparams.get('joint_action', 1))})"
+                )
+            mode_parts.append(gaz_eval_tail)
+            mode_parts.append(gaz_opp_tail)
         mode_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
         eval_start_msg = (
             f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
@@ -4971,7 +5031,7 @@ class GUIController(QtCore.QObject):
             if self._play_gaz_mode == "gumbel":
                 env["GAZ_PLAY_TEMPERATURE"] = f"{float(self._play_gaz_temperature):.3f}"
                 env["GAZ_PLAY_SIMS"] = str(int(self._play_gaz_sims))
-                env["GAZ_JOINT_ACTION"] = "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0"
+                env["GAZ_JOINT_ACTION"] = "1" if int(self._gaz_hyperparams.get("joint_action", 1)) == 1 else "0"
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -5029,7 +5089,7 @@ class GUIController(QtCore.QObject):
             if self._play_gaz_mode == "gumbel":
                 env["GAZ_PLAY_TEMPERATURE"] = f"{float(self._play_gaz_temperature):.3f}"
                 env["GAZ_PLAY_SIMS"] = str(int(self._play_gaz_sims))
-                env["GAZ_JOINT_ACTION"] = "1" if int(self._gaz_hyperparams.get("joint_action", 0)) == 1 else "0"
+                env["GAZ_JOINT_ACTION"] = "1" if int(self._gaz_hyperparams.get("joint_action", 1)) == 1 else "0"
         if self._play_agent_override_id:
             env["VIEWER_AGENT_ID"] = self._play_agent_override_id
             player_label, model_label = self._infer_viewer_role_labels_from_agent_id(
@@ -6694,7 +6754,7 @@ class GUIController(QtCore.QObject):
                 payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
                 if isinstance(payload, dict):
                     algo = str(payload.get("algo", "") or "").strip().lower()
-                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}:
+                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
                         return algo
                     if algo == "alphazero":
                         return ""
@@ -6710,6 +6770,8 @@ class GUIController(QtCore.QObject):
         joined = (str(pickle_path or "") + " " + str(checkpoint_path or "")).lower()
         if "gumbel_muzero" in joined or "gmz" in joined:
             return "gumbel_muzero"
+        if "gumbel_az" in joined or "gaz" in joined:
+            return "gumbel_az"
         if "alphazero_tree" in joined:
             return "alphazero_tree"
         if "alphazero_proxy" in joined:
@@ -7744,7 +7806,7 @@ class GUIController(QtCore.QObject):
                 self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
                 f"Алгоритм: {self._format_algo_label(self._play_model_algo_key)}"
-                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero"}
+                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}
                 else "Алгоритм: —"
             )
             self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"

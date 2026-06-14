@@ -4,7 +4,7 @@
 
 **Goal:** Добавить отдельный режим обучения `gumbel_az` («Gumbel AlphaZero») — per-head Gumbel top-k + Sequential Halving (depth-1, оценка через реальный env-шаг) — с полной интеграцией (train/checkpoint/resume/registry/eval/play/GUI, 3 пресета), переиспользуя AZ learner-конвейер.
 
-**Architecture:** `GumbelAlphaZeroSearch.run()` повторяет контракт `AlphaZeroFactorizedMCTS.run()` `(policy_targets, selected_actions, value)`, поэтому весь AZ learner/replay/checkpoint/resume переиспользуется без изменений; различается только бэкенд поиска у актёра. Сеть — `AlphaZeroPolicyValueNet` (policy+value, без dynamics). eval/play грузят модель как обычную AZ-сеть (greedy).
+**Architecture:** `GumbelAlphaZeroSearch.run()` повторяет контракт `AlphaZeroFactorizedMCTS.run()` `(policy_targets, selected_actions, value)`, поэтому весь AZ learner/replay/checkpoint/resume переиспользуется без изменений; различается только бэкенд поиска у актёра. Сеть — `AlphaZeroPolicyValueNet` (policy+value, без dynamics). eval/play/Viewer по умолчанию используют GAZ Search; Greedy остаётся быстрым fallback/baseline.
 
 **Tech Stack:** Python 3.12, PyTorch, NumPy, Gymnasium, PySide6/QML. Спек: `docs/superpowers/specs/2026-06-13-gumbel-alphazero-design.md`.
 
@@ -1624,7 +1624,7 @@ git commit -m "feat(gumbel_az): QML dropdown + вкладка настроек G
             body: "AlphaZero с Gumbel-планированием: Gumbel top-k в корне + Sequential Halving + "
                 + "completed-Q как цель политики. Гарантирует улучшение даже при малом числе симуляций "
                 + "(16–64), depth-1. Реальная модель среды (как AlphaZero), без выученной динамики. "
-                + "Сеть и чекпойнты совместимы с AlphaZero (eval/play грузят greedy)."
+                + "Сеть и чекпойнты совместимы с AlphaZero; eval/play/Viewer по умолчанию используют Search."
         }
 ```
 (структуру карточки взять идентичной существующим в этом файле.)
@@ -1768,5 +1768,5 @@ git commit -m "test(gumbel_az): интеграция селфплея + GUI hype
 7. **Перед коммитом крупного:** вызвать субагентов `engine-regression-reviewer` (ядро/движок) и `code-reviewer` (дублирование AZ↔gumbel_az) — по правилу проекта.
 
 ## Вне scope (подтверждено в спеке)
-ПК2/distributed, варианты B/C поиска, Gumbel-поиск на инференсе (eval/play пока greedy-reuse).
+ПК2/distributed, варианты B/C поиска, глубокий GAZ depth>1 и параллельные env-clone rollout'ы.
 

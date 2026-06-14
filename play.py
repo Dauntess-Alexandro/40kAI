@@ -60,19 +60,19 @@ PLAY_EPS = float(os.getenv("PLAY_EPS", "")) if os.getenv("PLAY_EPS") is not None
 PLAY_NO_EXPLORATION = os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
 if PLAY_NO_EXPLORATION:
     PLAY_EPS = 0.0
-AZ_PLAY_MODE = str(os.getenv("AZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+AZ_PLAY_MODE = str(os.getenv("AZ_PLAY_MODE", "mcts")).strip().lower() or "mcts"
 if AZ_PLAY_MODE not in {"greedy", "mcts"}:
-    AZ_PLAY_MODE = "greedy"
-GMZ_PLAY_MODE = str(os.getenv("GMZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+    AZ_PLAY_MODE = "mcts"
+GMZ_PLAY_MODE = str(os.getenv("GMZ_PLAY_MODE", "search")).strip().lower() or "search"
 if GMZ_PLAY_MODE not in {"greedy", "search"}:
-    GMZ_PLAY_MODE = "greedy"
-GAZ_PLAY_MODE = str(os.getenv("GAZ_PLAY_MODE", "greedy")).strip().lower() or "greedy"
+    GMZ_PLAY_MODE = "search"
+GAZ_PLAY_MODE = str(os.getenv("GAZ_PLAY_MODE", "gumbel")).strip().lower() or "gumbel"
 if GAZ_PLAY_MODE not in {"greedy", "gumbel"}:
-    GAZ_PLAY_MODE = "greedy"
+    GAZ_PLAY_MODE = "gumbel"
 GAZ_PLAY_SIMS = max(1, int(os.getenv("GAZ_PLAY_SIMS", "32")))
 GAZ_PLAY_NUM_CONSIDERED = max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8")))
 GAZ_PLAY_TEMPERATURE = float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.05"))
-GAZ_JOINT_ACTION_INFER = str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1"
+GAZ_JOINT_ACTION_INFER = str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("model", nargs="?", default="None")

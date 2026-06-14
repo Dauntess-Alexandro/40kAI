@@ -89,35 +89,59 @@ class GumbelAlphaZeroSearch:
         return priors, value
 
     def _evaluate_value_batch(self, leaves: list[dict]) -> list[float]:
-        if self._evaluator is not None:
-            return self._evaluator.evaluate_batch(leaves)
         n = len(leaves)
         if n == 0:
             return []
-        values: list[float | None] = [None] * n
+
+        self._leaf_eval_requests = int(getattr(self, "_leaf_eval_requests", 0)) + n
+        self._leaf_eval_batches = int(getattr(self, "_leaf_eval_batches", 0)) + 1
+        self._leaf_eval_batch_max = max(int(getattr(self, "_leaf_eval_batch_max", 0)), n)
+
+        unique_leaves: list[dict] = []
+        remap: list[int] = []
+        seen: dict[bytes, int] = {}
+        for leaf in leaves:
+            key = EvalCache._key(leaf["obs"], leaf["legal_masks"])
+            unique_idx = seen.get(key)
+            if unique_idx is None:
+                unique_idx = len(unique_leaves)
+                seen[key] = unique_idx
+                unique_leaves.append(leaf)
+            remap.append(unique_idx)
+
+        dedup_hits = n - len(unique_leaves)
+        if dedup_hits > 0:
+            self._leaf_eval_dedup_hits = int(getattr(self, "_leaf_eval_dedup_hits", 0)) + dedup_hits
+
+        if self._evaluator is not None:
+            unique_values = [float(v) for v in self._evaluator.evaluate_batch(unique_leaves)]
+            return [float(unique_values[i]) for i in remap]
+
+        values: list[float | None] = [None] * len(unique_leaves)
         uncached: list[int] = []
-        for i, leaf in enumerate(leaves):
+        for i, leaf in enumerate(unique_leaves):
             c = self._eval_cache.get(leaf["obs"], leaf["legal_masks"])
             if c is not None:
                 values[i] = float(c[1])
             else:
                 uncached.append(i)
         if uncached:
-            obs_batch = np.stack([leaves[i]["obs"] for i in uncached])
+            obs_batch = np.stack([unique_leaves[i]["obs"] for i in uncached])
             obs_t = torch.tensor(obs_batch, dtype=torch.float32, device=self.device)
-            num_heads = len(leaves[uncached[0]]["legal_masks"])
+            num_heads = len(unique_leaves[uncached[0]]["legal_masks"])
             masks_t = []
             for h in range(num_heads):
-                hm = np.stack([np.asarray(leaves[i]["legal_masks"][h], dtype=bool) for i in uncached])
+                hm = np.stack([np.asarray(unique_leaves[i]["legal_masks"][h], dtype=bool) for i in uncached])
                 masks_t.append(torch.as_tensor(hm, dtype=torch.bool, device=self.device))
             with torch.no_grad():
                 priors_t, values_t = self.net.infer(obs_t, masks_by_head=masks_t)
             for j, i in enumerate(uncached):
                 priors_np = [priors_t[h][j].detach().cpu().numpy().astype(np.float32) for h in range(num_heads)]
                 val = float(values_t.reshape(-1)[j].item())
-                self._eval_cache.set(leaves[i]["obs"], leaves[i]["legal_masks"], priors_np, val)
+                self._eval_cache.set(unique_leaves[i]["obs"], unique_leaves[i]["legal_masks"], priors_np, val)
                 values[i] = val
-        return [float(v if v is not None else 0.0) for v in values]
+        unique_values = [float(v if v is not None else 0.0) for v in values]
+        return [float(unique_values[i]) for i in remap]
 
     def _restore_env_safe(self, env_u, snapshot, reset_options) -> None:
         if snapshot is None:
@@ -166,7 +190,10 @@ class GumbelAlphaZeroSearch:
                 self._restore_env_safe(env_u, snapshot, reset_options)
         return leaf
 
-    def _search_head(self, *, head_idx, base_action, legal, prior, root_value, leaf_eval_fn):
+    def _search_head(
+        self, *, head_idx, base_action, legal, prior, root_value,
+        leaf_eval_fn=None, leaf_eval_batch_fn=None,
+    ):
         """SH по одной голове. leaf_eval_fn(action_list)->q (через env) или None (нет env).
 
         Возвращает (pi: np.ndarray, selected_action: int).
@@ -197,15 +224,29 @@ class GumbelAlphaZeroSearch:
         remaining = list(candidates)
         for phase in range(phases):
             per = max(1, n // (phases * max(1, len(remaining))))
+            work: list[tuple[int, list[int]]] = []
             for a in remaining:
                 for _ in range(per):
                     action_vec = list(base_action)
                     action_vec[head_idx] = int(a)
-                    q = leaf_eval_fn(action_vec)
-                    if q is None:
-                        q = float(root_value)
-                    visits[int(a)] += 1.0
-                    q_sums[int(a)] += float(q)
+                    work.append((int(a), action_vec))
+            if leaf_eval_batch_fn is not None and work:
+                qs = list(leaf_eval_batch_fn([action_vec for _a, action_vec in work]))
+            else:
+                qs = [
+                    leaf_eval_fn(action_vec) if leaf_eval_fn is not None else float(root_value)
+                    for _a, action_vec in work
+                ]
+            if len(qs) != len(work):
+                raise RuntimeError(
+                    "GumbelAlphaZeroSearch._search_head: leaf_eval returned wrong number of values. "
+                    "Что делать: проверьте batched leaf evaluator для Gumbel AlphaZero."
+                )
+            for (a, _action_vec), q in zip(work, qs):
+                if q is None:
+                    q = float(root_value)
+                visits[int(a)] += 1.0
+                q_sums[int(a)] += float(q)
             # ранжируем выживших по g+logit+sigma(qhat)
             keep = schedule[phase + 1]
             qmean = np.where(visits > 0, q_sums / np.maximum(visits, 1.0), float(root_value))
@@ -234,6 +275,11 @@ class GumbelAlphaZeroSearch:
     def run(self, *, obs, legal_masks_by_head, temperature: float = 1.0, env=None,
             len_model: int | None = None, enemy_policy_fn=None, reset_options=None,
             move_count: int | None = None, progress: float | None = None):
+        self._leaf_eval_requests = 0
+        self._leaf_eval_batches = 0
+        self._leaf_eval_batch_max = 0
+        self._leaf_eval_dedup_hits = 0
+
         legal_masks = [np.asarray(m, dtype=bool) for m in legal_masks_by_head]
         priors, root_value = self._evaluate_net(obs=np.asarray(obs, dtype=np.float32),
                                                 legal_masks_by_head=legal_masks)
@@ -245,32 +291,60 @@ class GumbelAlphaZeroSearch:
         ordered_keys = ordered_action_keys(int(len_model)) if (env is not None and len_model is not None) else []
         use_env = env is not None and len_model is not None and env_u is not None and hasattr(env_u, "snapshot_state")
 
-        def _make_leaf_eval():
+        def _make_leaf_eval_batch():
             if not use_env:
-                return lambda action_vec: float(root_value)
+                return lambda action_vecs: [float(root_value) for _ in action_vecs]
 
-            def _eval(action_vec):
-                snap = env_u.snapshot_state()
-                leaf = self._rollout_leaf(
-                    env=env, env_u=env_u, snapshot=snap, action_list=action_vec,
-                    len_model=int(len_model), ordered_keys=ordered_keys,
-                    enemy_policy_fn=enemy_policy_fn, reset_options=reset_options,
-                )
-                if leaf["terminal_value"] is not None:
-                    return float(leaf["terminal_value"])
-                vals = self._evaluate_value_batch([leaf])
-                return float(vals[0]) if vals else float(root_value)
+            chunk_size = max(1, int(getattr(self.cfg, "batch_eval_size", 1) or 1))
 
-            return _eval
+            def _flush_pending(out: list[float], pending: list[dict], indices: list[int]) -> None:
+                if not pending:
+                    return
+                vals = self._evaluate_value_batch(pending)
+                for idx, val in zip(indices, vals):
+                    out[int(idx)] = float(val)
+                pending.clear()
+                indices.clear()
 
-        leaf_eval_fn = _make_leaf_eval()
+            def _eval_batch(action_vecs):
+                out = [float(root_value) for _ in action_vecs]
+                pending: list[dict] = []
+                pending_indices: list[int] = []
+                for idx, action_vec in enumerate(action_vecs):
+                    snap = env_u.snapshot_state()
+                    leaf = self._rollout_leaf(
+                        env=env, env_u=env_u, snapshot=snap, action_list=action_vec,
+                        len_model=int(len_model), ordered_keys=ordered_keys,
+                        enemy_policy_fn=enemy_policy_fn, reset_options=reset_options,
+                    )
+                    terminal_value = leaf.get("terminal_value")
+                    if terminal_value is not None:
+                        out[idx] = float(terminal_value)
+                    elif bool(leaf.get("needs_net_eval", False)):
+                        pending.append(leaf)
+                        pending_indices.append(idx)
+                        if len(pending) >= chunk_size:
+                            _flush_pending(out, pending, pending_indices)
+                    else:
+                        out[idx] = float(root_value)
+                _flush_pending(out, pending, pending_indices)
+                return out
+
+            return _eval_batch
+
+        leaf_eval_batch_fn = _make_leaf_eval_batch()
+
+        def leaf_eval_fn(action_vec):
+            vals = leaf_eval_batch_fn([action_vec])
+            return float(vals[0]) if vals else float(root_value)
 
         policy_targets: list[np.ndarray] = []
         selected_actions: list[int] = []
         for h in range(num_heads):
             pi, a = self._search_head(
                 head_idx=h, base_action=base_action, legal=legal_masks[h],
-                prior=priors[h], root_value=root_value, leaf_eval_fn=leaf_eval_fn,
+                prior=priors[h], root_value=root_value,
+                leaf_eval_fn=leaf_eval_fn, leaf_eval_batch_fn=leaf_eval_batch_fn,
             )
             opening = int(getattr(self.cfg, "temperature_opening_moves", 12) or 12)
             if move_count is not None:
@@ -297,6 +371,10 @@ class GumbelAlphaZeroSearch:
             "root_value": float(root_value),
             "eval_cache_hits": float(self._eval_cache.hits),
             "eval_cache_misses": float(self._eval_cache.misses),
+            "leaf_eval_requests": float(getattr(self, "_leaf_eval_requests", 0)),
+            "leaf_eval_batches": float(getattr(self, "_leaf_eval_batches", 0)),
+            "leaf_eval_batch_max": float(getattr(self, "_leaf_eval_batch_max", 0)),
+            "leaf_eval_dedup_hits": float(getattr(self, "_leaf_eval_dedup_hits", 0)),
         }
         return policy_targets, selected_actions, float(root_value)
 

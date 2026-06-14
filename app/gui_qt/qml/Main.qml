@@ -98,6 +98,17 @@ ApplicationWindow {
     readonly property color rosterTitleUnderline: "#26ffffff"
     property string fontUiFamily: "Rajdhani"
     property string fontDataFamily: "IBM Plex Mono"
+    readonly property string inferenceSearchHelpText:
+        "Для AZ, GMZ и GAZ по умолчанию лучше использовать MCTS/Search: это обычно сильнее Greedy, но ход считается дольше.\n" +
+        "Greedy — один быстрый проход сети без поиска. Подходит для smoke-теста, слабого ПК или сравнения baseline.\n" +
+        "AZ MCTS — классический AlphaZero-поиск. GMZ Search — Gumbel MuZero search. GAZ Search — Gumbel AlphaZero с батчингом leaf-eval.\n" +
+        "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = чаще сильнее, но медленнее.\n" +
+        "Температура работает только в MCTS/Search:\n" +
+        "• меньше (0.03–0.08) — стабильнее;\n" +
+        "• больше (0.10–0.15) — больше разнообразия.\n" +
+        "Старт: AZ 0.06, GMZ 0.10, GAZ 0.05.\n" +
+        "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
+        "Эвристика — скриптовый бот, не использует нейросеть, поиск и температуру."
 
     function extractPercent(text) {
         var raw = text || ""
@@ -4418,16 +4429,7 @@ ApplicationWindow {
                                         anchors.margins: Math.round(6 * root.uiScale)
                                         wrapMode: Text.WordWrap
                                         color: root.uiTextMuted
-                                        text:
-                                            "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
-                                            "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
-                                            "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = сильнее, но медленнее.\n" +
-                                            "Температура работает в MCTS/Search:\n" +
-                                            "• меньше (0.03–0.08) — более стабильно;\n" +
-                                            "• больше (0.10–0.15) — больше разнообразия.\n" +
-                                            "Старт: AZ 0.06, GMZ 0.10.\n" +
-                                            "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
-                                            "Эвристика — скриптовый бот, не использует нейросеть и температуру."
+                                        text: root.inferenceSearchHelpText
                                     }
                                 }
 
@@ -5106,16 +5108,7 @@ ApplicationWindow {
                                                     flat: true
                                                     font.bold: true
                                                     ToolTip.visible: hovered
-                                                    ToolTip.text:
-                                                        "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
-                                                        "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
-                                                        "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = сильнее, но медленнее.\n" +
-                                                        "Температура работает в MCTS/Search:\n" +
-                                                        "• меньше (0.03–0.08) — более стабильно;\n" +
-                                                        "• больше (0.10–0.15) — больше разнообразия.\n" +
-                                                        "Старт: AZ 0.06, GMZ 0.10.\n" +
-                                                        "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
-                                                        "Эвристика — скриптовый бот, не использует нейросеть и температуру."
+                                                    ToolTip.text: root.inferenceSearchHelpText
                                                 }
                                                 Item { Layout.fillWidth: true }
                                                 Button {
@@ -5324,16 +5317,7 @@ ApplicationWindow {
                                                     flat: true
                                                     font.bold: true
                                                     ToolTip.visible: hovered
-                                                    ToolTip.text:
-                                                        "Greedy — ИИ сразу берет лучший ход. Это самый быстрый режим.\n" +
-                                                        "MCTS/Search — ИИ сначала просчитывает варианты вперед. Обычно сильнее, но медленнее.\n" +
-                                                        "MCTS sims / Search sims — число симуляций поиска (старт 32). Больше = сильнее, но медленнее.\n" +
-                                                        "Температура работает в MCTS/Search:\n" +
-                                                        "• меньше (0.03–0.08) — более стабильно;\n" +
-                                                        "• больше (0.10–0.15) — больше разнообразия.\n" +
-                                                        "Старт: AZ 0.06, GMZ 0.10.\n" +
-                                                        "PPO и DQN работают без поиска дерева, поэтому MCTS/Search и температура к ним не применяются.\n" +
-                                                        "Эвристика — скриптовый бот, не использует нейросеть и температуру."
+                                                    ToolTip.text: root.inferenceSearchHelpText
                                                 }
                                                 Item { Layout.fillWidth: true }
                                                 Button {
