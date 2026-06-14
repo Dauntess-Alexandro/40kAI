@@ -1198,7 +1198,7 @@ class GUIController(QtCore.QObject):
         if is_gumbel_az_algo(self._play_model_algo_key):
             return [
                 {"value": "greedy", "label": "Greedy"},
-                {"value": "gumbel", "label": "Gumbel"},
+                {"value": "gumbel", "label": "Search"},
             ]
         return []
 
@@ -1243,7 +1243,7 @@ class GUIController(QtCore.QObject):
         if self._play_model_algo_key == "gumbel_muzero":
             return "Search sims:"
         if is_gumbel_az_algo(self._play_model_algo_key):
-            return "Gumbel sims:"
+            return "Search sims:"
         return "Sims:"
 
     @QtCore.Property(str, notify=playModelMetaChanged)
@@ -1336,7 +1336,7 @@ class GUIController(QtCore.QObject):
         if is_gumbel_az_algo(algo_key):
             return [
                 {"value": "greedy", "label": "Greedy"},
-                {"value": "gumbel", "label": "Gumbel"},
+                {"value": "gumbel", "label": "Search"},
             ]
         return []
 
@@ -1420,7 +1420,7 @@ class GUIController(QtCore.QObject):
         if algo == "gumbel_muzero":
             return "Search sims:"
         if is_gumbel_az_algo(algo):
-            return "Gumbel sims:"
+            return "Search sims:"
         return "Sims:"
 
     def _eval_side_temperature(self, side: str) -> float:
