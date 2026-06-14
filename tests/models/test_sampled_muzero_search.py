@@ -84,3 +84,38 @@ def test_run_handles_empty_legal_head():
     pi, _, actions, _ = s.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
     assert abs(float(pi[1].sum()) - 1.0) < 1e-5
     assert 0 <= actions[1] < 4
+
+
+def test_joint_selection_matches_global_argmax_over_q():
+    """С низкой температурой и достаточным K sampled-поиск выбирает joint-ход,
+    совпадающий с argmax Q по ВСЕМ комбинациям (эталон полного перебора).
+    Это и есть координация: выбор цельного хода, а не покомпонентный argmax."""
+    import itertools
+
+    import numpy as np
+    import torch
+
+    from core.models.gumbel_muzero_model import GumbelMuZeroNet
+    from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
+
+    torch.manual_seed(0)
+    net = GumbelMuZeroNet(obs_dim=8, action_sizes=[2, 2],
+                          latent_dim=32, hidden_dim=32, num_layers=1, action_embed_dim=8)
+    s = SampledMuZeroSearch(
+        net=net,
+        config=SampledMuZeroSearchConfig(num_samples=2000, temperature=0.02, prior_weight=0.0),
+        device=torch.device("cpu"),
+    )
+    obs = np.zeros(8, dtype=np.float32)
+    legal = [np.ones(2, dtype=bool), np.ones(2, dtype=bool)]
+    np.random.seed(0)
+    _, _, actions, _ = s.run(obs=obs, legal_masks_by_head=legal, deterministic=True)
+
+    # Эталон: argmax Q по всем 4 joint-комбинациям
+    lat = net.initial_inference(torch.zeros(1, 8))[3]
+    joints = list(itertools.product([0, 1], [0, 1]))
+    acts = torch.tensor(joints, dtype=torch.long)
+    _p, val, rew, _nl = net.recurrent_inference(lat.expand(len(joints), -1), acts)
+    q = (rew + 0.997 * val).detach().numpy().reshape(-1)
+    best = joints[int(np.argmax(q))]
+    assert tuple(actions) == best, f"selected {tuple(actions)} != global argmax {best}"
