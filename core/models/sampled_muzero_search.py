@@ -159,3 +159,86 @@ class SampledMuZeroSearch:
             "root_value": float(root_value.item()), "q_mean": value_out,
         }
         return policy_targets, behavior_logits, selected_actions, value_out
+
+
+@torch.no_grad()
+def run_batched(*, net, cfg: SampledMuZeroSearchConfig, device: torch.device,
+                requests: list[dict], deterministic: bool = False) -> list[dict]:
+    """Батч по средам. RNG-порядок строго env-major → sample-major → head-minor,
+    чтобы при общем seed совпадать с последовательным run() по средам."""
+    N = len(requests)
+    if N == 0:
+        return []
+    K = max(1, int(cfg.num_samples))
+    tau_s = float(cfg.sample_temperature)
+    num_heads = len(requests[0]["legal_masks_by_head"])
+
+    obs_batch = torch.tensor(
+        np.stack([np.asarray(r["obs"], dtype=np.float32) for r in requests], axis=0), device=device)
+    masks_batch = []
+    for h in range(num_heads):
+        mh = np.stack([np.asarray(requests[n]["legal_masks_by_head"][h], dtype=bool) for n in range(N)], axis=0)
+        masks_batch.append(torch.as_tensor(mh, dtype=torch.bool, device=device))
+    root_logits, root_value, _r, latent = net.initial_inference(obs_batch, masks_by_head=masks_batch)
+    root_value_np = root_value.detach().cpu().numpy().reshape(-1).astype(np.float64)
+
+    per_env = []
+    rows_action, env_of_row = [], []
+    for n in range(N):
+        rl_n = [root_logits[h][n:n + 1] for h in range(num_heads)]
+        beh, beta_heads, legal_list = _beta_heads_from_logits(
+            rl_n, requests[n]["legal_masks_by_head"], tau_s)
+        samples = _sample_joint(beta_heads, legal_list, K)
+        if bool(cfg.dedup):
+            uniq, counts = np.unique(samples, axis=0, return_counts=True)
+        else:
+            uniq, counts = samples, np.ones(samples.shape[0], dtype=np.int64)
+        per_env.append((uniq, counts, beh, beta_heads, legal_list))
+        for u in range(uniq.shape[0]):
+            rows_action.append(uniq[u])
+            env_of_row.append(n)
+
+    idx_t = torch.tensor(env_of_row, dtype=torch.long, device=device)
+    latent_rep = latent.index_select(0, idx_t)
+    action_t = torch.as_tensor(np.asarray(rows_action), dtype=torch.long, device=device)
+    _p, val_b, rew_b, _nl = net.recurrent_inference(latent_rep, action_t, masks_by_head=None)
+    val_b = val_b.detach().cpu().numpy().reshape(-1).astype(np.float64)
+    rew_b = rew_b.detach().cpu().numpy().reshape(-1).astype(np.float64)
+    q_all = rew_b + float(cfg.discount) * val_b
+
+    results, cursor = [], 0
+    for n in range(N):
+        uniq, counts, beh, beta_heads, legal_list = per_env[n]
+        U = uniq.shape[0]
+        q = q_all[cursor:cursor + U]
+        cursor += U
+        pi_joint = _improved_joint_policy(q, counts, float(cfg.temperature))
+        if deterministic:
+            sel = int(np.argmax(pi_joint))
+        else:
+            sel = int(np.random.choice(np.arange(U), p=pi_joint))
+        selected = [int(x) for x in uniq[sel]]
+        policy_targets = _marginalize(uniq, pi_joint, beta_heads, legal_list, beh, float(cfg.prior_weight))
+        value_out = float(np.average(q, weights=counts)) if U > 0 else float(root_value_np[n])
+        results.append({
+            "env_id": int(requests[n].get("env_id", n)),
+            "selected_actions": selected,
+            "policy_targets": policy_targets,
+            "behavior_logits": beh,
+            "value_est": value_out,
+        })
+    return results
+
+
+class BatchedSampledMuZeroSearch:
+    """Обёртка над run_batched (для паритета с gmz). v1: без tree-reuse."""
+
+    def __init__(self, *, net, config: SampledMuZeroSearchConfig, device: torch.device):
+        self.net, self.cfg, self.device = net, config, device
+
+    def clear_tree_state(self, env_id: int | None = None) -> None:
+        return None
+
+    def run_batched_stateful(self, requests: list[dict], deterministic: bool = False) -> list[dict]:
+        return run_batched(net=self.net, cfg=self.cfg, device=self.device,
+                           requests=requests, deterministic=deterministic)
