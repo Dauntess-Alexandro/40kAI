@@ -15,8 +15,8 @@ Dialog {
     property int spacingSm: rootUi ? rootUi.spacingSm : 8
     property int spacingMd: rootUi ? rootUi.spacingMd : 12
 
-    readonly property var algoColors: ["#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706", "#0891b2"]
-    readonly property var algoTabNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ", "GAZ"]
+    readonly property var algoColors: ["#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706", "#be185d", "#0891b2"]
+    readonly property var algoTabNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ", "SMZ", "GAZ"]
 
     readonly property var dqnBadges: [
         { text: "Классика+",     bg: "#dbeafe", fg: "#1e40af" },
@@ -47,6 +47,12 @@ Dialog {
         { text: "Тяжёлый режим",      bg: "#fde68a", fg: "#78350f" },
         { text: "Very Compute-heavy", bg: "#fef3c7", fg: "#92400e" },
         { text: "Search+",            bg: "#fde68a", fg: "#78350f" }
+    ]
+    readonly property var smzBadges: [
+        { text: "Сэмпл K ходов",  bg: "#fce7f3", fg: "#831843" },
+        { text: "Joint actions",   bg: "#fbcfe8", fg: "#9d174d" },
+        { text: "IS-коррекция",    bg: "#fce7f3", fg: "#831843" },
+        { text: "v1 одна машина",  bg: "#fbcfe8", fg: "#9d174d" }
     ]
     readonly property var gazBadges: [
         { text: "Gumbel-план",    bg: "#cffafe", fg: "#155e75" },
@@ -127,6 +133,20 @@ Dialog {
         { icon: "★", title: "Когда выбирать",
           text: "Когда нужен максимум силы модели и есть бюджет по времени/ресурсам для обучения и оценки." }
     ]
+    readonly property var smzSections: [
+        { icon: "ⓘ", title: "Что это",
+          text: "Sampled MuZero: сэмплирует K цельных (joint) ходов из приора, координирует действия юнитов через importance sampling. v1 — одна машина, без inference server." },
+        { icon: "▶", title: "Как учится",
+          text: "Self-play + replay: актор сэмплирует K joint-действий, оценивает их через модель динамики, обновляет policy с IS-коррекцией. Learner учится через unroll + V-trace." },
+        { icon: "✓", title: "Сильные стороны",
+          text: "• явная координация юнитов через joint sampling;\n• IS-коррекция смещения сэмплирования;\n• дедупликация повторных ходов (dedup);\n• совместим с V-trace и reanalyze." },
+        { icon: "⚠", title: "Ограничения",
+          text: "• только одна машина (v1);\n• при малом K поиск слабее GMZ;\n• нет inference server — акторы и learner делят ресурсы GPU." },
+        { icon: "◆", title: "Ключевые параметры",
+          text: "• num_samples (K) — число joint-ходов на шаг;\n• search_temperature — температура в поиске;\n• sample_temperature — температура сэмплирования из приора;\n• prior_weight — доля приора в политике (0 = только IS-цель)." },
+        { icon: "★", title: "Когда выбирать",
+          text: "Когда нужна координация юнитов через совместные действия и есть желание экспериментировать с IS-based MuZero без распределённого inference." }
+    ]
     readonly property var gazSections: [
         { icon: "ⓘ", title: "Что это",
           text: "AlphaZero с Gumbel-планированием: в корне берётся набор кандидатов (Gumbel top-k), Sequential Halving распределяет бюджет симуляций, а completed-Q даёт цель политики. Реальная модель среды (как у AlphaZero), без выученной динамики MuZero. Поиск — depth-1 (один ход вперёд + ответ врага)." },
@@ -156,7 +176,8 @@ Dialog {
         if (a === "alphazero_tree") return 2
         if (a === "alphazero_proxy") return 3
         if (a === "gumbel_muzero") return 4
-        if (a === "gumbel_az") return 5
+        if (a === "sampled_muzero") return 5
+        if (a === "gumbel_az") return 6
         return 0
     }
 
@@ -241,7 +262,8 @@ Dialog {
             AlgoHelpTabButton { text: "AZ Tree";   accentColor: dlg.algoColors[2]; rootUi: dlg.rootUi }
             AlgoHelpTabButton { text: "AZ Proxy";  accentColor: dlg.algoColors[3]; rootUi: dlg.rootUi }
             AlgoHelpTabButton { text: "GMZ";       accentColor: dlg.algoColors[4]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "GAZ";       accentColor: dlg.algoColors[5]; rootUi: dlg.rootUi }
+            AlgoHelpTabButton { text: "SMZ";       accentColor: dlg.algoColors[5]; rootUi: dlg.rootUi }
+            AlgoHelpTabButton { text: "GAZ";       accentColor: dlg.algoColors[6]; rootUi: dlg.rootUi }
             AlgoHelpTabButton { text: "Сравнение"; accentColor: "#9ca3af";          rootUi: dlg.rootUi }
         }
 
@@ -334,9 +356,24 @@ Dialog {
                 AlgoHelpCard {
                     width: helpStack.width
                     rootUi: dlg.rootUi
+                    algoTitle: "Sampled MuZero (SMZ)"
+                    tldr: "MuZero с сэмплированием K joint-ходов и IS-коррекцией. Координация юнитов, v1 — одна машина."
+                    accentColor: dlg.algoColors[5]
+                    badges: dlg.smzBadges
+                    sections: dlg.smzSections
+                }
+            }
+            ScrollView {
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                AlgoHelpCard {
+                    width: helpStack.width
+                    rootUi: dlg.rootUi
                     algoTitle: "Gumbel AlphaZero (GAZ)"
                     tldr: "AlphaZero с Gumbel-планированием (top-k + Sequential Halving, depth-1). Улучшение политики при малом бюджете симуляций."
-                    accentColor: dlg.algoColors[5]
+                    accentColor: dlg.algoColors[6]
                     badges: dlg.gazBadges
                     sections: dlg.gazSections
                 }

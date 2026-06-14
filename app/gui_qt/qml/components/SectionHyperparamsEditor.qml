@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: hpEditor
-    required property string algoSection  // dqn | ppo | tree | proxy | gmz
+    required property string algoSection  // dqn | ppo | tree | proxy | gmz | gaz | smz
     property var rootUi: null
 
     spacing: rootUi ? rootUi.spacingSm : 8
@@ -21,6 +21,7 @@ ColumnLayout {
         if (algoSection === "proxy") return "AlphaZero (Proxy)"
         if (algoSection === "gmz") return "Gumbel MuZero"
         if (algoSection === "gaz") return "Gumbel AlphaZero"
+        if (algoSection === "smz") return "Sampled MuZero"
         return algoSection
     }
 
@@ -31,6 +32,7 @@ ColumnLayout {
         if (algoSection === "tree" || algoSection === "proxy") return controller.hpAzGroups
         if (algoSection === "gmz") return controller.hpGmzGroups
         if (algoSection === "gaz") return controller.hpGazGroups
+        if (algoSection === "smz") return controller.hpSmzGroups
         return []
     }
 
@@ -42,6 +44,7 @@ ColumnLayout {
         if (algoSection === "proxy") return controller.hpAzProxyBasicKeys
         if (algoSection === "gmz") return controller.hpGmzBasicKeys
         if (algoSection === "gaz") return controller.hpGazBasicKeys
+        if (algoSection === "smz") return controller.hpSmzBasicKeys
         return []
     }
 
@@ -81,6 +84,9 @@ ColumnLayout {
         } else if (algoSection === "gaz") {
             hpMap = controller.hpGazHyperparamsMap
             defaultsMap = controller.hpGazDefaultsMap
+        } else if (algoSection === "smz") {
+            hpMap = controller.hpSmzHyperparamsMap
+            defaultsMap = controller.hpSmzDefaultsMap
         } else {
             hpMap = ({})
             defaultsMap = ({})
@@ -103,6 +109,7 @@ ColumnLayout {
         else if (algoSection === "proxy") controller.set_az_proxy_hyperparam(key, value)
         else if (algoSection === "gmz") controller.set_gmz_hyperparam(key, value)
         else if (algoSection === "gaz") controller.set_gaz_hyperparam(key, value)
+        else if (algoSection === "smz") controller.set_smz_hyperparam(key, value)
     }
 
     function applyProfile(name) {
@@ -113,6 +120,7 @@ ColumnLayout {
         else if (algoSection === "proxy") controller.apply_az_proxy_profile(name)
         else if (algoSection === "gmz") controller.apply_gmz_profile(name)
         else if (algoSection === "gaz") controller.apply_gaz_profile(name)
+        else if (algoSection === "smz") controller.apply_smz_profile(name)
     }
 
     function presetLabel() {
@@ -123,6 +131,7 @@ ColumnLayout {
         if (algoSection === "proxy") return controller.hpAzProxyPresetLabel
         if (algoSection === "gmz") return controller.hpGmzPresetLabel
         if (algoSection === "gaz") return controller.hpGazPresetLabel
+        if (algoSection === "smz") return controller.hpSmzPresetLabel
         return "Custom"
     }
 
@@ -172,6 +181,7 @@ ColumnLayout {
         else if (algoSection === "tree" || algoSection === "proxy") tips = controller.hpAzFieldTooltips
         else if (algoSection === "gmz") tips = controller.hpGmzFieldTooltips
         else if (algoSection === "gaz") tips = controller.hpGazFieldTooltips
+        else if (algoSection === "smz") tips = controller.hpSmzFieldTooltips
         else return ""
         if (!tips) return ""
         var base = String(tips[key] ?? "")

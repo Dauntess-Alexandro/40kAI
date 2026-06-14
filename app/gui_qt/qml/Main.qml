@@ -1824,6 +1824,7 @@ ApplicationWindow {
                                                         { value: "alphazero_tree", label: "ALPHAZERO TREE" },
                                                         { value: "alphazero_proxy", label: "ALPHAZERO PROXY" },
                                                         { value: "gumbel_muzero", label: "GUMBEL MUZERO" },
+                                                        { value: "sampled_muzero", label: "SAMPLED MUZERO" },
                                                         { value: "gumbel_az", label: "GUMBEL ALPHAZERO" }
                                                     ]
                                                     textRole: "label"
@@ -4563,6 +4564,7 @@ ApplicationWindow {
                                     TabButton { text: "AlphaZero Tree" }
                                     TabButton { text: "AlphaZero Proxy" }
                                     TabButton { text: "Gumbel MuZero" }
+                                    TabButton { text: "Sampled MuZero" }
                                     TabButton { text: "Gumbel AlphaZero" }
                                 }
 
@@ -4641,6 +4643,21 @@ ApplicationWindow {
                                             SectionHyperparamsEditor {
                                                 Layout.fillWidth: true
                                                 algoSection: "gmz"
+                                                rootUi: root
+                                            }
+                                        }
+                                    }
+                                    ScrollView {
+                                        clip: true
+                                        contentWidth: smzHyperparamsColumn.width
+                                        ColumnLayout {
+                                            id: smzHyperparamsColumn
+                                            width: algoHyperparamsStack.width
+                                            spacing: root.spacingSm
+
+                                            SectionHyperparamsEditor {
+                                                Layout.fillWidth: true
+                                                algoSection: "smz"
                                                 rootUi: root
                                             }
                                         }

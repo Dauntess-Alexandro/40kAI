@@ -77,6 +77,15 @@ from app.gui_qt.gmz_hyperparams_defaults import (
     GMZ_VARIANT_A_BUNDLE,
     GMZ_VARIANT_B_BUNDLE,
 )
+from app.gui_qt.sampled_muzero_hyperparams_defaults import (
+    DEFAULT_SMZ_HYPERPARAMS,
+    SMZ_BASIC_KEYS,
+    SMZ_FIELD_TOOLTIPS,
+    SMZ_GROUPS,
+    SMZ_HYPERPARAM_KEYS,
+    SMZ_PROFILE_DETECT_ORDER,
+    SMZ_PROFILE_PRESETS,
+)
 from app.gui_qt.heur_benchmark_runner import HeurBenchmarkRunner
 from app.gui_qt.heur_calibrate_runner import HeurCalibrateRunner
 from app.gui_qt.hyperparams_cuda_hints import (
@@ -117,7 +126,7 @@ def _default_inference_mode_for_algo(algo: str) -> str:
     key = str(algo or "").strip().lower()
     if is_az_algo(key):
         return "mcts"
-    if key == "gumbel_muzero":
+    if key == "gumbel_muzero" or key == "sampled_muzero":
         return "search"
     if is_gumbel_az_algo(key):
         return "gumbel"
@@ -128,7 +137,7 @@ def _valid_inference_modes_for_algo(algo: str) -> set[str]:
     key = str(algo or "").strip().lower()
     if is_az_algo(key):
         return {"greedy", "mcts"}
-    if key == "gumbel_muzero":
+    if key == "gumbel_muzero" or key == "sampled_muzero":
         return {"greedy", "search"}
     if is_gumbel_az_algo(key):
         return {"greedy", "gumbel"}
@@ -442,7 +451,7 @@ class GUIController(QtCore.QObject):
         self._train_context_opponent_algo_short = "Эвристика"
         self._train_context_opponent_side = "P2"
 
-        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"]
+        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
         if self._training_algo not in self._training_algo_options:
             self._training_algo = "dqn"
@@ -473,6 +482,10 @@ class GUIController(QtCore.QObject):
         self._gaz_profile_presets = dict(GAZ_PROFILE_PRESETS)
         self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
         self._gaz_selected_profile = "balanced"
+        self._default_smz_hyperparams: dict[str, int | float | str] = dict(DEFAULT_SMZ_HYPERPARAMS)
+        self._smz_profile_presets = dict(SMZ_PROFILE_PRESETS)
+        self._smz_hyperparams = dict(self._default_smz_hyperparams)
+        self._smz_selected_profile = "balanced"
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._training_cuda_available = False
@@ -1192,6 +1205,7 @@ class GUIController(QtCore.QObject):
         return (
             is_az_algo(self._play_model_algo_key)
             or self._play_model_algo_key == "gumbel_muzero"
+            or self._play_model_algo_key == "sampled_muzero"
             or is_gumbel_az_algo(self._play_model_algo_key)
         )
 
@@ -1201,6 +1215,8 @@ class GUIController(QtCore.QObject):
             return "Режим AZ:"
         if self._play_model_algo_key == "gumbel_muzero":
             return "Режим GMZ:"
+        if self._play_model_algo_key == "sampled_muzero":
+            return "Режим SMZ:"
         if is_gumbel_az_algo(self._play_model_algo_key):
             return "Режим GAZ:"
         return "Режим:"
@@ -1212,7 +1228,7 @@ class GUIController(QtCore.QObject):
                 {"value": "mcts", "label": "MCTS"},
                 {"value": "greedy", "label": "Greedy"},
             ]
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return [
                 {"value": "search", "label": "Search"},
                 {"value": "greedy", "label": "Greedy"},
@@ -1228,7 +1244,7 @@ class GUIController(QtCore.QObject):
     def playInferenceMode(self) -> str:
         if is_az_algo(self._play_model_algo_key):
             return self._play_az_mode if self._play_az_mode in {"greedy", "mcts"} else "mcts"
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return self._play_gmz_mode if self._play_gmz_mode in {"greedy", "search"} else "search"
         if is_gumbel_az_algo(self._play_model_algo_key):
             return self._play_gaz_mode if self._play_gaz_mode in {"greedy", "gumbel"} else "gumbel"
@@ -1238,7 +1254,7 @@ class GUIController(QtCore.QObject):
     def playInferenceTemperatureVisible(self) -> bool:
         if is_az_algo(self._play_model_algo_key):
             return self._play_az_mode == "mcts"
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return self._play_gmz_mode == "search"
         if is_gumbel_az_algo(self._play_model_algo_key):
             return self._play_gaz_mode == "gumbel"
@@ -1248,7 +1264,7 @@ class GUIController(QtCore.QObject):
     def playInferenceTemperature(self) -> str:
         if is_az_algo(self._play_model_algo_key):
             return f"{float(self._play_az_temperature):.2f}"
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return f"{float(self._play_gmz_temperature):.2f}"
         if is_gumbel_az_algo(self._play_model_algo_key):
             return f"{float(self._play_gaz_temperature):.2f}"
@@ -1262,7 +1278,7 @@ class GUIController(QtCore.QObject):
     def playInferenceSearchSimsLabel(self) -> str:
         if is_az_algo(self._play_model_algo_key):
             return "MCTS sims:"
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return "Search sims:"
         if is_gumbel_az_algo(self._play_model_algo_key):
             return "Search sims:"
@@ -1272,7 +1288,7 @@ class GUIController(QtCore.QObject):
     def playInferenceSearchSims(self) -> str:
         if is_az_algo(self._play_model_algo_key):
             return str(int(self._play_az_mcts_sims))
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return str(int(self._play_gmz_search_sims))
         if is_gumbel_az_algo(self._play_model_algo_key):
             return str(int(self._play_gaz_sims))
@@ -1350,7 +1366,7 @@ class GUIController(QtCore.QObject):
                 {"value": "mcts", "label": "MCTS"},
                 {"value": "greedy", "label": "Greedy"},
             ]
-        if algo_key == "gumbel_muzero":
+        if algo_key in {"gumbel_muzero", "sampled_muzero"}:
             return [
                 {"value": "search", "label": "Search"},
                 {"value": "greedy", "label": "Greedy"},
@@ -1395,7 +1411,7 @@ class GUIController(QtCore.QObject):
         mode = self._eval_p1_inference_mode if str(side).upper() == "P1" else self._eval_p2_inference_mode
         if is_az_algo(algo):
             return mode == "mcts"
-        if algo == "gumbel_muzero":
+        if algo in {"gumbel_muzero", "sampled_muzero"}:
             return mode == "search"
         if is_gumbel_az_algo(algo):
             return mode == "gumbel"
@@ -1426,14 +1442,14 @@ class GUIController(QtCore.QObject):
         if side_key == "P1":
             if is_az_algo(algo):
                 return int(self._eval_p1_az_mcts_sims)
-            if algo == "gumbel_muzero":
+            if algo in {"gumbel_muzero", "sampled_muzero"}:
                 return int(self._eval_p1_gmz_search_sims)
             if is_gumbel_az_algo(algo):
                 return int(self._eval_p1_gaz_sims)
         else:
             if is_az_algo(algo):
                 return int(self._eval_p2_az_mcts_sims)
-            if algo == "gumbel_muzero":
+            if algo in {"gumbel_muzero", "sampled_muzero"}:
                 return int(self._eval_p2_gmz_search_sims)
             if is_gumbel_az_algo(algo):
                 return int(self._eval_p2_gaz_sims)
@@ -1443,7 +1459,7 @@ class GUIController(QtCore.QObject):
         algo = self._eval_side_algo_key(side)
         if is_az_algo(algo):
             return "MCTS sims:"
-        if algo == "gumbel_muzero":
+        if algo in {"gumbel_muzero", "sampled_muzero"}:
             return "Search sims:"
         if is_gumbel_az_algo(algo):
             return "Search sims:"
@@ -1455,14 +1471,14 @@ class GUIController(QtCore.QObject):
         if side_key == "P1":
             if is_az_algo(algo):
                 return float(self._eval_p1_az_temperature)
-            if algo == "gumbel_muzero":
+            if algo in {"gumbel_muzero", "sampled_muzero"}:
                 return float(self._eval_p1_gmz_temperature)
             if is_gumbel_az_algo(algo):
                 return float(self._eval_p1_gaz_temperature)
             return 0.10
         if is_az_algo(algo):
             return float(self._eval_p2_az_temperature)
-        if algo == "gumbel_muzero":
+        if algo in {"gumbel_muzero", "sampled_muzero"}:
             return float(self._eval_p2_gmz_temperature)
         if is_gumbel_az_algo(algo):
             return float(self._eval_p2_gaz_temperature)
@@ -2329,6 +2345,10 @@ class GUIController(QtCore.QObject):
     def hpGazPresetLabel(self) -> str:
         return self._profile_display_label(self._gaz_selected_profile)
 
+    @QtCore.Property(str, notify=trainingHyperparamsChanged)
+    def hpSmzPresetLabel(self) -> str:
+        return self._profile_display_label(self._smz_selected_profile)
+
     @QtCore.Property(bool, notify=settingsDirtyChanged)
     def settingsDirty(self) -> bool:
         return self._settings_dirty
@@ -2602,7 +2622,7 @@ class GUIController(QtCore.QObject):
         if is_az_algo(algo):
             changed = abs(parsed - float(self._eval_p1_az_temperature)) > 1e-9
             self._eval_p1_az_temperature = parsed
-        elif algo == "gumbel_muzero":
+        elif algo in {"gumbel_muzero", "sampled_muzero"}:
             changed = abs(parsed - float(self._eval_p1_gmz_temperature)) > 1e-9
             self._eval_p1_gmz_temperature = parsed
         elif is_gumbel_az_algo(algo):
@@ -2619,7 +2639,7 @@ class GUIController(QtCore.QObject):
         if is_az_algo(algo):
             changed = int(parsed) != int(self._eval_p1_az_mcts_sims)
             self._eval_p1_az_mcts_sims = int(parsed)
-        elif algo == "gumbel_muzero":
+        elif algo in {"gumbel_muzero", "sampled_muzero"}:
             changed = int(parsed) != int(self._eval_p1_gmz_search_sims)
             self._eval_p1_gmz_search_sims = int(parsed)
         elif is_gumbel_az_algo(algo):
@@ -2636,7 +2656,7 @@ class GUIController(QtCore.QObject):
         if is_az_algo(algo):
             changed = abs(parsed - float(self._eval_p2_az_temperature)) > 1e-9
             self._eval_p2_az_temperature = parsed
-        elif algo == "gumbel_muzero":
+        elif algo in {"gumbel_muzero", "sampled_muzero"}:
             changed = abs(parsed - float(self._eval_p2_gmz_temperature)) > 1e-9
             self._eval_p2_gmz_temperature = parsed
         elif is_gumbel_az_algo(algo):
@@ -2653,7 +2673,7 @@ class GUIController(QtCore.QObject):
         if is_az_algo(algo):
             changed = int(parsed) != int(self._eval_p2_az_mcts_sims)
             self._eval_p2_az_mcts_sims = int(parsed)
-        elif algo == "gumbel_muzero":
+        elif algo in {"gumbel_muzero", "sampled_muzero"}:
             changed = int(parsed) != int(self._eval_p2_gmz_search_sims)
             self._eval_p2_gmz_search_sims = int(parsed)
         elif is_gumbel_az_algo(algo):
@@ -2674,14 +2694,15 @@ class GUIController(QtCore.QObject):
             self.playModelMetaChanged.emit(self._play_model_algo_label)
             self._emit_status(f"Режим AZ для игры: {mode}.")
             return
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             if mode not in {"greedy", "search"}:
                 mode = "search"
             if mode == self._play_gmz_mode:
                 return
             self._play_gmz_mode = mode
             self.playModelMetaChanged.emit(self._play_model_algo_label)
-            self._emit_status(f"Режим GMZ для игры: {mode}.")
+            lbl = "SMZ" if self._play_model_algo_key == "sampled_muzero" else "GMZ"
+            self._emit_status(f"Режим {lbl} для игры: {mode}.")
             return
         if is_gumbel_az_algo(self._play_model_algo_key):
             if mode not in {"greedy", "gumbel"}:
@@ -2701,7 +2722,7 @@ class GUIController(QtCore.QObject):
             self._play_az_temperature = parsed
             self.playModelMetaChanged.emit(self._play_model_algo_label)
             return
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             if abs(parsed - float(self._play_gmz_temperature)) <= 1e-9:
                 return
             self._play_gmz_temperature = parsed
@@ -2722,7 +2743,7 @@ class GUIController(QtCore.QObject):
             self._play_az_mcts_sims = int(parsed)
             self.playModelMetaChanged.emit(self._play_model_algo_label)
             return
-        if self._play_model_algo_key == "gumbel_muzero":
+        if self._play_model_algo_key in {"gumbel_muzero", "sampled_muzero"}:
             if int(parsed) == int(self._play_gmz_search_sims):
                 return
             self._play_gmz_search_sims = int(parsed)
@@ -3045,7 +3066,7 @@ class GUIController(QtCore.QObject):
             algo = str(payload.get("algo", "")).strip().lower()
             if algo == "alphazero":
                 continue
-            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}:
                 # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
                 # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
                 paths = payload.get("paths") if isinstance(payload, dict) else None
@@ -3368,7 +3389,7 @@ class GUIController(QtCore.QObject):
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
         learner_algo = (self._training_algo or "dqn").strip().lower()
-        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}:
             learner_algo = "dqn"
 
         opponent_algo = "unknown"
@@ -3537,6 +3558,28 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
 
+    @QtCore.Slot(str, str)
+    def set_smz_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_smz_hyperparams:
+            return
+        default = self._default_smz_hyperparams[normalized_key]
+        current = self._smz_hyperparams.get(normalized_key, default)
+        try:
+            parsed = self._coerce_algo_hyperparam(normalized_key, value, default)
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение SMZ-параметра '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+        if current == parsed:
+            return
+        self._smz_hyperparams[normalized_key] = parsed
+        self._refresh_smz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
     def _detect_profile(
         self,
         hyperparams: dict[str, int | float | str],
@@ -3588,6 +3631,11 @@ class GUIController(QtCore.QObject):
             self._gaz_hyperparams, self._gaz_profile_presets
         )
 
+    def _refresh_smz_profile_label(self) -> None:
+        self._smz_selected_profile = self._detect_profile(
+            self._smz_hyperparams, self._smz_profile_presets
+        )
+
     def _refresh_training_profile_labels(self) -> None:
         self._refresh_dqn_profile_label()
         self._refresh_ppo_profile_label()
@@ -3595,6 +3643,7 @@ class GUIController(QtCore.QObject):
         self._refresh_az_proxy_profile_label()
         self._refresh_gmz_profile_label()
         self._refresh_gaz_profile_label()
+        self._refresh_smz_profile_label()
 
     @QtCore.Slot(str)
     def apply_gmz_profile(self, profile: str) -> None:
@@ -3617,6 +3666,19 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
         self._emit_status(f"Применен профиль Gumbel MuZero: {mode}. Сохраните настройки.")
+
+    @QtCore.Slot(str)
+    def apply_smz_profile(self, profile: str) -> None:
+        mode = str(profile or "").strip().lower()
+        if mode not in set(SMZ_PROFILE_DETECT_ORDER):
+            return
+        base = dict(self._default_smz_hyperparams)
+        base.update(self._smz_profile_presets.get(mode, {}))
+        self._smz_hyperparams.update(base)
+        self._smz_selected_profile = mode
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(f"Применен профиль Sampled MuZero: {mode}. Сохраните настройки.")
 
     def _coerce_az_hyperparam(self, key: str, value: str, default: int | float | str) -> int | float | str:
         if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "inference_server_mode"}:
@@ -3913,6 +3975,7 @@ class GUIController(QtCore.QObject):
             "proxy": self._default_az_proxy_hyperparams,
             "gmz": self._default_gmz_hyperparams,
             "gaz": self._default_gaz_hyperparams,
+            "smz": self._default_smz_hyperparams,
         }.get(section, {})
         default = defaults.get(k)
         if default is None:
@@ -3946,6 +4009,7 @@ class GUIController(QtCore.QObject):
             "proxy": (self._default_az_proxy_hyperparams, self._az_proxy_hyperparams, self._az_proxy_profile_presets),
             "gmz": (self._default_gmz_hyperparams, self._gmz_hyperparams, self._gmz_profile_presets),
             "gaz": (self._default_gaz_hyperparams, self._gaz_hyperparams, self._gaz_profile_presets),
+            "smz": (self._default_smz_hyperparams, self._smz_hyperparams, self._smz_profile_presets),
         }
         return mapping.get(section)
 
@@ -3972,6 +4036,8 @@ class GUIController(QtCore.QObject):
         allowed_profiles = {"fast", "balanced", "heavy"}
         if str(algo).strip().lower() == "gmz":
             allowed_profiles = set(GMZ_PROFILE_DETECT_ORDER)
+        if str(algo).strip().lower() == "smz":
+            allowed_profiles = set(SMZ_PROFILE_DETECT_ORDER)
         if not ctx or mode not in allowed_profiles:
             return ""
         defaults, current, presets = ctx
@@ -4113,6 +4179,14 @@ class GUIController(QtCore.QObject):
     def hpGazHyperparamKeys(self) -> list:
         return [str(k) for k in GAZ_HYPERPARAM_KEYS]
 
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpSmzHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._smz_hyperparams)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpSmzHyperparamKeys(self) -> list:
+        return [str(k) for k in SMZ_HYPERPARAM_KEYS]
+
     @QtCore.Property("QVariantList", constant=True)
     def hpDqnGroups(self) -> list:
         return self._groups_for_qml(DQN_GROUPS)
@@ -4132,6 +4206,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpGazGroups(self) -> list:
         return self._groups_for_qml(GAZ_GROUPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpSmzGroups(self) -> list:
+        return self._groups_for_qml(SMZ_GROUPS)
 
     @QtCore.Property("QVariantMap", constant=True)
     def hpDqnDefaultsMap(self) -> dict:
@@ -4158,6 +4236,10 @@ class GUIController(QtCore.QObject):
         return self._az_hyperparams_map_for_qml(self._default_gaz_hyperparams)
 
     @QtCore.Property("QVariantMap", constant=True)
+    def hpSmzDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_smz_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
     def hpDqnFieldTooltips(self) -> dict:
         return self._tooltips_for_qml(DQN_FIELD_TOOLTIPS)
 
@@ -4176,6 +4258,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantMap", constant=True)
     def hpGazFieldTooltips(self) -> dict:
         return self._tooltips_for_qml(GAZ_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpSmzFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(SMZ_FIELD_TOOLTIPS)
 
     @QtCore.Property("QVariantList", constant=True)
     def hpDqnBasicKeys(self) -> list:
@@ -4200,6 +4286,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpGazBasicKeys(self) -> list:
         return [str(k) for k in GAZ_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpSmzBasicKeys(self) -> list:
+        return [str(k) for k in SMZ_BASIC_KEYS]
 
     def _load_algo_hyperparams_section(
         self,
@@ -4343,6 +4433,7 @@ class GUIController(QtCore.QObject):
         self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
         self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
         self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
+        self._smz_hyperparams = dict(self._default_smz_hyperparams)
         self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
         self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
         self._refresh_training_profile_labels()
@@ -4371,6 +4462,13 @@ class GUIController(QtCore.QObject):
             self._emit_status(
                 f"Не удалось сохранить hyperparams.json в Настройках: {gmz_error}. "
                 "Исправьте значения Gumbel MuZero и повторите сохранение."
+            )
+            return
+        smz_error = self._validate_smz_hyperparams(self._smz_hyperparams)
+        if smz_error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {smz_error}. "
+                "Исправьте значения Sampled MuZero и повторите сохранение."
             )
             return
         az_tree_error = self._validate_az_hyperparams(self._az_tree_hyperparams, section="alphazero_tree")
@@ -4405,6 +4503,7 @@ class GUIController(QtCore.QObject):
             merged_payload["ppo"] = dict(self._ppo_hyperparams)
             merged_payload["gumbel_muzero"] = dict(self._gmz_hyperparams)
             merged_payload["gumbel_az"] = dict(self._gaz_hyperparams)
+            merged_payload["sampled_muzero"] = dict(self._smz_hyperparams)
             merged_payload["alphazero_tree"] = dict(self._az_tree_hyperparams)
             merged_payload["alphazero_proxy"] = dict(self._az_proxy_hyperparams)
             merged_payload.pop("alphazero", None)
@@ -4557,6 +4656,30 @@ class GUIController(QtCore.QObject):
             return "gumbel_muzero.actor_max_cuda должен быть >= 1"
         return None
 
+    def _validate_smz_hyperparams(self, payload: dict[str, int | float]) -> str | None:
+        lr = float(payload["learning_rate"])
+        batch_size = int(payload["batch_size"])
+        unroll_steps = int(payload["unroll_steps"])
+        discount = float(payload["discount"])
+        replay_capacity = int(payload["replay_capacity"])
+        num_actors = int(payload["num_actors"])
+        num_samples = int(payload["num_samples"])
+        if not (0.0 < lr <= 1.0):
+            return "sampled_muzero.learning_rate должен быть в диапазоне (0, 1]"
+        if batch_size < 1:
+            return "sampled_muzero.batch_size должен быть >= 1"
+        if unroll_steps < 1:
+            return "sampled_muzero.unroll_steps должен быть >= 1"
+        if not (0.0 < discount <= 1.0):
+            return "sampled_muzero.discount должен быть в диапазоне (0, 1]"
+        if replay_capacity < 1024:
+            return "sampled_muzero.replay_capacity должен быть >= 1024"
+        if num_actors < 1:
+            return "sampled_muzero.num_actors должен быть >= 1"
+        if num_samples < 1:
+            return "sampled_muzero.num_samples должен быть >= 1"
+        return None
+
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
         try:
             with open(self._hyperparams_path, encoding="utf-8") as handle:
@@ -4566,6 +4689,7 @@ class GUIController(QtCore.QObject):
             self._ppo_hyperparams = dict(self._default_ppo_hyperparams)
             self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
             self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
+            self._smz_hyperparams = dict(self._default_smz_hyperparams)
             self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
             self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
             self._refresh_training_profile_labels()
@@ -4605,6 +4729,13 @@ class GUIController(QtCore.QObject):
             "gumbel_az",
             self._default_gaz_hyperparams,
             GAZ_HYPERPARAM_KEYS,
+            root_fallback=False,
+        )
+        self._smz_hyperparams = self._load_algo_hyperparams_section(
+            payload,
+            "sampled_muzero",
+            self._default_smz_hyperparams,
+            SMZ_HYPERPARAM_KEYS,
             root_fallback=False,
         )
         self._az_tree_hyperparams = self._load_az_hyperparams_section(
@@ -5920,6 +6051,53 @@ class GUIController(QtCore.QObject):
                 f"sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )
+        elif self._training_algo == "sampled_muzero":
+            smz_map = {
+                "learning_rate": "SMZ_LR",
+                "batch_size": "SMZ_BATCH_SIZE",
+                "unroll_steps": "SMZ_UNROLL_STEPS",
+                "value_loss_weight": "SMZ_VALUE_LOSS_WEIGHT",
+                "reward_loss_weight": "SMZ_REWARD_LOSS_WEIGHT",
+                "consistency_loss_weight": "SMZ_CONSISTENCY_W",
+                "l2_weight": "SMZ_L2_WEIGHT",
+                "max_grad_norm": "SMZ_MAX_GRAD_NORM",
+                "discount": "SMZ_DISCOUNT",
+                "replay_capacity": "SMZ_REPLAY_CAPACITY",
+                "num_actors": "SMZ_NUM_ACTORS",
+                "actor_batch_send": "SMZ_ACTOR_BATCH_SEND",
+                "actor_queue_max": "SMZ_ACTOR_QUEUE_MAX",
+                "sync_every_updates": "SMZ_SYNC_EVERY_UPDATES",
+                "updates_per_rollout": "SMZ_UPDATES_PER_ROLLOUT",
+                "replay_min_size": "SMZ_REPLAY_MIN_SIZE",
+                "max_policy_staleness_updates": "SMZ_MAX_POLICY_STALENESS_UPDATES",
+                "reanalyze_fraction": "SMZ_REANALYZE_FRACTION",
+                "latent_dim": "SMZ_LATENT_DIM",
+                "hidden_dim": "SMZ_HIDDEN_DIM",
+                "num_layers": "SMZ_NUM_LAYERS",
+                "action_embed_dim": "SMZ_ACTION_EMBED_DIM",
+                "num_samples": "SMZ_NUM_SAMPLES",
+                "sample_temperature": "SMZ_SAMPLE_TEMPERATURE",
+                "search_temperature": "SMZ_SEARCH_TEMPERATURE",
+                "prior_weight": "SMZ_PRIOR_WEIGHT",
+                "dedup": "SMZ_DEDUP",
+                "tbptt_truncate": "SMZ_TBPTT_TRUNCATE",
+                "vtrace_full": "SMZ_VTRACE_FULL",
+                "vtrace_rho_clip": "SMZ_VTRACE_RHO_CLIP",
+                "vtrace_c_clip": "SMZ_VTRACE_C_CLIP",
+                "atom_range": "SMZ_ATOM_RANGE",
+                "ema_tau": "SMZ_EMA_TAU",
+                "learner_compile": "SMZ_LEARNER_COMPILE",
+                "actor_device": "SMZ_ACTOR_DEVICE",
+                "temperature_opening_moves": "SMZ_TEMP_OPENING_MOVES",
+                "temperature_opening_value": "SMZ_TEMP_OPENING",
+                "temperature_late_value": "SMZ_TEMP_LATE",
+                "outcome_only": "SMZ_OUTCOME_ONLY",
+                "outcome_value_win": "SMZ_OUTCOME_VALUE_WIN",
+                "outcome_value_loss": "SMZ_OUTCOME_VALUE_LOSS",
+                "outcome_value_draw": "SMZ_OUTCOME_VALUE_DRAW",
+            }
+            for key, env_key in smz_map.items():
+                env.insert(env_key, str(self._smz_hyperparams.get(key, self._default_smz_hyperparams.get(key))))
         elif self._training_algo == "gumbel_az":
             gaz_hp = self._gaz_hyperparams
             d = self._default_gaz_hyperparams
@@ -6006,6 +6184,17 @@ class GUIController(QtCore.QObject):
                 f"actor_device={gmz_actor_dev},actor_max_cuda={gmz_actor_max_cuda},"
                 f"vtrace={gmz_vtrace},atom={gmz_atom},tree_reuse={gmz_tree_reuse},"
                 f"reanalyze={gmz_reanalyze},batch_rec={gmz_batch_rec})."
+            )
+        elif self._training_algo == "sampled_muzero":
+            _smz_hp = self._smz_hyperparams
+            _smz_d = self._default_smz_hyperparams
+            _smz_k = int(_smz_hp.get("num_samples", _smz_d["num_samples"]))
+            _smz_actors = int(_smz_hp.get("num_actors", _smz_d["num_actors"]))
+            _smz_batch = int(_smz_hp.get("batch_size", _smz_d["batch_size"]))
+            _smz_replay = int(_smz_hp.get("replay_capacity", _smz_d["replay_capacity"]))
+            start_message = (
+                f"Старт {status_prefix.lower()}: SampledMuZero="
+                f"on(K={_smz_k},actors={_smz_actors},batch={_smz_batch},replay={_smz_replay})."
             )
         elif self._training_algo == "gumbel_az":
             gaz_hp = self._gaz_hyperparams
@@ -6754,7 +6943,7 @@ class GUIController(QtCore.QObject):
                 payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
                 if isinstance(payload, dict):
                     algo = str(payload.get("algo", "") or "").strip().lower()
-                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}:
                         return algo
                     if algo == "alphazero":
                         return ""
@@ -6790,6 +6979,8 @@ class GUIController(QtCore.QObject):
             return "GUMBEL ALPHAZERO"
         if key == "gumbel_muzero":
             return "GUMBEL_MUZERO"
+        if key == "sampled_muzero":
+            return "SAMPLED_MUZERO"
         if key == "alphazero_tree":
             return "ALPHAZERO TREE"
         if key == "alphazero_proxy":
@@ -7806,7 +7997,7 @@ class GUIController(QtCore.QObject):
                 self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
                 f"Алгоритм: {self._format_algo_label(self._play_model_algo_key)}"
-                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}
+                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}
                 else "Алгоритм: —"
             )
             self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"
