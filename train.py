@@ -11696,6 +11696,8 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
         "[SMZ][CONFIG] "
         f"num_samples={SMZ_NUM_SAMPLES} unroll={SMZ_UNROLL_STEPS} "
         f"batch={SMZ_BATCH_SIZE} actors={SMZ_NUM_ACTORS} effective_actors={effective_num_actors} "
+        f"inference_server={int(SMZ_INFERENCE_SERVER_ENABLED)} "
+        f"inference_mode={SMZ_INFERENCE_SERVER_MODE} env_workers={SMZ_NUM_ENV_WORKERS} "
         f"replay={SMZ_REPLAY_CAPACITY} "
         f"actor_device_req={SMZ_ACTOR_DEVICE_REQUESTED} actor_device_cuda={int(SMZ_ACTOR_DEVICE_CUDA)} "
         f"cuda_fallback={int(SMZ_ACTOR_USING_CUDA_FALLBACK)} "
@@ -11823,7 +11825,7 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
                 )
                 raise RuntimeError(
                     "Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, "
-                    "3) firewall (TCP 5560)."
+                    f"3) firewall (TCP {SMZ_INFERENCE_REMOTE_PORT})."
                 ) from exc
             append_agent_log(
                 f"[SMZ][REMOTE_CLIENT] connecting to tcp://{SMZ_INFERENCE_REMOTE_HOST}:{SMZ_INFERENCE_REMOTE_PORT}"
