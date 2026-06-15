@@ -5041,6 +5041,15 @@ class GUIController(QtCore.QObject):
         if opponent_algo == "gumbel_muzero" and gmz_opponent_mode == "search":
             env.insert("GMZ_EVAL_OPPONENT_SIMS", str(self._eval_side_search_sims(opponent_side)))
             env.insert("GMZ_EVAL_OPPONENT_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
+        smz_eval_mode = learner_mode if learner_algo == "sampled_muzero" and learner_mode in {"greedy", "search"} else "search"
+        smz_opponent_mode = opponent_mode if opponent_algo == "sampled_muzero" and opponent_mode in {"greedy", "search"} else "search"
+        env.insert("SMZ_EVAL_MODE", smz_eval_mode)
+        env.insert("SMZ_OPPONENT_MODE", smz_opponent_mode)
+        if learner_algo == "sampled_muzero" and smz_eval_mode == "search":
+            env.insert("SMZ_EVAL_NUM_SAMPLES", str(self._eval_side_search_sims(learner_side)))
+            env.insert("SMZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
+        if opponent_algo == "sampled_muzero" and smz_opponent_mode == "search":
+            env.insert("SMZ_EVAL_OPPONENT_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
 
@@ -5091,6 +5100,21 @@ class GUIController(QtCore.QObject):
                 )
             mode_parts.append(gmz_eval_tail)
             mode_parts.append(gmz_opp_tail)
+        if learner_algo == "sampled_muzero" or opponent_algo == "sampled_muzero":
+            smz_eval_tail = f"SMZ-eval={smz_eval_mode}"
+            smz_opp_tail = f"SMZ-opponent={smz_opponent_mode}"
+            if learner_algo == "sampled_muzero" and smz_eval_mode == "search":
+                smz_eval_tail += (
+                    f"(K={self._eval_side_search_sims(learner_side)},"
+                    f"temp={self._eval_side_temperature(learner_side):.2f})"
+                )
+            if opponent_algo == "sampled_muzero" and smz_opponent_mode == "search":
+                smz_opp_tail += (
+                    f"(K={self._eval_side_search_sims(opponent_side)},"
+                    f"temp={self._eval_side_temperature(opponent_side):.2f})"
+                )
+            mode_parts.append(smz_eval_tail)
+            mode_parts.append(smz_opp_tail)
         if is_gumbel_az_algo(learner_algo) or is_gumbel_az_algo(opponent_algo):
             gaz_eval_tail = f"GAZ-eval={gaz_eval_mode}"
             gaz_opp_tail = f"GAZ-opponent={gaz_opponent_mode}"
