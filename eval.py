@@ -46,7 +46,7 @@ from core.models.sampled_muzero_model import (
 )
 from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
-from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, ensure_runtime_dirs
+from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, EVAL_STOP_FLAG_PATH, ensure_runtime_dirs
 
 AGENT_EVAL_LOG_FILE = str(AGENT_EVAL_LOG_PATH.relative_to(AGENT_EVAL_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_EVAL_LOG_FILE)
@@ -86,6 +86,23 @@ def _install_pickle_compat_aliases() -> None:
             pass
     sys.modules.setdefault("gym_mod", types.ModuleType("gym_mod"))
     sys.modules.setdefault("model", types.ModuleType("model"))
+
+
+def _eval_stop_flag_path() -> str:
+    return os.environ.get("EVAL_STOP_FLAG_PATH", "").strip() or str(EVAL_STOP_FLAG_PATH)
+
+
+def eval_stop_requested() -> bool:
+    return os.path.exists(_eval_stop_flag_path())
+
+
+def clear_eval_stop_flag() -> None:
+    try:
+        path = _eval_stop_flag_path()
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 def log(message: str) -> None:
@@ -1278,7 +1295,12 @@ def main():
     )
     step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
 
+    clear_eval_stop_flag()
+
     for idx in range(1, games + 1):
+        if eval_stop_requested():
+            log(f"Остановка по запросу пользователя после {idx - 1}/{games} игр.")
+            break
         (
             winner,
             end_reason,
@@ -1401,8 +1423,14 @@ def main():
             f"end_reason={end_reason}"
         )
 
-    winrate_p1_all = p1_wins / games if games else 0.0
-    winrate_p2_all = p2_wins / games if games else 0.0
+    played_games = len(vp_diffs)
+    if played_games == 0:
+        log("Оценка прервана до первой завершённой игры.")
+        clear_eval_stop_flag()
+        return 0
+
+    winrate_p1_all = p1_wins / played_games if played_games else 0.0
+    winrate_p2_all = p2_wins / played_games if played_games else 0.0
     winrate_p1_decisive = p1_wins / (p1_wins + p2_wins) if (p1_wins + p2_wins) else 0.0
     winrate_p2_decisive = p2_wins / (p1_wins + p2_wins) if (p1_wins + p2_wins) else 0.0
     avg_vp_diff = sum(vp_diffs) / len(vp_diffs) if vp_diffs else 0.0
@@ -1525,6 +1553,7 @@ def main():
         f"raw={dict(end_reasons_v2)}"
     )
     log("[DETAIL] ------------------------------------------------")
+    clear_eval_stop_flag()
     return 0
 
 

@@ -67,6 +67,7 @@ UNITS_PATH = RUNTIME_STATE_DIR / "units.txt"
 STATE_JSON_PATH = RUNTIME_STATE_DIR / "state.json"
 RESPONSE_PATH = RUNTIME_STATE_DIR / "response.txt"
 TRAIN_DATA_PATH = RUNTIME_STATE_DIR / "data.json"
+EVAL_STOP_FLAG_PATH = RUNTIME_STATE_DIR / "eval_stop.flag"
 
 
 def resolve_share_models_root() -> str:

@@ -108,6 +108,7 @@ from project_paths import (
     ARTIFACTS_METRICS_DIR,
     ARTIFACTS_MODELS_DIR,
     BOARD_PATH,
+    EVAL_STOP_FLAG_PATH,
     PROJECT_ROOT,
     RESPONSE_PATH,
     RESULTS_PATH,
@@ -232,6 +233,11 @@ class GUIController(QtCore.QObject):
         self._tb_process: QtCore.QProcess | None = None  # TensorBoard (фоновый сервер)
         self._tb_port = 6006
         self._running = False
+        self._user_stop_requested = False
+        self._stop_kill_attempts = 0
+        self._stop_kill_timer = QtCore.QTimer(self)
+        self._stop_kill_timer.setSingleShot(True)
+        self._stop_kill_timer.timeout.connect(self._on_stop_kill_timeout)
         self._repo_root = str(PROJECT_ROOT)
         self._runtime_python = get_runtime_python(PROJECT_ROOT)
         self._app_gui_dir = str(APP_DIR / "gui_qt")
@@ -4755,12 +4761,66 @@ class GUIController(QtCore.QObject):
         if self._process is None:
             self._emit_status("Нет активного процесса для остановки.")
             return
+        if self._user_stop_requested:
+            return
+        self._user_stop_requested = True
+        self._stop_kill_attempts = 0
+        kind = self._active_process_kind
         self._emit_log("[GUI] Останавливаю процесс...", level="INFO")
-        self._process.terminate()
-        if not self._process.waitForFinished(3000):
-            self._emit_log("[GUI] Процесс не завершился, принудительное завершение.", level="WARN")
-            self._process.kill()
-        self._cleanup_process()
+        self._emit_status("Останавливаю...")
+        if kind == "eval":
+            self._write_eval_stop_flag()
+        proc = self._process
+        if proc.state() == QtCore.QProcess.ProcessState.Running:
+            proc.readAllStandardOutput()
+            proc.readAllStandardError()
+            proc.terminate()
+            self._stop_kill_timer.start(8000)
+            return
+        self._user_stop_requested = False
+        self._clear_eval_stop_flag()
+
+    def _write_eval_stop_flag(self) -> None:
+        ensure_runtime_dirs()
+        try:
+            EVAL_STOP_FLAG_PATH.write_text("stop\n", encoding="utf-8")
+        except OSError as exc:
+            self._emit_log(
+                f"[GUI] Не удалось записать eval stop.flag. "
+                f"Где: gui_qt/main.py (_write_eval_stop_flag). Детали: {exc}",
+                level="WARN",
+            )
+
+    def _clear_eval_stop_flag(self) -> None:
+        try:
+            if EVAL_STOP_FLAG_PATH.is_file():
+                EVAL_STOP_FLAG_PATH.unlink()
+        except OSError:
+            pass
+
+    def _on_stop_kill_timeout(self) -> None:
+        proc = self._process
+        if proc is None:
+            self._user_stop_requested = False
+            return
+        if proc.state() == QtCore.QProcess.ProcessState.NotRunning:
+            return
+        self._stop_kill_attempts += 1
+        if self._stop_kill_attempts == 1:
+            self._emit_log(
+                "[GUI] Процесс не завершился за 8 с, принудительное завершение.",
+                level="WARN",
+            )
+            proc.readAllStandardOutput()
+            proc.readAllStandardError()
+            proc.kill()
+            self._stop_kill_timer.start(5000)
+            return
+        self._emit_log(
+            "[GUI] Процесс всё ещё не завершился после kill(). "
+            "Дождитесь сигнала finished или перезапустите приложение.",
+            level="WARN",
+        )
 
     @QtCore.Slot()
     def clear_model_cache(self) -> None:
@@ -4972,6 +5032,10 @@ class GUIController(QtCore.QObject):
                 "Что делать: выберите хотя бы одного агента в P1/P2 либо укажите .pickle."
             )
             return
+
+        self._clear_eval_stop_flag()
+        self._user_stop_requested = False
+        self._stop_kill_attempts = 0
 
         eval_script = os.path.join(self._repo_root, "eval.py")
         if not os.path.exists(eval_script):
@@ -6609,10 +6673,22 @@ class GUIController(QtCore.QObject):
         self._cleanup_process()
 
     def _on_finished(self, exit_code: int, exit_status: QtCore.QProcess.ExitStatus) -> None:
+        self._stop_kill_timer.stop()
+        stopped_by_user = self._user_stop_requested
+        self._user_stop_requested = False
+        self._stop_kill_attempts = 0
+        self._clear_eval_stop_flag()
         status_text = "нормально" if exit_status == QtCore.QProcess.ExitStatus.NormalExit else "с ошибкой"
         self._emit_log(f"[GUI] Процесс завершён ({status_text}), код: {exit_code}.")
         if self._active_process_kind == "eval":
-            if exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0:
+            if stopped_by_user:
+                self._emit_status("Оценка остановлена.")
+                if not self._eval_summary_text.strip() or "Идёт оценка" in self._eval_summary_text:
+                    self._set_eval_summary_text(
+                        "Оценка остановлена пользователем. "
+                        "Частичный итог — в логе, если успели завершить хотя бы одну игру."
+                    )
+            elif exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0:
                 self._emit_status("Оценка завершена.")
                 if not self._eval_summary_text.strip() or "Идёт оценка" in self._eval_summary_text:
                     self._set_eval_summary_text(
@@ -6638,6 +6714,10 @@ class GUIController(QtCore.QObject):
         self._cleanup_process()
 
     def _cleanup_process(self) -> None:
+        self._stop_kill_timer.stop()
+        self._user_stop_requested = False
+        self._stop_kill_attempts = 0
+        self._clear_eval_stop_flag()
         self._training_ui_timer.stop()
         self._telemetry.set_context(
             pid=None, algo=str(getattr(self, "_training_algo", "dqn")),
