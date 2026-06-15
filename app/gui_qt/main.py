@@ -6196,6 +6196,67 @@ class GUIController(QtCore.QObject):
             }
             for key, env_key in smz_map.items():
                 env.insert(env_key, str(self._smz_hyperparams.get(key, self._default_smz_hyperparams.get(key))))
+            smz_inf_enabled = int(self._smz_hyperparams.get("inference_server_enabled", self._default_smz_hyperparams.get("inference_server_enabled", 0)))
+            smz_inf_mode = str(self._smz_hyperparams.get("inference_server_mode", self._default_smz_hyperparams.get("inference_server_mode", "local")))
+            env.insert("SMZ_INFERENCE_SERVER", "1" if smz_inf_enabled == 1 else "0")
+            env.insert("SMZ_INFERENCE_SERVER_MODE", smz_inf_mode)
+            env.insert(
+                "SMZ_INFERENCE_SERVER_COMPILE",
+                str(self._smz_hyperparams.get("inference_server_compile", self._default_smz_hyperparams.get("inference_server_compile", 1))),
+            )
+            env.insert(
+                "SMZ_INFERENCE_BATCH_SIZE",
+                str(self._smz_hyperparams.get("inference_batch_size", self._default_smz_hyperparams.get("inference_batch_size", 8))),
+            )
+            env.insert(
+                "SMZ_INFERENCE_BATCH_INTERVAL_MS",
+                str(self._smz_hyperparams.get("inference_batch_interval_ms", self._default_smz_hyperparams.get("inference_batch_interval_ms", 20.0))),
+            )
+            env.insert(
+                "SMZ_INFERENCE_REQUEST_QUEUE_MAX",
+                str(self._smz_hyperparams.get("inference_request_queue_max", self._default_smz_hyperparams.get("inference_request_queue_max", 32))),
+            )
+            env.insert(
+                "SMZ_INFERENCE_TIMEOUT",
+                str(self._smz_hyperparams.get("inference_timeout", self._default_smz_hyperparams.get("inference_timeout", 5.0))),
+            )
+            env.insert(
+                "SMZ_NUM_ENV_WORKERS",
+                str(self._smz_hyperparams.get("num_env_workers", self._default_smz_hyperparams.get("num_env_workers", 6))),
+            )
+            if smz_inf_enabled == 1 and smz_inf_mode == "remote":
+                remote_smz_path = Path(self._repo_root) / "runtime" / "state" / "remote_is_smz.json"
+                remote_smz_host = "127.0.0.1"
+                remote_smz_port = 5560
+                remote_smz_token = ""
+                if remote_smz_path.is_file():
+                    try:
+                        remote_smz_data = json.loads(remote_smz_path.read_text(encoding="utf-8"))
+                        if isinstance(remote_smz_data, dict):
+                            remote_smz_host = str(remote_smz_data.get("host", remote_smz_host))
+                            remote_smz_port = int(remote_smz_data.get("port", remote_smz_port))
+                            remote_smz_token = str(remote_smz_data.get("auth_token", remote_smz_token))
+                    except Exception as exc:
+                        self._emit_log(
+                            f"[GUI][SMZ][REMOTE_IS] не удалось прочитать remote_is_smz.json: {exc}; "
+                            "использую дефолты (127.0.0.1:5560)",
+                            level="WARN",
+                        )
+                else:
+                    self._emit_log(
+                        "[GUI][SMZ][REMOTE_IS] runtime/state/remote_is_smz.json не найден; "
+                        "использую дефолты (127.0.0.1:5560)",
+                        level="WARN",
+                    )
+                env.insert("SMZ_INFERENCE_SERVER_MODE", "remote")
+                env.insert("SMZ_INFERENCE_REMOTE_HOST", remote_smz_host)
+                env.insert("SMZ_INFERENCE_REMOTE_PORT", str(remote_smz_port))
+                env.insert("SMZ_INFERENCE_REMOTE_AUTH_TOKEN", remote_smz_token)
+                env.insert("SMZ_ACTOR_DEVICE", "inference_server")
+                self._emit_log(
+                    f"[GUI][SMZ][REMOTE_IS] enabled host={remote_smz_host} port={remote_smz_port}",
+                    level="INFO",
+                )
         elif self._training_algo == "gumbel_az":
             gaz_hp = self._gaz_hyperparams
             d = self._default_gaz_hyperparams

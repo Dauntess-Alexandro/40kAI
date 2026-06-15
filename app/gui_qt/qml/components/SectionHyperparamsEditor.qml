@@ -247,6 +247,8 @@ ColumnLayout {
             || k.indexOf("sync_") === 0 || k.indexOf("updates_per") >= 0 || k.indexOf("replay_min") >= 0
             || k.indexOf("max_policy") >= 0 || k.indexOf("outcome_only") >= 0
             || k === "dedup" || k.indexOf("tbptt_truncate") >= 0 || k.indexOf("vtrace_full") >= 0
+            || k.indexOf("inference_server_enabled") >= 0 || k.indexOf("inference_server_compile") >= 0
+            || k.indexOf("inference_request_queue_max") >= 0 || k.indexOf("clear_tree_on_weight_sync") >= 0
             || k.indexOf("double_dqn") >= 0 || k.indexOf("dueling") >= 0
             || k.indexOf("adaptive_entropy") >= 0 || k.indexOf("noisy_disable") >= 0
             || k.indexOf("noisy_sigma_anneal") >= 0 || k.indexOf("iqn_n_") === 0
