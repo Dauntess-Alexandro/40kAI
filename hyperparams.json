@@ -259,7 +259,11 @@
         "temperature_opening_moves": 12, "temperature_opening_value": 1.0, "temperature_late_value": 0.25,
         "replay_capacity": 400000, "replay_min_size": 512, "max_policy_staleness_updates": 600,
         "num_actors": 8, "sync_every_updates": 20, "updates_per_rollout": 3,
-        "actor_device": "cuda", "learner_compile": 1
+        "actor_device": "cuda", "learner_compile": 1,
+        "actor_max_cuda": 2, "num_env_workers": 6,
+        "inference_server_enabled": 0, "inference_server_mode": "local", "inference_server_compile": 1,
+        "inference_batch_size": 8, "inference_batch_interval_ms": 20.0,
+        "inference_request_queue_max": 32, "inference_timeout": 5.0, "clear_tree_on_weight_sync": 0
     },
     "gumbel_az": {
         "learning_rate": 0.0003,
