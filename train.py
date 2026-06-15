@@ -11826,7 +11826,7 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
                     "3) firewall (TCP 5560)."
                 ) from exc
             append_agent_log(
-                f"[SMZ][INF_SERVER] connecting to tcp://{SMZ_INFERENCE_REMOTE_HOST}:{SMZ_INFERENCE_REMOTE_PORT}"
+                f"[SMZ][REMOTE_CLIENT] connecting to tcp://{SMZ_INFERENCE_REMOTE_HOST}:{SMZ_INFERENCE_REMOTE_PORT}"
             )
         elif SMZ_INFERENCE_SERVER_LOCAL:
             request_q = ctx.Queue(maxsize=int(SMZ_INFERENCE_REQUEST_QUEUE_MAX))
@@ -12108,9 +12108,19 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
 
     pbar.close()
     _save_smz_sync()
+    if request_q is not None:
+        try:
+            request_q.put(None)
+        except Exception:
+            pass
     for p in procs:
         try:
             p.join(timeout=2.0)
+        except Exception:
+            pass
+    if inf_proc is not None:
+        try:
+            inf_proc.join(timeout=3.0)
         except Exception:
             pass
 
