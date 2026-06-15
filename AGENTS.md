@@ -52,6 +52,12 @@
 - Конфиг GUI (ПК1): `runtime/state/remote_is.json` (в `.gitignore`).
 - Логи сервера на ПК2: `runtime/logs/LOGS_FOR_AGENTS_REMOTE_IS.md`, `gmz_remote_is_*.log`.
 
+## Remote Inference Server (Sampled MuZero)
+- Гайд: `docs/remote-inference-server-smz.md`; пошагово на ПК2: `docs/pc2-remote-smz-is-setup-guide.md`.
+- Запуск ПК2: `tools/pc2_remote_smz_is.bat` (конфиг: `runtime/state/pc2_remote_smz_is_config.bat`). Порт по умолчанию 5560 (gmz/az — 5555; не запускать на одном ПК2/порту).
+- Конфиг GUI (ПК1): `runtime/state/remote_is_smz.json`. Тумблер: hyperparams `sampled_muzero.inference_server_enabled` / env `SMZ_INFERENCE_SERVER=1`. Дефолт выкл.
+- Логи: `[SMZ][INF_SERVER]`, `[SMZ][REMOTE_IS]`, `[SMZ][REMOTE_CLIENT]`, `[SMZ][ENV_WORKER]`.
+
 ## Inference Server (AlphaZero tree)
 - **Дизайн:** `docs/inference-server-az-design.md` (план: `plans/az-tree-inference-server.md`).
 - **LAN-руководство (ПК1+ПК2):** `docs/remote-inference-server-az.md`; пошагово на ПК2: `docs/pc2-remote-az-is-setup-guide.md`.
