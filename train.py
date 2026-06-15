@@ -152,6 +152,7 @@ from core.models.sampled_muzero_trainer import (
     make_smz_lr_scheduler,
     train_sampled_muzero_step,
 )
+from core.models.smz_inference_server import smz_inference_server_entry
 from core.models.utils import *
 
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
@@ -11661,7 +11662,23 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
             append_agent_log("[SMZ][SELFPLAY][WARN] SELF_PLAY_ENABLED=1, но OPPONENT_AGENT_ID пустой; fallback на heuristic.")
 
     effective_num_actors = int(SMZ_ACTOR_EFFECTIVE_NUM_ACTORS)
-    if SMZ_ACTOR_USING_CUDA_FALLBACK:
+    if SMZ_INFERENCE_SERVER_USING_FALLBACK:
+        append_agent_log(
+            "[SMZ][CONFIG][FALLBACK] Запрошен inference server (variant B), но CUDA недоступна. "
+            f"Переключаемся на вариант A: actor_device=cpu, num_actors={SMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS}."
+        )
+    elif SMZ_INFERENCE_SERVER_ENABLED:
+        if SMZ_INFERENCE_REMOTE:
+            append_agent_log(
+                f"[SMZ][CONFIG] Remote inference server (variant B-remote): env_workers={effective_num_actors} "
+                f"host={SMZ_INFERENCE_REMOTE_HOST} port={SMZ_INFERENCE_REMOTE_PORT}"
+            )
+        else:
+            append_agent_log(
+                f"[SMZ][CONFIG] Inference server (variant B-local): env_workers={effective_num_actors} "
+                f"batch={SMZ_INFERENCE_BATCH_SIZE} interval_ms={SMZ_INFERENCE_BATCH_INTERVAL_MS}"
+            )
+    elif SMZ_ACTOR_USING_CUDA_FALLBACK:
         append_agent_log(
             "[SMZ][CONFIG][FALLBACK] В hyperparams указан actor_device=cuda, но PyTorch не видит GPU с CUDA "
             f"(torch.cuda.is_available()=False, device_count={int(torch.cuda.device_count()) if hasattr(torch.cuda, 'device_count') else 0}). "
@@ -11751,6 +11768,8 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(SMZ_ACTOR_QUEUE_MAX))
     procs: list = []
+    inf_proc = None
+    request_q = None
 
     init_weights_cpu = {
         k: v.detach().cpu() for k, v in normalize_state_dict(smz_net.state_dict()).items()
@@ -11761,18 +11780,18 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
         "temperature_late_value": SMZ_TEMP_LATE,
     }
     search_cfg_payload = {
-        "num_samples": SMZ_NUM_SAMPLES,
-        "discount": SMZ_DISCOUNT,
-        "temperature": SMZ_SEARCH_TEMP,
-        "sample_temperature": SMZ_SAMPLE_TEMP,
-        "prior_weight": SMZ_PRIOR_WEIGHT,
-        "dedup": int(SMZ_DEDUP),
-        "latent_dim": SMZ_LATENT_DIM,
-        "hidden_dim": SMZ_HIDDEN_DIM,
-        "num_layers": SMZ_NUM_LAYERS,
-        "action_embed_dim": SMZ_ACTION_EMBED_DIM,
         "obs_dim": int(n_observations),
-        "action_sizes": list(n_actions),
+        "action_sizes": [int(x) for x in n_actions],
+        "latent_dim": int(SMZ_LATENT_DIM),
+        "hidden_dim": int(SMZ_HIDDEN_DIM),
+        "num_layers": int(SMZ_NUM_LAYERS),
+        "action_embed_dim": int(SMZ_ACTION_EMBED_DIM),
+        "num_samples": int(SMZ_NUM_SAMPLES),
+        "discount": float(SMZ_DISCOUNT),
+        "temperature": float(SMZ_SEARCH_TEMP),
+        "sample_temperature": float(SMZ_SAMPLE_TEMP),
+        "prior_weight": float(SMZ_PRIOR_WEIGHT),
+        "dedup": 1 if SMZ_DEDUP else 0,
     }
     outcome_payload = {
         "outcome_only": SMZ_OUTCOME_ONLY,
@@ -11783,15 +11802,62 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
     }
 
     if remaining_episodes > 0:
+        if SMZ_INFERENCE_SERVER_ENABLED and SMZ_INFERENCE_REMOTE:
+            from core.models.gmz_inference_transport import remote_health_check
+
+            try:
+                hc = remote_health_check(
+                    host=SMZ_INFERENCE_REMOTE_HOST,
+                    port=int(SMZ_INFERENCE_REMOTE_PORT),
+                    auth_token=SMZ_INFERENCE_REMOTE_AUTH_TOKEN,
+                    timeout=min(3.0, float(SMZ_INFERENCE_TIMEOUT)),
+                )
+                append_agent_log(
+                    f"[SMZ][REMOTE_CLIENT] health_check ok host={SMZ_INFERENCE_REMOTE_HOST} "
+                    f"port={SMZ_INFERENCE_REMOTE_PORT} policy_version={hc.get('policy_version', '?')} "
+                    f"gpu={hc.get('gpu_name', '?')}"
+                )
+            except Exception as exc:
+                append_agent_log(
+                    f"[SMZ][REMOTE_CLIENT] health_check failed host={SMZ_INFERENCE_REMOTE_HOST}: {exc}"
+                )
+                raise RuntimeError(
+                    "Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, "
+                    "3) firewall (TCP 5560)."
+                ) from exc
+            append_agent_log(
+                f"[SMZ][INF_SERVER] connecting to tcp://{SMZ_INFERENCE_REMOTE_HOST}:{SMZ_INFERENCE_REMOTE_PORT}"
+            )
+        elif SMZ_INFERENCE_SERVER_LOCAL:
+            request_q = ctx.Queue(maxsize=int(SMZ_INFERENCE_REQUEST_QUEUE_MAX))
+            reply_queues = [ctx.Queue(maxsize=8) for _ in range(int(effective_num_actors))]
+            inf_proc = ctx.Process(
+                target=smz_inference_server_entry,
+                args=(
+                    request_q,
+                    reply_queues,
+                    sync_path,
+                    init_weights_cpu,
+                    search_cfg_payload,
+                ),
+                kwargs={
+                    "inference_batch_size": int(SMZ_INFERENCE_BATCH_SIZE),
+                    "inference_batch_interval_ms": float(SMZ_INFERENCE_BATCH_INTERVAL_MS),
+                    "inference_server_compile": bool(SMZ_INFERENCE_SERVER_COMPILE),
+                    "clear_tree_on_weight_sync": bool(SMZ_CLEAR_TREE_ON_WEIGHT_SYNC),
+                },
+                daemon=True,
+            )
+            inf_proc.start()
+
         for a_idx in range(int(effective_num_actors)):
             base = int(remaining_episodes) // int(effective_num_actors)
             rem = int(remaining_episodes) % int(effective_num_actors)
             actor_episodes = int(base + (1 if a_idx < rem else 0))
             if actor_episodes <= 0:
                 continue
-            p = ctx.Process(
-                target=_actor_learner_actor_entry_sampled_muzero,
-                args=(
+            if SMZ_INFERENCE_SERVER_ENABLED:
+                worker_args = (
                     int(a_idx),
                     int(actor_episodes),
                     roster_config,
@@ -11799,17 +11865,47 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
                     int(b_hei),
                     int(n_observations),
                     list(n_actions),
-                    init_weights_cpu,
                     int(SMZ_ACTOR_BATCH_SEND),
                     data_q,
+                    request_q,
+                    reply_queues[int(a_idx)] if SMZ_INFERENCE_SERVER_LOCAL else None,
                     int(1 if SELF_PLAY_ENABLED else 0),
                     opponent_spec,
                     sp_cfg_payload,
-                    search_cfg_payload,
                     outcome_payload,
-                ),
-                daemon=True,
-            )
+                    float(SMZ_INFERENCE_TIMEOUT),
+                    str(SMZ_INFERENCE_SERVER_MODE),
+                    str(SMZ_INFERENCE_REMOTE_HOST),
+                    int(SMZ_INFERENCE_REMOTE_PORT),
+                    str(SMZ_INFERENCE_REMOTE_AUTH_TOKEN),
+                )
+                p = ctx.Process(
+                    target=_gmz_env_worker_entry,
+                    args=worker_args,
+                    daemon=True,
+                )
+            else:
+                p = ctx.Process(
+                    target=_actor_learner_actor_entry_sampled_muzero,
+                    args=(
+                        int(a_idx),
+                        int(actor_episodes),
+                        roster_config,
+                        int(b_len),
+                        int(b_hei),
+                        int(n_observations),
+                        list(n_actions),
+                        init_weights_cpu,
+                        int(SMZ_ACTOR_BATCH_SEND),
+                        data_q,
+                        int(1 if SELF_PLAY_ENABLED else 0),
+                        opponent_spec,
+                        sp_cfg_payload,
+                        search_cfg_payload,
+                        outcome_payload,
+                    ),
+                    daemon=True,
+                )
             p.start()
             procs.append(p)
 
