@@ -102,6 +102,12 @@ class SMZRemoteInferenceServer:
         action_embed_dim = int(search_cfg.get("action_embed_dim", 64))
         obs_dim = int(search_cfg.get("obs_dim", 0))
         action_sizes = [int(x) for x in search_cfg.get("action_sizes", [])]
+        if obs_dim <= 0 or not action_sizes:
+            raise ValueError(
+                "smz_inference_server: search_cfg пуст (obs_dim<=0 или action_sizes=[]). "
+                "Что делать: сгенерируйте search-cfg на ПК1 через tools/write_smz_remote_search_cfg.bat "
+                "и положите smz_remote_search_cfg.json рядом с весами (SMB/actor_sync)."
+            )
 
         net = make_sampled_muzero_net(
             obs_dim=obs_dim,
@@ -112,16 +118,25 @@ class SMZRemoteInferenceServer:
             action_embed_dim=action_embed_dim,
         ).to(torch_device)
 
+        def _log_mismatch(load_result) -> None:
+            missing = len(getattr(load_result, "missing_keys", []) or [])
+            unexpected = len(getattr(load_result, "unexpected_keys", []) or [])
+            if missing or unexpected:
+                _log(
+                    f"[SMZ][REMOTE_IS] weight load: missing={missing} unexpected={unexpected}",
+                    log_path,
+                )
+
         weight_src = init_weights_path if init_weights_path and os.path.isfile(init_weights_path) else None
         if weight_src:
             payload = torch.load(weight_src, map_location="cpu", weights_only=False)
             sd = payload.get("state_dict") if isinstance(payload, dict) else payload
-            net.load_state_dict(normalize_state_dict(sd), strict=False)
+            _log_mismatch(net.load_state_dict(normalize_state_dict(sd), strict=False))
             _log(f"[SMZ][REMOTE_IS] loaded init weights from {weight_src}", log_path)
         elif os.path.isfile(self.weights_path):
             payload = torch.load(self.weights_path, map_location="cpu", weights_only=False)
             sd = payload.get("state_dict") if isinstance(payload, dict) else payload
-            net.load_state_dict(normalize_state_dict(sd), strict=False)
+            _log_mismatch(net.load_state_dict(normalize_state_dict(sd), strict=False))
             _log(f"[SMZ][REMOTE_IS] loaded weights from {self.weights_path}", log_path)
         else:
             raise FileNotFoundError(

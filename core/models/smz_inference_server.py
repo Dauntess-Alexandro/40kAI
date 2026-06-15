@@ -276,9 +276,18 @@ def smz_inference_server_entry(
         else:
             device = torch.device("cpu")
 
+        obs_dim = int(search_cfg_payload.get("obs_dim", 0))
+        action_sizes = [int(x) for x in search_cfg_payload.get("action_sizes", [])]
+        if obs_dim <= 0 or not action_sizes:
+            raise ValueError(
+                "smz_inference_server: search_cfg пуст (obs_dim<=0 или action_sizes=[]). "
+                "Что делать: сгенерируйте search-cfg на ПК1 через tools/write_smz_remote_search_cfg.bat "
+                "и положите smz_remote_search_cfg.json рядом с весами (SMB/actor_sync)."
+            )
+
         net = make_sampled_muzero_net(
-            obs_dim=int(search_cfg_payload.get("obs_dim", 0)),
-            action_sizes=[int(x) for x in search_cfg_payload.get("action_sizes", [])],
+            obs_dim=obs_dim,
+            action_sizes=action_sizes,
             latent_dim=int(search_cfg_payload.get("latent_dim", 256)),
             hidden_dim=int(search_cfg_payload.get("hidden_dim", 256)),
             num_layers=int(search_cfg_payload.get("num_layers", 2)),
