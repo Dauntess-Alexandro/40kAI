@@ -24,7 +24,7 @@ from core.models.utils import build_action_masks_by_head, build_shoot_action_mas
 @dataclass(frozen=True)
 class OpponentSpec:
     agent_id: str
-    algo: str  # "dqn" | "ppo" | "alphazero_tree" | "alphazero_proxy" | "gumbel_muzero"
+    algo: str  # "dqn" | "ppo" | "alphazero_tree" | "alphazero_proxy" | "gumbel_muzero" | "sampled_muzero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
 
@@ -294,6 +294,76 @@ def build_policy_fn(
             legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
             obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
             if gmz_mode == "greedy":
+                with torch.no_grad():
+                    probs, _value = net.infer(obs_t, masks_by_head=[m.unsqueeze(0) for m in masks_cpu])
+                action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+            else:
+                pi_targets, _behavior_logits, selected, _value = search.run(
+                    obs=obs_np,
+                    legal_masks_by_head=legal_masks,
+                    deterministic=bool(deterministic),
+                )
+                if bool(deterministic):
+                    action = [int(np.argmax(pi)) for pi in pi_targets]
+                else:
+                    action = [int(x) for x in selected]
+            return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
+
+        return _policy_fn
+
+    if opponent.algo == "sampled_muzero":
+        from core.models.sampled_muzero_model import make_sampled_muzero_net
+        from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
+
+        net = make_sampled_muzero_net(
+            obs_dim=int(n_obs),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(os.getenv("SMZ_LATENT_DIM", "256")),
+            hidden_dim=int(os.getenv("SMZ_HIDDEN_DIM", "256")),
+            action_embed_dim=int(os.getenv("SMZ_ACTION_EMBED_DIM", "64")),
+        ).to(torch.device("cpu"))
+        net.load_state_dict(normalize_state_dict(opponent.policy_state))
+        net.eval()
+        smz_mode = str(os.getenv("SMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
+        if smz_mode not in {"search", "greedy"}:
+            smz_mode = "search"
+        search = SampledMuZeroSearch(
+            net=net,
+            config=SampledMuZeroSearchConfig(
+                num_samples=max(
+                    1,
+                    int(
+                        os.getenv(
+                            "SMZ_EVAL_OPPONENT_NUM_SAMPLES",
+                            os.getenv("SMZ_EVAL_NUM_SAMPLES", "24"),
+                        )
+                    ),
+                ),
+                temperature=float(
+                    os.getenv(
+                        "SMZ_EVAL_OPPONENT_TEMPERATURE",
+                        os.getenv("SMZ_EVAL_TEMPERATURE", "0.10"),
+                    )
+                ),
+                sample_temperature=float(
+                    os.getenv(
+                        "SMZ_EVAL_OPPONENT_SAMPLE_TEMPERATURE",
+                        os.getenv("SMZ_EVAL_SAMPLE_TEMPERATURE", "1.0"),
+                    )
+                ),
+                prior_weight=0.0,
+                dedup=True,
+                discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
+            ),
+            device=torch.device("cpu"),
+        )
+
+        def _policy_fn(obs_any) -> dict:
+            obs_np = _to_np_state(obs_any)
+            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
+            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
+            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+            if smz_mode == "greedy":
                 with torch.no_grad():
                     probs, _value = net.infer(obs_t, masks_by_head=[m.unsqueeze(0) for m in masks_cpu])
                 action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
