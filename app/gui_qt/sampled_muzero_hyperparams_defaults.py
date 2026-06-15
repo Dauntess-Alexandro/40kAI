@@ -38,6 +38,16 @@ SMZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "ema_tau",
     "learner_compile",
     "actor_device",
+    "actor_max_cuda",
+    "num_env_workers",
+    "inference_server_enabled",
+    "inference_server_mode",
+    "inference_server_compile",
+    "inference_batch_size",
+    "inference_batch_interval_ms",
+    "inference_request_queue_max",
+    "inference_timeout",
+    "clear_tree_on_weight_sync",
     "temperature_opening_moves",
     "temperature_opening_value",
     "temperature_late_value",
@@ -83,6 +93,16 @@ DEFAULT_SMZ_HYPERPARAMS: dict[str, int | float | str] = {
     "ema_tau": 0.005,
     "learner_compile": 1,
     "actor_device": "cuda",
+    "actor_max_cuda": 2,
+    "num_env_workers": 6,
+    "inference_server_enabled": 0,
+    "inference_server_mode": "local",
+    "inference_server_compile": 1,
+    "inference_batch_size": 8,
+    "inference_batch_interval_ms": 20.0,
+    "inference_request_queue_max": 32,
+    "inference_timeout": 5.0,
+    "clear_tree_on_weight_sync": 0,
     "temperature_opening_moves": 12,
     "temperature_opening_value": 1.0,
     "temperature_late_value": 0.25,
@@ -221,6 +241,23 @@ SMZ_GROUPS: tuple[dict[str, object], ...] = (
         "default_collapsed": True,
     },
     {
+        "id": "inference_server",
+        "title": "Inference Server",
+        "keys": (
+            "inference_server_enabled",
+            "inference_server_mode",
+            "num_env_workers",
+            "inference_batch_size",
+            "inference_batch_interval_ms",
+            "inference_request_queue_max",
+            "inference_timeout",
+            "inference_server_compile",
+            "clear_tree_on_weight_sync",
+            "actor_max_cuda",
+        ),
+        "default_collapsed": True,
+    },
+    {
         "id": "arch_outcome",
         "title": "Архитектура и outcome",
         "keys": (
@@ -274,6 +311,26 @@ SMZ_FIELD_TOOLTIPS: dict[str, str] = {
     "ema_tau": "Скорость обновления EMA-цели для consistency loss.",
     "learner_compile": "1 = torch.compile для learner на CUDA.",
     "actor_device": "cuda / cpu — устройство для акторов self-play.",
+    "actor_max_cuda": "Макс. число CUDA-акторов (variant A).",
+    "num_env_workers": "Число CPU env-воркеров (variant B).",
+    "inference_server_enabled": (
+        "Вкл inference-server (variant B): отдельный GPU-сервер крутит поиск, "
+        "env-воркеры на CPU. По умолчанию выкл."
+    ),
+    "inference_server_mode": (
+        "local — сервер на этой машине; remote — сервер на ПК2 "
+        "(настройки host/port в remote_is_smz.json)."
+    ),
+    "inference_server_compile": (
+        "torch.compile сервера (на Windows без triton мягко пропускается)."
+    ),
+    "inference_batch_size": "Макс. размер батча запросов на сервере.",
+    "inference_batch_interval_ms": "Окно сбора батча, мс.",
+    "inference_request_queue_max": "Глубина очереди запросов к серверу.",
+    "inference_timeout": "Таймаут ответа сервера, сек.",
+    "clear_tree_on_weight_sync": (
+        "Сброс tree-reuse при синке весов (для sampled v1 неактуально, оставьте 0)."
+    ),
     "temperature_opening_moves": "Ходов с повышенной температурой.",
     "temperature_opening_value": "Температура в дебюте.",
     "temperature_late_value": "Температура в эндшпиле.",
