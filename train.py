@@ -3173,16 +3173,74 @@ SMZ_VTRACE_C_CLIP = float(os.getenv("SMZ_VTRACE_C_CLIP", str(SMZ_CFG.get("vtrace
 SMZ_REANALYZE_FRACTION = float(os.getenv("SMZ_REANALYZE_FRACTION", str(SMZ_CFG.get("reanalyze_fraction", 0.15))))
 SMZ_EMA_TAU = float(os.getenv("SMZ_EMA_TAU", str(SMZ_CFG.get("ema_tau", 0.005))))
 SMZ_LEARNER_COMPILE = str(os.getenv("SMZ_LEARNER_COMPILE", str(SMZ_CFG.get("learner_compile", 1)))).strip() == "1"
+# Вариант A: GPU/CPU-акторы; вариант B: inference_server + CPU env workers (local|remote)
 SMZ_ACTOR_DEVICE_REQUESTED = str(os.getenv("SMZ_ACTOR_DEVICE", str(SMZ_CFG.get("actor_device", "cuda")))).strip().lower()
-if SMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda"):
+if SMZ_ACTOR_DEVICE_REQUESTED not in ("cpu", "cuda", "inference_server"):
     SMZ_ACTOR_DEVICE_REQUESTED = "cuda"
-SMZ_ACTOR_DEVICE_CUDA = SMZ_ACTOR_DEVICE_REQUESTED == "cuda" and torch.cuda.is_available()
-SMZ_ACTOR_USING_CUDA_FALLBACK = SMZ_ACTOR_DEVICE_REQUESTED == "cuda" and not torch.cuda.is_available()
 SMZ_ACTOR_MAX_CUDA = max(1, int(os.getenv("SMZ_ACTOR_MAX_CUDA", str(SMZ_CFG.get("actor_max_cuda", 2)))))
-if SMZ_ACTOR_DEVICE_CUDA:
-    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = min(int(SMZ_NUM_ACTORS), int(SMZ_ACTOR_MAX_CUDA))
+SMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS = 8
+SMZ_INFERENCE_SERVER_MODE = str(
+    os.getenv("SMZ_INFERENCE_SERVER_MODE", str(SMZ_CFG.get("inference_server_mode", "local")))
+).strip().lower()
+if SMZ_INFERENCE_SERVER_MODE == "inference_server":
+    SMZ_INFERENCE_SERVER_MODE = "local"
+SMZ_INFERENCE_REMOTE = SMZ_INFERENCE_SERVER_MODE == "remote"
+SMZ_INFERENCE_REMOTE_HOST = str(os.getenv("SMZ_INFERENCE_REMOTE_HOST", "127.0.0.1")).strip() or "127.0.0.1"
+SMZ_INFERENCE_REMOTE_PORT = max(1, int(os.getenv("SMZ_INFERENCE_REMOTE_PORT", "5560")))
+SMZ_INFERENCE_REMOTE_AUTH_TOKEN = str(os.getenv("SMZ_INFERENCE_REMOTE_AUTH_TOKEN", "")).strip()
+SMZ_INFERENCE_SERVER_REQUESTED = (
+    SMZ_INFERENCE_REMOTE
+    or str(os.getenv("SMZ_INFERENCE_SERVER", str(SMZ_CFG.get("inference_server_enabled", 0)))).strip() == "1"
+    or SMZ_ACTOR_DEVICE_REQUESTED == "inference_server"
+)
+SMZ_INFERENCE_SERVER_USING_FALLBACK = (
+    SMZ_INFERENCE_SERVER_REQUESTED and not SMZ_INFERENCE_REMOTE and not torch.cuda.is_available()
+)
+SMZ_INFERENCE_SERVER_ENABLED = SMZ_INFERENCE_SERVER_REQUESTED and (
+    SMZ_INFERENCE_REMOTE or torch.cuda.is_available()
+)
+SMZ_INFERENCE_SERVER_LOCAL = bool(SMZ_INFERENCE_SERVER_ENABLED and not SMZ_INFERENCE_REMOTE)
+SMZ_NUM_ENV_WORKERS = max(
+    1, int(os.getenv("SMZ_NUM_ENV_WORKERS", str(SMZ_CFG.get("num_env_workers", SMZ_CFG.get("num_actors", 6)))))
+)
+SMZ_INFERENCE_BATCH_SIZE = max(1, int(os.getenv("SMZ_INFERENCE_BATCH_SIZE", str(SMZ_CFG.get("inference_batch_size", 8)))))
+SMZ_INFERENCE_BATCH_INTERVAL_MS = float(
+    os.getenv("SMZ_INFERENCE_BATCH_INTERVAL_MS", str(SMZ_CFG.get("inference_batch_interval_ms", 20.0)))
+)
+SMZ_INFERENCE_TIMEOUT = float(os.getenv("SMZ_INFERENCE_TIMEOUT", str(SMZ_CFG.get("inference_timeout", 5.0))))
+SMZ_INFERENCE_REQUEST_QUEUE_MAX = max(
+    4, int(os.getenv("SMZ_INFERENCE_REQUEST_QUEUE_MAX", str(SMZ_CFG.get("inference_request_queue_max", 32))))
+)
+SMZ_INFERENCE_SERVER_COMPILE = str(
+    os.getenv("SMZ_INFERENCE_SERVER_COMPILE", str(SMZ_CFG.get("inference_server_compile", 1)))
+).strip() == "1"
+SMZ_CLEAR_TREE_ON_WEIGHT_SYNC = str(
+    os.getenv("SMZ_CLEAR_TREE_ON_WEIGHT_SYNC", str(SMZ_CFG.get("clear_tree_on_weight_sync", 0)))
+).strip() == "1"
+SMZ_ACTOR_USING_CUDA_FALLBACK = (
+    not SMZ_INFERENCE_SERVER_ENABLED
+    and SMZ_ACTOR_DEVICE_REQUESTED == "cuda"
+    and not torch.cuda.is_available()
+)
+if SMZ_INFERENCE_SERVER_ENABLED:
+    SMZ_ACTOR_DEVICE = "inference_server"
+    SMZ_ACTOR_DEVICE_CUDA = False
+    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(SMZ_NUM_ENV_WORKERS)
+elif SMZ_INFERENCE_SERVER_USING_FALLBACK:
+    SMZ_ACTOR_DEVICE = "cpu"
+    SMZ_ACTOR_DEVICE_CUDA = False
+    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(SMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS)
+elif SMZ_ACTOR_USING_CUDA_FALLBACK:
+    SMZ_ACTOR_DEVICE = "cpu"
+    SMZ_ACTOR_DEVICE_CUDA = False
+    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(SMZ_ACTOR_CPU_FALLBACK_NUM_ACTORS)
 else:
-    SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(SMZ_NUM_ACTORS)
+    SMZ_ACTOR_DEVICE = SMZ_ACTOR_DEVICE_REQUESTED
+    SMZ_ACTOR_DEVICE_CUDA = SMZ_ACTOR_DEVICE == "cuda" and torch.cuda.is_available()
+    if SMZ_ACTOR_DEVICE_CUDA:
+        SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = min(int(SMZ_NUM_ACTORS), int(SMZ_ACTOR_MAX_CUDA))
+    else:
+        SMZ_ACTOR_EFFECTIVE_NUM_ACTORS = int(SMZ_NUM_ACTORS)
 if "SMZ_ACTOR_COMPILE" in os.environ:
     SMZ_ACTOR_COMPILE = str(os.getenv("SMZ_ACTOR_COMPILE", "1")).strip() == "1"
 else:
