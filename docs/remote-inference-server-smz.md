@@ -218,7 +218,19 @@ netsh advfirewall firewall add rule name="40kAI Remote IS (SMZ)" dir=in action=a
 
 Обязателен. Поля должны **совпадать с ПК1** (ростер, миссия, preset Sampled MuZero).
 
-Пример содержимого `smz_remote_search_cfg.json`:
+**Не заполняйте вручную** — сгенерируйте на ПК1 (он сам измерит `obs_dim`/`action_sizes` из ростера
+и подставит `SMZ_*` из `hyperparams.json`):
+
+```bat
+REM на ПК1, в корне репо:
+tools\write_smz_remote_search_cfg.bat
+```
+
+Скрипт запишет `runtime\state\smz_remote_search_cfg.json` и копию в `artifacts\models\actor_sync\`
+(оттуда файл уезжает на ПК2 через SMB). Ручное заполнение `obs_dim: 0` / `action_sizes: []` приведёт к
+вырожденной сети — сервер ПК2 на старте выдаст ошибку с подсказкой запустить этот генератор.
+
+Пример сгенерированного `smz_remote_search_cfg.json` (значения `obs_dim`/`action_sizes` заполняет генератор):
 
 ```json
 {
