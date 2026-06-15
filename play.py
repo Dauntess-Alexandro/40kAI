@@ -34,6 +34,12 @@ from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
+from core.models.sampled_muzero_model import (
+    load_sampled_muzero_state_dict,
+    make_sampled_muzero_net,
+    sampled_muzero_arch_from_payload,
+)
+from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import (
     build_action_masks_by_head,
     build_shoot_action_mask,
@@ -66,6 +72,9 @@ if AZ_PLAY_MODE not in {"greedy", "mcts"}:
 GMZ_PLAY_MODE = str(os.getenv("GMZ_PLAY_MODE", "search")).strip().lower() or "search"
 if GMZ_PLAY_MODE not in {"greedy", "search"}:
     GMZ_PLAY_MODE = "search"
+SMZ_PLAY_MODE = str(os.getenv("SMZ_PLAY_MODE", "search")).strip().lower() or "search"
+if SMZ_PLAY_MODE not in {"greedy", "search"}:
+    SMZ_PLAY_MODE = "search"
 GAZ_PLAY_MODE = str(os.getenv("GAZ_PLAY_MODE", "gumbel")).strip().lower() or "gumbel"
 if GAZ_PLAY_MODE not in {"greedy", "gumbel"}:
     GAZ_PLAY_MODE = "gumbel"
@@ -209,7 +218,7 @@ if args.agent_id:
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero"}:
     algo = "dqn"
 if is_gumbel_az_algo(algo):
     gaz_tail = f", temperature={GAZ_PLAY_TEMPERATURE:.3f}, sims={GAZ_PLAY_SIMS}" if GAZ_PLAY_MODE == "gumbel" else ""
@@ -222,6 +231,10 @@ elif algo == "gumbel_muzero":
     gmz_temp = float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10"))
     gmz_tail = f", temperature={gmz_temp:.3f}" if GMZ_PLAY_MODE == "search" else ""
     _log(f"[PLAY][INFERENCE_MODE] algo=gumbel_muzero mode={GMZ_PLAY_MODE}{gmz_tail}")
+elif algo == "sampled_muzero":
+    smz_temp = float(os.getenv("SMZ_PLAY_TEMPERATURE", "0.10"))
+    smz_tail = f", temperature={smz_temp:.3f}" if SMZ_PLAY_MODE == "search" else ""
+    _log(f"[SMZ][PLAY][INFERENCE_MODE] algo=sampled_muzero mode={SMZ_PLAY_MODE}{smz_tail}")
 else:
     _log(f"[PLAY][INFERENCE_MODE] algo={algo} mode=greedy(fixed)")
 if algo == "ppo":
@@ -248,6 +261,17 @@ elif algo == "gumbel_muzero":
         action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
     ).to(device)
     policy_net.load_state_dict(normalize_state_dict(gmz_state))
+    policy_net.eval()
+    target_net = None
+elif algo == "sampled_muzero":
+    smz_state = checkpoint.get("sampled_muzero_net", checkpoint.get("policy_net", {}))
+    smz_arch = sampled_muzero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
+    policy_net = make_sampled_muzero_net(
+        obs_dim=int(n_observations),
+        action_sizes=[int(x) for x in n_actions],
+        **smz_arch,
+    ).to(device)
+    load_sampled_muzero_state_dict(policy_net, normalize_state_dict(smz_state))
     policy_net.eval()
     target_net = None
 else:
@@ -417,6 +441,36 @@ while isdone == False:
                 deterministic=True,
             )
             action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+        else:
+            masks_b = [m.to(state.device).unsqueeze(0) for m in masks]
+            with torch.no_grad():
+                probs, _value = policy_net.infer(state, masks_by_head=masks_b)
+            action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+        action = torch.tensor([action_list], device="cpu")
+    elif algo == "sampled_muzero":
+        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+        if SMZ_PLAY_MODE == "search":
+            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+            search = SampledMuZeroSearch(
+                net=policy_net,
+                config=SampledMuZeroSearchConfig(
+                    num_samples=max(1, int(os.getenv("SMZ_PLAY_NUM_SAMPLES", "24"))),
+                    temperature=float(os.getenv("SMZ_PLAY_TEMPERATURE", "0.10")),
+                    sample_temperature=float(os.getenv("SMZ_PLAY_SAMPLE_TEMPERATURE", "1.0")),
+                    prior_weight=0.0,
+                    dedup=True,
+                    discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
+                ),
+                device=state.device,
+            )
+            pi_targets, _behavior_logits, selected, _value = search.run(
+                obs=state.squeeze(0).detach().cpu().numpy(),
+                legal_masks_by_head=legal_masks,
+                deterministic=True,
+            )
+            action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+            if not action_list:
+                action_list = [int(x) for x in selected]
         else:
             masks_b = [m.to(state.device).unsqueeze(0) for m in masks]
             with torch.no_grad():

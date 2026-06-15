@@ -77,15 +77,6 @@ from app.gui_qt.gmz_hyperparams_defaults import (
     GMZ_VARIANT_A_BUNDLE,
     GMZ_VARIANT_B_BUNDLE,
 )
-from app.gui_qt.sampled_muzero_hyperparams_defaults import (
-    DEFAULT_SMZ_HYPERPARAMS,
-    SMZ_BASIC_KEYS,
-    SMZ_FIELD_TOOLTIPS,
-    SMZ_GROUPS,
-    SMZ_HYPERPARAM_KEYS,
-    SMZ_PROFILE_DETECT_ORDER,
-    SMZ_PROFILE_PRESETS,
-)
 from app.gui_qt.heur_benchmark_runner import HeurBenchmarkRunner
 from app.gui_qt.heur_calibrate_runner import HeurCalibrateRunner
 from app.gui_qt.hyperparams_cuda_hints import (
@@ -97,6 +88,15 @@ from app.gui_qt.remote_is_store import (
     DEFAULT_REMOTE_IS,
     load_remote_is,
     save_remote_is,
+)
+from app.gui_qt.sampled_muzero_hyperparams_defaults import (
+    DEFAULT_SMZ_HYPERPARAMS,
+    SMZ_BASIC_KEYS,
+    SMZ_FIELD_TOOLTIPS,
+    SMZ_GROUPS,
+    SMZ_HYPERPARAM_KEYS,
+    SMZ_PROFILE_DETECT_ORDER,
+    SMZ_PROFILE_PRESETS,
 )
 from core.models.alphazero_ids import is_az_algo, is_gumbel_az_algo
 from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
@@ -5157,6 +5157,11 @@ class GUIController(QtCore.QObject):
             if self._play_gmz_mode == "search":
                 env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
                 env["GMZ_PLAY_SIMS"] = str(int(self._play_gmz_search_sims))
+        elif self._play_model_algo_key == "sampled_muzero":
+            env["SMZ_PLAY_MODE"] = self._play_gmz_mode
+            if self._play_gmz_mode == "search":
+                env["SMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
+                env["SMZ_PLAY_NUM_SAMPLES"] = str(int(self._play_gmz_search_sims))
         elif is_gumbel_az_algo(self._play_model_algo_key):
             env["GAZ_PLAY_MODE"] = self._play_gaz_mode
             if self._play_gaz_mode == "gumbel":
@@ -5215,6 +5220,11 @@ class GUIController(QtCore.QObject):
             if self._play_gmz_mode == "search":
                 env["GMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
                 env["GMZ_PLAY_SIMS"] = str(int(self._play_gmz_search_sims))
+        elif self._play_model_algo_key == "sampled_muzero":
+            env["SMZ_PLAY_MODE"] = self._play_gmz_mode
+            if self._play_gmz_mode == "search":
+                env["SMZ_PLAY_TEMPERATURE"] = f"{float(self._play_gmz_temperature):.3f}"
+                env["SMZ_PLAY_NUM_SAMPLES"] = str(int(self._play_gmz_search_sims))
         elif is_gumbel_az_algo(self._play_model_algo_key):
             env["GAZ_PLAY_MODE"] = self._play_gaz_mode
             if self._play_gaz_mode == "gumbel":

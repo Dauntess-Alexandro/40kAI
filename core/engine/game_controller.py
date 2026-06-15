@@ -27,6 +27,12 @@ from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
+from core.models.sampled_muzero_model import (
+    load_sampled_muzero_state_dict,
+    make_sampled_muzero_net,
+    sampled_muzero_arch_from_payload,
+)
+from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import (
     build_action_masks_by_head,
     build_shoot_action_mask,
@@ -288,7 +294,7 @@ class GameController:
                 optimizer_state = payload.get("optimizer_state") or {}
                 meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
                 agent_algo = str(meta.get("algo", "")).strip().lower()
-                if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+                if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero"}:
                     if any(str(k).startswith("actor.") for k in policy_state.keys()):
                         agent_algo = "ppo"
                     elif any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
@@ -311,6 +317,8 @@ class GameController:
                     }
                 elif agent_algo == "gumbel_muzero":
                     checkpoint = {"gumbel_muzero_net": policy_state, "algo": "gumbel_muzero"}
+                elif agent_algo == "sampled_muzero":
+                    checkpoint = {"sampled_muzero_net": policy_state, "algo": "sampled_muzero"}
                 else:
                     checkpoint = {
                         "policy_net": policy_state,
@@ -409,7 +417,7 @@ class GameController:
             optimizer_state = payload.get("optimizer_state") or {}
             meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
             agent_algo = str(meta.get("algo", "")).strip().lower()
-            if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az"}:
+            if agent_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero"}:
                 if any(str(k).startswith("actor.") for k in policy_state.keys()):
                     agent_algo = "ppo"
                 elif any(str(k).startswith("policy_heads.") for k in policy_state.keys()):
@@ -446,6 +454,15 @@ class GameController:
                 checkpoint = {
                     "gumbel_muzero_net": policy_state,
                     "algo": "gumbel_muzero",
+                    "_viewer_agent_id": agent_id_override,
+                    "_viewer_model_source": "registry",
+                    "_viewer_bootstrap_pickle": model_path,
+                    "_viewer_bootstrap_checkpoint": checkpoint_path,
+                }
+            elif agent_algo == "sampled_muzero":
+                checkpoint = {
+                    "sampled_muzero_net": policy_state,
+                    "algo": "sampled_muzero",
                     "_viewer_agent_id": agent_id_override,
                     "_viewer_model_source": "registry",
                     "_viewer_bootstrap_pickle": model_path,
@@ -496,6 +513,9 @@ class GameController:
             gmz_play_mode = str(os.getenv("GMZ_PLAY_MODE", "search")).strip().lower() or "search"
             if gmz_play_mode not in {"greedy", "search"}:
                 gmz_play_mode = "search"
+            smz_play_mode = str(os.getenv("SMZ_PLAY_MODE", "search")).strip().lower() or "search"
+            if smz_play_mode not in {"greedy", "search"}:
+                smz_play_mode = "search"
             gaz_play_mode = str(os.getenv("GAZ_PLAY_MODE", "gumbel")).strip().lower() or "gumbel"
             if gaz_play_mode not in {"greedy", "gumbel"}:
                 gaz_play_mode = "gumbel"
@@ -582,6 +602,10 @@ class GameController:
                 gmz_temp = float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10"))
                 gmz_tail = f", temperature={gmz_temp:.3f}" if gmz_play_mode == "search" else ""
                 self._io.log(f"[VIEWER][INFERENCE_MODE] algo=gumbel_muzero mode={gmz_play_mode}{gmz_tail}")
+            elif algo == "sampled_muzero":
+                smz_temp = float(os.getenv("SMZ_PLAY_TEMPERATURE", "0.10"))
+                smz_tail = f", temperature={smz_temp:.3f}" if smz_play_mode == "search" else ""
+                self._io.log(f"[SMZ][VIEWER][INFERENCE_MODE] algo=sampled_muzero mode={smz_play_mode}{smz_tail}")
             else:
                 self._io.log(f"[VIEWER][INFERENCE_MODE] algo={algo} mode=greedy(fixed)")
             if algo == "ppo":
@@ -611,6 +635,18 @@ class GameController:
                     action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
                 ).to(device)
                 policy_net.load_state_dict(normalize_state_dict(gmz_state))
+                policy_net.eval()
+                target_net = None
+            elif algo == "sampled_muzero":
+                self._io.log("[SMZ][MODEL] Архитектура сети: sampled_muzero")
+                smz_state = checkpoint.get("sampled_muzero_net", checkpoint.get("policy_net", {}))
+                smz_arch = sampled_muzero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
+                policy_net = make_sampled_muzero_net(
+                    obs_dim=int(n_observations),
+                    action_sizes=[int(x) for x in n_actions],
+                    **smz_arch,
+                ).to(device)
+                load_sampled_muzero_state_dict(policy_net, normalize_state_dict(smz_state))
                 policy_net.eval()
                 target_net = None
             else:
@@ -754,6 +790,36 @@ class GameController:
                             deterministic=True,
                         )
                         action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                    else:
+                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                        with torch.no_grad():
+                            probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                    action = torch.tensor([action_list], device="cpu")
+                elif algo == "sampled_muzero":
+                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                    if smz_play_mode == "search":
+                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                        search = SampledMuZeroSearch(
+                            net=policy_net,
+                            config=SampledMuZeroSearchConfig(
+                                num_samples=max(1, int(os.getenv("SMZ_PLAY_NUM_SAMPLES", "24"))),
+                                temperature=float(os.getenv("SMZ_PLAY_TEMPERATURE", "0.10")),
+                                sample_temperature=float(os.getenv("SMZ_PLAY_SAMPLE_TEMPERATURE", "1.0")),
+                                prior_weight=0.0,
+                                dedup=True,
+                                discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
+                            ),
+                            device=state_tensor.device,
+                        )
+                        pi_targets, _behavior_logits, selected, _value = search.run(
+                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                            legal_masks_by_head=legal_masks,
+                            deterministic=True,
+                        )
+                        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                        if not action_list:
+                            action_list = [int(x) for x in selected]
                     else:
                         masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
                         with torch.no_grad():
