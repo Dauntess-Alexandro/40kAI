@@ -92,6 +92,7 @@ from core.models.alphazero_trainer import (
     build_alphazero_lr_scheduler,
     train_alphazero_step,
 )
+from core.models.az_family_env import resolve_az_family_env
 from core.models.az_rollout_receiver import RolloutReceiver
 from core.models.az_rollout_sink import (
     az_dist_stop_flag_path,
@@ -116,6 +117,7 @@ from core.models.dqn_dist import (
 )
 from core.models.gmz_inference_client import GMZInferenceClient
 from core.models.gmz_inference_server import gmz_inference_server_entry
+from core.models.gmz_remote_search_cfg_builder import publish_gmz_remote_search_cfg
 from core.models.gumbel_muzero_model import (
     GumbelMuZeroNet,
     gumbel_muzero_arch_from_payload,
@@ -154,7 +156,6 @@ from core.models.sampled_muzero_trainer import (
 )
 from core.models.smz_inference_server import smz_inference_server_entry
 from core.models.smz_remote_search_cfg_builder import publish_smz_remote_search_cfg
-from core.models.gmz_remote_search_cfg_builder import publish_gmz_remote_search_cfg
 from core.models.utils import *
 
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
@@ -2690,11 +2691,23 @@ AZ_MCTS_SIMULATE_ENEMY = str(
 ).strip() == "1"
 
 # --- Inference Server (variant B) ---
+# GAZ едет на общей AZ-инфре, но управляется своими GAZ_* env (свои порты 5565/5567),
+# чтобы не пересекаться с AZ-запусками. Приоритет: GAZ_* → AZ_* → секция gumbel_az.
+# Для не-GAZ алго GAZ_* игнорируется (AZ без изменений).
+_GAZ_ALGO = is_gumbel_az_algo(TRAIN_ALGO)
+
+
+def _az_family_env(gaz_key: str, az_key: str, default):
+    return resolve_az_family_env(gaz_key, az_key, default, is_gumbel=_GAZ_ALGO)
+
+
 AZ_INFERENCE_SERVER_REQUESTED = (
-    str(os.getenv("AZ_INFERENCE_SERVER", str(AZ_CFG.get("inference_server_enabled", 0)))).strip() == "1"
+    str(_az_family_env("GAZ_INFERENCE_SERVER", "AZ_INFERENCE_SERVER",
+                       AZ_CFG.get("inference_server_enabled", 0))).strip() == "1"
 )
 AZ_INFERENCE_SERVER_MODE = str(
-    os.getenv("AZ_INFERENCE_SERVER_MODE", str(AZ_CFG.get("inference_server_mode", "local")))
+    _az_family_env("GAZ_INFERENCE_SERVER_MODE", "AZ_INFERENCE_SERVER_MODE",
+                   AZ_CFG.get("inference_server_mode", "local"))
 ).strip().lower() or "local"
 AZ_INFERENCE_REMOTE = AZ_INFERENCE_SERVER_MODE == "remote"
 AZ_INFERENCE_SERVER_USING_FALLBACK = (
@@ -2722,22 +2735,32 @@ AZ_INFERENCE_SYNC_INTERVAL = float(os.getenv("AZ_INFERENCE_SYNC_INTERVAL", "0.5"
 AZ_INFERENCE_REQUEST_QUEUE_MAX = max(
     8, int(os.getenv("AZ_INFERENCE_REQUEST_QUEUE_MAX", str(AZ_NUM_ENV_WORKERS * 4)))
 )
-AZ_INFERENCE_REMOTE_HOST = str(os.getenv("AZ_INFERENCE_REMOTE_HOST", AZ_CFG.get("inference_remote_host", "127.0.0.1")))
-AZ_INFERENCE_REMOTE_PORT = int(os.getenv("AZ_INFERENCE_REMOTE_PORT", str(AZ_CFG.get("inference_remote_port", 5555))))
-AZ_INFERENCE_REMOTE_AUTH_TOKEN = str(os.getenv("AZ_INFERENCE_REMOTE_AUTH_TOKEN", AZ_CFG.get("inference_remote_auth_token", "")))
+AZ_INFERENCE_REMOTE_HOST = str(_az_family_env(
+    "GAZ_INFERENCE_REMOTE_HOST", "AZ_INFERENCE_REMOTE_HOST",
+    AZ_CFG.get("inference_remote_host", "127.0.0.1")))
+AZ_INFERENCE_REMOTE_PORT = int(_az_family_env(
+    "GAZ_INFERENCE_REMOTE_PORT", "AZ_INFERENCE_REMOTE_PORT",
+    AZ_CFG.get("inference_remote_port", 5565 if _GAZ_ALGO else 5555)))
+AZ_INFERENCE_REMOTE_AUTH_TOKEN = str(_az_family_env(
+    "GAZ_INFERENCE_REMOTE_AUTH_TOKEN", "AZ_INFERENCE_REMOTE_AUTH_TOKEN",
+    AZ_CFG.get("inference_remote_auth_token", "")))
 
 # --- Distributed self-play (PC2 env workers → rollout ZMQ → learner data_q) ---
 AZ_DISTRIBUTED_ACTORS = str(
-    os.getenv("AZ_DISTRIBUTED_ACTORS", str(AZ_CFG.get("distributed_actors_enabled", 0)))
+    _az_family_env("GAZ_DISTRIBUTED_ACTORS", "AZ_DISTRIBUTED_ACTORS",
+                   AZ_CFG.get("distributed_actors_enabled", 0))
 ).strip() == "1"
 AZ_DIST_ROLLOUT_BIND = str(
-    os.getenv("AZ_DIST_ROLLOUT_BIND", str(AZ_CFG.get("distributed_actors_bind_host", "0.0.0.0")))
+    _az_family_env("GAZ_DIST_ROLLOUT_BIND", "AZ_DIST_ROLLOUT_BIND",
+                   AZ_CFG.get("distributed_actors_bind_host", "0.0.0.0"))
 ).strip() or "0.0.0.0"
 AZ_DIST_ROLLOUT_PORT = max(
-    1, int(os.getenv("AZ_DIST_ROLLOUT_PORT", str(AZ_CFG.get("distributed_actors_port", 5557))))
+    1, int(_az_family_env("GAZ_DIST_ROLLOUT_PORT", "AZ_DIST_ROLLOUT_PORT",
+                          AZ_CFG.get("distributed_actors_port", 5567 if _GAZ_ALGO else 5557)))
 )
 AZ_DIST_AUTH_TOKEN = str(
-    os.getenv("AZ_DIST_AUTH_TOKEN", str(AZ_CFG.get("distributed_actors_auth_token", "")))
+    _az_family_env("GAZ_DIST_AUTH_TOKEN", "AZ_DIST_AUTH_TOKEN",
+                   AZ_CFG.get("distributed_actors_auth_token", ""))
 ).strip() or str(AZ_INFERENCE_REMOTE_AUTH_TOKEN or "")
 AZ_DIST_DRAIN_SEC = max(
     1.0, float(os.getenv("AZ_DIST_DRAIN_SEC", str(AZ_CFG.get("distributed_actors_drain_sec", 30.0))))
