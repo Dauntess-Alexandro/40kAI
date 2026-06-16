@@ -67,6 +67,8 @@ if exist "%CONFIG_EXAMPLE_REV%" set /p EX_REV=<"%CONFIG_EXAMPLE_REV%"
 if exist "%CONFIG_LOCAL_REV%" set /p CFG_REV=<"%CONFIG_LOCAL_REV%"
 if not defined EX_REV set "EX_REV=0"
 if not defined CFG_REV set "CFG_REV=0"
+echo %CFG_REV%| findstr /r "^[0-9][0-9]*$" >nul || set "CFG_REV=0"
+echo %EX_REV%| findstr /r "^[0-9][0-9]*$" >nul || set "EX_REV=0"
 if not exist "%CONFIG_BAT%" goto :do_copy_example_config
 if %CFG_REV% LSS %EX_REV% goto :do_copy_example_config
 exit /b 0
@@ -77,7 +79,7 @@ if exist "%CONFIG_BAT%" (
   echo [CONFIG] Backup: %CONFIG_BAT%.bak
 )
 copy /Y "%CONFIG_EXAMPLE%" "%CONFIG_BAT%" >nul
-echo %EX_REV%>"%CONFIG_LOCAL_REV%"
+> "%CONFIG_LOCAL_REV%" echo %EX_REV%
 echo [CONFIG] Synced %CONFIG_BAT% from example rev %EX_REV%
 if not exist "%CONFIG_BAT%.bak" echo         Edit paths if needed: tools\pc2_remote_smz_is.bat config
 exit /b 0
