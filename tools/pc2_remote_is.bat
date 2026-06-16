@@ -109,9 +109,18 @@ if not "%_SHARE%"=="" (
   )
 )
 
-REM Фолбэк (обратная совместимость): прежний дефолт на Z:\.
-if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" set "GMZ_REMOTE_WEIGHTS_PATH=Z:\latest_gmz_policy.pth"
-if "%GMZ_REMOTE_SEARCH_CONFIG%"=="" set "GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json"
+REM Вторичный фолбэк на Z:\actor_sync\ (UNC-путь из 40KAI_SHARE_ROOT может не работать в bat if exist).
+if not exist "%GMZ_REMOTE_WEIGHTS_PATH%" (
+  if exist "Z:\actor_sync\latest_gmz_policy.pth" set "GMZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_gmz_policy.pth"
+  if exist "Z:\latest_gmz_policy.pth" set "GMZ_REMOTE_WEIGHTS_PATH=Z:\latest_gmz_policy.pth"
+)
+if not exist "%GMZ_REMOTE_SEARCH_CONFIG%" (
+  if exist "Z:\actor_sync\gmz_remote_search_cfg.json" set "GMZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\gmz_remote_search_cfg.json"
+  if exist "Z:\gmz_remote_search_cfg.json" set "GMZ_REMOTE_SEARCH_CONFIG=Z:\gmz_remote_search_cfg.json"
+)
+REM Финальный фолбэк — если Z:\ тоже нет, дефолт (сервер выдаст понятную ошибку с путём).
+if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" set "GMZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_gmz_policy.pth"
+if "%GMZ_REMOTE_SEARCH_CONFIG%"=="" set "GMZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\gmz_remote_search_cfg.json"
 if "%GMZ_REMOTE_WEIGHTS_PATH%"=="" (
   echo [ОШИБКА] В конфиге не задан GMZ_REMOTE_WEIGHTS_PATH
   notepad "%CONFIG_BAT%"
