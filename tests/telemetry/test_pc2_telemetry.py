@@ -67,3 +67,12 @@ def test_sample_system_telemetry_shape():
     for key in ("name", "util", "cpu_name", "cpu_pct_system", "ram_pct_system"):
         assert key in s
     assert isinstance(s["cpu_name"], str) and s["cpu_name"]
+
+
+def test_sample_cpu_ram_system_shape():
+    from core.telemetry.pc2_telemetry import sample_cpu_ram_system
+
+    s = sample_cpu_ram_system()
+    assert set(s.keys()) == {"cpu_pct_system", "ram_pct_system", "ram_gb_system"}
+    for v in s.values():
+        assert v is None or isinstance(v, float)

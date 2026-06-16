@@ -41,8 +41,9 @@ def detect_cpu_name() -> str:
     return "CPU"
 
 
-def sample_system_telemetry() -> dict[str, Any]:
-    """Системные CPU/RAM (psutil) + первый GPU (GpuBackend) в форме карточек ПК2."""
+def sample_cpu_ram_system() -> dict[str, Any]:
+    """Мгновенные системные CPU%/RAM% (psutil). Без имени CPU (его кэшируют отдельно).
+    Все значения None, если psutil недоступен."""
     cpu_pct = None
     ram_pct = None
     ram_gb = None
@@ -55,6 +56,19 @@ def sample_system_telemetry() -> dict[str, Any]:
         ram_gb = round(float(vm.used) / (1024**3), 1)
     except Exception:
         pass
+    return {
+        "cpu_pct_system": cpu_pct,
+        "ram_pct_system": ram_pct,
+        "ram_gb_system": ram_gb,
+    }
+
+
+def sample_system_telemetry() -> dict[str, Any]:
+    """Системные CPU/RAM (psutil) + первый GPU (GpuBackend) в форме карточек ПК2."""
+    sys_cr = sample_cpu_ram_system()
+    cpu_pct = sys_cr["cpu_pct_system"]
+    ram_pct = sys_cr["ram_pct_system"]
+    ram_gb = sys_cr["ram_gb_system"]
 
     gpu: dict[str, Any] = {
         "name": None,
