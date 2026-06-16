@@ -146,6 +146,17 @@ def _valid_inference_modes_for_algo(algo: str) -> set[str]:
     return {"greedy"}
 
 
+def _coerce_eval_inference_mode(stored_mode: str, algo: str) -> str:
+    """Режим инференса eval для стороны: при эвристике stored не трогаем (search/mcts сохраняются)."""
+    algo_key = str(algo or "").strip().lower()
+    mode = str(stored_mode or "").strip().lower()
+    if not algo_key:
+        return mode or "greedy"
+    if mode in _valid_inference_modes_for_algo(algo_key):
+        return mode
+    return _default_inference_mode_for_algo(algo_key)
+
+
 @dataclass
 class RosterEntry:
     name: str
@@ -1418,19 +1429,24 @@ class GUIController(QtCore.QObject):
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1InferenceMode(self) -> str:
-        algo = self._eval_side_algo_key("P1")
-        mode = str(self._eval_p1_inference_mode or "").strip().lower()
-        return mode if mode in _valid_inference_modes_for_algo(algo) else _default_inference_mode_for_algo(algo)
+        return _coerce_eval_inference_mode(self._eval_p1_inference_mode, self._eval_side_algo_key("P1"))
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP2InferenceMode(self) -> str:
-        algo = self._eval_side_algo_key("P2")
-        mode = str(self._eval_p2_inference_mode or "").strip().lower()
-        return mode if mode in _valid_inference_modes_for_algo(algo) else _default_inference_mode_for_algo(algo)
+        return _coerce_eval_inference_mode(self._eval_p2_inference_mode, self._eval_side_algo_key("P2"))
+
+    def _eval_side_stored_inference_mode(self, side: str) -> str:
+        return self._eval_p1_inference_mode if str(side).upper() == "P1" else self._eval_p2_inference_mode
+
+    def _eval_side_effective_inference_mode(self, side: str) -> str:
+        return _coerce_eval_inference_mode(
+            self._eval_side_stored_inference_mode(side),
+            self._eval_side_algo_key(side),
+        )
 
     def _eval_side_temp_visible(self, side: str) -> bool:
         algo = self._eval_side_algo_key(side)
-        mode = self._eval_p1_inference_mode if str(side).upper() == "P1" else self._eval_p2_inference_mode
+        mode = self._eval_side_effective_inference_mode(side)
         if is_az_algo(algo):
             return mode == "mcts"
         if algo in {"gumbel_muzero", "sampled_muzero"}:
@@ -3409,12 +3425,12 @@ class GUIController(QtCore.QObject):
     def _ensure_eval_inference_defaults(self) -> None:
         p1_algo = self._eval_side_algo_key("P1")
         p2_algo = self._eval_side_algo_key("P2")
-        p1_mode = str(self._eval_p1_inference_mode or "").strip().lower()
-        p2_mode = str(self._eval_p2_inference_mode or "").strip().lower()
-        if p1_mode not in _valid_inference_modes_for_algo(p1_algo):
-            self._eval_p1_inference_mode = _default_inference_mode_for_algo(p1_algo)
-        if p2_mode not in _valid_inference_modes_for_algo(p2_algo):
-            self._eval_p2_inference_mode = _default_inference_mode_for_algo(p2_algo)
+        new_p1 = _coerce_eval_inference_mode(self._eval_p1_inference_mode, p1_algo)
+        new_p2 = _coerce_eval_inference_mode(self._eval_p2_inference_mode, p2_algo)
+        if new_p1 != self._eval_p1_inference_mode:
+            self._eval_p1_inference_mode = new_p1
+        if new_p2 != self._eval_p2_inference_mode:
+            self._eval_p2_inference_mode = new_p2
 
     def _extract_epoch_tag(self, agent_id: str) -> str:
         text = str(agent_id or "")
@@ -3505,7 +3521,10 @@ class GUIController(QtCore.QObject):
         else:
             self._eval_scenario_text = "Сценарий: обе стороны эвристика (недоступно для запуска)."
 
-        self._eval_mini_summary = f"Игр: {self._eval_games} • deterministic • epsilon=0 • AZ/GMZ/GAZ search по умолчанию"
+        self._eval_mini_summary = (
+            f"Игр: {self._eval_games} • deterministic • epsilon=0 • "
+            "AZ/GMZ/SMZ/GAZ: MCTS/Search по умолчанию"
+        )
         self._eval_matchup_text = (
             f"{self._eval_p1_display_name}\n"
             f"{self._eval_p2_display_name}\n"
@@ -5287,8 +5306,8 @@ class GUIController(QtCore.QObject):
         self._ensure_eval_inference_defaults()
         learner_algo = self._eval_side_algo_key(learner_side)
         opponent_algo = self._eval_side_algo_key(opponent_side)
-        learner_mode = self._eval_p1_inference_mode if learner_side == "P1" else self._eval_p2_inference_mode
-        opponent_mode = self._eval_p1_inference_mode if opponent_side == "P1" else self._eval_p2_inference_mode
+        learner_mode = self._eval_side_effective_inference_mode(learner_side)
+        opponent_mode = self._eval_side_effective_inference_mode(opponent_side)
 
         model_path = self._resolve_eval_model_path()
         if not learner_agent_id and model_path == "None":
