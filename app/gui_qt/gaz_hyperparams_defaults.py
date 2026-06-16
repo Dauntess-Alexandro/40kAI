@@ -91,14 +91,15 @@ _GAZ_BASE: dict[str, int | float | str] = {
     "lr_total_steps": 0,
     "det_eval_gate_win_min": 0.45,
     "det_eval_gate_turn_limit_max": 0.65,
-    # Швы под ПК2 — выключены
+    # Швы под ПК2 — выключены. Порты GAZ (5565/5567) отличаются от AZ (5555/5557),
+    # чтобы AZ и GAZ inference/distributed уживались на одном ПК2.
     "inference_server_enabled": 0,
     "inference_server_mode": "local",
     "inference_remote_host": "127.0.0.1",
-    "inference_remote_port": 5555,
+    "inference_remote_port": 5565,
     "inference_remote_auth_token": "",
     "distributed_actors_enabled": 0,
-    "distributed_actors_port": 5557,
+    "distributed_actors_port": 5567,
     "distributed_actors_bind_host": "0.0.0.0",
     "distributed_actors_auth_token": "",
 }

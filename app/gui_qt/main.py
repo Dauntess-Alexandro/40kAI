@@ -527,6 +527,15 @@ class GUIController(QtCore.QObject):
             self._remote_is_smz["port"] = 5560
         self._smz_remote_is_status_text = "не проверено"
         self._smz_remote_is_latency_ms = -1.0
+        # GAZ remote inference server — параллельный набор (remote_is_gaz.json, порт 5565)
+        self._remote_is_gaz: dict = load_remote_is(self._repo_root, "remote_is_gaz.json")
+        _gaz_cfg_file = bool(self._repo_root) and (
+            Path(self._repo_root) / "runtime" / "state" / "remote_is_gaz.json"
+        ).is_file()
+        if not _gaz_cfg_file:
+            self._remote_is_gaz["port"] = 5565
+        self._gaz_remote_is_status_text = "не проверено"
+        self._gaz_remote_is_latency_ms = -1.0
         # AZ inference server (вариант B) — LAN-чек статус (host/port берём из AZ hyperparams)
         self._az_inference_status = "не проверено"
         self._az_inference_latency_ms = -1.0
@@ -2363,6 +2372,173 @@ class GUIController(QtCore.QObject):
         self.mark_settings_dirty()
         mode = "B (inference server)" if enabled else "A (GPU-акторы)"
         self._emit_status(f"SMZ: режим {mode}. Сохраните настройки.")
+
+    # --- GAZ (Gumbel AlphaZero) remote inference server (порт 5565) ---
+    # GAZ едет на общей AZ-инфре (та же сеть) → health-check через AZ-протокол.
+    gazRemoteIsChanged = QtCore.Signal()
+
+    @QtCore.Property(bool, notify=gazRemoteIsChanged)
+    def gazRemoteIsEnabled(self) -> bool:
+        return bool(self._remote_is_gaz.get("user_enabled_lan", False))
+
+    @QtCore.Property(str, notify=gazRemoteIsChanged)
+    def gazRemoteIsHost(self) -> str:
+        return str(self._remote_is_gaz.get("host", DEFAULT_REMOTE_IS["host"]))
+
+    @QtCore.Property(int, notify=gazRemoteIsChanged)
+    def gazRemoteIsPort(self) -> int:
+        return int(self._remote_is_gaz.get("port", 5565))
+
+    @QtCore.Property(float, notify=gazRemoteIsChanged)
+    def gazRemoteIsTimeout(self) -> float:
+        return float(self._remote_is_gaz.get("timeout", DEFAULT_REMOTE_IS["timeout"]))
+
+    @QtCore.Property(str, notify=gazRemoteIsChanged)
+    def gazRemoteIsAuthToken(self) -> str:
+        return str(self._remote_is_gaz.get("auth_token", ""))
+
+    @QtCore.Property(str, notify=gazRemoteIsChanged)
+    def gazRemoteIsWeightsPath(self) -> str:
+        return str(self._remote_is_gaz.get("weights_share_path", ""))
+
+    @QtCore.Property(str, notify=gazRemoteIsChanged)
+    def gazRemoteIsSmbUncHint(self) -> str:
+        return str(self._remote_is_gaz.get("smb_unc_hint", ""))
+
+    @QtCore.Property(str, notify=gazRemoteIsChanged)
+    def gazRemoteIsStatusText(self) -> str:
+        return str(self._gaz_remote_is_status_text)
+
+    @QtCore.Property(str, notify=gazRemoteIsChanged)
+    def gazRemoteIsLatencyText(self) -> str:
+        ms = float(self._gaz_remote_is_latency_ms)
+        if ms < 0:
+            return "—"
+        return f"{ms:.0f} ms"
+
+    @QtCore.Property(bool, notify=trainingHyperparamsChanged)
+    def gazInferenceServerEnabled(self) -> bool:
+        return int(self._gaz_hyperparams.get("inference_server_enabled", 0) or 0) == 1
+
+    def _persist_remote_is_gaz(self) -> None:
+        try:
+            save_remote_is(self._repo_root, self._remote_is_gaz, "remote_is_gaz.json")
+        except OSError as exc:
+            self._emit_status(f"Не удалось сохранить remote_is_gaz.json: {exc}")
+
+    def _set_gaz_remote_is_lan_active(self, active: bool) -> None:
+        on = bool(active)
+        self._remote_is_gaz["user_enabled_lan"] = on
+        self._remote_is_gaz["enabled"] = on
+
+    @QtCore.Slot(bool)
+    def setGazRemoteIsEnabled(self, enabled: bool) -> None:
+        self._set_gaz_remote_is_lan_active(enabled)
+        if enabled:
+            # LAN включён — выключаем локальный GAZ IS
+            if int(self._gaz_hyperparams.get("inference_server_enabled", 0) or 0) == 1:
+                self._gaz_hyperparams["inference_server_enabled"] = 0
+                self._gaz_hyperparams["inference_server_mode"] = "local"
+                self.trainingHyperparamsChanged.emit()
+                self.mark_settings_dirty()
+            self._persist_rosters(schedule_search_cfg_sync=False)
+            if not os.path.isfile(str(TRAIN_DATA_PATH)):
+                self._refresh_train_data_json_from_rosters(expected_num_life=None)
+            self._sync_all_remote_search_cfgs_for_share(source="enable_lan_gaz")
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setGazRemoteIsHost(self, host: str) -> None:
+        self._remote_is_gaz["host"] = str(host or "").strip() or "127.0.0.1"
+        self._gaz_remote_is_status_text = "не проверено"
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(int)
+    def setGazRemoteIsPort(self, port: int) -> None:
+        self._remote_is_gaz["port"] = max(1, int(port))
+        self._gaz_remote_is_status_text = "не проверено"
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(float)
+    def setGazRemoteIsTimeout(self, timeout: float) -> None:
+        self._remote_is_gaz["timeout"] = max(0.5, float(timeout))
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setGazRemoteIsAuthToken(self, token: str) -> None:
+        self._remote_is_gaz["auth_token"] = str(token or "")
+        self._gaz_remote_is_status_text = "не проверено"
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setGazRemoteIsWeightsPath(self, path: str) -> None:
+        self._remote_is_gaz["weights_share_path"] = str(path or "")
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setGazRemoteIsSmbUncHint(self, hint: str) -> None:
+        self._remote_is_gaz["smb_unc_hint"] = str(hint or "")
+        self._persist_remote_is_gaz()
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot()
+    def checkGazRemoteIsConnection(self) -> None:
+        from core.models.az_inference_transport import az_remote_health_check
+
+        host = str(self._remote_is_gaz.get("host", "127.0.0.1"))
+        port = int(self._remote_is_gaz.get("port", 5565))
+        token = str(self._remote_is_gaz.get("auth_token", ""))
+        timeout = min(3.0, float(self._remote_is_gaz.get("timeout", 5.0)))
+        t0 = time.perf_counter()
+        try:
+            resp = az_remote_health_check(host=host, port=port, auth_token=token, timeout=timeout)
+            self._gaz_remote_is_latency_ms = (time.perf_counter() - t0) * 1000.0
+            gpu = str(resp.get("gpu_name", "?"))
+            pv = resp.get("policy_version", "?")
+            self._gaz_remote_is_status_text = f"OK • GPU: {gpu} • policy v{pv}"
+            self._emit_status(f"GAZ Remote IS: соединение OK ({self._gaz_remote_is_latency_ms:.0f} ms)")
+        except Exception as exc:
+            self._gaz_remote_is_latency_ms = -1.0
+            self._gaz_remote_is_status_text = f"Ошибка: {exc}"
+            self._emit_status(
+                "GAZ Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, 3) firewall (TCP 5565)."
+            )
+        self.gazRemoteIsChanged.emit()
+
+    @QtCore.Slot(bool)
+    def set_gaz_inference_server_mode(self, enabled: bool) -> None:
+        if enabled and not self._training_cuda_available:
+            self._emit_status(
+                "GAZ Inference server требует CUDA. "
+                "Установите PyTorch+cu и драйвер NVIDIA, затем нажмите ↻ в баннере GPU."
+            )
+            self.trainingHyperparamsChanged.emit()
+            return
+        if enabled and self.gazRemoteIsEnabled:
+            self._set_gaz_remote_is_lan_active(False)
+            self._persist_remote_is_gaz()
+            self.gazRemoteIsChanged.emit()
+        changed = False
+        new_enabled = 1 if enabled else 0
+        if self._gaz_hyperparams.get("inference_server_enabled") != new_enabled:
+            self._gaz_hyperparams["inference_server_enabled"] = new_enabled
+            changed = True
+        if enabled and self._gaz_hyperparams.get("inference_server_mode") != "local":
+            self._gaz_hyperparams["inference_server_mode"] = "local"
+            changed = True
+        if not changed:
+            return
+        self._refresh_gaz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        mode = "B (inference server)" if enabled else "A (GPU-акторы)"
+        self._emit_status(f"GAZ: режим {mode}. Сохраните настройки.")
 
     # --- TensorBoard (встроенный просмотр метрик) ---
     @staticmethod
@@ -6538,6 +6714,37 @@ class GUIController(QtCore.QObject):
             env.insert("GAZ_JOINT_ACTION", "1" if int(gaz_hp.get("joint_action", d["joint_action"])) == 1 else "0")
             env.insert("GAZ_BATCH_EVAL_SIZE", os.getenv("GAZ_BATCH_EVAL_SIZE", str(int(gaz_hp.get("batch_eval_size", d["batch_eval_size"])))))
             env.insert("GAZ_EVAL_CACHE_SIZE", os.getenv("GAZ_EVAL_CACHE_SIZE", str(int(gaz_hp.get("eval_cache_size", d["eval_cache_size"])))))
+            # --- GAZ Inference Server (variant B) + Distributed actors (порты 5565/5567) ---
+            gaz_inf_enabled = int(gaz_hp.get("inference_server_enabled", d.get("inference_server_enabled", 0)) or 0)
+            gaz_inf_mode = str(gaz_hp.get("inference_server_mode", d.get("inference_server_mode", "local")) or "local")
+            env.insert("GAZ_INFERENCE_SERVER", "1" if gaz_inf_enabled == 1 else "0")
+            env.insert("GAZ_INFERENCE_SERVER_MODE", gaz_inf_mode)
+            env.insert("AZ_NUM_ENV_WORKERS", os.getenv("AZ_NUM_ENV_WORKERS", str(int(gaz_hp.get("num_env_workers", gaz_hp.get("num_actors", 8))))))
+            env.insert("AZ_INFERENCE_BATCH_SIZE", os.getenv("AZ_INFERENCE_BATCH_SIZE", str(int(gaz_hp.get("inference_batch_size", 32)))))
+            env.insert("AZ_INFERENCE_TIMEOUT", os.getenv("AZ_INFERENCE_TIMEOUT", str(float(gaz_hp.get("inference_timeout", 5.0)))))
+            # LAN remote IS активен → инференс уходит на ПК2 (порт 5565), даже если локальный
+            # тумблер выключен (setGazRemoteIsEnabled его гасит). Зеркалит SMZ/GMZ-ветку.
+            gaz_lan_active = remote_is_lan_active(self._remote_is_gaz)
+            if gaz_lan_active or (gaz_inf_enabled == 1 and gaz_inf_mode == "remote"):
+                remote_gaz_host = str(self._remote_is_gaz.get("host", "127.0.0.1"))
+                remote_gaz_port = int(self._remote_is_gaz.get("port", 5565))
+                remote_gaz_token = str(self._remote_is_gaz.get("auth_token", ""))
+                env.insert("GAZ_INFERENCE_SERVER", "1")
+                env.insert("GAZ_INFERENCE_SERVER_MODE", "remote")
+                env.insert("GAZ_INFERENCE_REMOTE_HOST", remote_gaz_host)
+                env.insert("GAZ_INFERENCE_REMOTE_PORT", str(remote_gaz_port))
+                env.insert("GAZ_INFERENCE_REMOTE_AUTH_TOKEN", remote_gaz_token)
+                self._emit_log(
+                    f"[GUI][GAZ][REMOTE_IS] enabled host={remote_gaz_host} port={remote_gaz_port}",
+                    level="INFO",
+                )
+            gaz_dist_enabled = int(gaz_hp.get("distributed_actors_enabled", d.get("distributed_actors_enabled", 0)) or 0)
+            if gaz_dist_enabled == 1:
+                env.insert("GAZ_DISTRIBUTED_ACTORS", "1")
+                env.insert("GAZ_DIST_ROLLOUT_PORT", str(int(gaz_hp.get("distributed_actors_port", 5567))))
+                env.insert("GAZ_DIST_ROLLOUT_BIND", str(gaz_hp.get("distributed_actors_bind_host", "0.0.0.0")))
+                env.insert("GAZ_DIST_AUTH_TOKEN", str(gaz_hp.get("distributed_actors_auth_token", "")))
+                self._emit_log("[GUI][GAZ][DIST] distributed actors enabled (PC2 rollout :5567)", level="INFO")
             env.insert("AZ_NUM_ACTORS", os.getenv("AZ_NUM_ACTORS", env_overrides.get("NUM_ACTORS", str(int(gaz_hp.get("num_actors", 8))))))
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))

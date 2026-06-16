@@ -68,30 +68,33 @@ def save_remote_is(repo_root: str | Path, data: dict[str, Any], filename: str = 
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def apply_remote_is_to_qsettings(settings: Any, data: dict[str, Any]) -> None:
-    settings.setValue("remote_is/enabled", bool(data.get("enabled", False)))
-    settings.setValue("remote_is/host", str(data.get("host", "127.0.0.1")))
-    settings.setValue("remote_is/port", int(data.get("port", 5555)))
-    settings.setValue("remote_is/timeout", float(data.get("timeout", 5.0)))
-    settings.setValue("remote_is/auth_token", str(data.get("auth_token", "")))
-    settings.setValue("remote_is/weights_share_path", str(data.get("weights_share_path", "")))
-    settings.setValue("remote_is/smb_unc_hint", str(data.get("smb_unc_hint", "")))
+def apply_remote_is_to_qsettings(settings: Any, data: dict[str, Any], prefix: str = "remote_is") -> None:
+    # prefix изолирует наборы алгоритмов (remote_is / remote_is_gaz / remote_is_smz).
+    p = str(prefix or "remote_is").strip("/") or "remote_is"
+    settings.setValue(f"{p}/enabled", bool(data.get("enabled", False)))
+    settings.setValue(f"{p}/host", str(data.get("host", "127.0.0.1")))
+    settings.setValue(f"{p}/port", int(data.get("port", 5555)))
+    settings.setValue(f"{p}/timeout", float(data.get("timeout", 5.0)))
+    settings.setValue(f"{p}/auth_token", str(data.get("auth_token", "")))
+    settings.setValue(f"{p}/weights_share_path", str(data.get("weights_share_path", "")))
+    settings.setValue(f"{p}/smb_unc_hint", str(data.get("smb_unc_hint", "")))
 
 
-def load_remote_is_from_qsettings(settings: Any) -> dict[str, Any]:
+def load_remote_is_from_qsettings(settings: Any, prefix: str = "remote_is") -> dict[str, Any]:
+    p = str(prefix or "remote_is").strip("/") or "remote_is"
     data = dict(DEFAULT_REMOTE_IS)
-    if settings.contains("remote_is/enabled"):
-        data["enabled"] = bool(int(settings.value("remote_is/enabled", 0) or 0))
-    if settings.contains("remote_is/host"):
-        data["host"] = str(settings.value("remote_is/host", data["host"]) or data["host"])
-    if settings.contains("remote_is/port"):
-        data["port"] = int(settings.value("remote_is/port", data["port"]) or data["port"])
-    if settings.contains("remote_is/timeout"):
-        data["timeout"] = float(settings.value("remote_is/timeout", data["timeout"]) or data["timeout"])
-    if settings.contains("remote_is/auth_token"):
-        data["auth_token"] = str(settings.value("remote_is/auth_token", "") or "")
-    if settings.contains("remote_is/weights_share_path"):
-        data["weights_share_path"] = str(settings.value("remote_is/weights_share_path", "") or "")
-    if settings.contains("remote_is/smb_unc_hint"):
-        data["smb_unc_hint"] = str(settings.value("remote_is/smb_unc_hint", "") or "")
+    if settings.contains(f"{p}/enabled"):
+        data["enabled"] = bool(int(settings.value(f"{p}/enabled", 0) or 0))
+    if settings.contains(f"{p}/host"):
+        data["host"] = str(settings.value(f"{p}/host", data["host"]) or data["host"])
+    if settings.contains(f"{p}/port"):
+        data["port"] = int(settings.value(f"{p}/port", data["port"]) or data["port"])
+    if settings.contains(f"{p}/timeout"):
+        data["timeout"] = float(settings.value(f"{p}/timeout", data["timeout"]) or data["timeout"])
+    if settings.contains(f"{p}/auth_token"):
+        data["auth_token"] = str(settings.value(f"{p}/auth_token", "") or "")
+    if settings.contains(f"{p}/weights_share_path"):
+        data["weights_share_path"] = str(settings.value(f"{p}/weights_share_path", "") or "")
+    if settings.contains(f"{p}/smb_unc_hint"):
+        data["smb_unc_hint"] = str(settings.value(f"{p}/smb_unc_hint", "") or "")
     return data

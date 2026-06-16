@@ -4668,10 +4668,21 @@ ApplicationWindow {
                                     }
                                     ScrollView {
                                         clip: true
-                                        SectionHyperparamsEditor {
+                                        contentWidth: gazHyperparamsColumn.width
+                                        ColumnLayout {
+                                            id: gazHyperparamsColumn
                                             width: algoHyperparamsStack.width
-                                            algoSection: "gaz"
-                                            rootUi: root
+                                            spacing: root.spacingSm
+
+                                            GazInferenceServerPanel {
+                                                rootUi: root
+                                            }
+
+                                            SectionHyperparamsEditor {
+                                                Layout.fillWidth: true
+                                                algoSection: "gaz"
+                                                rootUi: root
+                                            }
                                         }
                                     }
                                 }
