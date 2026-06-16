@@ -41,6 +41,21 @@ class ShareCheck:
     message: str
 
 
+@dataclass(frozen=True)
+class InferenceLaunchPrep:
+    """Подготовка Remote IS перед запуском bat с ПК2-лаунчера."""
+
+    ok: bool
+    message: str
+    search_cfg_path: str = ""
+    weights_path: str = ""
+    env_extra: tuple[tuple[str, str], ...] = ()
+
+
+# Обратная совместимость
+SmzLaunchPrep = InferenceLaunchPrep
+
+
 _ROLES: tuple[Pc2Role, ...] = (
     Pc2Role(
         id="dqn_actors",
@@ -159,3 +174,14 @@ def validate_share_root(share_root: str) -> ShareCheck:
 
     weights_txt = "веса найдены" if has_weights else "весов пока нет (появятся при train на ПК1)"
     return ShareCheck(True, True, True, has_weights, f"Папка доступна ✓ ({weights_txt}).")
+
+
+def prepare_inference_launch(role_id: str, share_root: str) -> InferenceLaunchPrep:
+    from core.models.remote_is_search_cfg_registry import prepare_inference_launch as _prep
+
+    return _prep(role_id, share_root)
+
+
+def prepare_smz_inference_launch(share_root: str) -> InferenceLaunchPrep:
+    """Обратная совместимость."""
+    return prepare_inference_launch("smz_inference", share_root)

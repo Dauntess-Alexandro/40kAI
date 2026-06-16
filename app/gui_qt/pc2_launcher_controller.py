@@ -10,6 +10,8 @@ from app.gui_qt.pc2_launcher_backend import (
     build_launch_env,
     load_saved_share_root,
     pc2_roles,
+    prepare_inference_launch,
+    prepare_smz_inference_launch,
     resolve_role,
     save_share_root,
     validate_share_root,
@@ -110,12 +112,23 @@ class Pc2LauncherController(QtCore.QObject):
             self.logLine.emit(f"[GUI][ERROR] Не найден скрипт: {bat}")
             return
 
+        launch_env = build_launch_env(self._share_root, base={})
+        prep = prepare_inference_launch(role.id, self._share_root)
+        if not prep.ok:
+            if prep.message:
+                self.logLine.emit(f"[GUI][ERROR] {prep.message}")
+            return
+        if prep.message:
+            self.logLine.emit(f"[GUI][REMOTE_IS] {prep.message}")
+        for key, val in prep.env_extra:
+            launch_env[key] = val
+
         proc = QtCore.QProcess(self)
         proc.setWorkingDirectory(str(PROJECT_ROOT))
         proc.setProcessChannelMode(QtCore.QProcess.MergedChannels)
 
         qenv = QtCore.QProcessEnvironment.systemEnvironment()
-        for key, val in build_launch_env(self._share_root, base={}).items():
+        for key, val in launch_env.items():
             qenv.insert(key, str(val))
         proc.setProcessEnvironment(qenv)
 

@@ -6,6 +6,7 @@ from app.gui_qt.pc2_launcher_backend import (
     build_launch_env,
     load_saved_share_root,
     pc2_roles,
+    prepare_smz_inference_launch,
     resolve_role,
     save_share_root,
     validate_share_root,
@@ -72,6 +73,17 @@ def test_save_share_root_ignores_empty(tmp_path):
     save_share_root(r"\\PC1\actor_sync", settings)
     save_share_root("", settings)  # пустое не должно затирать сохранённое
     assert load_saved_share_root(settings) == r"\\PC1\actor_sync"
+
+
+def test_smz_role_port_5560():
+    by_id = {r.id: r for r in pc2_roles()}
+    assert by_id["smz_inference"].port == 5560
+    assert by_id["smz_inference"].script == "tools/pc2_remote_smz_is.bat"
+
+
+def test_prepare_smz_launch_fails_without_share():
+    prep = prepare_smz_inference_launch("")
+    assert prep.ok is False
 
 
 def test_validate_share_root_detects_weights(tmp_path):

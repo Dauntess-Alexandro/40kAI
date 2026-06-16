@@ -153,6 +153,8 @@ from core.models.sampled_muzero_trainer import (
     train_sampled_muzero_step,
 )
 from core.models.smz_inference_server import smz_inference_server_entry
+from core.models.smz_remote_search_cfg_builder import publish_smz_remote_search_cfg
+from core.models.gmz_remote_search_cfg_builder import publish_gmz_remote_search_cfg
 from core.models.utils import *
 
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
@@ -9149,6 +9151,25 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         extras={"actor_learner": 1, "train_algo": TRAIN_ALGO, "mcts_mode": AZ_MCTS_MODE, "num_actors": int(AZ_NUM_ACTORS)},
     )
 
+    try:
+        _az_search_cfg_paths = write_az_remote_search_cfg(
+            obs_dim=int(n_observations),
+            action_sizes=[int(x) for x in n_actions],
+            hidden_size=int(AZ_HIDDEN_SIZE),
+            num_layers=int(AZ_NUM_LAYERS),
+            n_value_ensemble=int(AZ_VALUE_ENSEMBLE),
+            num_simulations=int(AZ_MCTS_SIMS),
+            sources=["train.py:auto"],
+        )
+        append_agent_log(
+            f"[AZ][REMOTE_IS] search_cfg обновлён (obs={int(n_observations)}): {_az_search_cfg_paths}"
+        )
+    except Exception as exc:
+        append_agent_log(
+            f"[AZ][REMOTE_IS][WARN] не удалось записать search_cfg: {exc}. "
+            "Где: write_az_remote_search_cfg. Что делать: откройте Qt GUI на ПК1."
+        )
+
     az_kw = alphazero_kwargs_from_env()
     az_net = make_alphazero_net(n_observations=n_observations, n_actions=n_actions, **az_kw).to(device)
     optimizer = optim.AdamW(az_net.parameters(), lr=AZ_LR, amsgrad=True)
@@ -10740,6 +10761,35 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         extras={"actor_learner": 1, "train_algo": "gumbel_muzero", "num_actors": int(GMZ_NUM_ACTORS)},
     )
 
+    try:
+        _gmz_search_cfg_paths = publish_gmz_remote_search_cfg(
+            obs_dim=int(n_observations),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(GMZ_LATENT_DIM),
+            hidden_dim=int(GMZ_HIDDEN_DIM),
+            num_layers=int(GMZ_NUM_LAYERS),
+            action_embed_dim=int(GMZ_ACTION_EMBED_DIM),
+            num_simulations=int(GMZ_MCTS_SIMS),
+            root_top_k=int(GMZ_ROOT_TOP_K),
+            discount=float(GMZ_DISCOUNT),
+            temperature=float(GMZ_SEARCH_TEMP),
+            gumbel_scale=float(GMZ_GUMBEL_SCALE),
+            prior_weight=float(GMZ_PRIOR_WEIGHT),
+            batch_recurrent=bool(GMZ_BATCH_RECURRENT),
+            tree_reuse=bool(GMZ_TREE_REUSE),
+            mission=mission_name,
+            sources=["train.py:auto"],
+        )
+        append_agent_log(
+            f"[GMZ][REMOTE_IS] search_cfg обновлён (obs={int(n_observations)} "
+            f"sims={int(GMZ_MCTS_SIMS)}): {_gmz_search_cfg_paths}"
+        )
+    except Exception as exc:
+        append_agent_log(
+            f"[GMZ][REMOTE_IS][WARN] не удалось записать search_cfg: {exc}. "
+            "Где: publish_gmz_remote_search_cfg. Что делать: откройте Qt GUI на ПК1."
+        )
+
     gmz_net = GumbelMuZeroNet(
         obs_dim=int(n_observations),
         action_sizes=[int(x) for x in n_actions],
@@ -11498,6 +11548,34 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
         ruleset_version=learner_identity.ruleset_version,
         extras={"actor_learner": 1, "train_algo": "sampled_muzero", "num_actors": int(SMZ_NUM_ACTORS)},
     )
+
+    try:
+        _smz_search_cfg_paths = publish_smz_remote_search_cfg(
+            obs_dim=int(n_observations),
+            action_sizes=[int(x) for x in n_actions],
+            latent_dim=int(SMZ_LATENT_DIM),
+            hidden_dim=int(SMZ_HIDDEN_DIM),
+            num_layers=int(SMZ_NUM_LAYERS),
+            action_embed_dim=int(SMZ_ACTION_EMBED_DIM),
+            num_samples=int(SMZ_NUM_SAMPLES),
+            discount=float(SMZ_DISCOUNT),
+            temperature=float(SMZ_SEARCH_TEMP),
+            sample_temperature=float(SMZ_SAMPLE_TEMP),
+            prior_weight=float(SMZ_PRIOR_WEIGHT),
+            dedup=bool(SMZ_DEDUP),
+            mission=mission_name,
+            sources=["train.py:auto"],
+        )
+        append_agent_log(
+            f"[SMZ][REMOTE_IS] search_cfg обновлён (obs={int(n_observations)} "
+            f"num_samples={int(SMZ_NUM_SAMPLES)}): {_smz_search_cfg_paths}"
+        )
+    except Exception as exc:
+        append_agent_log(
+            f"[SMZ][REMOTE_IS][WARN] не удалось записать search_cfg: {exc}. "
+            "Где: publish_smz_remote_search_cfg. Что делать: tools\\write_smz_remote_search_cfg.bat "
+            "или запуск SMZ Remote IS из лаунчера ПК2."
+        )
 
     smz_net = make_sampled_muzero_net(
         obs_dim=int(n_observations),

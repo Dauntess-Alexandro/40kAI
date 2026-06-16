@@ -239,6 +239,10 @@ class GUIController(QtCore.QObject):
         self._stop_kill_timer = QtCore.QTimer(self)
         self._stop_kill_timer.setSingleShot(True)
         self._stop_kill_timer.timeout.connect(self._on_stop_kill_timeout)
+        self._roster_search_cfg_sync_timer = QtCore.QTimer(self)
+        self._roster_search_cfg_sync_timer.setSingleShot(True)
+        self._roster_search_cfg_sync_timer.setInterval(600)
+        self._roster_search_cfg_sync_timer.timeout.connect(self._flush_roster_remote_search_cfg_sync)
         self._repo_root = str(PROJECT_ROOT)
         self._runtime_python = get_runtime_python(PROJECT_ROOT)
         self._app_gui_dir = str(APP_DIR / "gui_qt")
@@ -529,6 +533,8 @@ class GUIController(QtCore.QObject):
         self._update_roster_summary()
         self._refresh_specific_opponent_options()
         self._refresh_eval_agent_options()
+
+        QtCore.QTimer.singleShot(800, self._sync_all_remote_search_cfgs_idle)
 
         self._emit_status("Нажмите «Тренировка 8х», чтобы запустить обучение.")
 
@@ -2029,6 +2035,10 @@ class GUIController(QtCore.QObject):
         if enabled:
             if not self.gmzInferenceServerEnabled:
                 self._apply_gmz_variant_b_bundle(emit_status=False, mark_dirty=True)
+            self._persist_rosters(schedule_search_cfg_sync=False)
+            if not os.path.isfile(str(TRAIN_DATA_PATH)):
+                self._refresh_train_data_json_from_rosters(expected_num_life=None)
+            self._sync_all_remote_search_cfgs_for_share(source="enable_lan_gmz")
         else:
             self._ensure_gmz_local_is_default()
         self._persist_remote_is()
@@ -2174,6 +2184,55 @@ class GUIController(QtCore.QObject):
         except OSError as exc:
             self._emit_status(f"Не удалось сохранить remote_is_smz.json: {exc}")
 
+    def _sync_smz_remote_search_cfg_for_share(self, *, source: str = "gui") -> None:
+        """ПК1: положить все remote IS search_cfg на SMB actor_sync."""
+        self._sync_all_remote_search_cfgs_for_share(source=source)
+
+    def _sync_all_remote_search_cfgs_for_share(self, *, source: str = "gui") -> None:
+        try:
+            from core.models.remote_is_search_cfg_registry import publish_all_remote_search_cfgs_from_repo
+
+            results = publish_all_remote_search_cfgs_from_repo(sources=[f"gui:{source}"])
+            for algo_id, info in results.items():
+                if info.get("ok"):
+                    paths = info.get("paths") or []
+                    if paths:
+                        self._emit_log(
+                            f"[GUI][REMOTE_IS][{algo_id.upper()}] search_cfg обновлён ({source}): {paths[-1]}",
+                            level="INFO",
+                        )
+        except Exception as exc:
+            self._emit_log(
+                f"[GUI][REMOTE_IS][WARN] не удалось обновить search_cfg ({source}): {exc}",
+                level="WARN",
+            )
+
+    def _schedule_roster_remote_search_cfg_sync(self) -> None:
+        """Отложенно пересобрать data.json и search_cfg после правок ростера/миссии."""
+        self._roster_search_cfg_sync_timer.start()
+
+    def _flush_roster_remote_search_cfg_sync(self) -> None:
+        try:
+            self._refresh_train_data_json_from_rosters(
+                expected_num_life=None,
+                sync_source="roster",
+            )
+        except OSError:
+            pass
+
+    def _sync_all_remote_search_cfgs_idle(self) -> None:
+        if os.path.isfile(str(TRAIN_DATA_PATH)):
+            self._sync_all_remote_search_cfgs_for_share(source="idle")
+            return
+        try:
+            self._persist_rosters(schedule_search_cfg_sync=False)
+            self._refresh_train_data_json_from_rosters(expected_num_life=None)
+        except OSError:
+            pass
+
+    def _sync_smz_remote_search_cfg_idle(self) -> None:
+        self._sync_all_remote_search_cfgs_idle()
+
     def _set_smz_remote_is_lan_active(self, active: bool) -> None:
         on = bool(active)
         self._remote_is_smz["user_enabled_lan"] = on
@@ -2189,6 +2248,10 @@ class GUIController(QtCore.QObject):
                 self._smz_hyperparams["inference_server_mode"] = "local"
                 self.trainingHyperparamsChanged.emit()
                 self.mark_settings_dirty()
+            self._persist_rosters(schedule_search_cfg_sync=False)
+            if not os.path.isfile(str(TRAIN_DATA_PATH)):
+                self._refresh_train_data_json_from_rosters(expected_num_life=None)
+            self._sync_all_remote_search_cfgs_for_share(source="enable_lan_smz")
         self._persist_remote_is_smz()
         self.smzRemoteIsChanged.emit()
 
@@ -2703,6 +2766,7 @@ class GUIController(QtCore.QObject):
             self._selected_mission = normalized
             self.missionChanged.emit(normalized)
             self._emit_train_setup_summary_changed()
+            self._schedule_roster_remote_search_cfg_sync()
 
     @QtCore.Slot(int)
     def set_selected_mission_index(self, index: int) -> None:
@@ -3147,6 +3211,8 @@ class GUIController(QtCore.QObject):
         self._refresh_specific_opponent_options()
         self._emit_status(f"Сторона обучения: {side}")
         self.mark_settings_dirty()
+        self._persist_rosters(schedule_search_cfg_sync=False)
+        self._schedule_roster_remote_search_cfg_sync()
 
     @QtCore.Slot(str)
     def set_learner_faction(self, value: str) -> None:
@@ -4724,6 +4790,7 @@ class GUIController(QtCore.QObject):
 
         self._emit_log(f"[GUI] hyperparams.json сохранён: {merged_payload}", level="INFO")
         self.mark_settings_saved("✓ Сохранено")
+        self._sync_all_remote_search_cfgs_for_share(source="save_hyperparams")
         self._emit_status("Параметры тренировки сохранены в hyperparams.json.")
 
     @QtCore.Slot()
@@ -5424,7 +5491,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(script):
             self._emit_status("Не найден скрипт запуска терминала. Проверьте репозиторий.")
             return
-        self._persist_rosters()
+        self._persist_rosters(schedule_search_cfg_sync=False)
         if not self._refresh_train_data_json_from_rosters(expected_num_life=None):
             return
         command = self._build_script_command(script, [model_path])
@@ -5485,7 +5552,7 @@ class GUIController(QtCore.QObject):
         if not os.path.exists(script):
             self._emit_status("Не найден скрипт Viewer. Проверьте репозиторий.")
             return
-        self._persist_rosters()
+        self._persist_rosters(schedule_search_cfg_sync=False)
         if not self._refresh_train_data_json_from_rosters(expected_num_life=None):
             return
         env = os.environ.copy()
@@ -6645,7 +6712,12 @@ class GUIController(QtCore.QObject):
         except Exception:
             return None
 
-    def _refresh_train_data_json_from_rosters(self, *, expected_num_life: int | None = None) -> bool:
+    def _refresh_train_data_json_from_rosters(
+        self,
+        *,
+        expected_num_life: int | None = None,
+        sync_source: str = "data_json",
+    ) -> bool:
         """Пересобрать runtime/state/data.json из runtime/state/units.txt (data.bat → initFile.py)."""
         script = self._script_path("data")
         # initFile.py: unit-списки и оружие по строкам — из units.txt; фракции — из ростеров learner/model.
@@ -6701,11 +6773,12 @@ class GUIController(QtCore.QObject):
                 level="ERROR",
             )
             return False
+        self._sync_all_remote_search_cfgs_for_share(source=sync_source)
         return True
 
     def _prepare_training_data(self) -> bool:
         try:
-            self._persist_rosters()
+            self._persist_rosters(schedule_search_cfg_sync=False)
             return self._refresh_train_data_json_from_rosters(expected_num_life=int(self._num_games))
         except OSError as exc:
             message = (
@@ -9208,7 +9281,7 @@ class GUIController(QtCore.QObject):
             melee_weapon=melee_weapon,
         )
 
-    def _persist_rosters(self) -> None:
+    def _persist_rosters(self, *, schedule_search_cfg_sync: bool = True) -> None:
         units_path = str(UNITS_PATH)
         # В файле runtime/state/units.txt:
         # - "Player Units" попадает как enemy в initFile.py
@@ -9236,6 +9309,8 @@ class GUIController(QtCore.QObject):
         os.makedirs(os.path.dirname(units_path), exist_ok=True)
         with open(units_path, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines))
+        if schedule_search_cfg_sync:
+            self._schedule_roster_remote_search_cfg_sync()
 
     def _clear_cache_files(self) -> None:
         models_path = str(ARTIFACTS_MODELS_DIR)
@@ -9246,7 +9321,13 @@ class GUIController(QtCore.QObject):
         # actor_sync: папку оставляем (SMB share), файлы внутри — удаляем.
         self._remove_contents(models_path, keep_dirs={"actor_sync"})
         actor_sync_path = os.path.join(models_path, "actor_sync")
-        self._remove_contents(actor_sync_path, keep_files={"gmz_remote_search_cfg.json"})
+        self._remove_contents(actor_sync_path, keep_files={
+            "gmz_remote_search_cfg.json",
+            "smz_remote_search_cfg.json",
+            "az_remote_search_cfg.json",
+            "remote_is_train_data.json",
+            "smz_train_data.json",
+        })
         self._remove_contents(heur_decisions_path)
         self._remove_contents(metrics_path)
         self._truncate_runtime_file(RESPONSE_PATH)

@@ -94,22 +94,7 @@ if errorlevel 1 (
 REM Единый корень общей папки (как у акторов): если задан 40KAI_SHARE_ROOT и пути
 REM не заданы явно — выводим их из него. Обе раскладки: SHARE\actor_sync\ или SHARE\.
 REM Имя 40KAI_* начинается с цифры — в batch %40KAI_..% ломается на %4, читаем через for/f.
-set "_SHARE="
-for /f "tokens=1* delims==" %%A in ('set 40KAI_SHARE_ROOT 2^>nul') do set "_SHARE=%%B"
-if not "%_SHARE%"=="" (
-  if "%SMZ_REMOTE_WEIGHTS_PATH%"=="" (
-    if exist "%_SHARE%\actor_sync\latest_smz_policy.pth" set "SMZ_REMOTE_WEIGHTS_PATH=%_SHARE%\actor_sync\latest_smz_policy.pth"
-    if exist "%_SHARE%\latest_smz_policy.pth" set "SMZ_REMOTE_WEIGHTS_PATH=%_SHARE%\latest_smz_policy.pth"
-  )
-  if "%SMZ_REMOTE_SEARCH_CONFIG%"=="" (
-    if exist "%_SHARE%\actor_sync\smz_remote_search_cfg.json" set "SMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\actor_sync\smz_remote_search_cfg.json"
-    if exist "%_SHARE%\smz_remote_search_cfg.json" set "SMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\smz_remote_search_cfg.json"
-  )
-)
-
-REM Фолбэк (обратная совместимость): прежний дефолт на Z:\.
-if "%SMZ_REMOTE_WEIGHTS_PATH%"=="" set "SMZ_REMOTE_WEIGHTS_PATH=Z:\latest_smz_policy.pth"
-if "%SMZ_REMOTE_SEARCH_CONFIG%"=="" set "SMZ_REMOTE_SEARCH_CONFIG=Z:\smz_remote_search_cfg.json"
+call :resolve_smb_paths
 if "%SMZ_REMOTE_WEIGHTS_PATH%"=="" (
   echo [ОШИБКА] В конфиге не задан SMZ_REMOTE_WEIGHTS_PATH
   notepad "%CONFIG_BAT%"
@@ -122,12 +107,8 @@ if "%SMZ_REMOTE_SEARCH_CONFIG%"=="" (
   pause
   exit /b 1
 )
-if not exist "%SMZ_REMOTE_SEARCH_CONFIG%" (
-  echo [ОШИБКА] search_cfg не найден: %SMZ_REMOTE_SEARCH_CONFIG%
-  echo Создайте JSON по образцу в docs\remote-inference-server-smz.md
-  pause
-  exit /b 1
-)
+set "SMZ_ENSURE_PENDING=0"
+if not exist "%SMZ_REMOTE_SEARCH_CONFIG%" set "SMZ_ENSURE_PENDING=1"
 
 if "%SMZ_REMOTE_HOST%"=="" set "SMZ_REMOTE_HOST=0.0.0.0"
 if "%SMZ_REMOTE_PORT%"=="" set "SMZ_REMOTE_PORT=5560"
@@ -187,6 +168,18 @@ if errorlevel 1 (
 python -c "import zmq, msgpack; print('  zmq+msgpack OK')"
 if errorlevel 1 (
   echo [ОШИБКА] pyzmq или msgpack не установлены. Запустите: tools\pc2_remote_smz_is.bat setup
+  pause
+  exit /b 1
+)
+
+if "%SMZ_ENSURE_PENDING%"=="1" (
+  call :ensure_search_cfg
+  call :resolve_smb_paths
+)
+if not exist "%SMZ_REMOTE_SEARCH_CONFIG%" (
+  echo [ОШИБКА] search_cfg не найден: %SMZ_REMOTE_SEARCH_CONFIG%
+  echo Лаунчер ПК2 или train на ПК1 должны создать smz_remote_search_cfg.json на шаре.
+  echo Лаунчер ПК2 или Qt GUI на ПК1 создают smz_remote_search_cfg.json на шаре автоматически.
   pause
   exit /b 1
 )
@@ -267,3 +260,42 @@ if not "%EC%"=="0" (
 )
 pause
 exit /b %EC%
+
+:resolve_smb_paths
+set "_SHARE="
+for /f "tokens=1* delims==" %%A in ('set 40KAI_SHARE_ROOT 2^>nul') do set "_SHARE=%%B"
+if not "%_SHARE%"=="" (
+  if "%SMZ_REMOTE_WEIGHTS_PATH%"=="" (
+    if exist "%_SHARE%\actor_sync\latest_smz_policy.pth" set "SMZ_REMOTE_WEIGHTS_PATH=%_SHARE%\actor_sync\latest_smz_policy.pth"
+    if exist "%_SHARE%\latest_smz_policy.pth" set "SMZ_REMOTE_WEIGHTS_PATH=%_SHARE%\latest_smz_policy.pth"
+  )
+  if "%SMZ_REMOTE_SEARCH_CONFIG%"=="" (
+    if exist "%_SHARE%\actor_sync\smz_remote_search_cfg.json" set "SMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\actor_sync\smz_remote_search_cfg.json"
+    if exist "%_SHARE%\smz_remote_search_cfg.json" set "SMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\smz_remote_search_cfg.json"
+  )
+)
+if not exist "%SMZ_REMOTE_SEARCH_CONFIG%" (
+  if exist "Z:\actor_sync\smz_remote_search_cfg.json" set "SMZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\smz_remote_search_cfg.json"
+  if exist "Z:\smz_remote_search_cfg.json" set "SMZ_REMOTE_SEARCH_CONFIG=Z:\smz_remote_search_cfg.json"
+)
+if not exist "%SMZ_REMOTE_WEIGHTS_PATH%" (
+  if exist "Z:\actor_sync\latest_smz_policy.pth" set "SMZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_smz_policy.pth"
+  if exist "Z:\latest_smz_policy.pth" set "SMZ_REMOTE_WEIGHTS_PATH=Z:\latest_smz_policy.pth"
+)
+if "%SMZ_REMOTE_WEIGHTS_PATH%"=="" set "SMZ_REMOTE_WEIGHTS_PATH=Z:\actor_sync\latest_smz_policy.pth"
+if "%SMZ_REMOTE_SEARCH_CONFIG%"=="" set "SMZ_REMOTE_SEARCH_CONFIG=Z:\actor_sync\smz_remote_search_cfg.json"
+exit /b 0
+
+:ensure_search_cfg
+if "%_SHARE%"=="" (
+  echo [WARN] 40KAI_SHARE_ROOT не задан — ensure search_cfg пропущен
+  exit /b 0
+)
+echo [SETUP] search_cfg не найден — ensure_remote_search_cfg.py --algo smz ...
+python "%TOOLS%\ensure_remote_search_cfg.py" --algo smz --share-root "%_SHARE%"
+if errorlevel 1 (
+  echo [WARN] ensure_smz_remote_search_cfg завершился с ошибкой
+) else (
+  set "SMZ_ENSURE_PENDING=0"
+)
+exit /b 0

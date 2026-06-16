@@ -122,12 +122,8 @@ if "%GMZ_REMOTE_SEARCH_CONFIG%"=="" (
   pause
   exit /b 1
 )
-if not exist "%GMZ_REMOTE_SEARCH_CONFIG%" (
-  echo [ОШИБКА] search_cfg не найден: %GMZ_REMOTE_SEARCH_CONFIG%
-  echo Создайте JSON по образцу в docs\remote-inference-server-gmz.md
-  pause
-  exit /b 1
-)
+set "GMZ_ENSURE_PENDING=0"
+if not exist "%GMZ_REMOTE_SEARCH_CONFIG%" set "GMZ_ENSURE_PENDING=1"
 
 if "%GMZ_REMOTE_HOST%"=="" set "GMZ_REMOTE_HOST=0.0.0.0"
 if "%GMZ_REMOTE_PORT%"=="" set "GMZ_REMOTE_PORT=5555"
@@ -187,6 +183,16 @@ if errorlevel 1 (
 python -c "import zmq, msgpack; print('  zmq+msgpack OK')"
 if errorlevel 1 (
   echo [ОШИБКА] pyzmq или msgpack не установлены. Запустите: tools\pc2_remote_is.bat setup
+  pause
+  exit /b 1
+)
+
+if "%GMZ_ENSURE_PENDING%"=="1" (
+  call :ensure_search_cfg
+)
+if not exist "%GMZ_REMOTE_SEARCH_CONFIG%" (
+  echo [ОШИБКА] search_cfg не найден: %GMZ_REMOTE_SEARCH_CONFIG%
+  echo Лаунчер ПК2 или Qt GUI на ПК1 создают search_cfg на шаре автоматически.
   pause
   exit /b 1
 )
@@ -267,3 +273,19 @@ if not "%EC%"=="0" (
 )
 pause
 exit /b %EC%
+
+:ensure_search_cfg
+if "%_SHARE%"=="" (
+  echo [WARN] 40KAI_SHARE_ROOT не задан — ensure search_cfg пропущен
+  exit /b 0
+)
+echo [SETUP] search_cfg не найден — ensure_remote_search_cfg.py --algo gmz ...
+python "%TOOLS%\ensure_remote_search_cfg.py" --algo gmz --share-root "%_SHARE%"
+if errorlevel 1 (
+  echo [WARN] ensure_remote_search_cfg завершился с ошибкой
+) else (
+  set "GMZ_ENSURE_PENDING=0"
+  if exist "%_SHARE%\actor_sync\gmz_remote_search_cfg.json" set "GMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\actor_sync\gmz_remote_search_cfg.json"
+  if exist "%_SHARE%\gmz_remote_search_cfg.json" set "GMZ_REMOTE_SEARCH_CONFIG=%_SHARE%\gmz_remote_search_cfg.json"
+)
+exit /b 0

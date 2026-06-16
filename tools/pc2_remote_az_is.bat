@@ -142,12 +142,9 @@ if "%AZ_REMOTE_SEARCH_CONFIG%"=="" (
   exit /b 1
 )
 if not exist "%AZ_REMOTE_SEARCH_CONFIG%" (
-  echo [ОШИБКА] search_cfg не найден: %AZ_REMOTE_SEARCH_CONFIG%
-  echo Ожидается при Z:=models: Z:\actor_sync\az_remote_search_cfg.json
-  echo При Z:=actor_sync ^(legacy^): Z:\az_remote_search_cfg.json
-  echo С ПК1: tools\write_az_remote_search_cfg.bat
-  pause
-  exit /b 1
+  set "AZ_ENSURE_PENDING=1"
+) else (
+  set "AZ_ENSURE_PENDING=0"
 )
 
 if "%AZ_REMOTE_HOST%"=="" set "AZ_REMOTE_HOST=0.0.0.0"
@@ -271,6 +268,17 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if "%AZ_ENSURE_PENDING%"=="1" (
+  call :ensure_search_cfg
+  call :resolve_smb_paths
+)
+if not exist "%AZ_REMOTE_SEARCH_CONFIG%" (
+  echo [ОШИБКА] search_cfg не найден: %AZ_REMOTE_SEARCH_CONFIG%
+  echo Лаунчер ПК2 или Qt GUI на ПК1 создают search_cfg на шаре автоматически.
+  pause
+  exit /b 1
+)
+
 if /i "%MODE%"=="check" (
   echo.
   echo [OK] Проверка пройдена. Для запуска: tools\pc2_remote_az_is.bat
@@ -361,3 +369,19 @@ echo.
 echo [INFO] Окно "40kAI AZ IS" может оставаться открытым — закройте его вручную после train.
 pause
 exit /b %EC%
+
+:ensure_search_cfg
+set "_SHARE="
+for /f "tokens=1* delims==" %%A in ('set 40KAI_SHARE_ROOT 2^>nul') do set "_SHARE=%%B"
+if "%_SHARE%"=="" (
+  echo [WARN] 40KAI_SHARE_ROOT не задан — ensure search_cfg пропущен
+  exit /b 0
+)
+echo [SETUP] search_cfg не найден — ensure_remote_search_cfg.py --algo az ...
+python "%TOOLS%\ensure_remote_search_cfg.py" --algo az --share-root "%_SHARE%"
+if errorlevel 1 (
+  echo [WARN] ensure_remote_search_cfg завершился с ошибкой
+) else (
+  set "AZ_ENSURE_PENDING=0"
+)
+exit /b 0
