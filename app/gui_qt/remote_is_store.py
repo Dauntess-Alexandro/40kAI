@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 from typing import Any
 
@@ -36,12 +35,12 @@ def remote_is_lan_active(data: dict[str, Any]) -> bool:
     return bool(normalize_remote_is(data).get("user_enabled_lan", False))
 
 
-def remote_is_config_path(repo_root: str | Path) -> Path:
-    return Path(repo_root) / "runtime" / "state" / "remote_is.json"
+def remote_is_config_path(repo_root: str | Path, filename: str = "remote_is.json") -> Path:
+    return Path(repo_root) / "runtime" / "state" / str(filename)
 
 
-def load_remote_is(repo_root: str | Path) -> dict[str, Any]:
-    path = remote_is_config_path(repo_root)
+def load_remote_is(repo_root: str | Path, filename: str = "remote_is.json") -> dict[str, Any]:
+    path = remote_is_config_path(repo_root, filename)
     if not path.is_file():
         return normalize_remote_is({})
     try:
@@ -56,14 +55,14 @@ def load_remote_is(repo_root: str | Path) -> dict[str, Any]:
         "user_enabled_lan"
     ):
         try:
-            save_remote_is(repo_root, merged)
+            save_remote_is(repo_root, merged, filename)
         except OSError:
             pass
     return merged
 
 
-def save_remote_is(repo_root: str | Path, data: dict[str, Any]) -> None:
-    path = remote_is_config_path(repo_root)
+def save_remote_is(repo_root: str | Path, data: dict[str, Any], filename: str = "remote_is.json") -> None:
+    path = remote_is_config_path(repo_root, filename)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = normalize_remote_is(data)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
