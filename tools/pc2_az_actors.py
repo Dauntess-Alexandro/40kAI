@@ -20,10 +20,15 @@ from core.models.az_rollout_sink import (  # noqa: E402
     az_dist_stop_flag_path,
     az_dist_stop_requested,
     build_az_dist_worker_payloads,
+    build_gaz_dist_worker_payloads,
     normalize_az_dist_hyperparams,
     read_az_dist_train_context,
     wait_az_dist_train_context,
 )
+
+
+def _is_gumbel_az(algo: str) -> bool:
+    return str(algo or "").strip().lower() == "gumbel_az"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -119,6 +124,31 @@ def _train_dist_defaults(train_mod) -> dict:
     }
 
 
+def _train_gaz_dist_defaults(train_mod) -> dict:
+    """Дефолты GumbelAlphaZeroSearch на ПК2 (fallback, если в SMB нет полей с ПК1)."""
+    return {
+        "num_simulations": int(train_mod.GAZ_NUM_SIMS),
+        "num_considered_actions": int(train_mod.GAZ_NUM_CONSIDERED),
+        "max_depth": int(train_mod.GAZ_MAX_DEPTH),
+        "value_scale": float(train_mod.GAZ_VALUE_SCALE),
+        "c_visit": float(train_mod.GAZ_C_VISIT),
+        "simulate_enemy": bool(train_mod.GAZ_SIMULATE_ENEMY),
+        "joint_action": bool(train_mod.GAZ_JOINT_ACTION),
+        "eval_cache_size": int(train_mod.GAZ_EVAL_CACHE_SIZE),
+        "batch_eval_size": int(train_mod.GAZ_BATCH_EVAL_SIZE),
+        "temperature_opening_moves": int(train_mod.AZ_TEMP_OPENING_MOVES),
+        "temperature_opening_value": float(train_mod.AZ_TEMP_OPENING),
+        "temperature_late_value": float(train_mod.AZ_TEMP_LATE),
+        "outcome_only": bool(train_mod.AZ_OUTCOME_ONLY),
+        "outcome_value_win": float(train_mod.AZ_OUTCOME_VALUE_WIN),
+        "outcome_value_loss": float(train_mod.AZ_OUTCOME_VALUE_LOSS),
+        "outcome_value_draw": float(train_mod.AZ_OUTCOME_VALUE_DRAW),
+        "batch_send": int(train_mod.AZ_ACTOR_BATCH_SEND),
+        "inference_timeout": float(train_mod.AZ_INFERENCE_TIMEOUT),
+        "self_play_enabled": int(train_mod.SELF_PLAY_ENABLED),
+    }
+
+
 def _resolve_opponent_agent_id(ctx: dict | None = None) -> str:
     explicit = str(os.getenv("OPPONENT_AGENT_ID", "") or "").strip()
     if explicit:
@@ -197,7 +227,13 @@ def _worker_main(worker_id: int) -> None:
         except (TypeError, json.JSONDecodeError):
             hp_pc1 = {}
 
-    payloads = build_az_dist_worker_payloads(hp_pc1, defaults=_train_dist_defaults(train_mod))
+    # train_algo берём из SMB-контекста ПК1 (main() кладёт в env). GAZ → GumbelAlphaZeroSearch.
+    train_algo = str(os.getenv("AZ_DIST_TRAIN_ALGO", "") or "").strip().lower()
+    gaz = _is_gumbel_az(train_algo)
+    if gaz:
+        payloads = build_gaz_dist_worker_payloads(hp_pc1, defaults=_train_gaz_dist_defaults(train_mod))
+    else:
+        payloads = build_az_dist_worker_payloads(hp_pc1, defaults=_train_dist_defaults(train_mod))
     mcts_payload = payloads["mcts"]
     sp_payload = payloads["sp"]
     outcome_payload = payloads["outcome"]
@@ -208,13 +244,15 @@ def _worker_main(worker_id: int) -> None:
     opponent_spec = _load_opponent_spec(train_mod, roster, b_len, b_hei)
 
     hp = train_mod.AZ_CFG
+    # Дефолтные порты GAZ (5565/5567) отличаются от AZ (5555/5557); их обычно задаёт bat,
+    # но fallback по алго страхует от рассинхрона.
     is_host = str(os.getenv("AZ_DIST_PC2_IS_HOST", "127.0.0.1"))
-    is_port = _env_int("AZ_DIST_PC2_IS_PORT", 5555)
+    is_port = _env_int("AZ_DIST_PC2_IS_PORT", 5565 if gaz else 5555)
     rollout_host = str(os.getenv("AZ_DIST_PC1_HOST", "127.0.0.1"))
-    rollout_port = _env_int("AZ_DIST_ROLLOUT_PORT", 5557)
+    rollout_port = _env_int("AZ_DIST_ROLLOUT_PORT", 5567 if gaz else 5557)
     auth = str(os.getenv("AZ_DIST_AUTH_TOKEN", os.getenv("AZ_INFERENCE_REMOTE_AUTH_TOKEN", "")))
     contract_hash = str(os.getenv("AZ_DIST_ENV_CONTRACT_HASH", ""))
-    stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path())
+    stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path(train_algo))
     batch_send = int(payloads["batch_send"])
 
     train_mod._az_env_worker_entry(
@@ -254,16 +292,31 @@ def main() -> int:
         require_opponent=False,
         require_hyperparams=False,
     )
+    # train_algo из контекста ПК1 → выбор GumbelAlphaZeroSearch (gumbel_az) vs AZ MCTS.
+    ctx_algo = str(dist_ctx.get("train_algo", "") or os.getenv("AZ_DIST_TRAIN_ALGO", "")).strip().lower()
+    if ctx_algo:
+        os.environ["AZ_DIST_TRAIN_ALGO"] = ctx_algo
+    _gaz = _is_gumbel_az(ctx_algo)
+    _tag = "GAZ" if _gaz else "AZ"
     hp_pc1 = normalize_az_dist_hyperparams(dist_ctx.get("az_hyperparams"))
     if hp_pc1:
         os.environ["AZ_DIST_HYPERPARAMS_JSON"] = json.dumps(hp_pc1, ensure_ascii=False)
-        print(
-            "[AZ][DIST][PC2] hyperparams с ПК1 (SMB): "
-            f"parallel_sims={hp_pc1.get('mcts_parallel_sims')} "
-            f"mcts_sims={hp_pc1.get('mcts_simulations')} "
-            f"max_depth={hp_pc1.get('mcts_max_depth')}",
-            flush=True,
-        )
+        if _gaz:
+            print(
+                f"[{_tag}][DIST][PC2] hyperparams с ПК1 (SMB): "
+                f"num_simulations={hp_pc1.get('num_simulations')} "
+                f"num_considered={hp_pc1.get('num_considered_actions')} "
+                f"joint_action={hp_pc1.get('joint_action')}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[{_tag}][DIST][PC2] hyperparams с ПК1 (SMB): "
+                f"parallel_sims={hp_pc1.get('mcts_parallel_sims')} "
+                f"mcts_sims={hp_pc1.get('mcts_simulations')} "
+                f"max_depth={hp_pc1.get('mcts_max_depth')}",
+                flush=True,
+            )
     elif wait_sec > 0:
         print(
             "[AZ][DIST][PC2][WARN] az_hyperparams в SMB нет — MCTS из локального hyperparams.json на ПК2. "
@@ -293,8 +346,8 @@ def main() -> int:
     # запускаем — иначе они крутят партии впустую (роллауты летят в мёртвый порт и
     # дропаются). Проба досягаемости приёмника ПК1. Выключить: AZ_DIST_WAIT_PC1_SEC=0.
     rollout_host = str(os.getenv("AZ_DIST_PC1_HOST", "127.0.0.1"))
-    rollout_port = _env_int("AZ_DIST_ROLLOUT_PORT", 5557)
-    stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path())
+    rollout_port = _env_int("AZ_DIST_ROLLOUT_PORT", 5567 if _gaz else 5557)
+    stop_flag = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or az_dist_stop_flag_path(ctx_algo))
     wait_pc1_sec = _env_float("AZ_DIST_WAIT_PC1_SEC", 600.0)
     if not wait_for_pc1_live(
         rollout_host,
@@ -302,13 +355,13 @@ def main() -> int:
         total_wait_sec=wait_pc1_sec,
         should_stop=lambda: az_dist_stop_requested(stop_flag),
     ):
-        print("[AZ][DIST][PC2] ПК1 не обнаружен — актёры не запущены (без спама).", flush=True)
+        print(f"[{_tag}][DIST][PC2] ПК1 не обнаружен — актёры не запущены (без спама).", flush=True)
         return 0
 
     print(
-        f"[AZ][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "
+        f"[{_tag}][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "
         f"rollout_target={rollout_host}:{rollout_port} "
-        f"is=127.0.0.1:{_env_int('AZ_DIST_PC2_IS_PORT', 5555)}",
+        f"is=127.0.0.1:{_env_int('AZ_DIST_PC2_IS_PORT', 5565 if _gaz else 5555)}",
         flush=True,
     )
 

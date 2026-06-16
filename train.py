@@ -2821,7 +2821,7 @@ DQN_DIST_TOPUP_GRACE_SEC = max(
 
 
 def _clear_az_dist_stop_flag() -> None:
-    path = az_dist_stop_flag_path()
+    path = az_dist_stop_flag_path(TRAIN_ALGO)
     try:
         removed = False
         if os.path.isfile(path):
@@ -2833,7 +2833,7 @@ def _clear_az_dist_stop_flag() -> None:
 
 
 def _touch_az_dist_stop_flag() -> None:
-    path = az_dist_stop_flag_path()
+    path = az_dist_stop_flag_path(TRAIN_ALGO)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
@@ -9175,21 +9175,23 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     )
 
     try:
+        _gaz_cfg = is_gumbel_az_algo(TRAIN_ALGO)
         _az_search_cfg_paths = write_az_remote_search_cfg(
             obs_dim=int(n_observations),
             action_sizes=[int(x) for x in n_actions],
             hidden_size=int(AZ_HIDDEN_SIZE),
             num_layers=int(AZ_NUM_LAYERS),
             n_value_ensemble=int(AZ_VALUE_ENSEMBLE),
-            num_simulations=int(AZ_MCTS_SIMS),
+            num_simulations=int(GAZ_NUM_SIMS if _gaz_cfg else AZ_MCTS_SIMS),
             sources=["train.py:auto"],
+            filename="gaz_remote_search_cfg.json" if _gaz_cfg else "az_remote_search_cfg.json",
         )
         append_agent_log(
-            f"[AZ][REMOTE_IS] search_cfg обновлён (obs={int(n_observations)}): {_az_search_cfg_paths}"
+            f"[{_AZ_LOG_TAG}][REMOTE_IS] search_cfg обновлён (obs={int(n_observations)}): {_az_search_cfg_paths}"
         )
     except Exception as exc:
         append_agent_log(
-            f"[AZ][REMOTE_IS][WARN] не удалось записать search_cfg: {exc}. "
+            f"[{_AZ_LOG_TAG}][REMOTE_IS][WARN] не удалось записать search_cfg: {exc}. "
             "Где: write_az_remote_search_cfg. Что делать: откройте Qt GUI на ПК1."
         )
 
@@ -9437,39 +9439,47 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         )
         rollout_receiver.start()
         try:
-            _dist_az_hp = pack_az_dist_hyperparams(
-                {
-                    **AZ_CFG,
-                    "mcts_simulations": int(AZ_MCTS_SIMS),
-                    "mcts_parallel_sims": int(AZ_MCTS_PARALLEL_SIMS),
-                    "mcts_max_depth": int(AZ_MCTS_MAX_DEPTH),
-                    "mcts_top_k_per_head": int(AZ_MCTS_TOP_K_PER_HEAD),
-                    "mcts_batch_eval_size": int(AZ_MCTS_BATCH_EVAL_SIZE),
-                    "mcts_simulate_enemy": int(AZ_MCTS_SIMULATE_ENEMY),
-                    "mcts_mode": str(AZ_MCTS_MODE),
-                    "mcts_root_dirichlet_only": int(AZ_MCTS_ROOT_DIRICHLET_ONLY),
-                    "mcts_eval_cache_size": int(AZ_MCTS_EVAL_CACHE_SIZE),
-                    "c_puct": float(AZ_C_PUCT),
-                    "c_puct_min": float(AZ_C_PUCT_MIN),
-                    "c_puct_max": float(AZ_C_PUCT_MAX),
-                    "c_puct_schedule": str(AZ_C_PUCT_SCHEDULE),
-                    "dirichlet_alpha": float(AZ_DIR_ALPHA),
-                    "dirichlet_eps": float(AZ_DIR_EPS),
-                    "pw_alpha": float(AZ_PW_ALPHA),
-                    "pw_beta": float(AZ_PW_BETA),
-                    "prior_weight_early": float(AZ_PRIOR_WEIGHT_EARLY),
-                    "temperature_opening_moves": int(AZ_TEMP_OPENING_MOVES),
-                    "temperature_opening_value": float(AZ_TEMP_OPENING),
-                    "temperature_late_value": float(AZ_TEMP_LATE),
-                    "outcome_only": int(AZ_OUTCOME_ONLY),
-                    "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
-                    "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
-                    "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
-                    "actor_batch_send": int(AZ_ACTOR_BATCH_SEND),
-                    "inference_timeout": float(AZ_INFERENCE_TIMEOUT),
-                    "self_play_enabled": int(SELF_PLAY_ENABLED),
-                }
-            )
+            _dist_shared_hp = {
+                "temperature_opening_moves": int(AZ_TEMP_OPENING_MOVES),
+                "temperature_opening_value": float(AZ_TEMP_OPENING),
+                "temperature_late_value": float(AZ_TEMP_LATE),
+                "outcome_only": int(AZ_OUTCOME_ONLY),
+                "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+                "actor_batch_send": int(AZ_ACTOR_BATCH_SEND),
+                "inference_timeout": float(AZ_INFERENCE_TIMEOUT),
+                "self_play_enabled": int(SELF_PLAY_ENABLED),
+            }
+            if is_gumbel_az_algo(TRAIN_ALGO):
+                # GAZ: пакуем поля GumbelAlphaZeroSearch (num_simulations/joint_action/...),
+                # чтобы ПК2-акторы строили тот же поиск, что и ПК1 (см. build_gaz_dist_worker_payloads).
+                _dist_az_hp = pack_az_dist_hyperparams({**_gaz_cfg_payload(), **_dist_shared_hp})
+            else:
+                _dist_az_hp = pack_az_dist_hyperparams(
+                    {
+                        **AZ_CFG,
+                        "mcts_simulations": int(AZ_MCTS_SIMS),
+                        "mcts_parallel_sims": int(AZ_MCTS_PARALLEL_SIMS),
+                        "mcts_max_depth": int(AZ_MCTS_MAX_DEPTH),
+                        "mcts_top_k_per_head": int(AZ_MCTS_TOP_K_PER_HEAD),
+                        "mcts_batch_eval_size": int(AZ_MCTS_BATCH_EVAL_SIZE),
+                        "mcts_simulate_enemy": int(AZ_MCTS_SIMULATE_ENEMY),
+                        "mcts_mode": str(AZ_MCTS_MODE),
+                        "mcts_root_dirichlet_only": int(AZ_MCTS_ROOT_DIRICHLET_ONLY),
+                        "mcts_eval_cache_size": int(AZ_MCTS_EVAL_CACHE_SIZE),
+                        "c_puct": float(AZ_C_PUCT),
+                        "c_puct_min": float(AZ_C_PUCT_MIN),
+                        "c_puct_max": float(AZ_C_PUCT_MAX),
+                        "c_puct_schedule": str(AZ_C_PUCT_SCHEDULE),
+                        "dirichlet_alpha": float(AZ_DIR_ALPHA),
+                        "dirichlet_eps": float(AZ_DIR_EPS),
+                        "pw_alpha": float(AZ_PW_ALPHA),
+                        "pw_beta": float(AZ_PW_BETA),
+                        "prior_weight_early": float(AZ_PRIOR_WEIGHT_EARLY),
+                        **_dist_shared_hp,
+                    }
+                )
             _dist_ctx_path = write_az_dist_train_context(
                 {
                     "opponent_agent_id": str(opponent_agent_id or OPPONENT_AGENT_ID or ""),
@@ -9483,30 +9493,35 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             # Авто-запись search-cfg для IS на ПК2 (форма сети) — чтобы не требовался
             # ручной tools/write_az_remote_search_cfg.bat и не было рассинхрона арх.
             try:
+                # GAZ и AZ используют одну сеть → форма search_cfg одна, но имя файла и
+                # число sims различаются (GAZ: gaz_remote_search_cfg.json + GAZ_NUM_SIMS).
+                _gaz_cfg = is_gumbel_az_algo(TRAIN_ALGO)
+                _search_cfg_filename = "gaz_remote_search_cfg.json" if _gaz_cfg else "az_remote_search_cfg.json"
                 _search_cfg_paths = write_az_remote_search_cfg(
                     obs_dim=int(n_observations),
                     action_sizes=list(n_actions),
                     hidden_size=int(AZ_HIDDEN_SIZE),
                     num_layers=int(AZ_NUM_LAYERS),
                     n_value_ensemble=int(AZ_VALUE_ENSEMBLE),
-                    num_simulations=int(AZ_MCTS_SIMS),
+                    num_simulations=int(GAZ_NUM_SIMS if _gaz_cfg else AZ_MCTS_SIMS),
                     sources=["train.py:auto", f"env_contract_hash={_az_contract_hash}"],
+                    filename=_search_cfg_filename,
                 )
                 append_agent_log(
-                    f"[AZ][DIST][CONTEXT] search_cfg обновлён (obs={int(n_observations)} "
-                    f"hidden={int(AZ_HIDDEN_SIZE)} layers={int(AZ_NUM_LAYERS)} "
+                    f"[{_AZ_LOG_TAG}][DIST][CONTEXT] search_cfg обновлён ({_search_cfg_filename} "
+                    f"obs={int(n_observations)} hidden={int(AZ_HIDDEN_SIZE)} layers={int(AZ_NUM_LAYERS)} "
                     f"n_value_ensemble={int(AZ_VALUE_ENSEMBLE)}): {_search_cfg_paths}"
                 )
             except Exception as exc:
                 append_agent_log(
-                    f"[AZ][DIST][CONTEXT][WARN] не удалось записать search_cfg: {exc}. "
+                    f"[{_AZ_LOG_TAG}][DIST][CONTEXT][WARN] не удалось записать search_cfg: {exc}. "
                     "Где: write_az_remote_search_cfg. Что делать: проверьте SMB actor_sync "
                     "или запустите tools/write_az_remote_search_cfg.bat вручную."
                 )
             append_agent_log(
-                f"[AZ][DIST][CONTEXT] wrote opponent_agent_id="
+                f"[{_AZ_LOG_TAG}][DIST][CONTEXT] wrote opponent_agent_id="
                 f"{opponent_agent_id or OPPONENT_AGENT_ID or '-'} "
-                f"parallel_sims={_dist_az_hp.get('mcts_parallel_sims', '?')} "
+                f"sims={_dist_az_hp.get('num_simulations', _dist_az_hp.get('mcts_simulations', '?'))} "
                 f"path={_dist_ctx_path}"
             )
         except Exception as exc:

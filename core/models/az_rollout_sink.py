@@ -74,11 +74,18 @@ def write_az_remote_search_cfg(
     return written
 
 
-def az_dist_stop_flag_path() -> str:
+def az_dist_stop_flag_path(algo: str | None = None) -> str:
+    """Путь stop-flag distributed self-play.
+
+    GAZ и AZ — раздельные флаги, чтобы distributed-прогоны не глушили друг друга:
+    gumbel_az → gaz_dist_stop.flag, иначе az_dist_stop.flag. Env AZ_DIST_STOP_FLAG_PATH
+    переопределяет (его прокидывает ПК1 → ПК2).
+    """
     custom = str(os.getenv("AZ_DIST_STOP_FLAG_PATH", "") or "").strip()
     if custom:
         return custom
-    return os.path.join(_actor_sync_dir(), "az_dist_stop.flag")
+    name = "gaz_dist_stop.flag" if str(algo or "").strip().lower() == "gumbel_az" else "az_dist_stop.flag"
+    return os.path.join(_actor_sync_dir(), name)
 
 
 def az_dist_stop_requested(flag_path: str | None = None) -> bool:
@@ -150,12 +157,30 @@ AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
     "self_play_enabled",
 )
 
+# GAZ (gumbel_az) использует те же _main_actor_learner_alphazero/_az_env_worker_entry,
+# но GumbelAlphaZeroSearch читает свои поля поиска (не AZ MCTS). Ключи не пересекаются
+# с AZ (mcts_* vs num_*), поэтому пакуем общим union — pack/normalize не теряют ни AZ,
+# ни GAZ поля; build_*_worker_payloads выбирает форму по train_algo.
+GAZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
+    "num_simulations",
+    "num_considered_actions",
+    "max_depth",
+    "value_scale",
+    "c_visit",
+    "simulate_enemy",
+    "joint_action",
+    "eval_cache_size",
+    "batch_eval_size",
+)
+
+_DIST_HYPERPARAM_KEYS: tuple[str, ...] = AZ_DIST_HYPERPARAM_KEYS + GAZ_DIST_HYPERPARAM_KEYS
+
 
 def pack_az_dist_hyperparams(values: dict[str, Any]) -> dict[str, Any]:
-    """Оставить только ключи для SMB az_dist_train_context.az_hyperparams."""
+    """Оставить только ключи для SMB az_dist_train_context.az_hyperparams (AZ ∪ GAZ)."""
     src = values if isinstance(values, dict) else {}
     out: dict[str, Any] = {}
-    for key in AZ_DIST_HYPERPARAM_KEYS:
+    for key in _DIST_HYPERPARAM_KEYS:
         if key not in src:
             continue
         out[key] = src[key]
@@ -216,6 +241,66 @@ def build_az_dist_worker_payloads(
         "simulate_enemy_in_tree": _hp_bool(
             hp, "mcts_simulate_enemy", bool(d.get("simulate_enemy_in_tree", True))
         ),
+    }
+    sp_payload = {
+        "temperature_opening_moves": int(
+            _hp_pick(hp, "temperature_opening_moves", d.get("temperature_opening_moves", 12))
+        ),
+        "temperature_opening_value": float(
+            _hp_pick(hp, "temperature_opening_value", d.get("temperature_opening_value", 1.0))
+        ),
+        "temperature_late_value": float(
+            _hp_pick(hp, "temperature_late_value", d.get("temperature_late_value", 0.3))
+        ),
+    }
+    outcome_payload = {
+        "outcome_only": _hp_bool(hp, "outcome_only", bool(d.get("outcome_only", True))),
+        "outcome_value_win": float(_hp_pick(hp, "outcome_value_win", d.get("outcome_value_win", 1.0))),
+        "outcome_value_loss": float(_hp_pick(hp, "outcome_value_loss", d.get("outcome_value_loss", -1.0))),
+        "outcome_value_draw": float(_hp_pick(hp, "outcome_value_draw", d.get("outcome_value_draw", -0.25))),
+        "policy_version": 0,
+    }
+    batch_send = int(_hp_pick(hp, "actor_batch_send", d.get("batch_send", 32)))
+    inference_timeout = float(_hp_pick(hp, "inference_timeout", d.get("inference_timeout", 5.0)))
+    self_play_enabled = int(
+        _hp_bool(hp, "self_play_enabled", bool(int(d.get("self_play_enabled", 0))))
+    )
+    return {
+        "mcts": mcts_payload,
+        "sp": sp_payload,
+        "outcome": outcome_payload,
+        "batch_send": batch_send,
+        "inference_timeout": inference_timeout,
+        "self_play_enabled": self_play_enabled,
+    }
+
+
+def build_gaz_dist_worker_payloads(
+    hp: dict[str, Any] | None,
+    *,
+    defaults: dict[str, Any],
+) -> dict[str, Any]:
+    """GAZ-вариант build_az_dist_worker_payloads: mcts-payload в форме GumbelAZSearch.
+
+    Ключи mcts совпадают с тем, что читает _build_az_search для gumbel_az
+    (num_simulations/num_considered_actions/joint_action/...). sp/outcome/batch_send —
+    как у AZ (общий _az_env_worker_entry).
+    """
+    hp = normalize_az_dist_hyperparams(hp or {})
+    d = defaults if isinstance(defaults, dict) else {}
+
+    mcts_payload = {
+        "num_simulations": int(_hp_pick(hp, "num_simulations", d.get("num_simulations", 32))),
+        "num_considered_actions": int(
+            _hp_pick(hp, "num_considered_actions", d.get("num_considered_actions", 8))
+        ),
+        "max_depth": int(_hp_pick(hp, "max_depth", d.get("max_depth", 1))),
+        "value_scale": float(_hp_pick(hp, "value_scale", d.get("value_scale", 0.1))),
+        "c_visit": float(_hp_pick(hp, "c_visit", d.get("c_visit", 50.0))),
+        "eval_cache_size": int(_hp_pick(hp, "eval_cache_size", d.get("eval_cache_size", 10000))),
+        "batch_eval_size": int(_hp_pick(hp, "batch_eval_size", d.get("batch_eval_size", 16))),
+        "simulate_enemy": _hp_bool(hp, "simulate_enemy", bool(d.get("simulate_enemy", False))),
+        "joint_action": _hp_bool(hp, "joint_action", bool(d.get("joint_action", False))),
     }
     sp_payload = {
         "temperature_opening_moves": int(
