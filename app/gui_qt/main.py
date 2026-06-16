@@ -6489,10 +6489,15 @@ class GUIController(QtCore.QObject):
                 "SMZ_NUM_ENV_WORKERS",
                 str(self._smz_hyperparams.get("num_env_workers", self._default_smz_hyperparams.get("num_env_workers", 6))),
             )
-            if smz_inf_enabled == 1 and (smz_inf_mode == "remote" or remote_is_lan_active(self._remote_is_smz)):
+            # LAN remote IS активен → инференс уходит на ПК2 независимо от локального
+            # тумблера inference_server_enabled (его setSmzRemoteIsEnabled намеренно гасит,
+            # чтобы не поднимать локальный IS). Зеркалит GMZ-ветку `if self.remoteIsEnabled`.
+            smz_lan_active = remote_is_lan_active(self._remote_is_smz)
+            if smz_lan_active or (smz_inf_enabled == 1 and smz_inf_mode == "remote"):
                 remote_smz_host = str(self._remote_is_smz.get("host", "127.0.0.1"))
                 remote_smz_port = int(self._remote_is_smz.get("port", 5560))
                 remote_smz_token = str(self._remote_is_smz.get("auth_token", ""))
+                env.insert("SMZ_INFERENCE_SERVER", "1")
                 env.insert("SMZ_INFERENCE_SERVER_MODE", "remote")
                 env.insert("SMZ_INFERENCE_REMOTE_HOST", remote_smz_host)
                 env.insert("SMZ_INFERENCE_REMOTE_PORT", str(remote_smz_port))
