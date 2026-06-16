@@ -93,10 +93,34 @@ def _spec_smz() -> RemoteIsAlgoSpec:
     )
 
 
+def _spec_gaz() -> RemoteIsAlgoSpec:
+    from core.models.gaz_remote_search_cfg_builder import (
+        SEARCH_CFG_NAME,
+        WEIGHTS_NAME,
+        ensure_gaz_remote_search_cfg,
+        publish_gaz_remote_search_cfg_from_repo,
+        resolve_gaz_smb_paths,
+    )
+
+    return RemoteIsAlgoSpec(
+        algo_id="gaz",
+        label="GAZ",
+        search_cfg_filename=SEARCH_CFG_NAME,
+        weights_filename=WEIGHTS_NAME,
+        env_search_key="GAZ_REMOTE_SEARCH_CONFIG",
+        env_weights_key="GAZ_REMOTE_WEIGHTS_PATH",
+        pc2_role_ids=("gaz_inference",),
+        ensure_fn=ensure_gaz_remote_search_cfg,
+        resolve_paths_fn=resolve_gaz_smb_paths,
+        publish_from_repo_fn=publish_gaz_remote_search_cfg_from_repo,
+    )
+
+
 REMOTE_IS_SEARCH_CFG_SPECS: tuple[RemoteIsAlgoSpec, ...] = (
     _spec_gmz(),
     _spec_az(),
     _spec_smz(),
+    _spec_gaz(),
 )
 
 _ROLE_TO_SPEC: dict[str, RemoteIsAlgoSpec] = {

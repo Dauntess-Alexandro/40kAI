@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 from core.models.remote_is_search_cfg_registry import (
     REMOTE_IS_SEARCH_CFG_SPECS,
@@ -15,15 +12,16 @@ from core.models.remote_is_search_cfg_registry import (
 )
 
 
-def test_registry_has_gmz_az_smz():
+def test_registry_has_gmz_az_smz_gaz():
     ids = {s.algo_id for s in REMOTE_IS_SEARCH_CFG_SPECS}
-    assert ids == {"gmz", "az", "smz"}
+    assert ids == {"gmz", "az", "smz", "gaz"}
 
 
 def test_spec_for_pc2_roles():
     assert spec_for_pc2_role("gmz_inference") is not None
     assert spec_for_pc2_role("az_inference") is not None
     assert spec_for_pc2_role("smz_inference") is not None
+    assert spec_for_pc2_role("gaz_inference") is not None
     assert spec_for_pc2_role("dqn_actors") is None
 
 
@@ -39,7 +37,7 @@ def test_publish_all_returns_all_algos(tmp_path, monkeypatch):
     monkeypatch.setenv("40KAI_SHARE_ROOT", str(tmp_path))
     monkeypatch.setattr(pp, "TRAIN_DATA_PATH", tmp_path / "no_data.json")
     results = publish_all_remote_search_cfgs_from_repo(sources=["test"])
-    assert set(results.keys()) == {"gmz", "az", "smz"}
+    assert set(results.keys()) == {"gmz", "az", "smz", "gaz"}
     for info in results.values():
         assert "ok" in info
 

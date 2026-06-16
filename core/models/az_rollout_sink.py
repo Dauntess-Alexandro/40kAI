@@ -34,13 +34,16 @@ def write_az_remote_search_cfg(
     n_value_ensemble: int,
     num_simulations: int,
     sources: list[str] | None = None,
+    filename: str = "az_remote_search_cfg.json",
 ) -> list[str]:
-    """ПК1: записать az_remote_search_cfg.json (форма сети для IS на ПК2).
+    """ПК1: записать <filename> (форма сети для IS на ПК2).
 
     Кладёт копию в actor_sync на шаре (её читает IS-сервер ПК2, чтобы собрать
     сеть, совместимую с обучаемой) и локально в runtime/state. Вызывается
-    автоматически при старте AZ-распределёнки — ручной
-    tools/write_az_remote_search_cfg.bat больше не нужен. Возвращает записанные пути.
+    автоматически при старте AZ/GAZ-распределёнки. Возвращает записанные пути.
+
+    filename: имя cfg-файла. AZ → az_remote_search_cfg.json (дефолт),
+    GAZ → gaz_remote_search_cfg.json (сеть та же, но веса/файл отдельные).
     """
     cfg = {
         "obs_dim": int(obs_dim),
@@ -56,8 +59,8 @@ def write_az_remote_search_cfg(
 
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     targets = [
-        os.path.join(repo_root, "runtime", "state", "az_remote_search_cfg.json"),
-        os.path.join(_actor_sync_dir(), "az_remote_search_cfg.json"),
+        os.path.join(repo_root, "runtime", "state", str(filename)),
+        os.path.join(_actor_sync_dir(), str(filename)),
     ]
     written: list[str] = []
     for path in targets:
