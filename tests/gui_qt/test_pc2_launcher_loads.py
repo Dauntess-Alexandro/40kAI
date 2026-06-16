@@ -51,4 +51,12 @@ def test_roles_exposed_to_qml():
     _app()
     controller = Pc2LauncherController()
     ids = [r["id"] for r in controller.rolesModel]
-    assert ids == ["dqn_actors", "az_actors", "az_inference", "gmz_inference"]
+    assert ids == [
+        "dqn_actors",
+        "az_actors",
+        "az_inference",
+        "gmz_inference",
+        "smz_inference",
+        "gaz_inference",
+        "gaz_actors",
+    ]

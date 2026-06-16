@@ -2420,6 +2420,23 @@ class GUIController(QtCore.QObject):
     def gazInferenceServerEnabled(self) -> bool:
         return int(self._gaz_hyperparams.get("inference_server_enabled", 0) or 0) == 1
 
+    @QtCore.Property(bool, notify=trainingHyperparamsChanged)
+    def gazDistributedActors(self) -> bool:
+        return int(self._gaz_hyperparams.get("distributed_actors_enabled", 0) or 0) == 1
+
+    @QtCore.Slot(bool)
+    def setGazDistributedActors(self, enabled: bool) -> None:
+        new_enabled = 1 if enabled else 0
+        if int(self._gaz_hyperparams.get("distributed_actors_enabled", 0) or 0) == new_enabled:
+            return
+        self._gaz_hyperparams["distributed_actors_enabled"] = new_enabled
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        self._emit_status(
+            "GAZ distributed actors: " + ("включены (ПК2 → rollout :5567)" if enabled else "выключены")
+            + ". Сохраните настройки."
+        )
+
     def _persist_remote_is_gaz(self) -> None:
         try:
             save_remote_is(self._repo_root, self._remote_is_gaz, "remote_is_gaz.json")
@@ -2435,10 +2452,18 @@ class GUIController(QtCore.QObject):
     def setGazRemoteIsEnabled(self, enabled: bool) -> None:
         self._set_gaz_remote_is_lan_active(enabled)
         if enabled:
-            # LAN включён — выключаем локальный GAZ IS
+            # LAN включён — выключаем локальный GAZ IS и включаем distributed actors по умолчанию
+            # (как у AZ: LAN-инференс на ПК2 + доп. env-воркеры на ПК2). Пользователь может
+            # снять distributed-тоггл отдельно.
+            changed_hp = False
             if int(self._gaz_hyperparams.get("inference_server_enabled", 0) or 0) == 1:
                 self._gaz_hyperparams["inference_server_enabled"] = 0
                 self._gaz_hyperparams["inference_server_mode"] = "local"
+                changed_hp = True
+            if int(self._gaz_hyperparams.get("distributed_actors_enabled", 0) or 0) != 1:
+                self._gaz_hyperparams["distributed_actors_enabled"] = 1
+                changed_hp = True
+            if changed_hp:
                 self.trainingHyperparamsChanged.emit()
                 self.mark_settings_dirty()
             self._persist_rosters(schedule_search_cfg_sync=False)
@@ -5937,9 +5962,14 @@ class GUIController(QtCore.QObject):
         algo = str(self._training_algo).strip().lower()
         dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
         az_hp = self._az_tree_hyperparams if isinstance(self._az_tree_hyperparams, dict) else {}
+        gaz_hp = self._gaz_hyperparams if isinstance(self._gaz_hyperparams, dict) else {}
         dqn_enabled = algo == "dqn" and int(dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1
         az_enabled = algo == "alphazero_tree" and int(az_hp.get("distributed_actors_enabled", 0) or 0) == 1
-        self._dist_progress_enabled = bool(dqn_enabled or az_enabled)
+        # GAZ едет на AZ-инфре → тот же "pool"-режим прогресса ПК1/ПК2.
+        gaz_enabled = algo == "gumbel_az" and int(gaz_hp.get("distributed_actors_enabled", 0) or 0) == 1
+        # pool_hp: секция, из которой берём num_env_workers для AZ/GAZ-ветки ниже.
+        pool_hp = gaz_hp if gaz_enabled else az_hp
+        self._dist_progress_enabled = bool(dqn_enabled or az_enabled or gaz_enabled)
         if not self._dist_progress_enabled:
             self._dist_progress_mode = ""
             self.distProgressModeChanged.emit("")
@@ -5971,11 +6001,11 @@ class GUIController(QtCore.QObject):
                 int(dqn_hp.get("distributed_pc2_num_workers", 8) or 8),
             )
         else:
-            # AZ: общий лимит totLifeT, вклад ПК1/ПК2 динамический (кто быстрее).
+            # AZ/GAZ: общий лимит totLifeT, вклад ПК1/ПК2 динамический (кто быстрее).
             self._dist_progress_mode = "pool"
             self._dist_local_ep_total = ep_total
             self._dist_remote_ep_total = ep_total
-            self._dist_pc2_workers_need = max(1, int(az_hp.get("num_env_workers", 8) or 8))
+            self._dist_pc2_workers_need = max(1, int(pool_hp.get("num_env_workers", 8) or 8))
         self.distProgressVisibleChanged.emit(True)
         self.distProgressModeChanged.emit(self._dist_progress_mode)
         if dqn_enabled and int(dqn_hp.get("distributed_wait_pc2", 0) or 0) == 1:
@@ -6887,6 +6917,7 @@ class GUIController(QtCore.QObject):
                 self._gmz_remote_cfg_for_telemetry()
                 or self._smz_remote_cfg_for_telemetry()
                 or self._az_remote_cfg_for_telemetry()
+                or self._gaz_remote_cfg_for_telemetry()
             ),
             batch_size_hint=(
                 self._smz_batch_size_hint()
@@ -6956,6 +6987,41 @@ class GUIController(QtCore.QObject):
             return {
                 "host": host,
                 "port": int(hp.get("inference_remote_port", 5555) or 5555),
+                "auth_token": str(hp.get("inference_remote_auth_token", "") or ""),
+                "transport": "az",
+            }
+        except Exception:
+            return None
+
+    def _gaz_remote_cfg_for_telemetry(self):
+        # Карточка ПК2 GPU для Gumbel AlphaZero (порт 5565, транспорт az — та же сеть/протокол).
+        # LAN активен либо через панель (_remote_is_gaz.user_enabled_lan), либо через
+        # gumbel_az hyperparams (inference_server_mode=remote + не-локальный host).
+        if str(self._training_algo) != "gumbel_az":
+            return None
+        try:
+            from app.gui_qt.remote_is_store import remote_is_lan_active
+
+            data = getattr(self, "_remote_is_gaz", None) or {}
+            if remote_is_lan_active(data):
+                host = str(data.get("host", "127.0.0.1") or "127.0.0.1").strip()
+                if host not in ("", "127.0.0.1", "localhost", "::1"):
+                    return {
+                        "host": host,
+                        "port": int(data.get("port", 5565) or 5565),
+                        "auth_token": str(data.get("auth_token", "") or ""),
+                        "transport": "az",
+                    }
+            hp = self._gaz_hyperparams
+            mode = str(hp.get("inference_server_mode", "") or "").lower()
+            if mode != "remote":
+                return None
+            host = str(hp.get("inference_remote_host", "127.0.0.1") or "127.0.0.1").strip()
+            if host in ("", "127.0.0.1", "localhost", "::1"):
+                return None
+            return {
+                "host": host,
+                "port": int(hp.get("inference_remote_port", 5565) or 5565),
                 "auth_token": str(hp.get("inference_remote_auth_token", "") or ""),
                 "transport": "az",
             }

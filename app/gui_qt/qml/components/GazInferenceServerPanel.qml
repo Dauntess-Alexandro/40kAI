@@ -163,6 +163,31 @@ ChamferPanel {
                         color: Qt.rgba(0.45, 0.75, 0.95, 0.25)
                     }
 
+                    GmzIsToggleRow {
+                        Layout.fillWidth: true
+                        rootUi: panel.rootUi
+                        title: "Distributed actors (ПК2)"
+                        tooltipText: "Self-play на CPU ПК2: rollout → этот ПК (:5567). На ПК2 после train: " +
+                            "tools\\pc2_remote_gaz_is.bat (IS + actors одной кнопкой)."
+                        active: true
+                        switchChecked: controller.gazDistributedActors
+                        switchEnabled: !controller.running
+                        accentOn: "#6eb8ff"
+                        accentOff: "#4a5564"
+                        subtitle: controller.gazDistributedActors
+                            ? "Включено · на ПК2: pc2_remote_gaz_is.bat (IS + actors вместе)"
+                            : "Выключено — только infer на ПК2, env только на этом ПК"
+                        onToggled: function(checked) {
+                            controller.setGazDistributedActors(checked)
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Qt.rgba(0.45, 0.75, 0.95, 0.25)
+                    }
+
                     GridLayout {
                         columns: 2
                         columnSpacing: rootUi.spacingMd
