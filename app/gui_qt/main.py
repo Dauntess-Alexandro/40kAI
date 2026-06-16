@@ -505,8 +505,8 @@ class GUIController(QtCore.QObject):
         self._remote_is_latency_ms = -1.0
         # SMZ remote inference server — параллельный набор (remote_is_smz.json, порт 5560)
         self._remote_is_smz: dict = load_remote_is(self._repo_root, "remote_is_smz.json")
-        _smz_cfg_file = self._repo_root and (
-            self._repo_root / "runtime" / "state" / "remote_is_smz.json"
+        _smz_cfg_file = bool(self._repo_root) and (
+            Path(self._repo_root) / "runtime" / "state" / "remote_is_smz.json"
         ).is_file()
         if not _smz_cfg_file:
             self._remote_is_smz["port"] = 5560
