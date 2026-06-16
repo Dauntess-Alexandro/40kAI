@@ -74,6 +74,14 @@ _ROLES: tuple[Pc2Role, ...] = (
         port=5555,
         note="GPU inference :5555. Не запускать вместе с AZ inference (тот же порт).",
     ),
+    Pc2Role(
+        id="smz_inference",
+        label="Sampled MuZero inference server",
+        script="tools/pc2_remote_smz_is.bat",
+        requires_gpu=True,
+        port=5560,
+        note="GPU inference :5560 (Sampled MuZero). Свой порт — можно вместе с gmz/az на разных портах.",
+    ),
 )
 
 
