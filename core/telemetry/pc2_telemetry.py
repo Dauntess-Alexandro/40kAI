@@ -65,11 +65,6 @@ def sample_cpu_ram_system() -> dict[str, Any]:
 
 def sample_system_telemetry() -> dict[str, Any]:
     """Системные CPU/RAM (psutil) + первый GPU (GpuBackend) в форме карточек ПК2."""
-    sys_cr = sample_cpu_ram_system()
-    cpu_pct = sys_cr["cpu_pct_system"]
-    ram_pct = sys_cr["ram_pct_system"]
-    ram_gb = sys_cr["ram_gb_system"]
-
     gpu: dict[str, Any] = {
         "name": None,
         "util": None,
@@ -100,9 +95,7 @@ def sample_system_telemetry() -> dict[str, Any]:
         "mem_total_mb": gpu["mem_total_mb"],
         "temp_c": gpu["temp_c"],
         "cpu_name": detect_cpu_name(),
-        "cpu_pct_system": cpu_pct,
-        "ram_pct_system": ram_pct,
-        "ram_gb_system": ram_gb,
+        **sample_cpu_ram_system(),
     }
 
 
