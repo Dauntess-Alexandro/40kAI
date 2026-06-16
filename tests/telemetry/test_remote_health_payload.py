@@ -50,3 +50,19 @@ def test_gmz_build_health_payload_cpu_ram_default_none():
     )
     assert payload["cpu_pct_system"] is None
     assert payload["cpu_name"] is None
+
+
+def test_smz_build_health_payload_includes_cpu_ram():
+    from tools.smz_remote_inference_server import build_health_payload as smz_payload
+
+    payload = smz_payload(
+        protocol_version=1, policy_version=7, gpu_name="RTX 2060 SUPER",
+        queue_depth=0, uptime_s=5, avg_batch=None,
+        gpu_util=10, gpu_mem_used_mb=512, gpu_mem_total_mb=8192, gpu_temp_c=44,
+        cpu_name="Ryzen 5 1600", cpu_pct_system=38.0,
+        ram_pct_system=31.0, ram_gb_system=5.0,
+    )
+    assert payload["cpu_pct_system"] == 38.0
+    assert payload["cpu_name"] == "Ryzen 5 1600"
+    assert payload["ram_pct_system"] == 31.0
+    assert payload["ram_gb_system"] == 5.0

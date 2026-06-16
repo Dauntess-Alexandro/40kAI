@@ -178,6 +178,10 @@ class SMZRemoteInferenceServer:
             else "cpu"
         )
 
+        from core.telemetry.pc2_telemetry import detect_cpu_name
+
+        self._cpu_name = detect_cpu_name()
+
         from collections import deque as _deque
 
         from core.telemetry.gpu_backend import GpuBackend
@@ -246,6 +250,9 @@ class SMZRemoteInferenceServer:
                     break
         except Exception:
             pass
+        from core.telemetry.pc2_telemetry import sample_cpu_ram_system
+
+        cpu = sample_cpu_ram_system()
         resp = build_health_payload(
             protocol_version=PROTOCOL_VERSION,
             policy_version=int(self._engine.weight_version),
@@ -255,6 +262,10 @@ class SMZRemoteInferenceServer:
             avg_batch=avg_batch,
             gpu_util=gpu_util, gpu_mem_used_mb=gpu_used,
             gpu_mem_total_mb=gpu_total, gpu_temp_c=gpu_temp,
+            cpu_name=self._cpu_name,
+            cpu_pct_system=cpu["cpu_pct_system"],
+            ram_pct_system=cpu["ram_pct_system"],
+            ram_gb_system=cpu["ram_gb_system"],
         )
         self._router_send(self._router, identity, encode_message(resp))
 
@@ -366,6 +377,10 @@ def build_health_payload(
     gpu_mem_used_mb,
     gpu_mem_total_mb,
     gpu_temp_c,
+    cpu_name: str | None = None,
+    cpu_pct_system=None,
+    ram_pct_system=None,
+    ram_gb_system=None,
 ) -> dict:
     return {
         "kind": "health_check",
@@ -380,6 +395,10 @@ def build_health_payload(
         "gpu_mem_used_mb": gpu_mem_used_mb,
         "gpu_mem_total_mb": gpu_mem_total_mb,
         "gpu_temp_c": gpu_temp_c,
+        "cpu_name": (None if cpu_name is None else str(cpu_name)),
+        "cpu_pct_system": cpu_pct_system,
+        "ram_pct_system": ram_pct_system,
+        "ram_gb_system": ram_gb_system,
     }
 
 
