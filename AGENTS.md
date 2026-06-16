@@ -75,6 +75,17 @@
 - Логи: `[AZ][DIST]`, `[AZ][DIST][RECEIVER]`, `[AZ][DIST][SINK]`, `stale_drop remote=…%`.
 - Отключить: `AZ_DISTRIBUTED_ACTORS=0` — прежний одиночный путь.
 
+## Remote Inference Server + Distributed self-play (Gumbel AlphaZero, GAZ)
+- **Дизайн:** `docs/inference-server-gaz-design.md` (спека: `docs/superpowers/specs/2026-06-16-gaz-inference-and-distributed-design.md`). **LAN-гайд:** `docs/remote-inference-server-gaz.md`; пошагово на ПК2: `docs/pc2-remote-gaz-is-setup-guide.md`. Планы: `plans/gaz-inference-server.md`, `plans/gaz-distributed-selfplay.md`.
+- **Тонкий слой:** GAZ (`gumbel_az`) едет на общей AZ-инфре (та же сеть `AlphaZeroPolicyValueNet`, общие `_main_actor_learner_alphazero`/`_az_env_worker_entry`/`az_inference_*`/`az_rollout_*`). Net-only offload: дерево SH + env-rollout на CPU-воркере, на GPU-сервер — только `net.infer` (+ батч leaf-eval). Свои у GAZ: порт, веса, имена, флаги, GUI-панель, ПК2-лаунчер.
+- **Порты (свои, не конфликтуют):** IS **5565**, distributed **5567** (AZ/GMZ=5555, SMZ=5560).
+- **Флаги:** `gumbel_az.inference_server_enabled` / env `GAZ_INFERENCE_SERVER=1` (дефолт 0); `gumbel_az.distributed_actors_enabled` / env `GAZ_DISTRIBUTED_ACTORS=1` (дефолт 0); на ПК2 — `GAZ_REMOTE_DIST_ACTORS_ENABLED=1`. Приоритет резолва: `GAZ_* → AZ_* → секция gumbel_az` (`core/models/az_family_env.py`).
+- **Веса (SMB):** `latest_az_gumbel_az_policy.pth`; search_cfg: `gaz_remote_search_cfg.json` (форма сети = AZ; пишется автоматически на ПК1). Stop-flag: `gaz_dist_stop.flag`.
+- **ПК2:** `tools/pc2_remote_gaz_is.bat` — IS (:5565) + опц. distributed actors (`AZ_DIST_TRAIN_ALGO=gumbel_az`, rollout → PC1:5567). Только actors: `tools/pc2_gaz_actors.bat`. Конфиг: `runtime/state/pc2_remote_gaz_is_config.bat`. Сервер: `tools/az_remote_inference_server.py --algo-label GAZ`.
+- **Конфиг GUI (ПК1):** `runtime/state/remote_is_gaz.json` (в `.gitignore`); панель «Inference Server» во вкладке **Gumbel AlphaZero**.
+- **Логи:** `[GAZ][INF_SERVER]`, `[GAZ][ENV_WORKER]`, `[GAZ][REMOTE_IS]`, `[GAZ][REMOTE_CLIENT]`, `[GAZ][DIST]`, `[GAZ][DIST][RECEIVER]`, `[GAZ][DIST][SINK]`, `[GAZ][CONFIG][FALLBACK]`.
+- Отключить: `GAZ_INFERENCE_SERVER=0` / `GAZ_DISTRIBUTED_ACTORS=0` — прежний одиночный CPU-путь.
+
 ## Результаты треинровки (общее)
 - **Можно смотреть `artifacts/results/results.txt`** для быстрой сверки итогов train/eval.
 
