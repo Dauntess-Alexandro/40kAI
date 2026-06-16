@@ -97,6 +97,22 @@ _ROLES: tuple[Pc2Role, ...] = (
         port=5560,
         note="GPU inference :5560 (Sampled MuZero). Свой порт — можно вместе с gmz/az на разных портах.",
     ),
+    Pc2Role(
+        id="gaz_inference",
+        label="Gumbel AlphaZero inference server (+ актора)",
+        script="tools/pc2_remote_gaz_is.bat",
+        requires_gpu=True,
+        port=5565,
+        note="GPU inference :5565 (Gumbel AlphaZero). Свой порт — можно вместе с az/gmz/smz.",
+    ),
+    Pc2Role(
+        id="gaz_actors",
+        label="Gumbel AlphaZero актора (distributed)",
+        script="tools/pc2_gaz_actors.bat",
+        requires_gpu=False,
+        port=5567,
+        note="CPU env-воркеры Gumbel AlphaZero → rollout на ПК1 (:5567).",
+    ),
 )
 
 
