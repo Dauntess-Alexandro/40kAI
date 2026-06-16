@@ -87,6 +87,7 @@ from app.gui_qt.hyperparams_cuda_hints import (
 from app.gui_qt.remote_is_store import (
     DEFAULT_REMOTE_IS,
     load_remote_is,
+    remote_is_lan_active,
     save_remote_is,
 )
 from app.gui_qt.sampled_muzero_hyperparams_defaults import (
@@ -502,6 +503,15 @@ class GUIController(QtCore.QObject):
         self._remote_is: dict = load_remote_is(self._repo_root)
         self._remote_is_status = "не проверено"
         self._remote_is_latency_ms = -1.0
+        # SMZ remote inference server — параллельный набор (remote_is_smz.json, порт 5560)
+        self._remote_is_smz: dict = load_remote_is(self._repo_root, "remote_is_smz.json")
+        _smz_cfg_file = self._repo_root and (
+            self._repo_root / "runtime" / "state" / "remote_is_smz.json"
+        ).is_file()
+        if not _smz_cfg_file:
+            self._remote_is_smz["port"] = 5560
+        self._smz_remote_is_status_text = "не проверено"
+        self._smz_remote_is_latency_ms = -1.0
         # AZ inference server (вариант B) — LAN-чек статус (host/port берём из AZ hyperparams)
         self._az_inference_status = "не проверено"
         self._az_inference_latency_ms = -1.0
@@ -2086,6 +2096,194 @@ class GUIController(QtCore.QObject):
                 "Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, 3) firewall (TCP 5555)."
             )
         self.remoteIsChanged.emit()
+
+    # --- SMZ Remote Inference Server (remote_is_smz.json, порт 5560) ---
+
+    SMZ_LOCAL_IS_TOOLTIP = (
+        "Локальный Inference Server для Sampled MuZero на этом ПК.\n\n"
+        "• CPU env workers симулируют партии\n"
+        "• 1 GPU-процесс на этом ПК обрабатывает батчи инференса\n"
+        "• Learner на GPU этого же ПК обучает сеть\n\n"
+        "Требуется CUDA. При включённом LAN Inference server эта опция недоступна."
+    )
+
+    SMZ_LAN_IS_TOOLTIP = (
+        "LAN Inference Server для Sampled MuZero: инференс на втором ПК (ПК2) по сети.\n\n"
+        "• На ПК1: learner (GPU) + CPU env workers\n"
+        "• На ПК2: GPU inference server (tools\\pc2_remote_smz_is.bat)\n"
+        "• Связь: ZMQ (порт 5560), «Проверить соединение» перед train\n\n"
+        "При включении локальный IS на ПК1 не запускается."
+    )
+
+    smzRemoteIsChanged = QtCore.Signal()
+
+    @QtCore.Property(bool, notify=smzRemoteIsChanged)
+    def smzRemoteIsEnabled(self) -> bool:
+        return bool(self._remote_is_smz.get("user_enabled_lan", False))
+
+    @QtCore.Property(str, notify=smzRemoteIsChanged)
+    def smzRemoteIsHost(self) -> str:
+        return str(self._remote_is_smz.get("host", DEFAULT_REMOTE_IS["host"]))
+
+    @QtCore.Property(int, notify=smzRemoteIsChanged)
+    def smzRemoteIsPort(self) -> int:
+        return int(self._remote_is_smz.get("port", 5560))
+
+    @QtCore.Property(float, notify=smzRemoteIsChanged)
+    def smzRemoteIsTimeout(self) -> float:
+        return float(self._remote_is_smz.get("timeout", DEFAULT_REMOTE_IS["timeout"]))
+
+    @QtCore.Property(str, notify=smzRemoteIsChanged)
+    def smzRemoteIsAuthToken(self) -> str:
+        return str(self._remote_is_smz.get("auth_token", ""))
+
+    @QtCore.Property(str, notify=smzRemoteIsChanged)
+    def smzRemoteIsWeightsPath(self) -> str:
+        return str(self._remote_is_smz.get("weights_share_path", ""))
+
+    @QtCore.Property(str, notify=smzRemoteIsChanged)
+    def smzRemoteIsSmbUncHint(self) -> str:
+        return str(self._remote_is_smz.get("smb_unc_hint", ""))
+
+    @QtCore.Property(str, notify=smzRemoteIsChanged)
+    def smzRemoteIsStatusText(self) -> str:
+        return str(self._smz_remote_is_status_text)
+
+    @QtCore.Property(str, notify=smzRemoteIsChanged)
+    def smzRemoteIsLatencyText(self) -> str:
+        ms = float(self._smz_remote_is_latency_ms)
+        if ms < 0:
+            return "—"
+        return f"{ms:.0f} ms"
+
+    @QtCore.Property(bool, notify=trainingHyperparamsChanged)
+    def smzInferenceServerEnabled(self) -> bool:
+        return int(self._smz_hyperparams.get("inference_server_enabled", 0) or 0) == 1
+
+    @QtCore.Property(str, constant=True)
+    def smzLocalIsTooltip(self) -> str:
+        return self.SMZ_LOCAL_IS_TOOLTIP
+
+    @QtCore.Property(str, constant=True)
+    def smzLanIsTooltip(self) -> str:
+        return self.SMZ_LAN_IS_TOOLTIP
+
+    def _persist_remote_is_smz(self) -> None:
+        try:
+            save_remote_is(self._repo_root, self._remote_is_smz, "remote_is_smz.json")
+        except OSError as exc:
+            self._emit_status(f"Не удалось сохранить remote_is_smz.json: {exc}")
+
+    def _set_smz_remote_is_lan_active(self, active: bool) -> None:
+        on = bool(active)
+        self._remote_is_smz["user_enabled_lan"] = on
+        self._remote_is_smz["enabled"] = on
+
+    @QtCore.Slot(bool)
+    def setSmzRemoteIsEnabled(self, enabled: bool) -> None:
+        self._set_smz_remote_is_lan_active(enabled)
+        if enabled:
+            # LAN включён — выключаем локальный IS
+            if int(self._smz_hyperparams.get("inference_server_enabled", 0) or 0) == 1:
+                self._smz_hyperparams["inference_server_enabled"] = 0
+                self._smz_hyperparams["inference_server_mode"] = "local"
+                self.trainingHyperparamsChanged.emit()
+                self.mark_settings_dirty()
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setSmzRemoteIsHost(self, host: str) -> None:
+        self._remote_is_smz["host"] = str(host or "").strip() or "127.0.0.1"
+        self._smz_remote_is_status_text = "не проверено"
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(int)
+    def setSmzRemoteIsPort(self, port: int) -> None:
+        self._remote_is_smz["port"] = max(1, int(port))
+        self._smz_remote_is_status_text = "не проверено"
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(float)
+    def setSmzRemoteIsTimeout(self, timeout: float) -> None:
+        self._remote_is_smz["timeout"] = max(0.5, float(timeout))
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setSmzRemoteIsAuthToken(self, token: str) -> None:
+        self._remote_is_smz["auth_token"] = str(token or "")
+        self._smz_remote_is_status_text = "не проверено"
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setSmzRemoteIsWeightsPath(self, path: str) -> None:
+        self._remote_is_smz["weights_share_path"] = str(path or "")
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(str)
+    def setSmzRemoteIsSmbUncHint(self, hint: str) -> None:
+        self._remote_is_smz["smb_unc_hint"] = str(hint or "")
+        self._persist_remote_is_smz()
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot()
+    def checkSmzRemoteIsConnection(self) -> None:
+        from core.models.gmz_inference_transport import remote_health_check
+
+        host = str(self._remote_is_smz.get("host", "127.0.0.1"))
+        port = int(self._remote_is_smz.get("port", 5560))
+        token = str(self._remote_is_smz.get("auth_token", ""))
+        timeout = min(3.0, float(self._remote_is_smz.get("timeout", 5.0)))
+        t0 = time.perf_counter()
+        try:
+            resp = remote_health_check(host=host, port=port, auth_token=token, timeout=timeout)
+            self._smz_remote_is_latency_ms = (time.perf_counter() - t0) * 1000.0
+            gpu = str(resp.get("gpu_name", "?"))
+            pv = resp.get("policy_version", "?")
+            self._smz_remote_is_status_text = f"OK • GPU: {gpu} • policy v{pv}"
+            self._emit_status(f"SMZ Remote IS: соединение OK ({self._smz_remote_is_latency_ms:.0f} ms)")
+        except Exception as exc:
+            self._smz_remote_is_latency_ms = -1.0
+            self._smz_remote_is_status_text = f"Ошибка: {exc}"
+            self._emit_status(
+                "SMZ Remote IS недоступен. Проверьте: 1) сервер на ПК2, 2) IP/порт, 3) firewall (TCP 5560)."
+            )
+        self.smzRemoteIsChanged.emit()
+
+    @QtCore.Slot(bool)
+    def set_smz_inference_server_mode(self, enabled: bool) -> None:
+        if enabled and not self._training_cuda_available:
+            self._emit_status(
+                "SMZ Inference server требует CUDA. "
+                "Установите PyTorch+cu и драйвер NVIDIA, затем нажмите ↻ в баннере GPU."
+            )
+            self.trainingHyperparamsChanged.emit()
+            return
+        if enabled and self.smzRemoteIsEnabled:
+            self._set_smz_remote_is_lan_active(False)
+            self._persist_remote_is_smz()
+            self.smzRemoteIsChanged.emit()
+        changed = False
+        new_enabled = 1 if enabled else 0
+        if self._smz_hyperparams.get("inference_server_enabled") != new_enabled:
+            self._smz_hyperparams["inference_server_enabled"] = new_enabled
+            changed = True
+        # При включении IS — убеждаемся, что режим "local" (LAN управляется _remote_is_smz)
+        if enabled and self._smz_hyperparams.get("inference_server_mode") != "local":
+            self._smz_hyperparams["inference_server_mode"] = "local"
+            changed = True
+        if not changed:
+            return
+        self._refresh_smz_profile_label()
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+        mode = "B (inference server)" if enabled else "A (GPU-акторы)"
+        self._emit_status(f"SMZ: режим {mode}. Сохраните настройки.")
 
     # --- TensorBoard (встроенный просмотр метрик) ---
     @staticmethod
@@ -6224,30 +6422,10 @@ class GUIController(QtCore.QObject):
                 "SMZ_NUM_ENV_WORKERS",
                 str(self._smz_hyperparams.get("num_env_workers", self._default_smz_hyperparams.get("num_env_workers", 6))),
             )
-            if smz_inf_enabled == 1 and smz_inf_mode == "remote":
-                remote_smz_path = Path(self._repo_root) / "runtime" / "state" / "remote_is_smz.json"
-                remote_smz_host = "127.0.0.1"
-                remote_smz_port = 5560
-                remote_smz_token = ""
-                if remote_smz_path.is_file():
-                    try:
-                        remote_smz_data = json.loads(remote_smz_path.read_text(encoding="utf-8"))
-                        if isinstance(remote_smz_data, dict):
-                            remote_smz_host = str(remote_smz_data.get("host", remote_smz_host))
-                            remote_smz_port = int(remote_smz_data.get("port", remote_smz_port))
-                            remote_smz_token = str(remote_smz_data.get("auth_token", remote_smz_token))
-                    except Exception as exc:
-                        self._emit_log(
-                            f"[GUI][SMZ][REMOTE_IS] не удалось прочитать remote_is_smz.json: {exc}; "
-                            "использую дефолты (127.0.0.1:5560)",
-                            level="WARN",
-                        )
-                else:
-                    self._emit_log(
-                        "[GUI][SMZ][REMOTE_IS] runtime/state/remote_is_smz.json не найден; "
-                        "использую дефолты (127.0.0.1:5560)",
-                        level="WARN",
-                    )
+            if smz_inf_enabled == 1 and (smz_inf_mode == "remote" or remote_is_lan_active(self._remote_is_smz)):
+                remote_smz_host = str(self._remote_is_smz.get("host", "127.0.0.1"))
+                remote_smz_port = int(self._remote_is_smz.get("port", 5560))
+                remote_smz_token = str(self._remote_is_smz.get("auth_token", ""))
                 env.insert("SMZ_INFERENCE_SERVER_MODE", "remote")
                 env.insert("SMZ_INFERENCE_REMOTE_HOST", remote_smz_host)
                 env.insert("SMZ_INFERENCE_REMOTE_PORT", str(remote_smz_port))
