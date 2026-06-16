@@ -4655,6 +4655,10 @@ ApplicationWindow {
                                             width: algoHyperparamsStack.width
                                             spacing: root.spacingSm
 
+                                            SmzInferenceServerPanel {
+                                                rootUi: root
+                                            }
+
                                             SectionHyperparamsEditor {
                                                 Layout.fillWidth: true
                                                 algoSection: "smz"
