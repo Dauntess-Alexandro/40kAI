@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40kAI — макеты подсказки по моделям (A/B/C/D/F)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cinzel:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-base: #0f172a;
+      --bg-surface: #131b2d;
+      --bg-elevated: #1e293b;
+      --border: #334155;
+      --text: #d7dde7;
+      --muted: #98a4b8;
+      --accent: #2563eb;
+      --accent-teal: #0d9488;
+      --accent-purple: #7c3aed;
+      --success: #34d399;
+      --warn: #fbbf24;
+      --danger: #f87171;
+      --radius: 12px;
+      --shadow: 0 24px 80px rgba(0,0,0,.55);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background: var(--bg-base);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── chrome ── */
+    .topbar {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(15,23,42,.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    }
+    .topbar h1 { margin: 0; font-size: 15px; font-weight: 600; }
+    .topbar p { margin: 0; font-size: 12px; color: var(--muted); flex: 1 1 200px; }
+    .variant-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+    .variant-tabs button {
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: .15s;
+    }
+    .variant-tabs button:hover { color: var(--text); border-color: #475569; }
+    .variant-tabs button.active {
+      color: #fff;
+      border-color: var(--accent);
+      background: rgba(37,99,235,.22);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .variant-tabs button[data-v="C"].active { border-color: #b08d57; background: rgba(176,141,87,.18); box-shadow: inset 0 -2px 0 #b08d57; }
+    .variant-tabs button[data-v="D"].active { border-color: var(--accent-teal); background: rgba(13,148,136,.18); box-shadow: inset 0 -2px 0 var(--accent-teal); }
+    .variant-tabs button[data-v="F"].active { border-color: var(--accent-purple); background: rgba(124,58,237,.18); box-shadow: inset 0 -2px 0 var(--accent-purple); }
+
+    .stage {
+      padding: 24px;
+      min-height: calc(100vh - 60px);
+      display: flex; align-items: flex-start; justify-content: center;
+      position: relative;
+      overflow: auto;
+    }
+    .stage::before {
+      content: "";
+      position: absolute; inset: 0;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      opacity: .35;
+    }
+    /* fake dashboard behind modal */
+    .fake-dash {
+      position: absolute; inset: 24px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #111827, #0f172a 40%, #1a1030);
+      border: 1px solid #1e293b;
+      overflow: hidden;
+      opacity: .55;
+    }
+    .fake-dash .sidebar {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 280px;
+      background: rgba(0,0,0,.25); border-right: 1px solid #1e293b;
+      padding: 20px;
+    }
+    .fake-dash .bar { height: 10px; border-radius: 4px; background: #334155; margin-bottom: 10px; }
+    .fake-dash .bar.w60 { width: 60%; } .fake-dash .bar.w80 { width: 80%; } .fake-dash .bar.w40 { width: 40%; }
+    .fake-dash .main { margin-left: 300px; padding: 24px; }
+    .fake-dash .progress { height: 6px; border-radius: 99px; background: #1e293b; margin: 16px 0; overflow: hidden; }
+    .fake-dash .progress > i { display: block; height: 100%; width: 42%; background: linear-gradient(90deg,#2563eb,#7c3aed); }
+
+    .variant { display: none; width: min(920px, 100%); position: relative; z-index: 2; }
+    .variant.active { display: block; }
+
+    .label-pill {
+      display: inline-block;
+      font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 4px 10px; border-radius: 99px;
+      margin-bottom: 10px;
+    }
+
+    /* shared dialog shell */
+    .dialog {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .dialog-hd {
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    }
+    .dialog-hd h2 { margin: 0; font-size: 17px; font-weight: 600; }
+    .dialog-hd .sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+    .dialog-bd { padding: 16px 22px 20px; }
+    .dialog-ft {
+      padding: 12px 22px 16px;
+      border-top: 1px solid var(--border);
+      display: flex; justify-content: flex-end; gap: 8px;
+    }
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn.primary { background: #1d4ed8; border-color: #2563eb; color: #fff; }
+    .btn.ghost { background: transparent; }
+
+    .summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .summary-card {
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: .15s;
+    }
+    .summary-card:hover { transform: translateY(-1px); }
+    .summary-card h4 { margin: 0 0 4px; font-size: 13px; }
+    .summary-card p { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .summary-card.blue { background: rgba(37,99,235,.12); border-color: rgba(59,130,246,.35); }
+    .summary-card.blue h4 { color: #93c5fd; }
+    .summary-card.purple { background: rgba(124,58,237,.12); border-color: rgba(167,139,250,.35); }
+    .summary-card.purple h4 { color: #c4b5fd; }
+
+    .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 14px; overflow-x: auto; }
+    .tab {
+      padding: 9px 14px; font-size: 12px; font-weight: 500;
+      color: var(--muted); border: none; background: none; cursor: pointer;
+      border-bottom: 2px solid transparent; white-space: nowrap;
+      transition: .15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.on { color: var(--text); font-weight: 700; border-bottom-color: var(--tab-accent, var(--accent)); background: rgba(255,255,255,.04); }
+
+    .badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 4px 10px; border-radius: 99px; margin: 0 6px 6px 0; }
+    .badge.outline { border: 1px solid; background: transparent; }
+    .badge.tint { border: 1px solid transparent; }
+
+    .section-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; display: flex; align-items: center; gap: 6px; }
+    .section-title svg { width: 14px; height: 14px; opacity: .85; }
+    .body-text { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
+    ul.clean { margin: 0; padding: 0; list-style: none; }
+    ul.clean li { font-size: 12px; color: var(--muted); line-height: 1.45; padding: 3px 0 3px 18px; position: relative; }
+    ul.clean li::before { content: ""; position: absolute; left: 0; top: 9px; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .5; }
+
+    .metric-bars { display: flex; flex-direction: column; gap: 8px; }
+    .metric-row { display: grid; grid-template-columns: 72px 1fr 28px; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+    .metric-row .track { height: 5px; border-radius: 99px; background: #0f172a; overflow: hidden; }
+    .metric-row .fill { height: 100%; border-radius: 99px; }
+
+    .callout {
+      border-radius: 10px;
+      padding: 12px 14px;
+      border: 1px solid;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    /* ═══ A — Инженерный премиум ═══ */
+    .a-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: grid;
+      grid-template-columns: 5px 1fr;
+      overflow: hidden;
+    }
+    .a-card .stripe { background: var(--accent); }
+    .a-card .inner { padding: 16px 18px; }
+    .a-hero { display: grid; grid-template-columns: 1fr 200px; gap: 20px; margin-bottom: 16px; }
+    .a-hero h3 { margin: 0 0 6px; font-size: 17px; }
+    .a-hero .tldr { margin: 0 0 10px; font-size: 12px; color: #60a5fa; line-height: 1.45; }
+    .a-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .a-block { border-radius: 10px; padding: 12px; border: 1px solid var(--border); }
+    .a-block.pro { background: rgba(52,211,153,.06); border-color: rgba(52,211,153,.2); }
+    .a-block.con { background: rgba(251,191,36,.06); border-color: rgba(251,191,36,.2); }
+    .a-block.tip { grid-column: 1 / -1; background: rgba(37,99,235,.08); border-color: rgba(59,130,246,.3); }
+
+    /* ═══ B — Каталог ═══ */
+    .b-hero {
+      text-align: center;
+      padding: 28px 20px 20px;
+      background: linear-gradient(180deg, rgba(37,99,235,.14), transparent);
+      border-radius: var(--radius);
+      margin-bottom: 20px;
+      border: 1px solid rgba(59,130,246,.15);
+    }
+    .b-hero h3 { margin: 0 0 8px; font-size: 22px; font-weight: 700; }
+    .b-hero .tldr { margin: 0 auto 16px; max-width: 520px; font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .b-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    .b-chip {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 99px;
+      padding: 6px 14px;
+      font-size: 11px;
+      color: var(--text);
+    }
+    .b-chip b { color: #60a5fa; font-weight: 600; }
+    .accordion { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .acc-item { border-bottom: 1px solid var(--border); }
+    .acc-item:last-child { border-bottom: none; }
+    .acc-hd {
+      width: 100%; text-align: left;
+      padding: 14px 16px;
+      background: var(--bg-elevated);
+      border: none; color: var(--text);
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .acc-hd:hover { background: #243044; }
+    .acc-hd .chev { transition: .2s; color: var(--muted); }
+    .acc-item.open .acc-hd .chev { transform: rotate(180deg); }
+    .acc-bd { display: none; padding: 0 16px 14px; background: rgba(0,0,0,.12); }
+    .acc-item.open .acc-bd { display: block; }
+
+    /* ═══ C — Игровой дашборд ═══ */
+    .c-dialog {
+      background: linear-gradient(160deg, #1a1714 0%, #12100e 50%, #0f172a 100%);
+      border-color: #6f4b2a;
+    }
+    .c-dialog .dialog-hd { border-color: #4a3520; }
+    .c-dialog .dialog-hd h2 { font-family: Cinzel, serif; letter-spacing: .04em; color: #e7dfd4; }
+    .c-hero {
+      display: grid;
+      grid-template-columns: 1fr 180px;
+      gap: 16px;
+      padding: 16px;
+      background:
+        url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.08'/%3E%3C/svg%3E"),
+        linear-gradient(135deg, rgba(176,141,87,.12), rgba(167,55,55,.08));
+      border: 1px solid #6f4b2a;
+      border-radius: 10px;
+      margin-bottom: 14px;
+    }
+    .c-class {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-family: Cinzel, serif;
+      font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+      color: #d7b66f;
+      margin-bottom: 8px;
+    }
+    .c-class::before { content: "◆"; font-size: 8px; }
+    .c-hero h3 { margin: 0 0 6px; font-family: Cinzel, serif; font-size: 20px; color: #f0e6d8; }
+    .c-hero .tldr { margin: 0; font-size: 12px; color: #b3a99c; line-height: 1.5; }
+    .c-radar { display: flex; align-items: center; justify-content: center; }
+    .c-radar svg text { fill: #b3a99c; font-size: 9px; font-family: Inter, sans-serif; }
+    .c-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .c-panel {
+      background: rgba(43,40,36,.6);
+      border: 1px solid #4a3520;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .c-panel h5 { margin: 0 0 8px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #b08d57; }
+    .c-panel.pro h5 { color: #6a8f3a; }
+    .c-panel.con h5 { color: #a73b32; }
+
+    /* ═══ D — Split panel ═══ */
+    .d-layout { display: grid; grid-template-columns: 220px 1fr; min-height: 480px; }
+    .d-side {
+      background: #0c1222;
+      border-right: 1px solid var(--border);
+      padding: 12px 10px;
+      overflow-y: auto;
+    }
+    .d-group { margin-bottom: 14px; }
+    .d-group-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #64748b; padding: 4px 10px 6px; }
+    .d-item {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; text-align: left;
+      padding: 8px 10px;
+      border: none; border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px; font-weight: 500;
+      cursor: pointer;
+    }
+    .d-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+    .d-item.on { background: rgba(37,99,235,.18); color: #fff; }
+    .d-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .d-main { padding: 18px 20px; overflow-y: auto; }
+    .d-main h3 { margin: 0 0 4px; font-size: 18px; }
+    .d-main .tldr { margin: 0 0 14px; color: #60a5fa; font-size: 12px; }
+
+    /* ═══ F — Wizard + сравнение ═══ */
+    .f-steps { display: flex; gap: 6px; margin-bottom: 18px; }
+    .f-step {
+      flex: 1; text-align: center;
+      padding: 8px; border-radius: 8px;
+      font-size: 11px; font-weight: 600;
+      color: var(--muted);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+    }
+    .f-step.done { color: var(--success); border-color: rgba(52,211,153,.3); }
+    .f-step.on { color: #fff; border-color: var(--accent-purple); background: rgba(124,58,237,.15); }
+    .f-question { text-align: center; margin-bottom: 20px; }
+    .f-question h3 { margin: 0 0 6px; font-size: 16px; }
+    .f-question p { margin: 0; font-size: 12px; color: var(--muted); }
+    .f-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .f-choice {
+      padding: 20px 16px;
+      border-radius: var(--radius);
+      border: 2px solid var(--border);
+      background: var(--bg-elevated);
+      cursor: pointer;
+      text-align: center;
+      transition: .15s;
+    }
+    .f-choice:hover { border-color: #64748b; transform: translateY(-2px); }
+    .f-choice.selected { border-color: var(--accent-purple); background: rgba(124,58,237,.12); }
+    .f-choice .ico { font-size: 28px; margin-bottom: 8px; }
+    .f-choice h4 { margin: 0 0 4px; font-size: 14px; }
+    .f-choice p { margin: 0; font-size: 11px; color: var(--muted); }
+    .f-result {
+      display: none;
+      border: 1px solid rgba(124,58,237,.35);
+      border-radius: var(--radius);
+      padding: 16px;
+      background: rgba(124,58,237,.08);
+      text-align: center;
+    }
+    .f-result.show { display: block; }
+    .f-result h4 { margin: 0 0 6px; font-size: 15px; color: #c4b5fd; }
+    .f-result p { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+    .f-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 16px; }
+    .f-table th, .f-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    .f-table th { color: var(--muted); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .f-table tr:hover td { background: rgba(255,255,255,.03); }
+    .f-table .hl { background: rgba(124,58,237,.12); }
+
+    .note {
+      margin-top: 16px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.04);
+      border: 1px dashed #475569;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Подсказка по моделям — макеты</h1>
+  <p>Кликайте вкладки A/B/C/D/F. Внутри — интерактивные элементы (табы, аккордеон, визард).</p>
+  <nav class="variant-tabs" id="variantNav">
+    <button class="active" data-v="A" data-target="varA">A · Премиум</button>
+    <button data-v="B" data-target="varB">B · Каталог</button>
+    <button data-v="C" data-target="varC">C · Игровой</button>
+    <button data-v="D" data-target="varD">D · Sidebar</button>
+    <button data-v="F" data-target="varF">F · Визард</button>
+  </nav>
+</header>
+
+<main class="stage">
+  <div class="fake-dash" aria-hidden="true">
+    <div class="sidebar">
+      <div class="bar w80"></div><div class="bar w60"></div><div class="bar w40"></div>
+      <div style="height:24px"></div>
+      <div class="bar w80"></div><div class="bar w60"></div><div class="bar w80"></div>
+    </div>
+    <div class="main">
+      <div class="bar w40"></div><div class="progress"><i></i></div>
+      <div class="bar w80"></div><div class="bar w60"></div><div class="bar w80"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ A ═══════════════ -->
+  <section class="variant active" id="varA">
+    <span class="label-pill" style="background:rgba(37,99,235,.2);color:#93c5fd;">A — Инженерный премиум · Linear / Raycast</span>
+    <div class="dialog">
+      <div class="dialog-hd">
+        <div>
+          <h2>Подсказка по моделям обучения</h2>
+          <p class="sub">Тонкие бордеры, outline-бейджи, метрики справа, цветовые блоки pro/con</p>
+        </div>
+      </div>
+      <div class="dialog-bd">
+        <div class="summary-row">
+          <div class="summary-card blue"><h4>Скорость и простота</h4><p>DQN · PPO — быстрые итерации, удобный старт.</p></div>
+          <div class="summary-card purple"><h4>Качество и поиск</h4><p>AZ Tree · GMZ — просчёт вперёд, дороже по времени.</p></div>
+        </div>
+        <div class="tabs" id="tabsA">
+          <button class="tab on" data-accent="#2563eb">DQN</button>
+          <button class="tab" data-accent="#0d9488">PPO</button>
+          <button class="tab" data-accent="#7c3aed">AZ Tree</button>
+          <button class="tab" data-accent="#6366f1">AZ Proxy</button>
+          <button class="tab" data-accent="#d97706">GMZ</button>
+          <button class="tab" data-accent="#9ca3af">Сравнение</button>
+        </div>
+        <div class="a-card">
+          <div class="stripe" id="stripeA" style="background:#2563eb"></div>
+          <div class="inner">
+            <div class="a-hero">
+              <div>
+                <h3>DQN (Deep Q-Network)</h3>
+                <p class="tldr">Off-policy value-агент без поиска. Быстрый старт, надёжный базовый бот.</p>
+                <span class="badge outline" style="border-color:#3b82f6;color:#93c5fd">Классика+</span>
+                <span class="badge outline" style="border-color:#6366f1;color:#a5b4fc">Надёжный</span>
+                <span class="badge outline" style="border-color:#3b82f6;color:#93c5fd">Средний train</span>
+                <span class="badge outline" style="border-color:#6366f1;color:#a5b4fc">Q-оценки</span>
+              </div>
+              <div class="metric-bars">
+                <div class="metric-row"><span>Скорость</span><div class="track"><div class="fill" style="width:75%;background:#34d399"></div></div><span>3/4</span></div>
+                <div class="metric-row"><span>Качество</span><div class="track"><div class="fill" style="width:50%;background:#60a5fa"></div></div><span>2/4</span></div>
+                <div class="metric-row"><span>Настройка</span><div class="track"><div class="fill" style="width:50%;background:#fbbf24"></div></div><span>2/4</span></div>
+                <div class="metric-row"><span>Compute</span><div class="track"><div class="fill" style="width:35%;background:#a78bfa"></div></div><span>low</span></div>
+              </div>
+            </div>
+            <div class="a-grid">
+              <div class="a-block">
+                <div class="section-title">ⓘ Что это</div>
+                <p class="body-text">ИИ оценивает ожидаемую пользу каждого действия и выбирает лучший ход в текущей ситуации.</p>
+              </div>
+              <div class="a-block">
+                <div class="section-title">▶ Как учится</div>
+                <p class="body-text">Запоминает прошлые ситуации (состояние, действие, результат) и постепенно улучшает Q-оценки.</p>
+              </div>
+              <div class="a-block pro">
+                <div class="section-title" style="color:#34d399">✓ Сильные стороны</div>
+                <ul class="clean" style="color:#86efac">
+                  <li>Понятная логика выбора хода</li>
+                  <li>Хорошее качество после обучения</li>
+                  <li>Удобно сравнивать с PPO/AZ/GMZ</li>
+                </ul>
+              </div>
+              <div class="a-block con">
+                <div class="section-title" style="color:#fbbf24">⚠ Ограничения</div>
+                <ul class="clean" style="color:#fcd34d">
+                  <li>Может учиться дольше PPO</li>
+                  <li>Чувствителен к настройкам</li>
+                  <li>Слабее моделей с MCTS</li>
+                </ul>
+              </div>
+              <div class="a-block tip callout" style="border-color:rgba(59,130,246,.4);color:#bfdbfe">
+                <strong>★ Когда выбирать:</strong> нужен надёжный агент с понятным поведением и готовность подождать обучение ради качества.
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">Фишка A: единый «инженерный» язык — outline-чипы, полоски метрик, секции с разным фоном, callout для рекомендации.</p>
+      </div>
+      <div class="dialog-ft"><button class="btn">Закрыть</button><button class="btn primary">Выбрать DQN в конфиге</button></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ B ═══════════════ -->
+  <section class="variant" id="varB">
+    <span class="label-pill" style="background:rgba(13,148,136,.2);color:#5eead4;">B — Каталог продуктов · Stripe / Notion docs</span>
+    <div class="dialog">
+      <div class="dialog-hd"><h2>Подсказка по моделям обучения</h2></div>
+      <div class="dialog-bd">
+        <div class="b-hero">
+          <h3>DQN</h3>
+          <p class="tldr">Off-policy value-агент без поиска. Надёжный базовый бот для тестов и долгих прогонов — когда важна предсказуемость, а не максимум тактики.</p>
+          <div class="b-chips">
+            <span class="b-chip"><b>Скорость train</b> ★★★</span>
+            <span class="b-chip"><b>Качество</b> ★★</span>
+            <span class="b-chip"><b>Поиск</b> нет</span>
+            <span class="b-chip"><b>Compute</b> low</span>
+          </div>
+        </div>
+        <div class="tabs" style="justify-content:center;border:none;margin-bottom:16px">
+          <button class="tab on">DQN</button><button class="tab">PPO</button><button class="tab">AZ Tree</button><button class="tab">GMZ</button><button class="tab">Все →</button>
+        </div>
+        <div class="accordion" id="accB">
+          <div class="acc-item open">
+            <button class="acc-hd">Что это <span class="chev">▼</span></button>
+            <div class="acc-bd"><p class="body-text">ИИ, который учится понимать, какой ход выгоднее. Для каждого действия оценивает ожидаемую пользу и выбирает лучший вариант.</p></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd">Как учится <span class="chev">▼</span></button>
+            <div class="acc-bd"><p class="body-text">Запоминает прошлые ситуации, постепенно улучшает оценки действий. Со временем реже ошибается в похожих сценариях.</p></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd">Сильные стороны <span class="chev">▼</span></button>
+            <div class="acc-bd"><ul class="clean"><li>Понятная логика выбора</li><li>Хорошее качество после обучения</li><li>Предсказуемое поведение</li></ul></div>
+          </div>
+          <div class="acc-item">
+            <button class="acc-hd">Ограничения <span class="chev">▼</span></button>
+            <div class="acc-bd"><ul class="clean"><li>Дольше PPO</li><li>Чувствителен к гиперпараметрам</li><li>Без MCTS в сложной тактике слабее</li></ul></div>
+          </div>
+          <div class="acc-item open">
+            <button class="acc-hd" style="color:#60a5fa">★ Когда выбирать <span class="chev">▼</span></button>
+            <div class="acc-bd"><p class="body-text" style="color:#bfdbfe">Когда нужен надёжный агент с понятным поведением и есть готовность подождать обучение ради качества итоговой модели.</p></div>
+          </div>
+        </div>
+        <p class="note">Фишка B: много воздуха, hero по центру, метрики-чипы, детали в аккордеоне — меньше «стены текста» сразу.</p>
+      </div>
+      <div class="dialog-ft"><button class="btn">Закрыть</button></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ C ═══════════════ -->
+  <section class="variant" id="varC">
+    <span class="label-pill" style="background:rgba(176,141,87,.2);color:#d7b66f;">C — Игровой дашборд · Warhammer tactical</span>
+    <div class="dialog c-dialog">
+      <div class="dialog-hd">
+        <div>
+          <h2>Боевой устав · модели обучения</h2>
+          <p class="sub" style="color:#8a7d6e">Тактическая справка для командира тренировки</p>
+        </div>
+      </div>
+      <div class="dialog-bd">
+        <div class="c-hero">
+          <div>
+            <div class="c-class">Класс · Страж</div>
+            <h3>DQN — Deep Q-Network</h3>
+            <p class="tldr">Без поиска. Надёжный фундамент армии — предсказуемые решения, средняя мощь, низкая стоимость снабжения (compute).</p>
+            <div style="margin-top:10px">
+              <span class="badge tint" style="background:rgba(176,141,87,.2);color:#d7b66f;border-color:#6f4b2a">Классика+</span>
+              <span class="badge tint" style="background:rgba(106,143,58,.2);color:#9acd5a;border-color:#4a5f2a">Надёжный</span>
+            </div>
+          </div>
+          <div class="c-radar">
+            <svg width="160" height="160" viewBox="0 0 160 160">
+              <polygon points="80,20 130,55 115,120 45,120 30,55" fill="none" stroke="#4a3520" stroke-width="1"/>
+              <polygon points="80,35 118,62 108,110 52,110 42,62" fill="none" stroke="#4a3520" stroke-width="1" opacity=".6"/>
+              <line x1="80" y1="80" x2="80" y2="20" stroke="#4a3520"/><line x1="80" y1="80" x2="130" y2="55" stroke="#4a3520"/>
+              <line x1="80" y1="80" x2="115" y2="120" stroke="#4a3520"/><line x1="80" y1="80" x2="45" y2="120" stroke="#4a3520"/>
+              <line x1="80" y1="80" x2="30" y2="55" stroke="#4a3520"/>
+              <polygon points="80,38 115,58 105,105 55,100 45,60" fill="rgba(176,141,87,.35)" stroke="#b08d57" stroke-width="1.5"/>
+              <text x="80" y="14" text-anchor="middle">Скорость</text>
+              <text x="138" y="58" text-anchor="start">Качество</text>
+              <text x="118" y="132" text-anchor="middle">Тактика</text>
+              <text x="42" y="132" text-anchor="middle">Стабильн.</text>
+              <text x="18" y="58" text-anchor="end">Простота</text>
+            </svg>
+          </div>
+        </div>
+        <div class="tabs" style="border-color:#4a3520">
+          <button class="tab on" style="border-color:#b08d57;color:#f0e6d8">DQN</button>
+          <button class="tab">PPO</button><button class="tab">AZ Tree</button><button class="tab">GMZ</button>
+        </div>
+        <div class="c-grid">
+          <div class="c-panel"><h5>Доктрина</h5><p class="body-text" style="color:#b3a99c">Оценка полезности каждого манёвра. Выбор с максимальной ожидаемой выгодой.</p></div>
+          <div class="c-panel"><h5>Подготовка</h5><p class="body-text" style="color:#b3a99c">Память прошлых боёв → улучшение Q-оценок с каждым циклом тренировки.</p></div>
+          <div class="c-panel pro"><h5>Преимущества</h5><ul class="clean" style="color:#9acd5a"><li>Ясная логика приказов</li><li>Стабильный итог</li></ul></div>
+          <div class="c-panel con"><h5>Слабости</h5><ul class="clean" style="color:#d4847a"><li>Без просчёта вперёд</li><li>Тонкая настройка</li></ul></div>
+        </div>
+        <p class="note" style="border-color:#6f4b2a;color:#8a7d6e">Фишка C: радар-характеристик, «класс» юнита, шум/бронза — дозированный гейм-вайб без перегруза основного UI.</p>
+      </div>
+      <div class="dialog-ft" style="border-color:#4a3520"><button class="btn" style="border-color:#6f4b2a;background:#2b2824;color:#e7dfd4">Закрыть</button></div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ D ═══════════════ -->
+  <section class="variant" id="varD">
+    <span class="label-pill" style="background:rgba(13,148,136,.2);color:#5eead4;">D — Split panel · sidebar-навигатор (IDE-style)</span>
+    <div class="dialog">
+      <div class="dialog-hd"><h2>Подсказка по моделям обучения</h2></div>
+      <div class="d-layout">
+        <aside class="d-side" id="sideD">
+          <div class="d-group">
+            <div class="d-group-label">Скорость</div>
+            <button class="d-item on" data-model="dqn"><span class="d-dot" style="background:#2563eb"></span>DQN</button>
+            <button class="d-item" data-model="ppo"><span class="d-dot" style="background:#0d9488"></span>PPO</button>
+          </div>
+          <div class="d-group">
+            <div class="d-group-label">Качество + поиск</div>
+            <button class="d-item" data-model="az"><span class="d-dot" style="background:#7c3aed"></span>AZ Tree</button>
+            <button class="d-item" data-model="proxy"><span class="d-dot" style="background:#6366f1"></span>AZ Proxy</button>
+            <button class="d-item" data-model="gmz"><span class="d-dot" style="background:#d97706"></span>GMZ</button>
+            <button class="d-item" data-model="gaz"><span class="d-dot" style="background:#0891b2"></span>GAZ</button>
+          </div>
+          <div class="d-group">
+            <div class="d-group-label">Эксперименты</div>
+            <button class="d-item" data-model="smz"><span class="d-dot" style="background:#be185d"></span>SMZ</button>
+          </div>
+          <div class="d-group">
+            <div class="d-group-label">Обзор</div>
+            <button class="d-item" data-model="cmp"><span class="d-dot" style="background:#9ca3af"></span>Сравнение</button>
+          </div>
+        </aside>
+        <div class="d-main" id="mainD">
+          <h3>DQN (Deep Q-Network)</h3>
+          <p class="tldr">Off-policy value-агент без поиска. Быстрый старт, надёжный базовый бот.</p>
+          <span class="badge tint" style="background:rgba(37,99,235,.15);color:#93c5fd">Классика+</span>
+          <span class="badge tint" style="background:rgba(37,99,235,.15);color:#93c5fd">Надёжный</span>
+          <div style="height:16px"></div>
+          <div class="section-title">Что это</div>
+          <p class="body-text" style="margin-bottom:14px">ИИ оценивает ожидаемую пользу каждого действия и выбирает лучший ход.</p>
+          <div class="section-title">Сильные стороны</div>
+          <ul class="clean" style="margin-bottom:14px"><li>Понятная логика</li><li>Хорошее качество после обучения</li><li>Предсказуемое поведение</li></ul>
+          <div class="callout" style="border-color:rgba(37,99,235,.35);color:#bfdbfe;background:rgba(37,99,235,.08)">
+            <strong>Когда выбирать:</strong> надёжный агент, готовность подождать обучение.
+          </div>
+        </div>
+      </div>
+      <div class="dialog-ft"><button class="btn">Закрыть</button><button class="btn primary">Выбрать в конфиге</button></div>
+    </div>
+    <p class="note" style="position:relative;z-index:2;max-width:920px;margin:16px auto 0">Фишка D: нет 8 табов в ряд — группы слева, контент справа. Масштабируется на SMZ/GAZ без горизонтального скролла.</p>
+  </section>
+
+  <!-- ═══════════════ F ═══════════════ -->
+  <section class="variant" id="varF">
+    <span class="label-pill" style="background:rgba(124,58,237,.2);color:#c4b5fd;">F — Визард выбора + таблица сравнения</span>
+    <div class="dialog">
+      <div class="dialog-hd">
+        <div>
+          <h2>Какую модель выбрать?</h2>
+          <p class="sub">2 вопроса → рекомендация. Или сразу таблица сравнения.</p>
+        </div>
+      </div>
+      <div class="dialog-bd">
+        <div class="f-steps">
+          <div class="f-step done" id="fs1">1 · Приоритет</div>
+          <div class="f-step on" id="fs2">2 · Ресурсы</div>
+          <div class="f-step" id="fs3">3 · Результат</div>
+        </div>
+        <div id="wizardF">
+          <div class="f-question">
+            <h3>Сколько compute и времени готовы потратить?</h3>
+            <p>Это влияет на AZ Tree / GMZ vs PPO / DQN</p>
+          </div>
+          <div class="f-choices">
+            <div class="f-choice" data-ans="fast">
+              <div class="ico">⚡</div>
+              <h4>Мало — хочу быстро</h4>
+              <p>PPO или DQN, короткие итерации</p>
+            </div>
+            <div class="f-choice selected" data-ans="max">
+              <div class="ico">🏆</div>
+              <h4>Много — нужен максимум</h4>
+              <p>AZ Tree, GMZ, GAZ с поиском</p>
+            </div>
+          </div>
+        </div>
+        <div class="f-result" id="resultF">
+          <h4>Рекомендация: AZ Tree</h4>
+          <p>Максимум тактики с настоящим MCTS. Дорогой инференс, но лучший потолок среди AZ.</p>
+          <button class="btn primary">Открыть карточку AZ Tree</button>
+        </div>
+        <table class="f-table">
+          <thead>
+            <tr><th>Модель</th><th>Train</th><th>Ход</th><th>Сила</th><th>Поиск</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr><td><span class="d-dot" style="display:inline-block;vertical-align:middle;margin-right:6px;background:#2563eb"></span>DQN</td><td>★★★</td><td>★★★★</td><td>★★</td><td>—</td><td><button class="btn ghost" style="padding:4px 8px;font-size:10px">→</button></td></tr>
+            <tr><td><span class="d-dot" style="display:inline-block;vertical-align:middle;margin-right:6px;background:#0d9488"></span>PPO</td><td>★★★★</td><td>★★★★</td><td>★★★</td><td>—</td><td><button class="btn ghost" style="padding:4px 8px;font-size:10px">→</button></td></tr>
+            <tr class="hl"><td><span class="d-dot" style="display:inline-block;vertical-align:middle;margin-right:6px;background:#7c3aed"></span>AZ Tree</td><td>★★</td><td>★★</td><td>★★★★★</td><td>MCTS</td><td><button class="btn ghost" style="padding:4px 8px;font-size:10px">→</button></td></tr>
+            <tr><td><span class="d-dot" style="display:inline-block;vertical-align:middle;margin-right:6px;background:#d97706"></span>GMZ</td><td>★</td><td>★★</td><td>★★★★★</td><td>Search+</td><td><button class="btn ghost" style="padding:4px 8px;font-size:10px">→</button></td></tr>
+          </tbody>
+        </table>
+        <p class="note">Фишка F: для новичка — визард; для опытного — компактная таблица с переходом в карточку. «Не знаю что выбрать» как первый экран.</p>
+      </div>
+      <div class="dialog-ft">
+        <button class="btn ghost" id="btnSkipF">Пропустить → все модели</button>
+        <button class="btn">Закрыть</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  // variant switcher
+  document.querySelectorAll('#variantNav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#variantNav button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.target).classList.add('active');
+    });
+  });
+
+  // A tabs accent
+  document.querySelectorAll('#tabsA .tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('#tabsA .tab').forEach(t => t.classList.remove('on'));
+      tab.classList.add('on');
+      const c = tab.dataset.accent || '#2563eb';
+      document.getElementById('stripeA').style.background = c;
+      tab.style.setProperty('--tab-accent', c);
+    });
+  });
+
+  // B accordion
+  document.querySelectorAll('#accB .acc-hd').forEach(hd => {
+    hd.addEventListener('click', () => hd.parentElement.classList.toggle('open'));
+  });
+
+  // D sidebar
+  const models = {
+    dqn: { title: 'DQN (Deep Q-Network)', tldr: 'Off-policy value-агент без поиска. Быстрый старт, надёжный базовый бот.', color: '#2563eb' },
+    ppo: { title: 'PPO (Proximal Policy Optimization)', tldr: 'On-policy policy-агент. Стабильно учится, удобный дефолт для RL.', color: '#0d9488' },
+    az:  { title: 'AlphaZero Tree', tldr: 'Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.', color: '#7c3aed' },
+    proxy:{ title: 'AlphaZero Proxy', tldr: 'AZ-пайплайн без полного дерева. Быстрее, потолок ниже.', color: '#6366f1' },
+    gmz: { title: 'Gumbel MuZero (GMZ)', tldr: 'MuZero + Gumbel-поиск. Потолок качества, самый дорогой режим.', color: '#d97706' },
+    gaz: { title: 'Gumbel AlphaZero (GAZ)', tldr: 'AZ с Gumbel top-k + Sequential Halving, depth-1.', color: '#0891b2' },
+    smz: { title: 'Sampled MuZero (SMZ)', tldr: 'Joint sampling K ходов, IS-коррекция. v1 — одна машина.', color: '#be185d' },
+    cmp: { title: 'Сравнение моделей', tldr: 'Таблица по скорости, силе, поиску и сложности тюна.', color: '#9ca3af' },
+  };
+  document.querySelectorAll('#sideD .d-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('#sideD .d-item').forEach(i => i.classList.remove('on'));
+      item.classList.add('on');
+      const m = models[item.dataset.model];
+      const main = document.getElementById('mainD');
+      main.innerHTML = `
+        <h3>${m.title}</h3>
+        <p class="tldr" style="color:${m.color}">${m.tldr}</p>
+        <div class="section-title">Кратко</div>
+        <p class="body-text">Клик по пункту слева меняет контент — без горизонтальных табов.</p>
+        <div style="height:12px"></div>
+        <div class="callout" style="border-color:${m.color}55;color:#d7dde7;background:${m.color}14">
+          <strong>Когда выбирать:</strong> см. полную карточку в реальном диалоге.
+        </div>`;
+    });
+  });
+
+  // F wizard
+  document.querySelectorAll('.f-choice').forEach(ch => {
+    ch.addEventListener('click', () => {
+      document.querySelectorAll('.f-choice').forEach(c => c.classList.remove('selected'));
+      ch.classList.add('selected');
+      document.getElementById('fs2').classList.remove('on');
+      document.getElementById('fs2').classList.add('done');
+      document.getElementById('fs3').classList.add('on');
+      const res = document.getElementById('resultF');
+      res.classList.add('show');
+      const h4 = res.querySelector('h4');
+      const p = res.querySelector('p');
+      if (ch.dataset.ans === 'fast') {
+        h4.textContent = 'Рекомендация: PPO';
+        p.textContent = 'Лучший баланс скорость/качество. Стабильный дефолт без search-оверхеда.';
+        document.querySelector('.f-table .hl')?.classList.remove('hl');
+        document.querySelector('.f-table tbody tr:nth-child(2)')?.classList.add('hl');
+      } else {
+        h4.textContent = 'Рекомендация: AZ Tree';
+        p.textContent = 'Максимум тактики с настоящим MCTS. Дорогой инференс, но лучший потолок среди AZ.';
+        document.querySelectorAll('.f-table tr').forEach(r => r.classList.remove('hl'));
+        document.querySelector('.f-table tbody tr:nth-child(3)')?.classList.add('hl');
+      }
+    });
+  });
+  document.getElementById('btnSkipF')?.addEventListener('click', () => {
+    document.getElementById('wizardF').style.display = 'none';
+    document.querySelector('.f-steps').style.display = 'none';
+    document.getElementById('resultF').classList.remove('show');
+  });
+</script>
+</body>
+</html>

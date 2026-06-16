@@ -1,0 +1,1704 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Подсказка по моделям - варианты A/B/C/D/F</title>
+  <style>
+    :root {
+      --bg: #070d19;
+      --bg-soft: #0b1322;
+      --panel: #101a2b;
+      --panel-2: #172438;
+      --panel-3: #1c2a40;
+      --line: #2a3b56;
+      --line-soft: #1d2a3e;
+      --text: #d8e4f7;
+      --muted: #9cacbf;
+      --dim: #6f819a;
+      --blue: #2f80ff;
+      --blue-soft: #14305a;
+      --violet: #9074ff;
+      --violet-soft: #241c4e;
+      --gold: #c2952d;
+      --gold-soft: #2d2611;
+      --green: #46d39a;
+      --green-soft: #12372e;
+      --orange: #ffb46a;
+      --orange-soft: #3a2816;
+      --red: #ff657d;
+      --red-soft: #401b28;
+      --radius: 8px;
+      --shadow: 0 18px 70px rgba(0, 0, 0, .45);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(180deg, rgba(22, 33, 53, .65), rgba(7, 13, 25, 1) 280px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, .015), rgba(255, 255, 255, .015) 1px, transparent 1px, transparent 48px),
+        var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 72px;
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 14, 26, .92);
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      min-width: 280px;
+    }
+
+    .brand h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      line-height: 1.15;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .nav a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #101827;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .nav a:hover {
+      border-color: var(--blue);
+      color: var(--text);
+    }
+
+    main {
+      width: min(1480px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 26px 0 70px;
+    }
+
+    .intro {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 16px;
+      margin-bottom: 22px;
+    }
+
+    .intro-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(16, 26, 43, .78);
+    }
+
+    .intro-card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    .intro-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .section {
+      margin: 24px 0 38px;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 0 12px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: 20px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .section-title span {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .mock-shell {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background:
+        linear-gradient(180deg, rgba(22, 34, 54, .95), rgba(7, 13, 25, .95)),
+        var(--bg-soft);
+      box-shadow: var(--shadow);
+    }
+
+    .dialog {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0c1424;
+    }
+
+    .dialog-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 46px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line-soft);
+      background: #0d1628;
+    }
+
+    .dialog-head h3 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.2;
+    }
+
+    .head-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .mini-button,
+    .close-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #142136;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .close-button {
+      width: 30px;
+      padding: 0;
+      color: var(--text);
+    }
+
+    .dialog-body {
+      padding: 14px;
+    }
+
+    .hint-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .hint-card {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+    }
+
+    .hint-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #8ebdff;
+      font-size: 14px;
+    }
+
+    .hint-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.3;
+      font-size: 14px;
+    }
+
+    .hint-card.violet {
+      border-color: #554395;
+      background: var(--violet-soft);
+    }
+
+    .hint-card.violet strong {
+      color: #c9bfff;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: stretch;
+      min-height: 42px;
+      border-bottom: 1px solid var(--line-soft);
+      background: #0b1322;
+    }
+
+    .tab,
+    .family-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 18px;
+      border: 0;
+      border-right: 1px solid rgba(255, 255, 255, .04);
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      cursor: default;
+    }
+
+    .tab.active,
+    .family-tab.active {
+      color: #e8f0ff;
+      background: #173166;
+      box-shadow: inset 0 -3px 0 var(--blue);
+      font-weight: 800;
+    }
+
+    .content-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .content-card h4 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .lead {
+      margin: 0 0 14px;
+      color: #5aa0ff;
+      font-style: italic;
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-bottom: 14px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid #c6d8ff;
+      border-radius: 999px;
+      background: #dce7ff;
+      color: #2450b9;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .chip.dark {
+      border-color: var(--line);
+      background: #111d31;
+      color: var(--muted);
+    }
+
+    .chip.gold {
+      border-color: #7b6324;
+      background: var(--gold-soft);
+      color: #f0cd67;
+    }
+
+    .chip.green {
+      border-color: #2b8567;
+      background: var(--green-soft);
+      color: #8cf2c4;
+    }
+
+    .chip.violet {
+      border-color: #5a49a8;
+      background: var(--violet-soft);
+      color: #cfc6ff;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    .subblock {
+      min-width: 0;
+    }
+
+    .subblock h5 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 8px;
+      color: #edf4ff;
+      font-size: 14px;
+    }
+
+    .subblock p,
+    .subblock li {
+      color: var(--muted);
+      line-height: 1.48;
+      font-size: 13px;
+    }
+
+    .subblock p {
+      margin: 0;
+    }
+
+    .subblock ul {
+      margin: 0;
+      padding-left: 17px;
+    }
+
+    .marker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--blue-soft);
+      color: #6aa8ff;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .marker.warn {
+      background: var(--orange-soft);
+      color: var(--orange);
+    }
+
+    .rating-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .rating {
+      display: grid;
+      grid-template-columns: 92px 1fr 34px;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bar {
+      height: 8px;
+      border: 1px solid var(--line);
+      border-radius: 99px;
+      background: #0b1220;
+      overflow: hidden;
+    }
+
+    .bar > i {
+      display: block;
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--blue), #74b6ff);
+    }
+
+    .bar.violet > i {
+      background: linear-gradient(90deg, var(--violet), #cabdff);
+    }
+
+    .bar.gold > i {
+      background: linear-gradient(90deg, var(--gold), #efd06c);
+    }
+
+    .bar.green > i {
+      background: linear-gradient(90deg, #30ad7e, var(--green));
+    }
+
+    .family-board {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 14px;
+    }
+
+    .family-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+      margin: 0 0 12px;
+    }
+
+    .family-card {
+      min-height: 92px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #101b2d;
+    }
+
+    .family-card.active {
+      border-color: var(--blue);
+      background: #132a50;
+      box-shadow: inset 0 0 0 1px rgba(47, 128, 255, .35);
+    }
+
+    .family-card h5 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .family-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.35;
+      font-size: 12px;
+    }
+
+    .family-card .models {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 10px;
+    }
+
+    .model-pill {
+      min-height: 22px;
+      padding: 3px 7px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: #0b1322;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .model-pill.active {
+      border-color: var(--blue);
+      background: #173166;
+      color: #eff6ff;
+    }
+
+    .verdict {
+      padding: 14px;
+      border: 1px solid #385c94;
+      border-radius: var(--radius);
+      background: #12233d;
+    }
+
+    .verdict h5 {
+      margin: 0 0 7px;
+      color: #90beff;
+      font-size: 14px;
+    }
+
+    .verdict p {
+      margin: 0;
+      color: var(--text);
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .comparison-grid > div {
+      min-height: 52px;
+      padding: 9px;
+      border-right: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line-soft);
+      background: #101a2b;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .comparison-grid > div:nth-child(6n) {
+      border-right: 0;
+    }
+
+    .comparison-grid .head {
+      min-height: 38px;
+      background: #0a1220;
+      color: #dbe8ff;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .comparison-grid .model {
+      color: #edf4ff;
+      font-weight: 900;
+    }
+
+    .comparison-grid .best {
+      background: #132a50;
+      color: #d8e8ff;
+      box-shadow: inset 3px 0 0 var(--blue);
+    }
+
+    .score {
+      display: flex;
+      gap: 3px;
+      margin-top: 4px;
+    }
+
+    .score i {
+      width: 15px;
+      height: 7px;
+      border-radius: 2px;
+      background: #27354c;
+    }
+
+    .score i.on {
+      background: var(--blue);
+    }
+
+    .score.gold i.on {
+      background: var(--gold);
+    }
+
+    .score.green i.on {
+      background: var(--green);
+    }
+
+    .b-layout {
+      display: grid;
+      grid-template-columns: 1.45fr .75fr;
+      gap: 14px;
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .filter {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #0e1829;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .filter.active {
+      border-color: var(--gold);
+      background: var(--gold-soft);
+      color: #f1d07a;
+    }
+
+    .side-panel {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .side-panel h4 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .recommend-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    .recommend {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 9px;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      background: #0d1728;
+    }
+
+    .recommend.active {
+      border-color: var(--blue);
+      background: #142842;
+    }
+
+    .rank {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: #1b2a42;
+      color: #dceaff;
+      font-weight: 900;
+    }
+
+    .recommend strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 13px;
+    }
+
+    .recommend span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .wizard {
+      display: grid;
+      grid-template-columns: 1fr .85fr;
+      gap: 14px;
+    }
+
+    .steps {
+      display: grid;
+      gap: 12px;
+    }
+
+    .step-card {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .step-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .step-title h4 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .step-title span {
+      color: var(--dim);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .choice-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 9px;
+    }
+
+    .choice {
+      min-height: 96px;
+      padding: 11px;
+      border: 1px solid var(--line-soft);
+      border-radius: 7px;
+      background: #0d1728;
+    }
+
+    .choice.active {
+      border-color: var(--blue);
+      background: #132a50;
+      box-shadow: inset 0 0 0 1px rgba(47, 128, 255, .25);
+    }
+
+    .choice strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #edf4ff;
+      font-size: 13px;
+    }
+
+    .choice p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.35;
+      font-size: 12px;
+    }
+
+    .result-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      padding: 16px;
+      border: 1px solid #35629e;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(21, 45, 80, .9), rgba(16, 26, 43, 1)),
+        var(--panel);
+    }
+
+    .result-card h4 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .result-card .big-model {
+      margin: 0 0 10px;
+      color: #ffffff;
+      font-size: 34px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .result-card p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .explain-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 9px;
+      margin-top: auto;
+    }
+
+    .explain {
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(10, 18, 32, .75);
+    }
+
+    .explain strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 12px;
+    }
+
+    .explain span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .rail-layout {
+      display: grid;
+      grid-template-columns: 230px 1fr;
+      min-height: 540px;
+    }
+
+    .rail {
+      padding: 12px;
+      border-right: 1px solid var(--line-soft);
+      background: #091221;
+    }
+
+    .rail-item {
+      display: grid;
+      grid-template-columns: 5px 1fr;
+      gap: 10px;
+      min-height: 70px;
+      padding: 10px 8px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      color: var(--muted);
+    }
+
+    .rail-item + .rail-item {
+      margin-top: 6px;
+    }
+
+    .rail-item i {
+      display: block;
+      border-radius: 99px;
+      background: var(--line);
+    }
+
+    .rail-item.active {
+      border-color: var(--blue);
+      background: #132a50;
+      color: var(--text);
+    }
+
+    .rail-item.active i {
+      background: var(--blue);
+    }
+
+    .rail-item.gold i {
+      background: var(--gold);
+    }
+
+    .rail-item.violet i {
+      background: var(--violet);
+    }
+
+    .rail-item.green i {
+      background: var(--green);
+    }
+
+    .rail-item strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .rail-item span {
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    .rail-content {
+      padding: 16px;
+      background: #0c1424;
+    }
+
+    .model-switch {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .model-switch .model-pill {
+      min-height: 34px;
+      padding: 7px 12px;
+      font-size: 13px;
+    }
+
+    .hero-detail {
+      display: grid;
+      grid-template-columns: 1.25fr .75fr;
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .hero-copy {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .hero-copy h4 {
+      margin: 0 0 8px;
+      font-size: 26px;
+    }
+
+    .hero-copy p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .metric-stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .metric-box {
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #101a2b;
+    }
+
+    .metric-box strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .f-grid {
+      display: grid;
+      grid-template-columns: .85fr 1.15fr;
+      gap: 14px;
+    }
+
+    .compact-top {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .kpi {
+      min-height: 80px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #101a2b;
+    }
+
+    .kpi strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .kpi span {
+      color: #edf4ff;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .matrix-mini {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .mini-model {
+      min-height: 120px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #0d1728;
+    }
+
+    .mini-model.active {
+      border-color: var(--blue);
+      background: #132a50;
+    }
+
+    .mini-model strong {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .mini-model p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      line-height: 1.32;
+      font-size: 12px;
+    }
+
+    .f-detail {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .f-detail h4 {
+      margin: 0 0 9px;
+      font-size: 22px;
+    }
+
+    .dense-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      font-size: 12px;
+    }
+
+    .dense-table th,
+    .dense-table td {
+      padding: 9px;
+      border-bottom: 1px solid var(--line-soft);
+      text-align: left;
+      color: var(--muted);
+    }
+
+    .dense-table th {
+      background: #0a1220;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-size: 11px;
+    }
+
+    .dense-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .dense-table td:first-child {
+      color: #edf4ff;
+      font-weight: 900;
+    }
+
+    @media (max-width: 1100px) {
+      .intro,
+      .family-board,
+      .b-layout,
+      .wizard,
+      .hero-detail,
+      .f-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .family-grid,
+      .compact-top {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .comparison-grid {
+        grid-template-columns: repeat(3, minmax(130px, 1fr));
+      }
+
+      .comparison-grid > div:nth-child(6n) {
+        border-right: 1px solid var(--line-soft);
+      }
+
+      .comparison-grid > div:nth-child(3n) {
+        border-right: 0;
+      }
+
+      .rail-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        border-right: 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        justify-content: flex-start;
+      }
+
+      main {
+        width: min(100vw - 20px, 1480px);
+      }
+
+      .hint-row,
+      .two-col,
+      .choice-grid,
+      .explain-row,
+      .family-grid,
+      .compact-top,
+      .matrix-mini {
+        grid-template-columns: 1fr;
+      }
+
+      .tabs {
+        overflow-x: auto;
+      }
+
+      .tab,
+      .family-tab {
+        min-width: 120px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Подсказка по моделям</h1>
+      <p>Пять визуальных направлений для Qt GUI. Все макеты статические.</p>
+    </div>
+    <nav class="nav" aria-label="Навигация по вариантам">
+      <a href="#variant-a">A. Семейства</a>
+      <a href="#variant-b">B. Матрица</a>
+      <a href="#variant-c">C. Мастер</a>
+      <a href="#variant-d">D. Рейл</a>
+      <a href="#variant-f">F. Командная</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro">
+      <article class="intro-card">
+        <h2>Задача макетов</h2>
+        <p>Показать, как подсказку можно превратить из справки в быстрый инструмент выбора модели. Я оставил стиль близким к текущему темному интерфейсу, но добавил более ясную группировку, рейтинги и вердикты.</p>
+      </article>
+      <article class="intro-card">
+        <h2>Как читать</h2>
+        <p>A и D лучше для вкладок по семействам. B лучше для сравнения. C лучше для новичка. F самый плотный вариант для опытного пользователя.</p>
+      </article>
+    </section>
+
+    <section class="section" id="variant-a">
+      <div class="section-title">
+        <h2>A. Семейства сверху</h2>
+        <span>Самый близкий к текущему окну: меняем порядок и добавляем понятные группы.</span>
+      </div>
+      <div class="mock-shell">
+        <div class="dialog">
+          <div class="dialog-head">
+            <h3>Подсказка по моделям обучения</h3>
+            <div class="head-actions">
+              <span class="mini-button">Коротко</span>
+              <span class="mini-button">Подробно</span>
+              <span class="close-button">X</span>
+            </div>
+          </div>
+          <div class="dialog-body">
+            <div class="hint-row">
+              <div class="hint-card">
+                <strong>Скорость и простота</strong>
+                <p>DQN и PPO - быстрые итерации, удобный старт обучения.</p>
+              </div>
+              <div class="hint-card violet">
+                <strong>Качество и поиск</strong>
+                <p>AZ Tree и GMZ - просчет вперед, дороже по времени, сильнее тактически.</p>
+              </div>
+            </div>
+
+            <div class="family-grid">
+              <div class="family-card active">
+                <h5>Быстрый старт</h5>
+                <p>Без поиска. Хорошо для первых прогонов и базовых сравнений.</p>
+                <div class="models">
+                  <span class="model-pill active">DQN</span>
+                  <span class="model-pill">PPO</span>
+                </div>
+              </div>
+              <div class="family-card">
+                <h5>Поиск</h5>
+                <p>MCTS и планирование. Медленнее, но сильнее в сложных ходах.</p>
+                <div class="models">
+                  <span class="model-pill">AZ Tree</span>
+                  <span class="model-pill">GMZ</span>
+                </div>
+              </div>
+              <div class="family-card">
+                <h5>Компромисс</h5>
+                <p>Self-play без полного дерева. Быстрее ход, меньше тяжелого поиска.</p>
+                <div class="models">
+                  <span class="model-pill">AZ Proxy</span>
+                </div>
+              </div>
+              <div class="family-card">
+                <h5>Эксперимент</h5>
+                <p>Продвинутые режимы. Нужны аккуратные настройки и больше контроля.</p>
+                <div class="models">
+                  <span class="model-pill">SMZ</span>
+                  <span class="model-pill">GAZ</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="family-board">
+              <article class="content-card">
+                <h4>DQN (Deep Q-Network)</h4>
+                <p class="lead">Надежный базовый агент. Быстро стартует, хорошо подходит для тестов и долгих прогонов.</p>
+                <div class="chips">
+                  <span class="chip">Классика+</span>
+                  <span class="chip">Надежный</span>
+                  <span class="chip">Средний train</span>
+                  <span class="chip">Q-оценки</span>
+                </div>
+                <div class="two-col">
+                  <div class="subblock">
+                    <h5><span class="marker">i</span> Что это</h5>
+                    <p>ИИ оценивает пользу каждого действия в текущей ситуации и выбирает лучший вариант без отдельного поиска по дереву.</p>
+                  </div>
+                  <div class="subblock">
+                    <h5><span class="marker">></span> Когда брать</h5>
+                    <p>Когда нужен понятный старт, стабильная baseline-модель и быстрые сравнения с PPO/AZ/GMZ.</p>
+                  </div>
+                </div>
+              </article>
+
+              <aside class="verdict">
+                <h5>Быстрый вердикт</h5>
+                <p>DQN - хороший первый выбор для 100-500 эпизодов. Если нужно качество в сложной тактике, позже сравнить с AZ Tree или GMZ.</p>
+                <div class="rating-list">
+                  <div class="rating"><span>Скорость</span><div class="bar"><i style="width: 78%"></i></div><b>4/5</b></div>
+                  <div class="rating"><span>Качество</span><div class="bar gold"><i style="width: 60%"></i></div><b>3/5</b></div>
+                  <div class="rating"><span>Сложность</span><div class="bar green"><i style="width: 36%"></i></div><b>2/5</b></div>
+                  <div class="rating"><span>Бюджет</span><div class="bar violet"><i style="width: 48%"></i></div><b>2/5</b></div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="variant-b">
+      <div class="section-title">
+        <h2>B. Матрица выбора</h2>
+        <span>Лучший вариант, если пользователь чаще спрашивает: "что мне выбрать?".</span>
+      </div>
+      <div class="mock-shell">
+        <div class="dialog">
+          <div class="dialog-head">
+            <h3>Сравнение моделей обучения</h3>
+            <div class="head-actions">
+              <span class="mini-button">Семейства</span>
+              <span class="mini-button">Сравнение</span>
+              <span class="close-button">X</span>
+            </div>
+          </div>
+          <div class="dialog-body">
+            <div class="filters">
+              <span class="filter active">Профиль: быстрый старт</span>
+              <span class="filter">100 эпизодов</span>
+              <span class="filter">Only War</span>
+              <span class="filter">Новичку</span>
+              <span class="filter">Качество</span>
+            </div>
+            <div class="b-layout">
+              <div class="comparison-grid" aria-label="Матрица сравнения моделей">
+                <div class="head">Модель</div>
+                <div class="head">Семейство</div>
+                <div class="head">Скорость</div>
+                <div class="head">Качество</div>
+                <div class="head">Сложность</div>
+                <div class="head">Когда брать</div>
+
+                <div class="model best">DQN</div>
+                <div class="best">Быстрый старт</div>
+                <div class="best">Высокая<div class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></div>
+                <div class="best">Среднее<div class="score gold"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div></div>
+                <div class="best">Низкая<div class="score green"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+                <div class="best">Первый надежный baseline</div>
+
+                <div class="model">PPO</div>
+                <div>Быстрый старт</div>
+                <div>Высокая<div class="score"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></div>
+                <div>Среднее<div class="score gold"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div></div>
+                <div>Средняя<div class="score green"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div></div>
+                <div>Сравнить с value-based</div>
+
+                <div class="model">AZ Tree</div>
+                <div>Поиск</div>
+                <div>Низкая<div class="score"><i class="on"></i><i></i><i></i><i></i><i></i></div></div>
+                <div>Высокое<div class="score gold"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></div>
+                <div>Высокая<div class="score green"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></div>
+                <div>Сложная тактика и MCTS</div>
+
+                <div class="model">GMZ</div>
+                <div>Поиск</div>
+                <div>Средняя<div class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+                <div>Высокое<div class="score gold"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></div>
+                <div>Высокая<div class="score green"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div></div>
+                <div>Планирование с MuZero</div>
+
+                <div class="model">SMZ / GAZ</div>
+                <div>Эксперимент</div>
+                <div>Разная<div class="score"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div></div>
+                <div>Потенциал<div class="score gold"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div></div>
+                <div>Очень высокая<div class="score green"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div></div>
+                <div>Исследования и тонкая настройка</div>
+              </div>
+              <aside class="side-panel">
+                <h4>Рекомендация под текущий запуск</h4>
+                <div class="recommend-list">
+                  <div class="recommend active">
+                    <span class="rank">1</span>
+                    <div><strong>DQN</strong><span>быстро, понятно, хороший baseline</span></div>
+                    <span class="chip">OK</span>
+                  </div>
+                  <div class="recommend">
+                    <span class="rank">2</span>
+                    <div><strong>PPO</strong><span>полезно сравнить поведение</span></div>
+                    <span class="chip dark">alt</span>
+                  </div>
+                  <div class="recommend">
+                    <span class="rank">3</span>
+                    <div><strong>AZ Tree</strong><span>лучше позже, когда будет больше бюджета</span></div>
+                    <span class="chip gold">slow</span>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="variant-c">
+      <div class="section-title">
+        <h2>C. Мастер выбора</h2>
+        <span>Самый дружелюбный для новичка: не читать справку, а ответить на 2-3 вопроса.</span>
+      </div>
+      <div class="mock-shell">
+        <div class="dialog">
+          <div class="dialog-head">
+            <h3>Помощник выбора модели</h3>
+            <div class="head-actions">
+              <span class="mini-button">Сбросить</span>
+              <span class="close-button">X</span>
+            </div>
+          </div>
+          <div class="dialog-body wizard">
+            <div class="steps">
+              <article class="step-card">
+                <div class="step-title">
+                  <h4>Что важнее в этом запуске?</h4>
+                  <span>Шаг 1 из 3</span>
+                </div>
+                <div class="choice-grid">
+                  <div class="choice active">
+                    <strong>Быстро обучить</strong>
+                    <p>Нужен рабочий агент и короткие итерации.</p>
+                  </div>
+                  <div class="choice">
+                    <strong>Максимум качества</strong>
+                    <p>Готов ждать ради более сильной тактики.</p>
+                  </div>
+                  <div class="choice">
+                    <strong>Эксперимент</strong>
+                    <p>Интересны сложные self-play сценарии.</p>
+                  </div>
+                </div>
+              </article>
+              <article class="step-card">
+                <div class="step-title">
+                  <h4>Сколько времени готово уйти?</h4>
+                  <span>Шаг 2 из 3</span>
+                </div>
+                <div class="choice-grid">
+                  <div class="choice active">
+                    <strong>Минуты</strong>
+                    <p>Проверить пайплайн и первые результаты.</p>
+                  </div>
+                  <div class="choice">
+                    <strong>Часы</strong>
+                    <p>Нормальное обучение и сравнение моделей.</p>
+                  </div>
+                  <div class="choice">
+                    <strong>Долго</strong>
+                    <p>Можно запускать тяжелый поиск и self-play.</p>
+                  </div>
+                </div>
+              </article>
+              <article class="step-card">
+                <div class="step-title">
+                  <h4>Насколько понятным должен быть результат?</h4>
+                  <span>Шаг 3 из 3</span>
+                </div>
+                <div class="choice-grid">
+                  <div class="choice active">
+                    <strong>Прозрачно</strong>
+                    <p>Хочу легко объяснить, почему выбран ход.</p>
+                  </div>
+                  <div class="choice">
+                    <strong>Баланс</strong>
+                    <p>Нужны качество и приемлемая сложность.</p>
+                  </div>
+                  <div class="choice">
+                    <strong>Не важно</strong>
+                    <p>Главное - сила итогового поведения.</p>
+                  </div>
+                </div>
+              </article>
+            </div>
+            <aside class="result-card">
+              <h4>Рекомендуется</h4>
+              <div class="big-model">DQN</div>
+              <div class="chips">
+                <span class="chip">Быстрый старт</span>
+                <span class="chip">Надежный baseline</span>
+                <span class="chip dark">Можно сравнить с PPO</span>
+              </div>
+              <p>Под текущий профиль DQN даст самый понятный старт. Если первые прогоны стабильные, следующим шагом логично сравнить PPO, затем AZ Tree/GMZ на большем бюджете.</p>
+              <div class="explain-row">
+                <div class="explain">
+                  <strong>Почему не AZ Tree?</strong>
+                  <span>Для короткого запуска MCTS может быть слишком дорогим.</span>
+                </div>
+                <div class="explain">
+                  <strong>Когда перейти?</strong>
+                  <span>Когда baseline уже понятен и есть время на качество.</span>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="variant-d">
+      <div class="section-title">
+        <h2>D. Левый рейл семейств</h2>
+        <span>Более профессиональная компоновка: семейства слева, детали и модели справа.</span>
+      </div>
+      <div class="mock-shell">
+        <div class="dialog">
+          <div class="dialog-head">
+            <h3>Подсказка по моделям обучения</h3>
+            <div class="head-actions">
+              <span class="mini-button">Сравнить</span>
+              <span class="close-button">X</span>
+            </div>
+          </div>
+          <div class="rail-layout">
+            <aside class="rail">
+              <div class="rail-item active">
+                <i></i>
+                <div><strong>Быстрый старт</strong><span>DQN, PPO. Быстро проверить и обучить.</span></div>
+              </div>
+              <div class="rail-item gold">
+                <i></i>
+                <div><strong>Поиск</strong><span>AZ Tree, GMZ. Дороже, но умнее тактически.</span></div>
+              </div>
+              <div class="rail-item violet">
+                <i></i>
+                <div><strong>Компромисс</strong><span>AZ Proxy. Self-play без полного MCTS.</span></div>
+              </div>
+              <div class="rail-item green">
+                <i></i>
+                <div><strong>Эксперимент</strong><span>SMZ, GAZ. Продвинутые сценарии.</span></div>
+              </div>
+            </aside>
+            <div class="rail-content">
+              <div class="model-switch">
+                <span class="model-pill active">DQN</span>
+                <span class="model-pill">PPO</span>
+              </div>
+              <div class="hero-detail">
+                <article class="hero-copy">
+                  <h4>DQN</h4>
+                  <p class="lead">Хороший первый агент для обучения, тестов и сравнения.</p>
+                  <div class="two-col">
+                    <div class="subblock">
+                      <h5><span class="marker">+</span> Сильные стороны</h5>
+                      <ul>
+                        <li>понятная логика выбора хода;</li>
+                        <li>хороший baseline для новых миссий;</li>
+                        <li>быстрее тяжелых search-моделей;</li>
+                        <li>удобно сравнивать с PPO и AZ.</li>
+                      </ul>
+                    </div>
+                    <div class="subblock">
+                      <h5><span class="marker warn">!</span> Ограничения</h5>
+                      <ul>
+                        <li>может хуже играть сложные тактические позиции;</li>
+                        <li>чувствителен к настройкам;</li>
+                        <li>требует аккуратного подбора гиперпараметров.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </article>
+                <aside class="metric-stack">
+                  <div class="metric-box">
+                    <strong>Когда выбирать</strong>
+                    <p class="lead">Первый запуск, быстрый baseline, проверка train/eval пайплайна.</p>
+                  </div>
+                  <div class="metric-box">
+                    <strong>Метрики</strong>
+                    <div class="rating-list">
+                      <div class="rating"><span>Скорость</span><div class="bar"><i style="width: 80%"></i></div><b>4/5</b></div>
+                      <div class="rating"><span>Качество</span><div class="bar gold"><i style="width: 62%"></i></div><b>3/5</b></div>
+                      <div class="rating"><span>Сложность</span><div class="bar green"><i style="width: 35%"></i></div><b>2/5</b></div>
+                    </div>
+                  </div>
+                  <div class="metric-box">
+                    <strong>Следующий шаг</strong>
+                    <p class="lead">Сравнить с PPO. Если нужен поиск - перейти к AZ Tree или GMZ.</p>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="variant-f">
+      <div class="section-title">
+        <h2>F. Командная панель</h2>
+        <span>Самый плотный вариант: для опытного пользователя, который хочет быстро принять решение.</span>
+      </div>
+      <div class="mock-shell">
+        <div class="dialog">
+          <div class="dialog-head">
+            <h3>Модели обучения: быстрый выбор</h3>
+            <div class="head-actions">
+              <span class="mini-button">Текущие настройки</span>
+              <span class="close-button">X</span>
+            </div>
+          </div>
+          <div class="dialog-body">
+            <div class="compact-top">
+              <div class="kpi"><strong>Лучший старт</strong><span>DQN</span></div>
+              <div class="kpi"><strong>Для качества</strong><span>AZ Tree</span></div>
+              <div class="kpi"><strong>Компромисс</strong><span>AZ Proxy</span></div>
+              <div class="kpi"><strong>Эксперимент</strong><span>SMZ</span></div>
+            </div>
+            <div class="f-grid">
+              <div>
+                <div class="matrix-mini">
+                  <article class="mini-model active">
+                    <strong>DQN <span class="chip">1</span></strong>
+                    <p>Быстрый baseline, понятное поведение, хороший первый запуск.</p>
+                    <div class="rating-list">
+                      <div class="rating"><span>Speed</span><div class="bar"><i style="width: 82%"></i></div><b>4</b></div>
+                      <div class="rating"><span>Quality</span><div class="bar gold"><i style="width: 60%"></i></div><b>3</b></div>
+                    </div>
+                  </article>
+                  <article class="mini-model">
+                    <strong>PPO <span class="chip dark">2</span></strong>
+                    <p>Быстрый policy-gradient вариант для сравнения поведения.</p>
+                    <div class="rating-list">
+                      <div class="rating"><span>Speed</span><div class="bar"><i style="width: 75%"></i></div><b>4</b></div>
+                      <div class="rating"><span>Quality</span><div class="bar gold"><i style="width: 58%"></i></div><b>3</b></div>
+                    </div>
+                  </article>
+                  <article class="mini-model">
+                    <strong>AZ Tree <span class="chip gold">Q</span></strong>
+                    <p>Сильнее в тактике, но дороже по времени и вычислениям.</p>
+                    <div class="rating-list">
+                      <div class="rating"><span>Speed</span><div class="bar"><i style="width: 26%"></i></div><b>1</b></div>
+                      <div class="rating"><span>Quality</span><div class="bar gold"><i style="width: 88%"></i></div><b>5</b></div>
+                    </div>
+                  </article>
+                </div>
+                <table class="dense-table">
+                  <thead>
+                    <tr>
+                      <th>Семейство</th>
+                      <th>Модели</th>
+                      <th>Плюс</th>
+                      <th>Цена</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Быстрый старт</td>
+                      <td>DQN, PPO</td>
+                      <td>быстрые итерации</td>
+                      <td>ниже качество поиска</td>
+                    </tr>
+                    <tr>
+                      <td>Поиск</td>
+                      <td>AZ Tree, GMZ</td>
+                      <td>сильнее тактика</td>
+                      <td>дорого по времени</td>
+                    </tr>
+                    <tr>
+                      <td>Компромисс</td>
+                      <td>AZ Proxy</td>
+                      <td>быстрее self-play</td>
+                      <td>меньше полноценного MCTS</td>
+                    </tr>
+                    <tr>
+                      <td>Эксперимент</td>
+                      <td>SMZ, GAZ</td>
+                      <td>потенциал</td>
+                      <td>сложные настройки</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <article class="f-detail">
+                <h4>DQN выбран как стартовая рекомендация</h4>
+                <p class="lead">Для короткого train-прогона и проверки пайплайна лучше начать с DQN. Он дает понятный baseline и не требует тяжелого поиска.</p>
+                <div class="chips">
+                  <span class="chip">Рекомендуется сейчас</span>
+                  <span class="chip dark">следом PPO</span>
+                  <span class="chip gold">для качества AZ Tree</span>
+                </div>
+                <div class="two-col">
+                  <div class="subblock">
+                    <h5><span class="marker">1</span> Что сделать</h5>
+                    <p>Запустить DQN на текущих настройках, затем сравнить с PPO на том же бюджете эпизодов.</p>
+                  </div>
+                  <div class="subblock">
+                    <h5><span class="marker warn">2</span> Когда менять</h5>
+                    <p>Если baseline стабилен, но не хватает тактики, перейти к AZ Tree или GMZ.</p>
+                  </div>
+                </div>
+                <table class="dense-table">
+                  <thead>
+                    <tr>
+                      <th>Критерий</th>
+                      <th>DQN</th>
+                      <th>PPO</th>
+                      <th>AZ Tree</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Быстрая проверка</td>
+                      <td>лучше</td>
+                      <td>хорошо</td>
+                      <td>плохо</td>
+                    </tr>
+                    <tr>
+                      <td>Сложная тактика</td>
+                      <td>средне</td>
+                      <td>средне</td>
+                      <td>лучше</td>
+                    </tr>
+                    <tr>
+                      <td>Простота объяснения</td>
+                      <td>хорошо</td>
+                      <td>средне</td>
+                      <td>сложнее</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
