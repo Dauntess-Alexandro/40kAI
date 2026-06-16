@@ -6657,7 +6657,11 @@ class GUIController(QtCore.QObject):
             pid=self._process.processId() or None,
             algo=str(self._training_algo),
             active=True,
-            remote_cfg=self._gmz_remote_cfg_for_telemetry() or self._az_remote_cfg_for_telemetry(),
+            remote_cfg=(
+                self._gmz_remote_cfg_for_telemetry()
+                or self._smz_remote_cfg_for_telemetry()
+                or self._az_remote_cfg_for_telemetry()
+            ),
             batch_size_hint=self._gmz_batch_size_hint(),
         )
         self._telemetry.start()
@@ -6677,6 +6681,28 @@ class GUIController(QtCore.QObject):
             return {
                 "host": data.get("host", "127.0.0.1"),
                 "port": int(data.get("port", 5555)),
+                "auth_token": data.get("auth_token", ""),
+                "transport": "gmz",
+            }
+        except Exception:
+            return None
+
+    def _smz_remote_cfg_for_telemetry(self):
+        # Remote IS (и карточка ПК2) для Sampled MuZero. SMZ ходит по GMZ-транспорту,
+        # поэтому transport="gmz" (RemoteTelemetryProbe по умолчанию — gmz health_check).
+        if str(self._training_algo) != "sampled_muzero":
+            return None
+        try:
+            from app.gui_qt.remote_is_store import remote_is_lan_active
+        except Exception:
+            return None
+        try:
+            data = self._remote_is_smz
+            if not remote_is_lan_active(data):
+                return None
+            return {
+                "host": data.get("host", "127.0.0.1"),
+                "port": int(data.get("port", 5560)),
                 "auth_token": data.get("auth_token", ""),
                 "transport": "gmz",
             }
