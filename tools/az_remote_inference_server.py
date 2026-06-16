@@ -26,6 +26,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net  # noqa: E402
 from core.models.az_inference_protocol import (  # noqa: E402
     AZ_PROTOCOL_VERSION,
     build_health_response,
@@ -33,7 +34,6 @@ from core.models.az_inference_protocol import (  # noqa: E402
     encode_message,
 )
 from core.models.az_inference_server import AZInferenceEngine  # noqa: E402
-from core.models.alphazero_model import make_alphazero_net, load_alphazero_state_dict  # noqa: E402
 from core.models.utils import normalize_state_dict  # noqa: E402
 
 
@@ -74,9 +74,12 @@ class AZRemoteInferenceServer:
         auth_token: str,
         log_path: Path | None,
         max_queue_depth: int = 128,
+        algo_label: str = "AZ",
     ) -> None:
         self.host = str(host)
         self.port = int(port)
+        # Лог-тег REMOTE_IS: AZ tree → AZ; gumbel_az → GAZ (сервер один, сеть одна).
+        self.tag = str(algo_label or "AZ").strip().upper() or "AZ"
         self.weights_path = str(weights_path)
         self.batch_size = max(1, int(batch_size))
         self.batch_interval_s = float(batch_interval_ms) / 1000.0
@@ -111,12 +114,12 @@ class AZRemoteInferenceServer:
             payload = torch.load(weight_src, map_location="cpu", weights_only=False)
             sd = payload.get("state_dict") if isinstance(payload, dict) else payload
             load_alphazero_state_dict(net, normalize_state_dict(sd), log_fn=None)
-            _log(f"[AZ][REMOTE_IS] loaded init weights from {weight_src}", log_path)
+            _log(f"[{self.tag}][REMOTE_IS] loaded init weights from {weight_src}", log_path)
         elif os.path.isfile(self.weights_path):
             payload = torch.load(self.weights_path, map_location="cpu", weights_only=False)
             sd = payload.get("state_dict") if isinstance(payload, dict) else payload
             load_alphazero_state_dict(net, normalize_state_dict(sd), log_fn=None)
-            _log(f"[AZ][REMOTE_IS] loaded weights from {self.weights_path}", log_path)
+            _log(f"[{self.tag}][REMOTE_IS] loaded weights from {self.weights_path}", log_path)
         else:
             raise FileNotFoundError(
                 f"Веса не найдены: {self.weights_path!r}. "
@@ -166,10 +169,10 @@ class AZRemoteInferenceServer:
         self._router = self._ctx.socket(zmq.ROUTER)
         self._router.setsockopt(zmq.LINGER, 0)
         self._router.bind(f"tcp://{self.host}:{self.port}")
-        _log(f"[AZ][REMOTE_IS] listening on {self.host}:{self.port} device={torch_device}", log_path)
+        _log(f"[{self.tag}][REMOTE_IS] listening on {self.host}:{self.port} device={torch_device}", log_path)
         # Маркер нового кода телеметрии: видно в логе ПК2 = health_check шлёт CPU/RAM ПК2.
         _log(
-            f"[AZ][REMOTE_IS] telemetry cpu={'on' if self._psutil is not None else 'OFF(psutil?)'} "
+            f"[{self.tag}][REMOTE_IS] telemetry cpu={'on' if self._psutil is not None else 'OFF(psutil?)'} "
             f"cpu_label={self._cpu_label!r}",
             log_path,
         )
@@ -317,7 +320,7 @@ class AZRemoteInferenceServer:
         except Exception as exc:
             for item in batch:
                 self._send_error(item.identity, f"batch error: {exc}")
-            _log(f"[AZ][REMOTE_IS] batch_error: {exc}", self.log_path)
+            _log(f"[{self.tag}][REMOTE_IS] batch_error: {exc}", self.log_path)
             return
 
         cursor = 0
@@ -353,9 +356,9 @@ class AZRemoteInferenceServer:
             except KeyboardInterrupt:
                 break
             except Exception as exc:
-                _log(f"[AZ][REMOTE_IS] loop_error: {exc}", self.log_path)
+                _log(f"[{self.tag}][REMOTE_IS] loop_error: {exc}", self.log_path)
                 time.sleep(0.05)
-        _log("[AZ][REMOTE_IS] shutdown complete", self.log_path)
+        _log(f"[{self.tag}][REMOTE_IS] shutdown complete", self.log_path)
 
 
 def _load_cfg(path: str | None) -> dict[str, Any]:
@@ -384,14 +387,16 @@ def main() -> int:
     parser.add_argument("--batch-interval-ms", type=float, default=10.0)
     parser.add_argument("--auth-token", default="")
     parser.add_argument("--log-file", default=None)
+    parser.add_argument("--algo-label", default="AZ", help="Лог-тег REMOTE_IS: AZ или GAZ")
     args = parser.parse_args()
 
     if args.sync_method != "smb":
         print("v1 поддерживает только --sync-method smb", file=sys.stderr)
         return 2
 
+    _label = str(args.algo_label or "AZ").strip().lower() or "az"
     log_path = Path(args.log_file) if args.log_file else (
-        _REPO_ROOT / "runtime" / "logs" / f"az_remote_is_{datetime.now().strftime('%Y-%m-%d')}.log"
+        _REPO_ROOT / "runtime" / "logs" / f"{_label}_remote_is_{datetime.now().strftime('%Y-%m-%d')}.log"
     )
     net_cfg = _load_cfg(args.search_config)
     server = AZRemoteInferenceServer(
@@ -406,6 +411,7 @@ def main() -> int:
         batch_interval_ms=float(args.batch_interval_ms),
         auth_token=str(args.auth_token or ""),
         log_path=log_path,
+        algo_label=str(args.algo_label or "AZ"),
     )
 
     def _on_signal(_sig, _frame) -> None:

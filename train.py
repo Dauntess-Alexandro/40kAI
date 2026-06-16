@@ -8959,7 +8959,7 @@ def _az_env_worker_entry(
         )
         if mode == "remote":
             append_agent_log(
-                f"[AZ][REMOTE_CLIENT][CONN] worker={int(worker_id)} "
+                f"[{_AZ_LOG_TAG}][REMOTE_CLIENT][CONN] worker={int(worker_id)} "
                 f"tcp://{remote_host}:{int(remote_port)}"
             )
 
@@ -8994,17 +8994,17 @@ def _az_env_worker_entry(
         ep_limit = int(episodes)
         ep_total_label = str(ep_limit) if ep_limit > 0 else "open"
         append_agent_log(
-            f"[AZ][ENV_WORKER] worker={int(worker_id)} started episodes={ep_total_label} "
+            f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} started episodes={ep_total_label} "
             f"rollout_sink={rollout_sink_mode}"
         )
         ep_iter = range(ep_limit) if ep_limit > 0 else itertools.count()
         for _ep in ep_iter:
             if dist_stop_flag_path and az_dist_stop_requested(dist_stop_flag_path):
-                append_agent_log(f"[AZ][ENV_WORKER] worker={int(worker_id)} stop.flag — выход")
+                append_agent_log(f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} stop.flag — выход")
                 break
             ep_idx_1based = int(_ep) + 1
             print(
-                f"[AZ][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{ep_total_label} starting",
+                f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{ep_total_label} starting",
                 flush=True,
             )
             attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
@@ -9547,13 +9547,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         timeout=min(3.0, float(AZ_INFERENCE_TIMEOUT)),
                     )
                     append_agent_log(
-                        f"[AZ][REMOTE_CLIENT] health_check ok host={AZ_INFERENCE_REMOTE_HOST} "
+                        f"[{_AZ_LOG_TAG}][REMOTE_CLIENT] health_check ok host={AZ_INFERENCE_REMOTE_HOST} "
                         f"port={AZ_INFERENCE_REMOTE_PORT} policy_version={hc.get('policy_version', '?')} "
                         f"gpu={hc.get('gpu_name', '?')}"
                     )
                 except Exception as exc:
                     append_agent_log(
-                        f"[AZ][REMOTE_CLIENT] health_check failed host={AZ_INFERENCE_REMOTE_HOST}: {exc}"
+                        f"[{_AZ_LOG_TAG}][REMOTE_CLIENT] health_check failed host={AZ_INFERENCE_REMOTE_HOST}: {exc}"
                     )
                     hint_host = ""
                     if str(AZ_INFERENCE_REMOTE_HOST).strip() in ("127.0.0.1", "localhost", "::1"):
@@ -9599,7 +9599,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 )
                 inf_proc.start()
                 append_agent_log(
-                    f"[AZ][INF_SERVER] process spawned pid={inf_proc.pid} "
+                    f"[{_AZ_LOG_TAG}][INF_SERVER] process spawned pid={inf_proc.pid} "
                     f"workers={effective_num_workers}"
                 )
 
@@ -9992,7 +9992,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             p.join(timeout=2.0)
             if p.is_alive():
                 append_agent_log(
-                    f"[AZ][ENV_WORKER] процесс pid={p.pid} не завершился за 2с — terminate."
+                    f"[{_AZ_LOG_TAG}][ENV_WORKER] процесс pid={p.pid} не завершился за 2с — terminate."
                 )
                 p.terminate()
                 p.join(timeout=1.0)
@@ -10006,7 +10006,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             pass
         inf_proc.join(timeout=3.0)
         if inf_proc.is_alive():
-            append_agent_log("[AZ][INF_SERVER] process не завершился за 3с, terminate.")
+            append_agent_log(f"[{_AZ_LOG_TAG}][INF_SERVER] process не завершился за 3с, terminate.")
             inf_proc.terminate()
 
     if not last_checkpoint:
