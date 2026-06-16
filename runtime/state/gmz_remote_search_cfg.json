@@ -22,10 +22,9 @@
   "prior_weight": 0.25,
   "batch_recurrent": 1,
   "tree_reuse": 1,
-  "_generated_utc": "2026-06-16T07:55:23Z",
+  "_generated_utc": "2026-06-16T12:06:55Z",
   "_sources": [
-    "test",
-    "algo=gmz"
+    "train.py:auto"
   ],
   "_mission": "only_war"
 }
