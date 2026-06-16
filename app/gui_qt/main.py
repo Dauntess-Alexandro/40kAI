@@ -6662,7 +6662,11 @@ class GUIController(QtCore.QObject):
                 or self._smz_remote_cfg_for_telemetry()
                 or self._az_remote_cfg_for_telemetry()
             ),
-            batch_size_hint=self._gmz_batch_size_hint(),
+            batch_size_hint=(
+                self._smz_batch_size_hint()
+                if str(self._training_algo) == "sampled_muzero"
+                else self._gmz_batch_size_hint()
+            ),
         )
         self._telemetry.start()
 
@@ -6740,6 +6744,12 @@ class GUIController(QtCore.QObject):
                     self._default_gmz_hyperparams.get("inference_batch_size", 10),
                 )
             )
+        except Exception:
+            return None
+
+    def _smz_batch_size_hint(self) -> int | None:
+        try:
+            return int(self._smz_hyperparams.get("inference_batch_size", 8))
         except Exception:
             return None
 

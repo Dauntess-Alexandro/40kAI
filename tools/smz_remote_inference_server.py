@@ -382,6 +382,8 @@ def build_health_payload(
     ram_pct_system=None,
     ram_gb_system=None,
 ) -> dict:
+    # cpu_*/ram_* — опциональны (телеметрия CPU/RAM ПК2). Старый ПК2 их не шлёт → None,
+    # старый ПК1 (GUI) игнорирует. Обратная совместимость health_check сохраняется.
     return {
         "kind": "health_check",
         "status": "ok",
