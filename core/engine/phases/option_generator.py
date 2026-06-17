@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.engine.phases.stratagems import Trigger, legal_stratagem_options
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -97,25 +98,22 @@ def _alive_indices(health) -> list[int]:
 def command_window(env, side: str) -> DecisionWindow:
     """Окно командной фазы: Insane Bravery на провал Battle-shock.
 
-    Реальный провал теста определяется броском в рантайме; на уровне слоя мы
-    предлагаем агенту опцию заранее (PASS / использовать Bravery на юнита i),
-    гейтим только по наличию CP — как делает командная фаза env.
+    Опции Bravery берутся из реестра стратагем (legal_stratagem_options),
+    а не инлайнятся: единый источник истины по легальности CP.
     """
     e = _unwrap(env)
     health = e.unit_health if side == "model" else e.enemy_health
     cp = int(e.modelCP if side == "model" else e.enemyCP)
     options: list[ActionOption] = [ActionOption(kind=ActionKind.PASS, unit_idx=None)]
-    if cp >= 1:
-        for i in _alive_indices(health):
-            options.append(
-                ActionOption(
-                    kind=ActionKind.USE_STRATAGEM,
-                    unit_idx=int(i),
-                    param={"stratagem_id": "insane_bravery"},
-                    legacy_patch={"use_cp": 1, "cp_on": int(i)},
-                    meta={"stratagem_id": "insane_bravery", "cp_cost": 1},
-                )
-            )
+    options.extend(
+        legal_stratagem_options(
+            e,
+            side,
+            phase=Phase.COMMAND,
+            trigger=Trigger.BATTLE_SHOCK_FAILED,
+            candidate_unit_idxs=_alive_indices(health),
+        )
+    )
     return DecisionWindow(
         window_id=f"command:{side}",
         owner_side=side,

@@ -16,6 +16,16 @@ from core.engine.phases.option_generator import (
     movement_options_for_unit,
     shooting_options_for_unit,
 )
+from core.engine.phases.stratagems import (
+    REGISTRY,
+    StratagemDef,
+    Trigger,
+    UsageLimit,
+    by_id,
+    for_phase,
+    for_trigger,
+    legal_stratagem_options,
+)
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -43,4 +53,12 @@ __all__ = [
     "charge_options_for_unit",
     "compile_options_to_action_dict",
     "default_action_dict",
+    "StratagemDef",
+    "Trigger",
+    "UsageLimit",
+    "REGISTRY",
+    "by_id",
+    "for_phase",
+    "for_trigger",
+    "legal_stratagem_options",
 ]
