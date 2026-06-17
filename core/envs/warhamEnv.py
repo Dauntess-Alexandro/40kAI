@@ -3975,21 +3975,27 @@ class Warhammer40kEnv(gym.Env):
             )
             return None
 
-        use_it = True
         if manual:
             strat = self._prompt_yes_no("Использовать Smokescreen (1 CP)? (y/n): ")
             if strat is None:
                 self.game_over = True
                 return None
             use_it = strat
+        else:
+            use_it = self._should_use_reaction("smokescreen", defender_side, defender_idx, [defender_idx], phase, cp)
 
         if not use_it:
+            if not manual:
+                self._log_rule(
+                    defender_side,
+                    defender_idx,
+                    "Smokescreen",
+                    "Реакция пропущена политикой реакций.",
+                    phase=phase,
+                )
             return None
 
-        if defender_side == "model":
-            self.modelCP -= 1
-        else:
-            self.enemyCP -= 1
+        _apply_stratagem(self, defender_side, "smokescreen", defender_idx)
 
         self._log_rule(
             defender_side,

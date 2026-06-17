@@ -37,3 +37,29 @@ def test_should_use_reaction_policy_exception_falls_back_to_true():
 
     env.reaction_policy = boom
     assert env._should_use_reaction("smokescreen", "model", 0, [0], "shooting", 1) is True
+
+
+def test_smokescreen_fires_with_default_policy():
+    env = build_env()
+    env.unit_data[0]["Keywords"] = ["INFANTRY", "SMOKE"]
+    env.modelCP = 2
+    env.stratagem_used = []
+    env.battle_round = 1
+    with env.simulation_mode():
+        effect = env._maybe_use_smokescreen("model", 0, "shooting")
+    assert effect == "benefit of cover"
+    assert env.modelCP == 1
+    assert ("model", "smokescreen", 1) in env.stratagem_used
+
+
+def test_smokescreen_skipped_by_policy():
+    env = build_env()
+    env.unit_data[0]["Keywords"] = ["INFANTRY", "SMOKE"]
+    env.modelCP = 2
+    env.stratagem_used = []
+    env.reaction_policy = lambda ctx: False
+    with env.simulation_mode():
+        effect = env._maybe_use_smokescreen("model", 0, "shooting")
+    assert effect is None
+    assert env.modelCP == 2
+    assert env.stratagem_used == []
