@@ -1,3 +1,4 @@
+from core.engine.phases import phase_engine
 from core.engine.phases.option_generator import movement_options_for_unit
 from core.engine.phases.types import ActionKind
 from tests.engine.phases._helpers import build_env
@@ -59,6 +60,43 @@ def test_decide_move_zero_keeps_position():
             "model", action=_move_action(n, {}), battle_shock=[False] * n,
             decide_move=lambda i: 0,
         )
+        coords = list(env.unit_coords[0])
+    env.restore_state(snap)
+    assert coords == [2, 2]
+
+
+def _pick_index_for(unit_idx, k):
+    def decide(window):
+        if window.cursor_unit_idx == unit_idx:
+            for o in window.options:
+                if o.param.get("reachable_index") == k:
+                    return o
+        return window.options[0]  # stay (index 0)
+
+    return decide
+
+
+def test_run_movement_moves_unit():
+    env = build_env()
+    _setup(env)
+    chosen = _pick_last_move(env)
+    k = chosen.param["reachable_index"]
+    dest_x, dest_y = chosen.param["dest"]
+
+    snap = env.snapshot_state()
+    with env.simulation_mode():
+        phase_engine.run_movement(env, "model", _pick_index_for(0, k))
+        coords = list(env.unit_coords[0])
+    env.restore_state(snap)
+    assert coords == [int(dest_y), int(dest_x)]
+
+
+def test_run_movement_stay_keeps_position():
+    env = build_env()
+    _setup(env)
+    snap = env.snapshot_state()
+    with env.simulation_mode():
+        phase_engine.run_movement(env, "model", lambda window: window.options[0])
         coords = list(env.unit_coords[0])
     env.restore_state(snap)
     assert coords == [2, 2]
