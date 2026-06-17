@@ -4549,7 +4549,7 @@ class Warhammer40kEnv(gym.Env):
 
         return None
 
-    def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
+    def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None, decide_move=None):
         self.begin_phase(side, "movement")
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
@@ -4578,7 +4578,7 @@ class Warhammer40kEnv(gym.Env):
                 if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
                     base_m = int(self.unit_data[i]["Movement"])
                     label = "move_num_" + str(i)
-                    want = int(action[label])
+                    want = int(decide_move(i)) if decide_move is not None else int(action[label])
                     move_dir = int(action.get("move", 4))
                     advance_roll = None
                     movement = 0.0
