@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from core.engine.phases.types import Phase, Timing
+from core.engine.phases.types import ActionKind, ActionOption, Phase, Timing
 
 
 class Trigger(StrEnum):
@@ -107,3 +107,61 @@ def for_phase(phase: Phase) -> list[StratagemDef]:
 
 def for_trigger(trigger: Trigger) -> list[StratagemDef]:
     return [d for d in REGISTRY if d.trigger == trigger]
+
+
+def _unwrap(env):
+    """Снять gym-обёртку до Warhammer40kEnv (локально, без цикла на option_generator)."""
+    return getattr(env, "unwrapped", env)
+
+
+def legal_stratagem_options(
+    env,
+    side: str,
+    *,
+    phase: Phase,
+    trigger: Trigger,
+    candidate_unit_idxs: list[int] | None = None,
+) -> list[ActionOption]:
+    """Какие стратагемы доступны сейчас (read-only).
+
+    Фильтры: фаза, триггер, хватает ли CP, юнит жив, есть ли нужный keyword.
+    legacy_patch есть только у insane_bravery (выразима в плоском action_dict);
+    реакции пока несут пустой patch (исполняются движком авто до Stage 6/7).
+    """
+    e = _unwrap(env)
+    is_model = side == "model"
+    cp = int(e.modelCP if is_model else e.enemyCP)
+    health = e.unit_health if is_model else e.enemy_health
+    unit_data_list = e.unit_data if is_model else e.enemy_data
+
+    defs = [d for d in for_trigger(trigger) if phase in d.phases]
+    options: list[ActionOption] = []
+    for d in defs:
+        if cp < d.cp_cost:
+            continue
+        if candidate_unit_idxs is None:
+            continue
+        for raw in candidate_unit_idxs:
+            i = int(raw)
+            if not (0 <= i < len(health)) or health[i] <= 0:
+                continue
+            if d.keyword_req and not all(
+                e._unit_has_keyword(unit_data_list[i], kw) for kw in d.keyword_req
+            ):
+                continue
+            legacy_patch = {"use_cp": 1, "cp_on": i} if d.id == "insane_bravery" else {}
+            options.append(
+                ActionOption(
+                    kind=ActionKind.USE_STRATAGEM,
+                    unit_idx=i,
+                    param={"stratagem_id": d.id},
+                    legacy_patch=dict(legacy_patch),
+                    meta={
+                        "stratagem_id": d.id,
+                        "cp_cost": d.cp_cost,
+                        "timing": d.timing,
+                        "scope": d.scope,
+                    },
+                )
+            )
+    return options
