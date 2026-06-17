@@ -5,6 +5,7 @@
 и компилирует их обратно в плоский action_dict.
 """
 
+from core.engine.phases import stratagem_engine
 from core.engine.phases.legacy_compiler import (
     compile_options_to_action_dict,
     default_action_dict,
@@ -16,6 +17,7 @@ from core.engine.phases.option_generator import (
     movement_options_for_unit,
     shooting_options_for_unit,
 )
+from core.engine.phases.stratagem_engine import apply as apply_stratagem
 from core.engine.phases.stratagems import (
     REGISTRY,
     StratagemDef,
@@ -61,4 +63,6 @@ __all__ = [
     "for_phase",
     "for_trigger",
     "legal_stratagem_options",
+    "stratagem_engine",
+    "apply_stratagem",
 ]

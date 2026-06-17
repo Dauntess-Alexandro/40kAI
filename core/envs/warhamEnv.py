@@ -1027,6 +1027,7 @@ class Warhammer40kEnv(gym.Env):
         self.enemyOverwatch = -1
         self.modelStrat = {"overwatch": -1, "smokescreen": -1}
         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
+        self.stratagem_used = []
         self.unitFellBack = []
         self.enemyFellBack = []
 
@@ -6731,6 +6732,7 @@ class Warhammer40kEnv(gym.Env):
         self.enemyCP = 0
         self.modelVP = 0
         self.enemyVP = 0
+        self.stratagem_used = []
         self.battle_round = 1
         self.active_side = self.turn_order[0]
         self.phase = "command"
