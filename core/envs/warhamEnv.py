@@ -8004,6 +8004,44 @@ class Warhammer40kEnv(gym.Env):
     def close(self):
         pass
 
+    _PHASE_OBS_ORDER = ("command", "movement", "shooting", "charge", "fight", "scoring")
+
+    def _phase_obs_block(self, side: str) -> list[float]:
+        """Доп. блок observation за флагом PHASE_OBS_FEATURES: фаза/timing/CP/стратагемы.
+
+        Длина детерминирована: 6 (phase one-hot) + 1 (timing main) + 2 (cp self/enemy norm)
+        + K (стратагема доступна сейчас) + K (использована в этом раунде), K = len(REGISTRY).
+        """
+        from core.engine.phases.stratagems import REGISTRY
+
+        cur_phase = str(getattr(self, "phase", "command") or "command")
+        phase_onehot = [1.0 if cur_phase == p else 0.0 for p in self._PHASE_OBS_ORDER]
+        # timing: считаем MAIN (1.0); reaction-окна пока вне obs-петли
+        timing_main = [1.0]
+
+        cp_norm = 12.0
+        cp_self = float(self.modelCP if side == "model" else self.enemyCP) / cp_norm
+        cp_enemy = float(self.enemyCP if side == "model" else self.modelCP) / cp_norm
+        cp_block = [cp_self, cp_enemy]
+
+        cp_have = float(self.modelCP if side == "model" else self.enemyCP)
+        avail = []
+        for d in REGISTRY:
+            ok = (cur_phase in tuple(p.value for p in d.phases)) and (cp_have >= d.cp_cost)
+            avail.append(1.0 if ok else 0.0)
+
+        cur_round = int(getattr(self, "battle_round", 1))
+        used_recs = list(getattr(self, "stratagem_used", []) or [])
+        used = []
+        for d in REGISTRY:
+            was_used = any(
+                rec[0] == side and rec[1] == d.id and (len(rec) < 3 or int(rec[2]) == cur_round)
+                for rec in used_recs
+            )
+            used.append(1.0 if was_used else 0.0)
+
+        return phase_onehot + timing_main + cp_block + avail + used
+
     def get_observation_for_side(self, side: str):
         obs = []
         if side == "enemy":
@@ -8040,6 +8078,9 @@ class Warhammer40kEnv(gym.Env):
             obs.append(OM[1])
 
         obs.append(int(self.game_over))
+
+        if os.getenv("PHASE_OBS_FEATURES", "0") == "1":
+            obs.extend(self._phase_obs_block(side))
 
         return np.array(obs, dtype=np.float32)
 
