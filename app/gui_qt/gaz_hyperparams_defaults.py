@@ -6,6 +6,8 @@ from __future__ import annotations
 GAZ_INFERENCE_PRESERVE_KEYS: tuple[str, ...] = (
     "inference_server_enabled",
     "inference_server_mode",
+    "num_env_workers",
+    "inference_batch_interval_ms",
     "inference_remote_host",
     "inference_remote_port",
     "inference_remote_auth_token",
@@ -53,6 +55,9 @@ GAZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "lr_total_steps",
     "det_eval_gate_win_min",
     "det_eval_gate_turn_limit_max",
+    "num_env_workers",
+    "inference_batch_size",
+    "inference_batch_interval_ms",
     *GAZ_INFERENCE_PRESERVE_KEYS,
 )
 
@@ -93,6 +98,9 @@ _GAZ_BASE: dict[str, int | float | str] = {
     "det_eval_gate_turn_limit_max": 0.65,
     # Швы под ПК2 — выключены. Порты GAZ (5565/5567) отличаются от AZ (5555/5557),
     # чтобы AZ и GAZ inference/distributed уживались на одном ПК2.
+    "num_env_workers": 8,
+    "inference_batch_size": 32,
+    "inference_batch_interval_ms": 10,
     "inference_server_enabled": 0,
     "inference_server_mode": "local",
     "inference_remote_host": "127.0.0.1",
@@ -256,4 +264,7 @@ GAZ_FIELD_TOOLTIPS: dict[str, str] = {
     "lr_total_steps": "Всего шагов для LR-расписания.",
     "det_eval_gate_win_min": "Порог win_rate для аннотации gate_pass в DET-eval.",
     "det_eval_gate_turn_limit_max": "Макс. доля turn_limit для gate_pass.",
+    "num_env_workers": "Число CPU env workers при inference_server_enabled=1 или LAN IS.",
+    "inference_batch_size": "Макс. запросов в одном batch inference server (ПК1). Remote IS: GAZ_REMOTE_BATCH_SIZE на ПК2 ≥ этого значения.",
+    "inference_batch_interval_ms": "Окно сбора batch (мс).",
 }

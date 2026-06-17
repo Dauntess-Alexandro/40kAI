@@ -6750,7 +6750,14 @@ class GUIController(QtCore.QObject):
             env.insert("GAZ_INFERENCE_SERVER", "1" if gaz_inf_enabled == 1 else "0")
             env.insert("GAZ_INFERENCE_SERVER_MODE", gaz_inf_mode)
             env.insert("AZ_NUM_ENV_WORKERS", os.getenv("AZ_NUM_ENV_WORKERS", str(int(gaz_hp.get("num_env_workers", gaz_hp.get("num_actors", 8))))))
-            env.insert("AZ_INFERENCE_BATCH_SIZE", os.getenv("AZ_INFERENCE_BATCH_SIZE", str(int(gaz_hp.get("inference_batch_size", 32)))))
+            env.insert("AZ_INFERENCE_BATCH_SIZE", os.getenv("AZ_INFERENCE_BATCH_SIZE", str(int(gaz_hp.get("inference_batch_size", d.get("inference_batch_size", 32))))))
+            env.insert(
+                "AZ_INFERENCE_BATCH_INTERVAL_MS",
+                os.getenv(
+                    "AZ_INFERENCE_BATCH_INTERVAL_MS",
+                    str(float(gaz_hp.get("inference_batch_interval_ms", d.get("inference_batch_interval_ms", 10.0)))),
+                ),
+            )
             env.insert("AZ_INFERENCE_TIMEOUT", os.getenv("AZ_INFERENCE_TIMEOUT", str(float(gaz_hp.get("inference_timeout", 5.0)))))
             # LAN remote IS активен → инференс уходит на ПК2 (порт 5565), даже если локальный
             # тумблер выключен (setGazRemoteIsEnabled его гасит). Зеркалит SMZ/GMZ-ветку.

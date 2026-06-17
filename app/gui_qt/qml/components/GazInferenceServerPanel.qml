@@ -7,7 +7,15 @@ ChamferPanel {
     id: panel
     required property var rootUi
 
+    readonly property var hp: controller.hpGazHyperparamsMap
+    readonly property bool isEnabled: controller.gazInferenceServerEnabled || controller.gazRemoteIsEnabled
     readonly property bool localIsOn: controller.gazInferenceServerEnabled && !controller.gazRemoteIsEnabled
+
+    function gazNum(k, d) {
+        var v = hp[k]
+        return (v === undefined || v === null || v === "") ? d : Number(v)
+    }
+    function setKey(k, v) { controller.set_gaz_hyperparam(k, String(v)) }
 
     Layout.fillWidth: true
     fillColor: rootUi.uiBgBase
@@ -268,6 +276,55 @@ ChamferPanel {
                     }
                 }
             }
+        }
+
+        // --- Общие параметры (видны когда IS включён: local или LAN) ---
+        GridLayout {
+            Layout.fillWidth: true
+            visible: panel.isEnabled
+            columns: 2
+            columnSpacing: rootUi.spacingMd
+            rowSpacing: rootUi.spacingSm
+
+            Text { text: "env workers"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
+            SpinBox {
+                from: 1; to: 64
+                value: panel.gazNum("num_env_workers", 8)
+                onValueModified: panel.setKey("num_env_workers", value)
+            }
+            Text { text: "batch size"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
+            SpinBox {
+                from: 1; to: 256
+                value: panel.gazNum("inference_batch_size", 32)
+                onValueModified: panel.setKey("inference_batch_size", value)
+            }
+            Text { text: "batch interval, мс"; color: rootUi.uiTextMuted; font.pixelSize: Math.round(11 * rootUi.uiScale) }
+            SpinBox {
+                from: 1; to: 200
+                value: panel.gazNum("inference_batch_interval_ms", 10)
+                onValueModified: panel.setKey("inference_batch_interval_ms", value)
+            }
+        }
+
+        Label {
+            visible: controller.gazRemoteIsEnabled
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: "Совет: для LAN рекомендуется max_depth=1 (меньше round-trip)."
+            color: rootUi.uiTextMuted
+            font.pixelSize: Math.round(10 * rootUi.uiScale)
+            font.italic: true
+        }
+
+        Label {
+            visible: panel.isEnabled
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: "Dist-акторы ПК2: Gumbel/hyperparams подтягиваются из SMB gaz_dist_train_context.json (ПК1 пишет при train) — git pull не нужен.\n" +
+                  "inference batch size — на ПК1; remote IS: GAZ_REMOTE_BATCH_SIZE ≥ batch size (heavy ≈ 64) в pc2_remote_gaz_is_config.bat."
+            color: rootUi.uiTextMuted
+            font.pixelSize: Math.round(10 * rootUi.uiScale)
+            font.italic: true
         }
     }
 }

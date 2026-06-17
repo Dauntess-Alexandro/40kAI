@@ -6,6 +6,14 @@ from app.gui_qt.gaz_hyperparams_defaults import (
 )
 
 
+def test_gaz_inference_worker_batch_defaults():
+    assert int(DEFAULT_GAZ_HYPERPARAMS["num_env_workers"]) == 8
+    assert int(DEFAULT_GAZ_HYPERPARAMS["inference_batch_size"]) == 32
+    assert float(DEFAULT_GAZ_HYPERPARAMS["inference_batch_interval_ms"]) == 10.0
+    for key in ("num_env_workers", "inference_batch_size", "inference_batch_interval_ms"):
+        assert key in GAZ_HYPERPARAM_KEYS
+
+
 def test_joint_action_default_on_and_tucked_away():
     # joint_action включён по умолчанию и убран с верха (не первый в search, не в basic)
     assert int(DEFAULT_GAZ_HYPERPARAMS["joint_action"]) == 1
