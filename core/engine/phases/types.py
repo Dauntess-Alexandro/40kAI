@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class Phase(str, Enum):
+class Phase(StrEnum):
     COMMAND = "command"
     MOVEMENT = "movement"
     SHOOTING = "shooting"
@@ -14,7 +14,7 @@ class Phase(str, Enum):
     SCORING = "scoring"
 
 
-class SubStep(str, Enum):
+class SubStep(StrEnum):
     BATTLE_SHOCK = "battle_shock"
     MOVE_UNIT = "move_unit"
     PICK_SHOOT_TARGET = "pick_shoot_target"
@@ -23,12 +23,12 @@ class SubStep(str, Enum):
     SCORE = "score"
 
 
-class Timing(str, Enum):
+class Timing(StrEnum):
     MAIN = "main"
     REACTION = "reaction"
 
 
-class ActionKind(str, Enum):
+class ActionKind(StrEnum):
     STAY = "stay"
     MOVE = "move"
     ADVANCE = "advance"

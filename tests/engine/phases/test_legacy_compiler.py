@@ -2,7 +2,6 @@ from core.engine.phases.legacy_compiler import (
     compile_options_to_action_dict,
     default_action_dict,
 )
-
 from core.engine.phases.option_generator import movement_options_for_unit
 from core.engine.phases.types import ActionKind, ActionOption
 from tests.engine.phases._helpers import build_env
