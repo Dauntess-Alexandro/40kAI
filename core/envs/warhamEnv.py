@@ -4057,7 +4057,6 @@ class Warhammer40kEnv(gym.Env):
             f"Триггер Overwatch: цель переместилась. Цель: {target_label}.",
         )
 
-        use_it = True
         chosen = candidates[0]
         if manual:
             ids = [c + (21 if defender_side == "model" else 11) for c in candidates]
@@ -4082,16 +4081,20 @@ class Warhammer40kEnv(gym.Env):
                 self._log_phase_msg(side_label, phase, "Overwatch отменён: выбран недоступный юнит.")
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
+        else:
+            if not self._should_use_reaction("overwatch", defender_side, chosen, candidates, phase, cp):
+                self._log_phase_msg(side_label, phase, "Overwatch пропущен политикой реакций.")
+                return
 
         if defender_side == "model":
-            self.modelCP -= 1
+            _apply_stratagem(self, "model", "overwatch", chosen)
             attacker_health = self.unit_health
             attacker_weapon = self.unit_weapon
             attacker_data = self.unit_data
             target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
             target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
         else:
-            self.enemyCP -= 1
+            _apply_stratagem(self, "enemy", "overwatch", chosen)
             attacker_health = self.enemy_health
             attacker_weapon = self.enemy_weapon
             attacker_data = self.enemy_data
@@ -4207,7 +4210,6 @@ class Warhammer40kEnv(gym.Env):
         unit_choices = self._format_unit_choices(defender_side, eligible)
         self._log_phase_msg(side_label, phase, f"Доступные юниты для Heroic Intervention: {unit_choices}.")
 
-        use_it = True
         chosen = eligible[0]
         if manual:
             strat = self._prompt_yes_no("Использовать Heroic Intervention (2 CP)? (y/n): ")
@@ -4229,11 +4231,15 @@ class Warhammer40kEnv(gym.Env):
                 self._log_phase_msg(side_label, phase, "Heroic Intervention отменён: выбран недоступный юнит.")
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
+        else:
+            if not self._should_use_reaction("heroic_intervention", defender_side, chosen, eligible, phase, defender_cp):
+                self._log_phase_msg(side_label, phase, "Heroic Intervention пропущен политикой реакций.")
+                return
 
         if defender_side == "model":
-            self.modelCP -= 2
+            _apply_stratagem(self, "model", "heroic_intervention", chosen)
         else:
-            self.enemyCP -= 2
+            _apply_stratagem(self, "enemy", "heroic_intervention", chosen)
 
         pos_before = tuple(defender_coords[chosen])
         defender_coords[chosen][0] = charging_coords[charging_idx][0] + 1

@@ -63,3 +63,76 @@ def test_smokescreen_skipped_by_policy():
     assert effect is None
     assert env.modelCP == 2
     assert env.stratagem_used == []
+
+
+def _setup_overwatch(env):
+    env.unit_coords[0] = [10, 10]
+    env.enemy_coords[0] = [11, 10]
+    env._invalidate_target_cache("test")
+    env.modelCP = 2
+    env.stratagem_used = []
+    env.battle_round = 1
+    assert env._collect_overwatch_candidates("model", "enemy", 0), "overwatch сетап: нет кандидатов"
+
+
+def test_overwatch_fires_with_default_policy():
+    env = build_env()
+    _setup_overwatch(env)
+    with env.simulation_mode():
+        env._resolve_overwatch("model", "enemy", 0, "movement")
+    assert env.modelCP == 1
+    assert ("model", "overwatch", 1) in env.stratagem_used
+
+
+def test_overwatch_skipped_by_policy_false():
+    env = build_env()
+    _setup_overwatch(env)
+    env.reaction_policy = lambda ctx: False
+    with env.simulation_mode():
+        env._resolve_overwatch("model", "enemy", 0, "movement")
+    assert env.modelCP == 2
+    assert env.stratagem_used == []
+
+
+def test_overwatch_policy_receives_ctx():
+    env = build_env()
+    _setup_overwatch(env)
+    seen = {}
+
+    def policy(ctx):
+        seen.update(ctx)
+        return True
+
+    env.reaction_policy = policy
+    with env.simulation_mode():
+        env._resolve_overwatch("model", "enemy", 0, "movement")
+    assert seen["stratagem_id"] == "overwatch"
+    assert seen["side"] == "model"
+    assert seen["cp"] >= 1
+
+
+def _setup_heroic(env):
+    env.unit_coords[0] = [10, 10]
+    env.enemy_coords[0] = [12, 10]
+    env.modelCP = 2
+    env.stratagem_used = []
+    env.battle_round = 1
+
+
+def test_heroic_fires_with_default_policy_spends_two():
+    env = build_env()
+    _setup_heroic(env)
+    with env.simulation_mode():
+        env._resolve_heroic_intervention("model", "enemy", 0, "charge")
+    assert env.modelCP == 0
+    assert ("model", "heroic_intervention", 1) in env.stratagem_used
+
+
+def test_heroic_skipped_by_policy_false():
+    env = build_env()
+    _setup_heroic(env)
+    env.reaction_policy = lambda ctx: False
+    with env.simulation_mode():
+        env._resolve_heroic_intervention("model", "enemy", 0, "charge")
+    assert env.modelCP == 2
+    assert env.stratagem_used == []
