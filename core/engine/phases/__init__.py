@@ -5,6 +5,13 @@
 и компилирует их обратно в плоский action_dict.
 """
 
+from core.engine.phases.option_generator import (
+    charge_options_for_unit,
+    command_window,
+    generate_windows,
+    movement_options_for_unit,
+    shooting_options_for_unit,
+)
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -25,4 +32,9 @@ __all__ = [
     "PhaseState",
     "SubStep",
     "Timing",
+    "generate_windows",
+    "command_window",
+    "movement_options_for_unit",
+    "shooting_options_for_unit",
+    "charge_options_for_unit",
 ]

@@ -2,10 +2,12 @@ import numpy as np
 
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
+    command_window,
+    generate_windows,
     movement_options_for_unit,
     shooting_options_for_unit,
 )
-from core.engine.phases.types import ActionKind
+from core.engine.phases.types import ActionKind, Phase
 from tests.engine.phases._helpers import build_env
 
 
@@ -125,3 +127,42 @@ def test_movement_generator_exceeds_buggy_move_num_mask():
     mask_true = int(np.sum(np.asarray(mask, dtype=bool)))
     opts = movement_options_for_unit(env, "model", 0)
     assert len(opts) >= mask_true
+
+
+def test_command_window_offers_bravery_only_with_cp():
+    env = build_env()
+    env.modelCP = 0
+    win0 = command_window(env, "model")
+    assert all(o.kind is not ActionKind.USE_STRATAGEM for o in win0.options)
+
+    env.modelCP = 2
+    win = command_window(env, "model")
+    bravery = [o for o in win.options if o.kind is ActionKind.USE_STRATAGEM]
+    alive = [i for i, hp in enumerate(env.unit_health) if hp > 0]
+    assert [o.unit_idx for o in bravery] == alive
+    for o in bravery:
+        assert o.meta["stratagem_id"] == "insane_bravery"
+        assert o.legacy_patch == {"use_cp": 1, "cp_on": int(o.unit_idx)}
+
+
+def test_generate_windows_orders_phases():
+    env = build_env()
+    env.modelCP = 1
+    env.unit_coords[0] = [10, 10]
+    env.enemy_coords[0] = [11, 10]
+    env._invalidate_target_cache("test")
+
+    windows = generate_windows(env, "model")
+    phases_seen = [w.phase for w in windows]
+    # command идёт первым, бой/скоринг не порождают окон выбора в этом слое
+    assert phases_seen[0] is Phase.COMMAND
+    assert Phase.MOVEMENT in phases_seen
+    assert Phase.SHOOTING in phases_seen
+    assert Phase.CHARGE in phases_seen
+    # порядок фаз неубывающий по индексу в каноне
+    order = {Phase.COMMAND: 0, Phase.MOVEMENT: 1, Phase.SHOOTING: 2, Phase.CHARGE: 3}
+    idxs = [order[p] for p in phases_seen]
+    assert idxs == sorted(idxs)
+    # window_id стабильны и уникальны
+    ids = [w.window_id for w in windows]
+    assert len(ids) == len(set(ids))

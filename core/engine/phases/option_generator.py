@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from core.engine.phases.types import ActionKind, ActionOption
+from core.engine.phases.types import (
+    ActionKind,
+    ActionOption,
+    DecisionWindow,
+    Phase,
+    SubStep,
+    Timing,
+)
 
 
 def _unwrap(env):
@@ -81,3 +88,90 @@ def charge_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOption]
             )
         )
     return options
+
+
+def _alive_indices(health) -> list[int]:
+    return [i for i, hp in enumerate(health) if hp > 0]
+
+
+def command_window(env, side: str) -> DecisionWindow:
+    """Окно командной фазы: Insane Bravery на провал Battle-shock.
+
+    Реальный провал теста определяется броском в рантайме; на уровне слоя мы
+    предлагаем агенту опцию заранее (PASS / использовать Bravery на юнита i),
+    гейтим только по наличию CP — как делает командная фаза env.
+    """
+    e = _unwrap(env)
+    health = e.unit_health if side == "model" else e.enemy_health
+    cp = int(e.modelCP if side == "model" else e.enemyCP)
+    options: list[ActionOption] = [ActionOption(kind=ActionKind.PASS, unit_idx=None)]
+    if cp >= 1:
+        for i in _alive_indices(health):
+            options.append(
+                ActionOption(
+                    kind=ActionKind.USE_STRATAGEM,
+                    unit_idx=int(i),
+                    param={"stratagem_id": "insane_bravery"},
+                    legacy_patch={"use_cp": 1, "cp_on": int(i)},
+                    meta={"stratagem_id": "insane_bravery", "cp_cost": 1},
+                )
+            )
+    return DecisionWindow(
+        window_id=f"command:{side}",
+        owner_side=side,
+        phase=Phase.COMMAND,
+        sub_step=SubStep.BATTLE_SHOCK,
+        timing=Timing.MAIN,
+        cursor_unit_idx=None,
+        options=options,
+        context={"cp": cp},
+    )
+
+
+def generate_windows(env, side: str = "model") -> list[DecisionWindow]:
+    """Упорядоченные окна хода: command → movement → shooting → charge.
+
+    Бой/скоринг в текущей модели не дают выбора агента — окон не порождаем.
+    """
+    e = _unwrap(env)
+    health = e.unit_health if side == "model" else e.enemy_health
+    alive = _alive_indices(health)
+    windows: list[DecisionWindow] = [command_window(e, side)]
+
+    for u in alive:
+        windows.append(
+            DecisionWindow(
+                window_id=f"movement:{side}:{u}",
+                owner_side=side,
+                phase=Phase.MOVEMENT,
+                sub_step=SubStep.MOVE_UNIT,
+                timing=Timing.MAIN,
+                cursor_unit_idx=int(u),
+                options=movement_options_for_unit(e, side, u),
+            )
+        )
+    for u in alive:
+        windows.append(
+            DecisionWindow(
+                window_id=f"shooting:{side}:{u}",
+                owner_side=side,
+                phase=Phase.SHOOTING,
+                sub_step=SubStep.PICK_SHOOT_TARGET,
+                timing=Timing.MAIN,
+                cursor_unit_idx=int(u),
+                options=shooting_options_for_unit(e, side, u),
+            )
+        )
+    for u in alive:
+        windows.append(
+            DecisionWindow(
+                window_id=f"charge:{side}:{u}",
+                owner_side=side,
+                phase=Phase.CHARGE,
+                sub_step=SubStep.PICK_CHARGE_TARGET,
+                timing=Timing.MAIN,
+                cursor_unit_idx=int(u),
+                options=charge_options_for_unit(e, side, u),
+            )
+        )
+    return windows
