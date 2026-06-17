@@ -9,10 +9,10 @@ def test_apply_spends_cp_and_records_model():
     env.modelCP = 3
     env.battle_round = 2
     env.stratagem_used = []
-    res = stratagem_engine.apply(env, "model", "insane_bravery", 0)
+    res = stratagem_engine.apply(env, "model", "insane_bravery", 0, phase="command")
     assert res == {"ok": True, "cp_spent": 1, "reason": None}
     assert env.modelCP == 2
-    assert env.stratagem_used == [("model", "insane_bravery", 2)]
+    assert env.stratagem_used == [("model", "insane_bravery", 2, "command", 0)]
 
 
 def test_apply_spends_cp_enemy_side():
@@ -20,10 +20,10 @@ def test_apply_spends_cp_enemy_side():
     env.enemyCP = 1
     env.battle_round = 1
     env.stratagem_used = []
-    res = stratagem_engine.apply(env, "enemy", "insane_bravery", 1)
+    res = stratagem_engine.apply(env, "enemy", "insane_bravery", 1, phase="command")
     assert res["ok"] is True
     assert env.enemyCP == 0
-    assert env.stratagem_used == [("enemy", "insane_bravery", 1)]
+    assert env.stratagem_used == [("enemy", "insane_bravery", 1, "command", 1)]
 
 
 def test_apply_no_cp_is_noop():

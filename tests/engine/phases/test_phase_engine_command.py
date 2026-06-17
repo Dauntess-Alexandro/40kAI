@@ -72,11 +72,11 @@ def test_run_command_applies_bravery():
     _setup_failing_unit0(env)
     snap = env.snapshot_state()
     with env.simulation_mode():
-        bs, _r = phase_engine.run_command(env, "model", _pick_bravery_for(0))
+        state = phase_engine.run_command(env, "model", _pick_bravery_for(0))
         used = list(env.stratagem_used)
     env.restore_state(snap)
-    assert bs[0] is False
-    assert ("model", "insane_bravery", env.battle_round) in used
+    assert state.battle_shock[0] is False
+    assert ("model", "insane_bravery", env.battle_round, "command", 0) in used
 
 
 def test_run_command_declines_bravery():
@@ -84,8 +84,8 @@ def test_run_command_declines_bravery():
     _setup_failing_unit0(env)
     snap = env.snapshot_state()
     with env.simulation_mode():
-        bs, _r = phase_engine.run_command(env, "model", _pick_pass)
+        state = phase_engine.run_command(env, "model", _pick_pass)
         used = list(env.stratagem_used)
     env.restore_state(snap)
-    assert bs[0] is True
+    assert state.battle_shock[0] is True
     assert used == []

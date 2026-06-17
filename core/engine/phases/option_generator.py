@@ -91,6 +91,22 @@ def charge_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOption]
     return options
 
 
+def fight_stratagem_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOption]:
+    """PASS + active fight-phase stratagems for one alive unit."""
+    e = _unwrap(env)
+    options: list[ActionOption] = [ActionOption(kind=ActionKind.PASS, unit_idx=int(unit_idx))]
+    options.extend(
+        legal_stratagem_options(
+            e,
+            side,
+            phase=Phase.FIGHT,
+            trigger=Trigger.FIGHT_PHASE,
+            candidate_unit_idxs=[int(unit_idx)],
+        )
+    )
+    return options
+
+
 def _alive_indices(health) -> list[int]:
     return [i for i, hp in enumerate(health) if hp > 0]
 

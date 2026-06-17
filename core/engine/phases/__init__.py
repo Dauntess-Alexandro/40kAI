@@ -13,6 +13,7 @@ from core.engine.phases.legacy_compiler import (
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
     command_window,
+    fight_stratagem_options_for_unit,
     generate_windows,
     movement_options_for_unit,
     shooting_options_for_unit,
@@ -35,6 +36,7 @@ from core.engine.phases.types import (
     Phase,
     PhaseResult,
     PhaseState,
+    PhaseTurnState,
     SubStep,
     Timing,
 )
@@ -46,6 +48,7 @@ __all__ = [
     "Phase",
     "PhaseResult",
     "PhaseState",
+    "PhaseTurnState",
     "SubStep",
     "Timing",
     "generate_windows",
@@ -53,6 +56,7 @@ __all__ = [
     "movement_options_for_unit",
     "shooting_options_for_unit",
     "charge_options_for_unit",
+    "fight_stratagem_options_for_unit",
     "compile_options_to_action_dict",
     "default_action_dict",
     "StratagemDef",

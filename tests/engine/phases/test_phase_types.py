@@ -5,6 +5,7 @@ from core.engine.phases.types import (
     Phase,
     PhaseResult,
     PhaseState,
+    PhaseTurnState,
     SubStep,
     Timing,
 )
@@ -57,3 +58,14 @@ def test_phase_state_and_result_defaults():
     assert res.next_window is None
     assert res.done is False
     assert res.events == [] and res.info_patch == {}
+
+
+def test_phase_turn_state_defaults_are_independent():
+    a = PhaseTurnState(side="model")
+    b = PhaseTurnState(side="enemy")
+    a.battle_shock.append(True)
+    a.advanced_flags.append(True)
+    a.info["phase"] = "movement"
+    assert b.battle_shock == []
+    assert b.advanced_flags == []
+    assert b.info == {}

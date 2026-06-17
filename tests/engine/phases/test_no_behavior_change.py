@@ -1,5 +1,9 @@
+import random
+
+import numpy as np
+
 from core.engine.phases import compile_options_to_action_dict, default_action_dict
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, run_windowed_default_turn
 
 
 def _state_tuple(env):
@@ -12,6 +16,18 @@ def _state_tuple(env):
         int(env.enemyVP),
         [list(c) for c in env.unit_coords],
         [list(c) for c in env.enemy_coords],
+    )
+
+
+def _extended_state_tuple(env):
+    return _state_tuple(env) + (
+        [list(x) for x in env.unitInAttack],
+        [list(x) for x in env.enemyInAttack],
+        list(env.model_used_advance),
+        list(env.enemy_used_advance),
+        list(env.unitFellBack),
+        list(env.enemyFellBack),
+        list(env.stratagem_used),
     )
 
 
@@ -57,3 +73,27 @@ def test_default_action_dict_matches_action_contract_keys():
 
     d = default_action_dict(2)
     assert set(d.keys()) == set(ordered_action_keys(2))
+
+
+def test_windowed_default_turn_matches_legacy_default_step_state():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    n = len(env.unit_health)
+    action = compile_options_to_action_dict([], len_model=n)
+    snap = env.snapshot_state()
+
+    random.seed(123)
+    np.random.seed(123)
+    with env.simulation_mode():
+        env.step(dict(action))
+        legacy_state = _extended_state_tuple(env)
+    env.restore_state(snap)
+
+    random.seed(123)
+    np.random.seed(123)
+    with env.simulation_mode():
+        run_windowed_default_turn(env, "model")
+        windowed_state = _extended_state_tuple(env)
+    env.restore_state(snap)
+
+    assert windowed_state == legacy_state

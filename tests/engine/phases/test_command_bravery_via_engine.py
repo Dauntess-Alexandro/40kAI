@@ -26,7 +26,7 @@ def test_command_bravery_routed_through_engine_records_journal():
             # Bravery спасла юнит 0
             assert battle_shock[0] is False
             # запись в журнале появилась
-            assert ("model", "insane_bravery", env.battle_round) in env.stratagem_used
+            assert ("model", "insane_bravery", env.battle_round, "command", 0) in env.stratagem_used
             # нетто CP: +1 (командование) -1 (bravery) = без изменений
             assert env.modelCP == start_cp
         finally:

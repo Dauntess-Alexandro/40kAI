@@ -1029,6 +1029,7 @@ class Warhammer40kEnv(gym.Env):
         self.modelStrat = {"overwatch": -1, "smokescreen": -1}
         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
         self.stratagem_used = []
+        self.active_stratagem_effects = []
         self.reaction_policy = None
         self.unitFellBack = []
         self.enemyFellBack = []
@@ -1234,9 +1235,11 @@ class Warhammer40kEnv(gym.Env):
             v = _ga(_self, _k, None)
             snap[_k] = dict(v) if v is not None else {}
 
-        # --- журнал стратагем (list of (side, id, round)) ---
+        # --- журнал стратагем (list of (side, id, round, phase, unit_idx)) ---
         _su = _ga(_self, "stratagem_used", None)
         snap["stratagem_used"] = [tuple(x) for x in _su] if _su is not None else []
+        _ase = _ga(_self, "active_stratagem_effects", None)
+        snap["active_stratagem_effects"] = [dict(x) for x in _ase] if _ase is not None else []
 
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
@@ -1317,6 +1320,8 @@ class Warhammer40kEnv(gym.Env):
 
         if "stratagem_used" in snapshot:
             _self.stratagem_used = [tuple(x) for x in snapshot["stratagem_used"]]
+        if "active_stratagem_effects" in snapshot:
+            _self.active_stratagem_effects = [dict(x) for x in snapshot["active_stratagem_effects"]]
 
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
@@ -1593,11 +1598,11 @@ class Warhammer40kEnv(gym.Env):
                     return targets
                 if self.unitFellBack[unit_idx]:
                     return targets
-                if bool(getattr(self, "unit_used_advance", [False] * len(self.unit_health))[unit_idx]):
+                if bool(getattr(self, "model_used_advance", [False] * len(self.unit_health))[unit_idx]):
                     return targets
                 move_allowance = float(self.unit_data[unit_idx].get("M", 0))
                 if bool(getattr(self, "unit_has_assault", [False] * len(self.unit_health))[unit_idx]):
-                    adv_roll = getattr(self, "unit_advance_roll", [0] * len(self.unit_health))[unit_idx]
+                    adv_roll = getattr(self, "model_advance_roll", [0] * len(self.unit_health))[unit_idx]
                     move_allowance += float(adv_roll or 0)
                 max_charge_dist = move_allowance + 6.0
                 for e_idx in range(len(self.enemy_health)):
@@ -1651,7 +1656,7 @@ class Warhammer40kEnv(gym.Env):
         fell_back = self.unitFellBack if is_model else self.enemyFellBack
         weapon = self.unit_weapon if is_model else self.enemy_weapon
         move_used_advance = (
-            getattr(self, "unit_used_advance", [False] * len(unit_health))
+            getattr(self, "model_used_advance", [False] * len(unit_health))
             if is_model
             else getattr(self, "enemy_used_advance", [False] * len(unit_health))
         )
@@ -1729,7 +1734,9 @@ class Warhammer40kEnv(gym.Env):
                 overlay = self.get_unit_movement_overlay(side, int(i))
                 # индекс 0 зарезервирован под stay в fallback-режиме контроллера
                 mmask[0] = True
-                lim = min(n, 1 + len(overlay))
+                move_cells = overlay.get("move_cells") or []
+                advance_cells = overlay.get("advance_cells") or []
+                lim = min(n, 1 + len(move_cells) + len(advance_cells))
                 if lim > 1:
                     mmask[1:lim] = True
             if not mmask.any():
@@ -2205,6 +2212,29 @@ class Warhammer40kEnv(gym.Env):
                     self._log(heur_cover_msg)
             return "benefit of cover"
         return base_effect
+
+    def _fight_effects_for_attacker(self, side: str, unit_idx: int):
+        effects: dict[str, int] = {}
+        for rec in list(getattr(self, "active_stratagem_effects", []) or []):
+            if str(rec.get("phase", "")) != "fight":
+                continue
+            if str(rec.get("side", "")) != str(side):
+                continue
+            if int(rec.get("unit_idx", -1)) != int(unit_idx):
+                continue
+            if int(rec.get("round", getattr(self, "battle_round", 1))) != int(getattr(self, "battle_round", 1)):
+                continue
+            if rec.get("effect_id") == "hungry_void_strength_mod":
+                effects["strength_mod"] = int(effects.get("strength_mod", 0)) + int(rec.get("strength_mod", 1))
+        return effects or None
+
+    def _clear_phase_stratagem_effects(self, phase: str) -> None:
+        phase = str(phase)
+        self.active_stratagem_effects = [
+            dict(rec)
+            for rec in list(getattr(self, "active_stratagem_effects", []) or [])
+            if str(rec.get("phase", "")) != phase
+        ]
 
     def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
         if side == "enemy":
@@ -3995,7 +4025,7 @@ class Warhammer40kEnv(gym.Env):
                 )
             return None
 
-        _apply_stratagem(self, defender_side, "smokescreen", defender_idx)
+        _apply_stratagem(self, defender_side, "smokescreen", defender_idx, phase=phase)
 
         self._log_rule(
             defender_side,
@@ -4087,14 +4117,14 @@ class Warhammer40kEnv(gym.Env):
                 return
 
         if defender_side == "model":
-            _apply_stratagem(self, "model", "overwatch", chosen)
+            _apply_stratagem(self, "model", "overwatch", chosen, phase=phase)
             attacker_health = self.unit_health
             attacker_weapon = self.unit_weapon
             attacker_data = self.unit_data
             target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
             target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
         else:
-            _apply_stratagem(self, "enemy", "overwatch", chosen)
+            _apply_stratagem(self, "enemy", "overwatch", chosen, phase=phase)
             attacker_health = self.enemy_health
             attacker_weapon = self.enemy_weapon
             attacker_data = self.enemy_data
@@ -4237,9 +4267,9 @@ class Warhammer40kEnv(gym.Env):
                 return
 
         if defender_side == "model":
-            _apply_stratagem(self, "model", "heroic_intervention", chosen)
+            _apply_stratagem(self, "model", "heroic_intervention", chosen, phase=phase)
         else:
-            _apply_stratagem(self, "enemy", "heroic_intervention", chosen)
+            _apply_stratagem(self, "enemy", "heroic_intervention", chosen, phase=phase)
 
         pos_before = tuple(defender_coords[chosen])
         defender_coords[chosen][0] = charging_coords[charging_idx][0] + 1
@@ -4377,7 +4407,7 @@ class Warhammer40kEnv(gym.Env):
                         else:
                             _use_bravery = bool(action and action.get("use_cp") == 1 and action.get("cp_on") == i)
                         if _use_bravery:
-                            _bravery = _apply_stratagem(self, "model", "insane_bravery", i)
+                            _bravery = _apply_stratagem(self, "model", "insane_bravery", i, phase="command")
                             if _bravery["ok"]:
                                 battle_shock[i] = False
                                 reward_delta += reward_cfg.COMMAND_INSANE_BRAVERY_REWARD
@@ -4447,12 +4477,13 @@ class Warhammer40kEnv(gym.Env):
                         self.enemyOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
-                            battle_shock[i] = False
-                            self.enemyCP -= 1
-                            self.enemyOC[i] = self.enemy_data[i]["OC"]
-                            if self.trunc is False:
-                                self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
+                        if use_cp == 1 and cp_on == i:
+                            _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
+                            if _bravery["ok"]:
+                                battle_shock[i] = False
+                                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                                if self.trunc is False:
+                                    self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
@@ -4492,9 +4523,10 @@ class Warhammer40kEnv(gym.Env):
                                 self.game_over = True
                                 return None
                             if strat:
-                                battleSh = False
-                                self.enemyCP -= 1
-                                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                                _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
+                                if _bravery["ok"]:
+                                    battleSh = False
+                                    self.enemyOC[i] = self.enemy_data[i]["OC"]
                 battle_shock[i] = battleSh
                 if battleSh:
                     continue
@@ -4536,10 +4568,11 @@ class Warhammer40kEnv(gym.Env):
                         self.enemyOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
-                            battleSh = False
-                            self.enemyCP -= 1
-                            self.enemyOC[i] = self.enemy_data[i]["OC"]
+                        if use_cp == 1 and cp_on == i:
+                            _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
+                            if _bravery["ok"]:
+                                battleSh = False
+                                self.enemyOC[i] = self.enemy_data[i]["OC"]
 
                 battle_shock[i] = battleSh
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
@@ -6570,6 +6603,7 @@ class Warhammer40kEnv(gym.Env):
                         elif model_power < enemy_power:
                             strength_term -= reward_cfg.MELEE_STRENGTH_SCALE
         self.resolve_fight_phase(active_side=side, trunc=self.trunc)
+        self._clear_phase_stratagem_effects("fight")
 
         if side == "model" and engaged_pairs:
             post_enemy_hp_total = float(sum(self.enemy_health))
@@ -6785,6 +6819,7 @@ class Warhammer40kEnv(gym.Env):
         self.modelVP = 0
         self.enemyVP = 0
         self.stratagem_used = []
+        self.active_stratagem_effects = []
         self.battle_round = 1
         self.active_side = self.turn_order[0]
         self.phase = "command"
@@ -6946,6 +6981,7 @@ class Warhammer40kEnv(gym.Env):
                 defender_data = self.enemy_data[def_idx]
                 hp_before = self.enemy_health[def_idx]
                 models_before = _remaining_models("enemy", def_idx, hp_before)
+                fight_effect = self._fight_effects_for_attacker("model", att_idx)
 
                 _logger = None
                 if quiet is False and use_roll_logger:
@@ -6958,6 +6994,7 @@ class Warhammer40kEnv(gym.Env):
                         self.enemy_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                         roller=_logger.roll,
                     )
                 else:
@@ -6968,6 +7005,7 @@ class Warhammer40kEnv(gym.Env):
                         self.enemy_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                     )
 
                 self._apply_health_update("enemy", def_idx, modHealth, reason="fight")
@@ -6992,7 +7030,7 @@ class Warhammer40kEnv(gym.Env):
                         attacker_data=attacker_data,
                         defender_data=defender_data,
                         dmg_list=dmg,
-                        effect=None,
+                        effect=fight_effect,
                         attacker_label=self._format_unit_label("model", att_idx),
                         defender_label=self._format_unit_label("enemy", def_idx),
                         hp_before=hp_before,
@@ -7029,6 +7067,7 @@ class Warhammer40kEnv(gym.Env):
                 defender_data = self.unit_data[def_idx]
                 hp_before = self.unit_health[def_idx]
                 models_before = _remaining_models("model", def_idx, hp_before)
+                fight_effect = self._fight_effects_for_attacker("enemy", att_idx)
 
                 _logger = None
                 manual_dice = os.getenv("MANUAL_DICE", "0") == "1"
@@ -7042,6 +7081,7 @@ class Warhammer40kEnv(gym.Env):
                         self.unit_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                         roller=_logger.roll,
                     )
                 else:
@@ -7053,6 +7093,7 @@ class Warhammer40kEnv(gym.Env):
                         self.unit_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                         **extra_kwargs,
                     )
 
@@ -7077,7 +7118,7 @@ class Warhammer40kEnv(gym.Env):
                         attacker_data=attacker_data,
                         defender_data=defender_data,
                         dmg_list=dmg,
-                        effect=None,
+                        effect=fight_effect,
                         attacker_label=self._format_unit_label("enemy", att_idx),
                         defender_label=self._format_unit_label("model", def_idx),
                         hp_before=hp_before,
@@ -7121,6 +7162,7 @@ class Warhammer40kEnv(gym.Env):
         # есть ли вообще кому драться?
         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
         if not any_fight:
+            self._clear_phase_stratagem_effects("fight")
             return
 
         model_eligible = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
@@ -7282,6 +7324,7 @@ class Warhammer40kEnv(gym.Env):
 
         if quiet is False:
             self._log("⚔️ Combat resolution complete.\n")
+        self._clear_phase_stratagem_effects("fight")
 
 
 

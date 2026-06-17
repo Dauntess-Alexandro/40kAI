@@ -11,6 +11,7 @@ class Trigger(StrEnum):
     TARGETED_BY_SHOOTING = "targeted_by_shooting"
     ENEMY_ENDED_MOVE = "enemy_ended_move"
     ENEMY_CHARGED_IN = "enemy_charged_in"
+    FIGHT_PHASE = "fight_phase"
 
 
 class UsageLimit(StrEnum):
@@ -84,6 +85,18 @@ REGISTRY: tuple[StratagemDef, ...] = (
         keyword_req=(),
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="counter_charge",
+    ),
+    StratagemDef(
+        id="hungry_void",
+        name_ru="Hungry Void",
+        cp_cost=1,
+        phases=(Phase.FIGHT,),
+        timing=Timing.MAIN,
+        trigger=Trigger.FIGHT_PHASE,
+        scope="self_unit",
+        keyword_req=(),
+        usage_limit=UsageLimit.PER_PHASE,
+        effect_id="hungry_void_strength_mod",
     ),
 )
 

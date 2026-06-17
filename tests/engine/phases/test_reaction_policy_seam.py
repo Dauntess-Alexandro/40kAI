@@ -49,7 +49,7 @@ def test_smokescreen_fires_with_default_policy():
         effect = env._maybe_use_smokescreen("model", 0, "shooting")
     assert effect == "benefit of cover"
     assert env.modelCP == 1
-    assert ("model", "smokescreen", 1) in env.stratagem_used
+    assert ("model", "smokescreen", 1, "shooting", 0) in env.stratagem_used
 
 
 def test_smokescreen_skipped_by_policy():
@@ -81,7 +81,7 @@ def test_overwatch_fires_with_default_policy():
     with env.simulation_mode():
         env._resolve_overwatch("model", "enemy", 0, "movement")
     assert env.modelCP == 1
-    assert ("model", "overwatch", 1) in env.stratagem_used
+    assert ("model", "overwatch", 1, "movement", 0) in env.stratagem_used
 
 
 def test_overwatch_skipped_by_policy_false():
@@ -125,7 +125,7 @@ def test_heroic_fires_with_default_policy_spends_two():
     with env.simulation_mode():
         env._resolve_heroic_intervention("model", "enemy", 0, "charge")
     assert env.modelCP == 0
-    assert ("model", "heroic_intervention", 1) in env.stratagem_used
+    assert ("model", "heroic_intervention", 1, "charge", 0) in env.stratagem_used
 
 
 def test_heroic_skipped_by_policy_false():

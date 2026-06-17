@@ -113,12 +113,8 @@ def test_movement_options_index_parity_with_executor():
     assert len(opts) == total
 
 
-def test_movement_generator_exceeds_buggy_move_num_mask():
-    """Документирует баг маски move_num (len(overlay)=2 → только индексы 0,1,2).
-
-    Генератор движется по исполнительной истине и обязан давать НЕ меньше
-    опций, чем разрешает сломанная маска.
-    """
+def test_move_num_mask_covers_representable_reachable_indices():
+    """The legal mask must cover every executor-reachable movement option it can represent."""
     env = build_env()
     env.unit_coords[0] = [15, 15]
     env._invalidate_target_cache("test")
@@ -126,7 +122,18 @@ def test_movement_generator_exceeds_buggy_move_num_mask():
     mask = env.get_legal_action_masks_by_head("model")["move_num_0"]
     mask_true = int(np.sum(np.asarray(mask, dtype=bool)))
     opts = movement_options_for_unit(env, "model", 0)
-    assert len(opts) >= mask_true
+    assert mask_true == min(len(mask), len(opts))
+
+
+def test_model_charge_targets_respect_model_used_advance():
+    env = build_env()
+    env.unit_coords[0] = [10, 10]
+    env.enemy_coords[0] = [12, 10]
+    env.unit_health[1] = 0.0
+    env.model_used_advance = [True, False]
+    env._invalidate_target_cache("test")
+
+    assert env.get_charge_targets_for_unit("model", 0) == []
 
 
 def test_command_window_offers_bravery_only_with_cp():

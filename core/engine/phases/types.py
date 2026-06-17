@@ -92,3 +92,14 @@ class PhaseResult:
     next_window: DecisionWindow | None = None
     done: bool = False
     info_patch: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PhaseTurnState:
+    """Mutable turn context carried between windowed phase-engine calls."""
+
+    side: str
+    battle_shock: list[bool] = field(default_factory=list)
+    advanced_flags: list[bool] = field(default_factory=list)
+    reward_delta: float = 0.0
+    info: dict[str, Any] = field(default_factory=dict)

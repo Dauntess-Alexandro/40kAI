@@ -7,7 +7,7 @@ def _unwrap(env):
     return getattr(env, "unwrapped", env)
 
 
-def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None) -> dict:
+def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase: str | None = None) -> dict:
     """Списать CP за стратагему и записать использование в журнал env.
 
     Единая точка CP-расхода. Решение «можно ли» — по наличию CP (cp >= cost).
@@ -28,5 +28,28 @@ def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None) -> dic
     if used is None:
         used = []
         e.stratagem_used = used
-    used.append((side, d.id, int(getattr(e, "battle_round", 1))))
+    used.append(
+        (
+            side,
+            d.id,
+            int(getattr(e, "battle_round", 1)),
+            str(phase or getattr(e, "phase", "")),
+            int(unit_idx) if unit_idx is not None else None,
+        )
+    )
+    if d.effect_id == "hungry_void_strength_mod" and unit_idx is not None:
+        active = getattr(e, "active_stratagem_effects", None)
+        if active is None:
+            active = []
+            e.active_stratagem_effects = active
+        active.append(
+            {
+                "side": str(side),
+                "unit_idx": int(unit_idx),
+                "round": int(getattr(e, "battle_round", 1)),
+                "phase": str(phase or getattr(e, "phase", "fight") or "fight"),
+                "effect_id": d.effect_id,
+                "strength_mod": 1,
+            }
+        )
     return {"ok": True, "cp_spent": d.cp_cost, "reason": None}
