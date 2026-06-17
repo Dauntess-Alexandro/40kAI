@@ -394,11 +394,11 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         # Overwatch 10e: попадания только на натуральную 6.
         bs = 6
 
-    s = _to_int(attackerWeapon.get("S"), default=0)
+    s = _to_int(attackerWeapon.get("S"), default=0) + int(eff["strength_mod"])
     t = _to_int(attackeeData.get("T"), default=0)
 
     # AP в 10e обычно отрицательный (например -1, -2)
-    ap = _to_int(attackerWeapon.get("AP"), default=0)
+    ap = _to_int(attackerWeapon.get("AP"), default=0) - int(eff["ap_improve"])
 
     # Benefit of cover: +1 к сейву => целевое значение СНИЖАЕТСЯ на 1 (мин 2+)
     cover_bonus = 1 if (eff["cover"] and rangeOfComb == "Ranged") else 0

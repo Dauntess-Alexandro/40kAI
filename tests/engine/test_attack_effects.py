@@ -55,3 +55,27 @@ def test_cover_dict_equivalent_to_string():
     via_dict, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"cover": True},
                         roller=StubRoller(hit=[5], wound=[6], save=[5]))
     assert float(sum(via_dict)) == 0.0
+
+
+def test_strength_mod_changes_wound_threshold():
+    # S4 vs T4 → 4+; S5 vs T4 → 3+. wound-бросок [3]: без +S не ранит, с +1 S ранит.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}  # Sv7 → засейвить нельзя
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[5], wound=[3]))
+    boosted, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"strength_mod": 1},
+                        roller=StubRoller(hit=[5], wound=[3]))
+    assert float(sum(base)) == 0.0
+    assert float(sum(boosted)) == 1.0
+
+
+def test_ap_improve_worsens_save():
+    # Sv4 AP0 → 4+; ap_improve=1 → AP-1 → 5+. save-бросок [4]: без эффекта сейвит, с эффектом нет.
+    weapon = _ranged_weapon(S=4, AP=0)
+    defender = {"Sv": 4, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[5], wound=[6], save=[4]))
+    improved, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"ap_improve": 1},
+                         roller=StubRoller(hit=[5], wound=[6], save=[4]))
+    assert float(sum(base)) == 0.0
+    assert float(sum(improved)) == 1.0
