@@ -1,0 +1,28 @@
+"""Слой иерархических фаз W40k: окна решений и опции действий.
+
+Аддитивный слой над Warhammer40kEnv. Не меняет поведение движка — только
+описывает ход как последовательность DecisionWindow со списком ActionOption
+и компилирует их обратно в плоский action_dict.
+"""
+
+from core.engine.phases.types import (
+    ActionKind,
+    ActionOption,
+    DecisionWindow,
+    Phase,
+    PhaseResult,
+    PhaseState,
+    SubStep,
+    Timing,
+)
+
+__all__ = [
+    "ActionKind",
+    "ActionOption",
+    "DecisionWindow",
+    "Phase",
+    "PhaseResult",
+    "PhaseState",
+    "SubStep",
+    "Timing",
+]
