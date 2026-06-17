@@ -1,3 +1,5 @@
+from core.engine.phases import phase_engine
+from core.engine.phases.types import ActionKind
 from tests.engine.phases._helpers import build_env
 
 
@@ -45,6 +47,44 @@ def test_decide_bravery_false_keeps_battleshock():
     snap = env.snapshot_state()
     with env.simulation_mode():
         bs, _r = env.command_phase("model", action=_action(0, 0, n), decide_bravery=lambda i: False)
+        used = list(env.stratagem_used)
+    env.restore_state(snap)
+    assert bs[0] is True
+    assert used == []
+
+
+def _pick_bravery_for(unit_idx):
+    def decide(window):
+        for o in window.options:
+            if o.kind is ActionKind.USE_STRATAGEM and o.unit_idx == unit_idx:
+                return o
+        return window.options[0]  # PASS
+
+    return decide
+
+
+def _pick_pass(window):
+    return window.options[0]
+
+
+def test_run_command_applies_bravery():
+    env = build_env()
+    _setup_failing_unit0(env)
+    snap = env.snapshot_state()
+    with env.simulation_mode():
+        bs, _r = phase_engine.run_command(env, "model", _pick_bravery_for(0))
+        used = list(env.stratagem_used)
+    env.restore_state(snap)
+    assert bs[0] is False
+    assert ("model", "insane_bravery", env.battle_round) in used
+
+
+def test_run_command_declines_bravery():
+    env = build_env()
+    _setup_failing_unit0(env)
+    snap = env.snapshot_state()
+    with env.simulation_mode():
+        bs, _r = phase_engine.run_command(env, "model", _pick_pass)
         used = list(env.stratagem_used)
     env.restore_state(snap)
     assert bs[0] is True
