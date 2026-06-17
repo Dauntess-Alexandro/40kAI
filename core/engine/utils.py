@@ -136,11 +136,13 @@ def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_da
     эвристикой врага для выбора цели и определения «добью/не добью». Возвращает
     float (НЕ обрезается по HP цели — обрезание делает вызывающий код).
     """
+    eff = _normalize_effects(effects)
+
     # --- профиль защитника / сейв ---
     sv_base = _to_int(attackee_data.get("Sv"), default=7)
     inv = _to_int(attackee_data.get("IVSave"), default=0)
-    ap = _to_int(attacker_weapon.get("AP"), default=0)
-    cover_bonus = 1 if (effects == "benefit of cover" and rangeOfComb == "Ranged") else 0
+    ap = _to_int(attacker_weapon.get("AP"), default=0) - int(eff["ap_improve"])
+    cover_bonus = 1 if (eff["cover"] and rangeOfComb == "Ranged") else 0
     save_target = sv_base - cover_bonus - ap
     if save_target < 2:
         save_target = 2
@@ -149,6 +151,11 @@ def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_da
     if inv and inv > 0:
         save_target = min(save_target, inv)
     p_save = (7 - save_target) / 6.0 if save_target <= 6 else 0.0
+    # reroll_save (защитник перебрасывает провал): шанс сейва растёт
+    if eff["reroll_save"] == "all":
+        p_save = p_save + (1.0 - p_save) * p_save
+    elif eff["reroll_save"] == "ones":
+        p_save = p_save + (1.0 / 6.0) * p_save
     p_unsaved = 1.0 - p_save
 
     # --- to-hit ---
@@ -161,13 +168,21 @@ def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_da
         p_hit = 1.0 / 6.0  # только натуральная 6 (crit) попадает
     else:
         p_hit = 1.0
+    if eff["reroll_hits"] == "all":
+        p_hit = p_hit + (1.0 - p_hit) * p_hit
+    elif eff["reroll_hits"] == "ones":
+        p_hit = p_hit + (1.0 / 6.0) * p_hit
     p_crit = 1.0 / 6.0
 
     # --- to-wound ---
-    s = _to_int(attacker_weapon.get("S"), default=0)
+    s = _to_int(attacker_weapon.get("S"), default=0) + int(eff["strength_mod"])
     t = _to_int(attackee_data.get("T"), default=0)
     wt = _wound_target(s, t) if (s and t) else 7
     p_wound = (7 - wt) / 6.0 if wt <= 6 else 0.0
+    if eff["reroll_wounds"] == "all":
+        p_wound = p_wound + (1.0 - p_wound) * p_wound
+    elif eff["reroll_wounds"] == "ones":
+        p_wound = p_wound + (1.0 / 6.0) * p_wound
 
     # --- число атак (зеркалит attack()) ---
     n_models_raw = attacker_data.get("#OfModels")

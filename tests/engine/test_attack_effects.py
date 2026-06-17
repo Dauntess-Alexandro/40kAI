@@ -1,4 +1,4 @@
-from core.engine.utils import _normalize_effects, attack
+from core.engine.utils import _normalize_effects, attack, expected_damage
 
 
 class StubRoller:
@@ -164,3 +164,51 @@ def test_normalize_effects_reroll_wounds_save():
     assert _normalize_effects({})["reroll_wounds"] is None
     assert _normalize_effects({})["reroll_save"] is None
     assert _normalize_effects({"reroll_wounds": "weird"})["reroll_wounds"] is None
+
+
+# --- Stage 8.6.1: expected_damage учитывает opt-in effects ---
+
+
+def test_expected_damage_none_unchanged_baseline():
+    w = _ranged_weapon(S=4)
+    d = {"Sv": 4, "T": 4, "IVSave": 0}
+    a = {"#OfModels": 1, "W": 1}
+    ev0 = expected_damage(1, w, a, d)
+    ev_none = expected_damage(1, w, a, d, effects=None)
+    assert ev0 == ev_none
+
+
+def test_expected_damage_strength_mod_raises_ev():
+    w = _ranged_weapon(S=4)
+    d = {"Sv": 7, "T": 4, "IVSave": 0}
+    a = {"#OfModels": 1, "W": 1}
+    base = expected_damage(1, w, a, d)
+    boosted = expected_damage(1, w, a, d, effects={"strength_mod": 1})
+    assert boosted > base
+
+
+def test_expected_damage_reroll_hits_raises_ev():
+    w = _ranged_weapon(S=4)
+    d = {"Sv": 7, "T": 4, "IVSave": 0}
+    a = {"#OfModels": 1, "W": 1}
+    base = expected_damage(1, w, a, d)
+    rer = expected_damage(1, w, a, d, effects={"reroll_hits": "all"})
+    assert rer > base
+
+
+def test_expected_damage_ap_improve_raises_ev():
+    w = _ranged_weapon(S=4, AP=0)
+    d = {"Sv": 4, "T": 4, "IVSave": 0}
+    a = {"#OfModels": 1, "W": 1}
+    base = expected_damage(1, w, a, d)
+    improved = expected_damage(1, w, a, d, effects={"ap_improve": 1})
+    assert improved > base
+
+
+def test_expected_damage_cover_string_still_works():
+    w = _ranged_weapon(S=4, AP=0)
+    d = {"Sv": 5, "T": 4, "IVSave": 0}
+    a = {"#OfModels": 1, "W": 1}
+    base = expected_damage(1, w, a, d)
+    covered = expected_damage(1, w, a, d, effects="benefit of cover")
+    assert covered < base
