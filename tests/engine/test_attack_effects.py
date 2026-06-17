@@ -79,3 +79,27 @@ def test_ap_improve_worsens_save():
                          roller=StubRoller(hit=[5], wound=[6], save=[4]))
     assert float(sum(base)) == 0.0
     assert float(sum(improved)) == 1.0
+
+
+def test_reroll_hits_ones():
+    # bs4. hit [1]: без ре-ролла промах → урон 0; reroll_hits="ones" [1]→ре-ролл [5] хит → урон 1.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}  # засейвить нельзя
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[1], wound=[6]))
+    rer, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"reroll_hits": "ones"},
+                    roller=StubRoller(hit=[1, 5], wound=[6]))
+    assert float(sum(base)) == 0.0
+    assert float(sum(rer)) == 1.0
+
+
+def test_reroll_hits_all_rerolls_misses():
+    # bs4. hit [2] промах (не 1, но < bs) → reroll_hits="all" ре-роллит [5] → хит.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[2], wound=[6]))
+    rer, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"reroll_hits": "all"},
+                    roller=StubRoller(hit=[2, 5], wound=[6]))
+    assert float(sum(base)) == 0.0
+    assert float(sum(rer)) == 1.0

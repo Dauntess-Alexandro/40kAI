@@ -455,6 +455,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     else:
         rolls = np.array(list(rolls), dtype=int)
 
+    if eff["reroll_hits"]:
+        need = []
+        for idx, r in enumerate(rolls):
+            r = int(r)
+            if eff["reroll_hits"] == "ones" and r == 1:
+                need.append(idx)
+            elif eff["reroll_hits"] == "all" and r != 6 and r < bs:
+                need.append(idx)
+        if need:
+            new = _roll_with_stage(num=len(need), stage="hit")
+            new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
+            for j, idx in enumerate(need):
+                rolls[idx] = int(new[j])
+
     lethal = _weapon_has_lethal_hits(attackerWeapon)
 
     hits = 0
