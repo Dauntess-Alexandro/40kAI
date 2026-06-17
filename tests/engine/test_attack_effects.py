@@ -29,10 +29,24 @@ def _ranged_weapon(**over):
 
 
 def test_normalize_effects_variants():
-    assert _normalize_effects(None) == {"cover": False, "reroll_hits": None, "strength_mod": 0, "ap_improve": 0}
+    assert _normalize_effects(None) == {
+        "cover": False,
+        "reroll_hits": None,
+        "reroll_wounds": None,
+        "reroll_save": None,
+        "strength_mod": 0,
+        "ap_improve": 0,
+    }
     assert _normalize_effects("benefit of cover")["cover"] is True
     d = _normalize_effects({"cover": True, "reroll_hits": "ones", "strength_mod": 1, "ap_improve": 2})
-    assert d == {"cover": True, "reroll_hits": "ones", "strength_mod": 1, "ap_improve": 2}
+    assert d == {
+        "cover": True,
+        "reroll_hits": "ones",
+        "reroll_wounds": None,
+        "reroll_save": None,
+        "strength_mod": 1,
+        "ap_improve": 2,
+    }
     # неизвестный reroll → None
     assert _normalize_effects({"reroll_hits": "weird"})["reroll_hits"] is None
 
@@ -103,3 +117,50 @@ def test_reroll_hits_all_rerolls_misses():
                     roller=StubRoller(hit=[2, 5], wound=[6]))
     assert float(sum(base)) == 0.0
     assert float(sum(rer)) == 1.0
+
+
+def test_reroll_wounds_ones():
+    # S4 vs T4 → wound 4+. hit [5] (хит), wound [1] (провал-единица) → урон 0;
+    # reroll_wounds="ones" [1]→ре-ролл [6] (ранит) → урон 1.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[5], wound=[1]))
+    rer, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"reroll_wounds": "ones"},
+                    roller=StubRoller(hit=[5], wound=[1, 6]))
+    assert float(sum(base)) == 0.0
+    assert float(sum(rer)) == 1.0
+
+
+def test_reroll_wounds_all_rerolls_failures():
+    # S4 vs T4 → wound 4+. hit [5], wound [3] (провал) → урон 0;
+    # reroll_wounds="all" [3]→ре-ролл [5] (ранит) → урон 1.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[5], wound=[3]))
+    rer, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"reroll_wounds": "all"},
+                    roller=StubRoller(hit=[5], wound=[3, 5]))
+    assert float(sum(base)) == 0.0
+    assert float(sum(rer)) == 1.0
+
+
+def test_reroll_save_all_saves_failed_save():
+    # Sv4. hit [5], wound [6] (ранит), save [3] (провал, нужно 4+) → урон 1;
+    # reroll_save="all" [3]→ре-ролл [5] (сейв) → урон 0.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 4, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[5], wound=[6], save=[3]))
+    sav, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"reroll_save": "all"},
+                    roller=StubRoller(hit=[5], wound=[6], save=[3, 5]))
+    assert float(sum(base)) == 1.0
+    assert float(sum(sav)) == 0.0
+
+
+def test_normalize_effects_reroll_wounds_save():
+    assert _normalize_effects({"reroll_wounds": "all"})["reroll_wounds"] == "all"
+    assert _normalize_effects({"reroll_save": "ones"})["reroll_save"] == "ones"
+    assert _normalize_effects({})["reroll_wounds"] is None
+    assert _normalize_effects({})["reroll_save"] is None
+    assert _normalize_effects({"reroll_wounds": "weird"})["reroll_wounds"] is None

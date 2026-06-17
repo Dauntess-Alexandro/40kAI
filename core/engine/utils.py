@@ -320,7 +320,14 @@ def _normalize_effects(effects):
 
     None -> дефолты (cover=False); "benefit of cover" -> cover=True; dict -> читаем ключи.
     """
-    out = {"cover": False, "reroll_hits": None, "strength_mod": 0, "ap_improve": 0}
+    out = {
+        "cover": False,
+        "reroll_hits": None,
+        "reroll_wounds": None,
+        "reroll_save": None,
+        "strength_mod": 0,
+        "ap_improve": 0,
+    }
     if effects is None:
         return out
     if isinstance(effects, str):
@@ -331,6 +338,10 @@ def _normalize_effects(effects):
         out["cover"] = bool(effects.get("cover") or effects.get("benefit_of_cover"))
         rh = effects.get("reroll_hits")
         out["reroll_hits"] = rh if rh in ("ones", "all") else None
+        rw = effects.get("reroll_wounds")
+        out["reroll_wounds"] = rw if rw in ("ones", "all") else None
+        rs = effects.get("reroll_save")
+        out["reroll_save"] = rs if rs in ("ones", "all") else None
         try:
             out["strength_mod"] = int(effects.get("strength_mod", 0) or 0)
         except (TypeError, ValueError):
@@ -505,6 +516,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             else:
                 wound_rolls = np.array(list(wound_rolls), dtype=int)
 
+            if eff["reroll_wounds"]:
+                need = []
+                for idx, w in enumerate(wound_rolls):
+                    w = int(w)
+                    if eff["reroll_wounds"] == "ones" and w == 1:
+                        need.append(idx)
+                    elif eff["reroll_wounds"] == "all" and w < wt:
+                        need.append(idx)
+                if need:
+                    new = _roll_with_stage(num=len(need), stage="wound")
+                    new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
+                    for j, idx in enumerate(need):
+                        wound_rolls[idx] = int(new[j])
+
             for w in wound_rolls:
                 w = int(w)
                 if w == 1:
@@ -519,6 +544,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             save_rolls = np.array([save_rolls], dtype=int)
         else:
             save_rolls = np.array(list(save_rolls), dtype=int)
+
+        if eff["reroll_save"]:
+            need = []
+            for idx, r in enumerate(save_rolls):
+                r = int(r)
+                if eff["reroll_save"] == "ones" and r == 1:
+                    need.append(idx)
+                elif eff["reroll_save"] == "all" and r < save_target:
+                    need.append(idx)
+            if need:
+                new = _roll_with_stage(num=len(need), stage="save")
+                new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
+                for j, idx in enumerate(need):
+                    save_rolls[idx] = int(new[j])
 
         for k in range(len(dmg_instances)):
             r = int(save_rolls[k])
