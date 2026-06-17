@@ -76,7 +76,7 @@ REGISTRY: tuple[StratagemDef, ...] = (
     StratagemDef(
         id="heroic_intervention",
         name_ru="Heroic Intervention",
-        cp_cost=1,
+        cp_cost=2,
         phases=(Phase.CHARGE,),
         timing=Timing.REACTION,
         trigger=Trigger.ENEMY_CHARGED_IN,

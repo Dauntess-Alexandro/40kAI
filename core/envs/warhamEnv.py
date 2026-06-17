@@ -1029,6 +1029,7 @@ class Warhammer40kEnv(gym.Env):
         self.modelStrat = {"overwatch": -1, "smokescreen": -1}
         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
         self.stratagem_used = []
+        self.reaction_policy = None
         self.unitFellBack = []
         self.enemyFellBack = []
 
@@ -3930,6 +3931,24 @@ class Warhammer40kEnv(gym.Env):
 
     def _unit_has_smoke(self, unit_data: dict) -> bool:
         return self._unit_has_keyword(unit_data, "smoke")
+
+    def _should_use_reaction(self, stratagem_id, side, chosen, candidates, phase, cp) -> bool:
+        """Решение «использовать реакцию»: без политики — текущее поведение (всегда да)."""
+        policy = getattr(self, "reaction_policy", None)
+        if policy is None:
+            return True
+        ctx = {
+            "side": side,
+            "stratagem_id": stratagem_id,
+            "phase": phase,
+            "chosen": chosen,
+            "candidates": list(candidates),
+            "cp": int(cp),
+        }
+        try:
+            return bool(policy(ctx))
+        except Exception:
+            return True
 
     def _maybe_use_smokescreen(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """
