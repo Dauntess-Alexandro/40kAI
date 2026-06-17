@@ -4342,7 +4342,7 @@ class Warhammer40kEnv(gym.Env):
             self.active_side = self.turn_order[current_index + 1]
         self.phase = "command"
 
-    def command_phase(self, side: str, action=None, manual: bool = False):
+    def command_phase(self, side: str, action=None, manual: bool = False, decide_bravery=None):
         self.begin_phase(side, "command")
         if side == "model":
             self._terrain_shaping_shot_bonus_units = set()
@@ -4372,7 +4372,11 @@ class Warhammer40kEnv(gym.Env):
                         self.modelOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
+                        if decide_bravery is not None:
+                            _use_bravery = bool(decide_bravery(i))
+                        else:
+                            _use_bravery = bool(action and action.get("use_cp") == 1 and action.get("cp_on") == i)
+                        if _use_bravery:
                             _bravery = _apply_stratagem(self, "model", "insane_bravery", i)
                             if _bravery["ok"]:
                                 battle_shock[i] = False
