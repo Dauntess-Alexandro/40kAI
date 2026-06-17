@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.engine.phases.legacy_compiler import default_action_dict
 from core.engine.phases.option_generator import (
+    charge_options_for_unit,
     command_window,
     movement_options_for_unit,
     shooting_options_for_unit,
@@ -92,4 +93,37 @@ def run_shooting(env, side, decide):
         advanced_flags=[False] * len(health),
         action=action,
         decide_shoot=lambda i: chosen_rank.get(i, -1),
+    )
+
+
+def run_charge(env, side, decide):
+    """Исполнить фазу чарджа через окна решений (по юниту).
+
+    decide(window) -> ActionOption: CHARGE (target_idx — глобальный id врага) или PASS.
+    Для PASS-юнитов decide_charge возвращает None (чардж не объявляется).
+    """
+    e = _unwrap(env)
+    health = e.unit_health if side == "model" else e.enemy_health
+    alive = [i for i, hp in enumerate(health) if hp > 0]
+    chosen_target: dict[int, int] = {}
+    for u in alive:
+        opts = charge_options_for_unit(e, side, u)
+        win = DecisionWindow(
+            window_id=f"charge:{side}:{u}",
+            owner_side=side,
+            phase=Phase.CHARGE,
+            sub_step=SubStep.PICK_CHARGE_TARGET,
+            timing=Timing.MAIN,
+            cursor_unit_idx=int(u),
+            options=opts,
+        )
+        opt = decide(win)
+        if opt is not None and opt.kind is ActionKind.CHARGE and opt.target_idx is not None:
+            chosen_target[int(u)] = int(opt.target_idx)
+    action = default_action_dict(len(health))
+    return e.charge_phase(
+        side,
+        advanced_flags=[False] * len(health),
+        action=action,
+        decide_charge=lambda i: chosen_target.get(i),
     )

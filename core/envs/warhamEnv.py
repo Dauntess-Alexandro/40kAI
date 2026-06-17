@@ -6014,7 +6014,7 @@ class Warhammer40kEnv(gym.Env):
                                 )
         return None
 
-    def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+    def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_charge=None):
         self.begin_phase(side, "charge")
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
@@ -6058,7 +6058,13 @@ class Warhammer40kEnv(gym.Env):
                                 potential_targets.append(j)
                     if potential_targets:
                         any_charge_targets = True
-                    if action["attack"] != 1:
+                    if decide_charge is not None:
+                        _charge_target = decide_charge(i)
+                        _do_charge = _charge_target is not None
+                    else:
+                        _charge_target = None
+                        _do_charge = action["attack"] == 1
+                    if not _do_charge:
                         if potential_targets:
                             target_list = self._format_unit_choices("enemy", potential_targets)
                             self._log_unit(
@@ -6073,7 +6079,7 @@ class Warhammer40kEnv(gym.Env):
                     chargeAble = []
                     dice_vals = dice(num=2)
                     diceRoll = sum(dice_vals)
-                    if action["attack"] == 1:
+                    if _do_charge:
                         if potential_targets:
                             for j in potential_targets:
                                 if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
@@ -6084,7 +6090,7 @@ class Warhammer40kEnv(gym.Env):
                                     if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
                                         chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfE = action["charge"]
+                        idOfE = int(_charge_target) if decide_charge is not None else action["charge"]
                         target_list = self._format_unit_choices("enemy", chargeAble)
                         dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i]) if idOfE in chargeAble else None
                         if _verbose_logs_enabled():
