@@ -3982,6 +3982,45 @@ class Warhammer40kEnv(gym.Env):
         except Exception:
             return True
 
+    def _maybe_use_go_to_ground(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
+        """10e Go to Ground: реакция INFANTRY-защитника при выборе целью стрельбы → benefit of cover.
+
+        Фолбэк Smokescreen для юнитов без SMOKE: требует keyword INFANTRY и 1 CP.
+        """
+        if defender_side == "model":
+            cp = self.modelCP
+            unit_data = self.unit_data[defender_idx]
+        else:
+            cp = self.enemyCP
+            unit_data = self.enemy_data[defender_idx]
+
+        if not self._unit_has_keyword(unit_data, "infantry"):
+            return None
+        if cp < 1:
+            return None
+
+        if manual:
+            strat = self._prompt_yes_no("Использовать Go to Ground (1 CP)? (y/n): ")
+            if strat is None:
+                self.game_over = True
+                return None
+            use_it = strat
+        else:
+            use_it = self._should_use_reaction("go_to_ground", defender_side, defender_idx, [defender_idx], phase, cp)
+
+        if not use_it:
+            return None
+
+        _apply_stratagem(self, defender_side, "go_to_ground", defender_idx, phase=phase)
+        self._log_rule(
+            defender_side,
+            defender_idx,
+            "Go to Ground",
+            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: benefit of cover до конца фазы.",
+            phase=phase,
+        )
+        return "benefit of cover"
+
     def _maybe_use_smokescreen(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """
         10e Smokescreen: реакция защитника в момент выбора цели для стрельбы.
@@ -3996,7 +4035,7 @@ class Warhammer40kEnv(gym.Env):
             unit_data = self.enemy_data[defender_idx]
 
         if not self._unit_has_smoke(unit_data):
-            return None
+            return self._maybe_use_go_to_ground(defender_side, defender_idx, phase, manual=manual)
         if cp < 1:
             self._log_rule(
                 defender_side,

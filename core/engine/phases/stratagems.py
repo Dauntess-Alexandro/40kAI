@@ -112,6 +112,18 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="command_reroll_wounds",
     ),
+    StratagemDef(
+        id="go_to_ground",
+        name_ru="Go to Ground",
+        cp_cost=1,
+        phases=(Phase.SHOOTING,),
+        timing=Timing.REACTION,
+        trigger=Trigger.TARGETED_BY_SHOOTING,
+        scope="reacting_unit",
+        keyword_req=("infantry",),
+        usage_limit=UsageLimit.UNLIMITED,
+        effect_id="benefit_of_cover",
+    ),
 )
 
 
