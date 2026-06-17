@@ -3,7 +3,6 @@ from __future__ import annotations
 import random
 from collections import deque
 from dataclasses import dataclass
-from typing import List
 
 import numpy as np
 
@@ -15,6 +14,12 @@ class AZTransition:
     value_target: float
     policy_version: int = 0
     faction: str = ""
+    # Stage 8.2: опциональные phase/stratagem-метаданные (дефолт None — обратная совместимость).
+    phase: str | None = None
+    window_id: str | None = None
+    stratagem_id: str | None = None
+    cp_before: int | None = None
+    cp_after: int | None = None
 
 
 class AlphaZeroReplayBuffer:
@@ -32,7 +37,7 @@ class AlphaZeroReplayBuffer:
     def push(self, transition: AZTransition) -> None:
         self.buffer.append(transition)
 
-    def push_many(self, transitions: List[AZTransition]) -> None:
+    def push_many(self, transitions: list[AZTransition]) -> None:
         for t in transitions:
             self.push(t)
 
