@@ -1,7 +1,7 @@
-from core.engine.unit import Unit
 from core.engine.mission import apply_end_of_battle
 from core.engine.phases import phase_engine
 from core.engine.phases.types import ActionKind, Phase
+from core.engine.unit import Unit
 from core.envs.warhamEnv import Warhammer40kEnv
 
 
@@ -73,8 +73,7 @@ def run_windowed_default_turn(env: Warhammer40kEnv, side: str = "model"):
     state = phase_engine.run_movement(env, side, _default_window_decide, state)
     state = phase_engine.run_shooting(env, side, _default_window_decide, state)
     state = phase_engine.run_charge(env, side, _default_window_decide, state)
-    fight_delta = env.fight_phase(side) or 0.0
-    state.reward_delta += float(fight_delta)
+    state = phase_engine.run_fight(env, side, _default_window_decide, state)
     env._invalidate_target_cache(f"windowed_default_after_fight:{side}")
     apply_end_of_battle(env, log_fn=env._log)
     if side == "model":

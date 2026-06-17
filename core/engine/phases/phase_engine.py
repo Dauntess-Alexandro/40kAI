@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from core.engine.phases import stratagem_engine
 from core.engine.phases.legacy_compiler import default_action_dict
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
     command_window,
+    fight_stratagem_options_for_unit,
     movement_options_for_unit,
     shooting_options_for_unit,
 )
@@ -192,4 +194,40 @@ def run_charge(env, side, decide, state: PhaseTurnState | None = None) -> PhaseT
     reward_delta = float(result or 0.0) if result is not None else 0.0
     state.reward_delta += reward_delta
     state.info["charge_reward_delta"] = reward_delta
+    return state
+
+
+def run_fight(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTurnState:
+    """Исполнить фазу боя через окна решений (по eligible-бойцу).
+
+    decide(window) -> ActionOption: USE_STRATAGEM (fight-phase, напр. hungry_void) или PASS.
+    Выбранные стратагемы применяются через stratagem_engine.apply ДО боя — fight_phase
+    читает их из active_stratagem_effects (_fight_effects_for_attacker).
+    """
+    e = _unwrap(env)
+    state = _ensure_state(e, side, state)
+    health = e.unit_health if side == "model" else e.enemy_health
+    in_attack = e.unitInAttack if side == "model" else e.enemyInAttack
+    eligible = [i for i in range(len(health)) if health[i] > 0 and in_attack[i][0] == 1]
+    chosen: dict[int, str] = {}
+    for u in eligible:
+        opts = fight_stratagem_options_for_unit(e, side, u)
+        win = DecisionWindow(
+            window_id=f"fight:{side}:{u}",
+            owner_side=side,
+            phase=Phase.FIGHT,
+            sub_step=SubStep.FIGHT_UNIT,
+            timing=Timing.MAIN,
+            cursor_unit_idx=int(u),
+            options=opts,
+        )
+        opt = decide(win)
+        if opt is not None and opt.kind is ActionKind.USE_STRATAGEM and opt.meta.get("stratagem_id"):
+            chosen[int(u)] = str(opt.meta["stratagem_id"])
+    for u, sid in chosen.items():
+        stratagem_engine.apply(e, side, sid, u, phase="fight")
+    result = e.fight_phase(side)
+    reward_delta = float(result or 0.0) if result is not None else 0.0
+    state.reward_delta += reward_delta
+    state.info["fight_reward_delta"] = reward_delta
     return state
