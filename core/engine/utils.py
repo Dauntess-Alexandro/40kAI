@@ -315,6 +315,33 @@ def _roll_attacks_expr(expr, _roll_fn):
     return 1, False
 
 
+def _normalize_effects(effects):
+    """Привести effects к dict со стабильными ключами (назад-совместимо).
+
+    None -> дефолты (cover=False); "benefit of cover" -> cover=True; dict -> читаем ключи.
+    """
+    out = {"cover": False, "reroll_hits": None, "strength_mod": 0, "ap_improve": 0}
+    if effects is None:
+        return out
+    if isinstance(effects, str):
+        if effects.strip().lower() == "benefit of cover":
+            out["cover"] = True
+        return out
+    if isinstance(effects, dict):
+        out["cover"] = bool(effects.get("cover") or effects.get("benefit_of_cover"))
+        rh = effects.get("reroll_hits")
+        out["reroll_hits"] = rh if rh in ("ones", "all") else None
+        try:
+            out["strength_mod"] = int(effects.get("strength_mod", 0) or 0)
+        except (TypeError, ValueError):
+            out["strength_mod"] = 0
+        try:
+            out["ap_improve"] = int(effects.get("ap_improve", 0) or 0)
+        except (TypeError, ValueError):
+            out["ap_improve"] = 0
+    return out
+
+
 def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
            rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None, hit_on_6: bool = False):
     """Attack resolution (приведено к "10e-стилю" бросков).
@@ -356,6 +383,8 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             return roller(num=num, max=max, stage=stage)
         return roller(num=num, max=max)
 
+    eff = _normalize_effects(effects)
+
     # --- Targets / profile parsing ---
     sv_base = _to_int(attackeeData.get("Sv"), default=7)
     inv = _to_int(attackeeData.get("IVSave"), default=0)  # 0 = нет инвула
@@ -372,7 +401,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     ap = _to_int(attackerWeapon.get("AP"), default=0)
 
     # Benefit of cover: +1 к сейву => целевое значение СНИЖАЕТСЯ на 1 (мин 2+)
-    cover_bonus = 1 if (effects == "benefit of cover" and rangeOfComb == "Ranged") else 0
+    cover_bonus = 1 if (eff["cover"] and rangeOfComb == "Ranged") else 0
 
     # Цель сейва: Sv - cover_bonus - AP  (если AP отрицательный, то минус AP => +)
     save_target = sv_base - cover_bonus - ap
