@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from core.engine.phases.legacy_compiler import default_action_dict
-from core.engine.phases.option_generator import command_window, movement_options_for_unit
+from core.engine.phases.option_generator import (
+    command_window,
+    movement_options_for_unit,
+    shooting_options_for_unit,
+)
 from core.engine.phases.types import ActionKind, DecisionWindow, Phase, SubStep, Timing
 
 
@@ -55,4 +59,37 @@ def run_movement(env, side, decide):
         action=action,
         battle_shock=[False] * len(health),
         decide_move=lambda i: chosen_idx.get(i, 0),
+    )
+
+
+def run_shooting(env, side, decide):
+    """Исполнить фазу стрельбы через окна решений (по юниту).
+
+    decide(window) -> ActionOption: SHOOT (с param local_rank) или PASS.
+    Для PASS-юнитов decide_shoot возвращает -1 (ранг вне диапазона → стрельба пропускается).
+    """
+    e = _unwrap(env)
+    health = e.unit_health if side == "model" else e.enemy_health
+    alive = [i for i, hp in enumerate(health) if hp > 0]
+    chosen_rank: dict[int, int] = {}
+    for u in alive:
+        opts = shooting_options_for_unit(e, side, u)
+        win = DecisionWindow(
+            window_id=f"shooting:{side}:{u}",
+            owner_side=side,
+            phase=Phase.SHOOTING,
+            sub_step=SubStep.PICK_SHOOT_TARGET,
+            timing=Timing.MAIN,
+            cursor_unit_idx=int(u),
+            options=opts,
+        )
+        opt = decide(win)
+        if opt is not None and opt.kind is ActionKind.SHOOT and opt.param.get("local_rank") is not None:
+            chosen_rank[int(u)] = int(opt.param["local_rank"])
+    action = default_action_dict(len(health))
+    return e.shooting_phase(
+        side,
+        advanced_flags=[False] * len(health),
+        action=action,
+        decide_shoot=lambda i: chosen_rank.get(i, -1),
     )

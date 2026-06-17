@@ -5384,7 +5384,7 @@ class Warhammer40kEnv(gym.Env):
 
         return None
 
-    def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+    def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_shoot=None):
         self.begin_phase(side, "shooting")
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
@@ -5414,7 +5414,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = self.get_shoot_targets_for_unit("model", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
-                    raw = action["shoot"]
+                    raw = int(decide_shoot(i)) if decide_shoot is not None else action["shoot"]
                     if 0 <= raw < len(valid_target_ids):
                         idOfE = valid_target_ids[raw]
                         target_hp_prev = self.enemy_health[idOfE]
