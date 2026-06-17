@@ -2,6 +2,7 @@ import numpy as np
 
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
+    movement_options_for_unit,
     shooting_options_for_unit,
 )
 from core.engine.phases.types import ActionKind
@@ -83,3 +84,44 @@ def test_charge_targets_union_matches_charge_mask():
 
     if gen_ids:
         assert gen_ids == mask_ids
+
+
+def test_movement_options_index_parity_with_executor():
+    env = build_env()
+    env.unit_coords[0] = [15, 15]
+    env._invalidate_target_cache("test")
+
+    opts = movement_options_for_unit(env, "model", 0)
+    assert opts and opts[0].kind is ActionKind.STAY
+    assert opts[0].param["reachable_index"] == 0
+
+    base_m = int(env.unit_data[0]["Movement"])
+    # Для каждой сгенерированной опции dest совпадает с тем, что вернёт исполнитель по тому же индексу.
+    total = None
+    for o in opts:
+        k = o.param["reachable_index"]
+        dest, _mode, _dist, chosen_idx, total = env._pick_destination_by_reachable_index(
+            "model", 0, choice=k, base_m=base_m, unit_label="[TEST]"
+        )
+        assert dest is not None
+        assert chosen_idx == k
+        assert o.param["dest"] == (int(dest[0]), int(dest[1]))
+        assert o.legacy_patch == {"move_num_0": k}
+    # Генератор покрывает ровно весь исполнительный диапазон reachable.
+    assert len(opts) == total
+
+
+def test_movement_generator_exceeds_buggy_move_num_mask():
+    """Документирует баг маски move_num (len(overlay)=2 → только индексы 0,1,2).
+
+    Генератор движется по исполнительной истине и обязан давать НЕ меньше
+    опций, чем разрешает сломанная маска.
+    """
+    env = build_env()
+    env.unit_coords[0] = [15, 15]
+    env._invalidate_target_cache("test")
+
+    mask = env.get_legal_action_masks_by_head("model")["move_num_0"]
+    mask_true = int(np.sum(np.asarray(mask, dtype=bool)))
+    opts = movement_options_for_unit(env, "model", 0)
+    assert len(opts) >= mask_true
