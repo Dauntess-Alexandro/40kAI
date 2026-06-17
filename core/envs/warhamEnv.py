@@ -31,6 +31,7 @@ from core.engine.mission import (
     score_end_of_command_phase,
     terrain_cells_from_features,
 )
+from core.engine.phases.stratagem_engine import apply as _apply_stratagem
 from core.engine.skills import apply_end_of_command_phase
 from core.engine.state_export import write_state_json
 from project_paths import ARTIFACTS_METRICS_DIR, BOARD_PATH, RUNTIME_STATE_DIR
@@ -4341,7 +4342,8 @@ class Warhammer40kEnv(gym.Env):
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
                         if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
-                            if self.modelCP - 1 >= 0:
+                            _bravery = _apply_stratagem(self, "model", "insane_bravery", i)
+                            if _bravery["ok"]:
                                 battle_shock[i] = False
                                 reward_delta += reward_cfg.COMMAND_INSANE_BRAVERY_REWARD
                                 self._log_reward_unit(
@@ -4351,7 +4353,6 @@ class Warhammer40kEnv(gym.Env):
                                     "Reward (командование): "
                                     f"Insane Bravery bonus=+{reward_cfg.COMMAND_INSANE_BRAVERY_REWARD:.3f}",
                                 )
-                                self.modelCP -= 1
                                 if self.trunc is False:
                                     self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
                             else:
