@@ -1187,6 +1187,8 @@ class Warhammer40kEnv(gym.Env):
             "viewer_activation": _ga(_self, "viewer_activation", False),
             "viewer_awaiting_ack": _ga(_self, "viewer_awaiting_ack", False),
             "modelUpdates": _ga(_self, "modelUpdates", ""),
+            "_enemy_cp_on": _ga(_self, "_enemy_cp_on", None),
+            "_enemy_use_cp": _ga(_self, "_enemy_use_cp", None),
         }
 
         # --- numpy array ---
@@ -1230,6 +1232,10 @@ class Warhammer40kEnv(gym.Env):
             v = _ga(_self, _k, None)
             snap[_k] = dict(v) if v is not None else {}
 
+        # --- журнал стратагем (list of (side, id, round)) ---
+        _su = _ga(_self, "stratagem_used", None)
+        snap["stratagem_used"] = [tuple(x) for x in _su] if _su is not None else []
+
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
             v = _ga(_self, _k, None)
@@ -1259,6 +1265,7 @@ class Warhammer40kEnv(gym.Env):
             "last_end_reason", "last_winner", "current_action_index",
             "viewer_step_seq", "viewer_activation", "viewer_awaiting_ack",
             "modelUpdates",
+            "_enemy_cp_on", "_enemy_use_cp",
         )
         for _k in _SCALAR_KEYS:
             if _k in snapshot:
@@ -1305,6 +1312,9 @@ class Warhammer40kEnv(gym.Env):
         for _k in ("modelStrat", "enemyStrat"):
             if _k in snapshot:
                 setattr(_self, _k, dict(snapshot[_k]))
+
+        if "stratagem_used" in snapshot:
+            _self.stratagem_used = [tuple(x) for x in snapshot["stratagem_used"]]
 
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
