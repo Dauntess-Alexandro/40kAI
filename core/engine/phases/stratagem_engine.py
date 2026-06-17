@@ -37,19 +37,22 @@ def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase:
             int(unit_idx) if unit_idx is not None else None,
         )
     )
-    if d.effect_id == "hungry_void_strength_mod" and unit_idx is not None:
+    _FIGHT_EFFECT_PAYLOAD = {
+        "hungry_void_strength_mod": {"strength_mod": 1},
+        "command_reroll_wounds": {"reroll_wounds": "all"},
+    }
+    if d.effect_id in _FIGHT_EFFECT_PAYLOAD and unit_idx is not None:
         active = getattr(e, "active_stratagem_effects", None)
         if active is None:
             active = []
             e.active_stratagem_effects = active
-        active.append(
-            {
-                "side": str(side),
-                "unit_idx": int(unit_idx),
-                "round": int(getattr(e, "battle_round", 1)),
-                "phase": str(phase or getattr(e, "phase", "fight") or "fight"),
-                "effect_id": d.effect_id,
-                "strength_mod": 1,
-            }
-        )
+        rec = {
+            "side": str(side),
+            "unit_idx": int(unit_idx),
+            "round": int(getattr(e, "battle_round", 1)),
+            "phase": str(phase or getattr(e, "phase", "fight") or "fight"),
+            "effect_id": d.effect_id,
+        }
+        rec.update(_FIGHT_EFFECT_PAYLOAD[d.effect_id])
+        active.append(rec)
     return {"ok": True, "cp_spent": d.cp_cost, "reason": None}

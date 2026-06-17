@@ -14,9 +14,9 @@ from tests.engine.phases._helpers import build_env
 
 
 def test_registry_integrity():
-    assert len(REGISTRY) == 5
+    assert len(REGISTRY) == 6
     ids = [d.id for d in REGISTRY]
-    assert ids == ["insane_bravery", "overwatch", "smokescreen", "heroic_intervention", "hungry_void"]
+    assert ids == ["insane_bravery", "overwatch", "smokescreen", "heroic_intervention", "hungry_void", "command_reroll"]
     assert len(ids) == len(set(ids))
     for d in REGISTRY:
         assert isinstance(d, StratagemDef)
@@ -30,7 +30,7 @@ def test_lookups_by_phase_and_trigger():
     assert any(d.id == "hungry_void" for d in for_phase(Phase.FIGHT))
     assert [d.id for d in for_trigger(Trigger.TARGETED_BY_SHOOTING)] == ["smokescreen"]
     assert [d.id for d in for_trigger(Trigger.BATTLE_SHOCK_FAILED)] == ["insane_bravery"]
-    assert [d.id for d in for_trigger(Trigger.FIGHT_PHASE)] == ["hungry_void"]
+    assert [d.id for d in for_trigger(Trigger.FIGHT_PHASE)] == ["hungry_void", "command_reroll"]
 
 
 def test_smokescreen_requires_smoke_keyword():

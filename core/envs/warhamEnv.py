@@ -2214,7 +2214,7 @@ class Warhammer40kEnv(gym.Env):
         return base_effect
 
     def _fight_effects_for_attacker(self, side: str, unit_idx: int):
-        effects: dict[str, int] = {}
+        effects: dict = {}
         for rec in list(getattr(self, "active_stratagem_effects", []) or []):
             if str(rec.get("phase", "")) != "fight":
                 continue
@@ -2226,6 +2226,8 @@ class Warhammer40kEnv(gym.Env):
                 continue
             if rec.get("effect_id") == "hungry_void_strength_mod":
                 effects["strength_mod"] = int(effects.get("strength_mod", 0)) + int(rec.get("strength_mod", 1))
+            elif rec.get("effect_id") == "command_reroll_wounds":
+                effects["reroll_wounds"] = str(rec.get("reroll_wounds", "all"))
         return effects or None
 
     def _clear_phase_stratagem_effects(self, phase: str) -> None:

@@ -98,6 +98,20 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="hungry_void_strength_mod",
     ),
+    StratagemDef(
+        id="command_reroll",
+        # Approximation: по правилам 10e Command Re-roll = ре-ролл ОДНОГО броска в любой фазе.
+        # В песочнице упрощено до fight-phase: ре-ролл всех проваленных wound-бросков атаки юнита.
+        name_ru="Command Re-roll (упрощённо)",
+        cp_cost=1,
+        phases=(Phase.FIGHT,),
+        timing=Timing.MAIN,
+        trigger=Trigger.FIGHT_PHASE,
+        scope="self_unit",
+        keyword_req=(),
+        usage_limit=UsageLimit.PER_PHASE,
+        effect_id="command_reroll_wounds",
+    ),
 )
 
 
