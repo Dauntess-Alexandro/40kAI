@@ -18,153 +18,199 @@ Dialog {
     readonly property var algoColors: ["#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706", "#be185d", "#0891b2"]
     readonly property var algoTabNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ", "SMZ", "GAZ"]
 
+    // --- стат-бары ---
+    readonly property var dqnStats: [
+        { label: qsTr("Скорость старта"), value: 4 },
+        { label: qsTr("Сила тактики"),    value: 4 },
+        { label: qsTr("Цена инференса"),  value: 1 },
+        { label: qsTr("Сложность"),       value: 4 }
+    ]
+    readonly property var ppoStats: [
+        { label: qsTr("Скорость старта"), value: 5 },
+        { label: qsTr("Сила тактики"),    value: 2 },
+        { label: qsTr("Цена инференса"),  value: 1 },
+        { label: qsTr("Сложность"),       value: 3 }
+    ]
+    readonly property var azTreeStats: [
+        { label: qsTr("Скорость старта"), value: 2 },
+        { label: qsTr("Сила тактики"),    value: 5 },
+        { label: qsTr("Цена инференса"),  value: 4 },
+        { label: qsTr("Сложность"),       value: 4 }
+    ]
+    readonly property var azProxyStats: [
+        { label: qsTr("Скорость старта"), value: 3 },
+        { label: qsTr("Сила тактики"),    value: 3 },
+        { label: qsTr("Цена инференса"),  value: 2 },
+        { label: qsTr("Сложность"),       value: 3 }
+    ]
+    readonly property var gmzStats: [
+        { label: qsTr("Скорость старта"), value: 1 },
+        { label: qsTr("Сила тактики"),    value: 5 },
+        { label: qsTr("Цена инференса"),  value: 5 },
+        { label: qsTr("Сложность"),       value: 5 }
+    ]
+    readonly property var smzStats: [
+        { label: qsTr("Скорость старта"), value: 2 },
+        { label: qsTr("Сила тактики"),    value: 4 },
+        { label: qsTr("Цена инференса"),  value: 3 },
+        { label: qsTr("Сложность"),       value: 4 }
+    ]
+    readonly property var gazStats: [
+        { label: qsTr("Скорость старта"), value: 2 },
+        { label: qsTr("Сила тактики"),    value: 4 },
+        { label: qsTr("Цена инференса"),  value: 4 },
+        { label: qsTr("Сложность"),       value: 5 }
+    ]
+
+    // --- бейджи ---
     readonly property var dqnBadges: [
-        { text: "Классика+",     bg: "#dbeafe", fg: "#1e40af" },
-        { text: "Надёжный",      bg: "#e0e7ff", fg: "#3730a3" },
-        { text: "Средний train", bg: "#dbeafe", fg: "#1e40af" },
-        { text: "Q-оценки",      bg: "#e0e7ff", fg: "#3730a3" }
+        { text: qsTr("Rainbow"),     bg: "#dbeafe", fg: "#1e40af" },
+        { text: qsTr("IQN + Noisy"), bg: "#e0e7ff", fg: "#3730a3" },
+        { text: qsTr("PER + n-step"),bg: "#dbeafe", fg: "#1e40af" },
+        { text: qsTr("Q-оценки"),    bg: "#e0e7ff", fg: "#3730a3" }
     ]
     readonly property var ppoBadges: [
-        { text: "Рабочий дефолт", bg: "#ccfbf1", fg: "#115e59" },
-        { text: "Стабильный",     bg: "#99f6e4", fg: "#134e4a" },
-        { text: "Быстрый train",  bg: "#ccfbf1", fg: "#115e59" },
-        { text: "Policy-RL",      bg: "#99f6e4", fg: "#134e4a" }
+        { text: qsTr("Рабочий дефолт"), bg: "#ccfbf1", fg: "#115e59" },
+        { text: qsTr("Стабильный"),     bg: "#99f6e4", fg: "#134e4a" },
+        { text: qsTr("Быстрый train"),  bg: "#ccfbf1", fg: "#115e59" },
+        { text: qsTr("Policy-RL"),      bg: "#99f6e4", fg: "#134e4a" }
     ]
     readonly property var azTreeBadges: [
-        { text: "Тактика+",                bg: "#ede9fe", fg: "#5b21b6" },
-        { text: "Качество",                bg: "#ddd6fe", fg: "#4c1d95" },
-        { text: "Super Very Compute-heavy",bg: "#ede9fe", fg: "#5b21b6" },
-        { text: "MCTS",                    bg: "#ddd6fe", fg: "#4c1d95" }
+        { text: qsTr("Тактика+"),                bg: "#ede9fe", fg: "#5b21b6" },
+        { text: qsTr("Качество"),                bg: "#ddd6fe", fg: "#4c1d95" },
+        { text: qsTr("Super Very Compute-heavy"),bg: "#ede9fe", fg: "#5b21b6" },
+        { text: qsTr("MCTS"),                    bg: "#ddd6fe", fg: "#4c1d95" }
     ]
     readonly property var azProxyBadges: [
-        { text: "Тактика",       bg: "#e0e7ff", fg: "#3730a3" },
-        { text: "Лёгкий MCTS",   bg: "#c7d2fe", fg: "#312e81" },
-        { text: "Compute-light", bg: "#e0e7ff", fg: "#3730a3" },
-        { text: "Proxy-поиск",   bg: "#c7d2fe", fg: "#312e81" }
+        { text: qsTr("Тактика"),       bg: "#e0e7ff", fg: "#3730a3" },
+        { text: qsTr("Лёгкий MCTS"),   bg: "#c7d2fe", fg: "#312e81" },
+        { text: qsTr("Compute-light"), bg: "#e0e7ff", fg: "#3730a3" },
+        { text: qsTr("Proxy-поиск"),   bg: "#c7d2fe", fg: "#312e81" }
     ]
     readonly property var gmzBadges: [
-        { text: "Топ Качество",       bg: "#fef3c7", fg: "#92400e" },
-        { text: "Тяжёлый режим",      bg: "#fde68a", fg: "#78350f" },
-        { text: "Very Compute-heavy", bg: "#fef3c7", fg: "#92400e" },
-        { text: "Search+",            bg: "#fde68a", fg: "#78350f" }
+        { text: qsTr("Топ Качество"),       bg: "#fef3c7", fg: "#92400e" },
+        { text: qsTr("Тяжёлый режим"),      bg: "#fde68a", fg: "#78350f" },
+        { text: qsTr("Very Compute-heavy"), bg: "#fef3c7", fg: "#92400e" },
+        { text: qsTr("Search+"),            bg: "#fde68a", fg: "#78350f" }
     ]
     readonly property var smzBadges: [
-        { text: "Сэмпл K ходов",  bg: "#fce7f3", fg: "#831843" },
-        { text: "Joint actions",   bg: "#fbcfe8", fg: "#9d174d" },
-        { text: "IS-коррекция",    bg: "#fce7f3", fg: "#831843" },
-        { text: "v1 одна машина",  bg: "#fbcfe8", fg: "#9d174d" }
+        { text: qsTr("Сэмпл K ходов"),  bg: "#fce7f3", fg: "#831843" },
+        { text: qsTr("Joint actions"),   bg: "#fbcfe8", fg: "#9d174d" },
+        { text: qsTr("IS-коррекция"),    bg: "#fce7f3", fg: "#831843" },
+        { text: qsTr("v1 одна машина"),  bg: "#fbcfe8", fg: "#9d174d" }
     ]
     readonly property var gazBadges: [
-        { text: "Gumbel-план",    bg: "#cffafe", fg: "#155e75" },
-        { text: "Малый бюджет",   bg: "#a5f3fc", fg: "#164e63" },
-        { text: "Depth-1",        bg: "#cffafe", fg: "#155e75" },
-        { text: "Policy-improve", bg: "#a5f3fc", fg: "#164e63" }
+        { text: qsTr("Gumbel-план"),    bg: "#cffafe", fg: "#155e75" },
+        { text: qsTr("Малый бюджет"),   bg: "#a5f3fc", fg: "#164e63" },
+        { text: qsTr("Depth-1"),        bg: "#cffafe", fg: "#155e75" },
+        { text: qsTr("Policy-improve"), bg: "#a5f3fc", fg: "#164e63" }
     ]
 
+    // --- секции ---
     readonly property var dqnSections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "ИИ, который учится понимать, какой ход выгоднее в текущей ситуации. Для каждого действия он оценивает ожидаемую пользу и выбирает лучший вариант." },
-        { icon: "▶", title: "Как учится",
-          text: "Запоминает прошлые ситуации (состояние, действие, результат), потом на этих данных постепенно улучшает оценки действий. Со временем реже ошибается и лучше выбирает ходы в похожих сценариях." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• понятная логика выбора хода;\n• хорошее качество игры после обучения;\n• удобно сравнивать с PPO/AZ/GMZ;\n• обычно предсказуемое поведение в повторяющихся ситуациях;\n• подходит как надёжный базовый агент для тестов и долгих прогонов." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• может учиться дольше PPO;\n• чувствителен к настройкам;\n• требует больше вычислений при тренировке;\n• качество сильно зависит от того, насколько удачно подобраны гиперпараметры;\n• в очень сложной тактике может хуже справляться, чем модели с полноценным поиском (MCTS/Search)." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда нужен надёжный агент с понятным поведением и есть готовность подождать обучение ради качества итоговой модели." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("Не «ванильный» DQN, а Rainbow-набор: Double, Dueling, IQN, NoisyNet, n-step, PER. Off-policy value-агент без поиска.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Запоминает прошлые ситуации в приоритетный replay (PER) и обновляет Q-распределение (IQN) с n-step возвратами. NoisyNet вместо ε-жадного exploration.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• сильный baseline без MCTS;\n• IQN даёт более точную оценку действий;\n• NoisyNet — стабильный exploration;\n• дешёвый инференс;\n• удобно сравнивать с PPO/AZ/GMZ.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• без поиска может хуже видеть длинную тактику;\n• Rainbow-набор тянет больше настроек, чем чистый DQN;\n• качество сильно зависит от reward shaping.") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Первый запуск и проверка train/eval-потока — но уже как сильный baseline: часто его одного достаточно без MCTS.") }
     ]
     readonly property var ppoSections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "ИИ, который учится напрямую улучшать стратегию выбора действий. Он не просто оценивает отдельные ходы, а постепенно делает всю политику игры более качественной." },
-        { icon: "▶", title: "Как учится",
-          text: "Играет серии шагов (rollout), оценивает, какие решения были полезными, и обновляет стратегию небольшими безопасными шагами, чтобы не ломать уже выученное поведение." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• обычно стабильно обучается;\n• хороший баланс между скоростью обучения и качеством;\n• удобен как рабочий режим по умолчанию;\n• часто быстрее и предсказуемее в настройке, чем сложные search-модели;\n• подходит для длительных тренировок без сильных скачков поведения." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• не использует поиск по дереву на каждом ходе;\n• в сложной тактике может уступать AZ/GMZ с MCTS/Search;\n• качество зависит от rollout/epoch/minibatch настроек;\n• иногда требует тонкой подстройки коэффициентов (clip, entropy, value loss)." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда нужен надёжный универсальный агент с хорошим балансом скорость обучения / качество игры." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("ИИ, который учится напрямую улучшать стратегию выбора действий. Не просто оценивает ходы, а делает всю политику более качественной.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Играет серии шагов (rollout), оценивает, какие решения были полезными, и обновляет стратегию небольшими безопасными шагами, чтобы не ломать уже выученное поведение.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• обычно стабильно обучается;\n• хороший баланс скорость/качество;\n• удобен как рабочий режим по умолчанию;\n• быстрее и предсказуемее, чем сложные search-модели;\n• подходит для длительных тренировок без скачков.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• не использует поиск по дереву;\n• в сложной тактике может уступать AZ/GMZ;\n• качество зависит от rollout/epoch/minibatch;\n• иногда требует тонкой подстройки (clip, entropy, value loss).") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда нужен on-policy взгляд: посмотреть, как policy-gradient ведёт себя на текущих наградах, и получить независимую от Q-обучения точку сравнения. Быстро запускается и почти не требует тяжёлых настроек.") }
     ]
     readonly property var azTreeSections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "ИИ с настоящим поиском по дереву (MCTS): нейросеть даёт приоритеты и оценку позиции, а поиск прокручивает варианты вперёд (число симуляций и глубина реально влияют на силу хода)." },
-        { icon: "▶", title: "Как учится",
-          text: "Self-play: акторы играют партии, в позициях используется MCTS, сеть учится предсказывать политику и value так, как если бы играла с этим поиском." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• максимальная сила среди вариантов AZ в проекте;\n• лучше видит последствия на несколько ходов;\n• при росте mcts_simulations / mcts_max_depth обычно заметно крепче;\n• лучший выбор для eval/viewer, если важна сила, а не скорость хода." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• самый тяжёлый AZ по CPU/GPU на каждом ходу;\n• чувствителен к search-настройкам (mcts_simulations, c_puct, mcts_max_depth, temperature);\n• при малом бюджете поиска преимущество над PPO/DQN может быть неочевидным." },
-        { icon: "◆", title: "Режимы инференса",
-          text: "• MCTS — рекомендуемый режим по умолчанию: сильнее, но медленнее;\n• Greedy — один проход сети, быстрый baseline без MCTS." },
-        { icon: "✦", title: "Температура",
-          text: "Только в режиме MCTS (в Greedy не используется)." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда приоритет — качество решений и сила игры, есть ресурсы на обучение и на медленный инференс." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("ИИ с настоящим поиском по дереву (MCTS): нейросеть даёт приоритеты и оценку позиции, а поиск прокручивает варианты вперёд (число симуляций и глубина реально влияют на силу хода).") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Self-play: акторы играют партии, в позициях используется MCTS, сеть учится предсказывать политику и value так, как если бы играла с этим поиском.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• максимальная сила среди вариантов AZ;\n• лучше видит последствия на несколько ходов;\n• при росте mcts_simulations / mcts_max_depth заметно крепче;\n• лучший выбор для eval/viewer, если важна сила.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• самый тяжёлый AZ по CPU/GPU на каждом ходу;\n• чувствителен к search-настройкам (mcts_simulations, c_puct, mcts_max_depth, temperature);\n• при малом бюджете поиска преимущество неочевидно.") },
+        { icon: "◆", title: qsTr("Режимы инференса"),
+          text: qsTr("• MCTS — рекомендуемый режим по умолчанию: сильнее, но медленнее;\n• Greedy — один проход сети, быстрый baseline без MCTS.") },
+        { icon: "✦", title: qsTr("Температура"),
+          text: qsTr("Только в режиме MCTS (в Greedy не используется).") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда приоритет — качество решений и сила игры, есть ресурсы на обучение и на медленный инференс.") }
     ]
     readonly property var azProxySections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "То же семейство AlphaZero (policy + value, self-play, replay), но на ходу поиск упрощён: вместо полного MCTS — один проход сети и шум Dirichlet в корне. Компромисс «обучаемся как AZ, играем быстрее»." },
-        { icon: "▶", title: "Как учится",
-          text: "Так же через self-play и replay, но в акторах используется proxy-режим поиска (не разворачивается полное дерево, как в Tree)." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• быстрее Tree на инференсе и при большом числе акторов;\n• проще тюнить, если не хочется возиться с sims×depth;\n• удобен для длинных прогонов self-play, когда MCTS на каждом шаге слишком дорог;\n• промежуточный вариант между PPO и AZ Tree." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• потолок силы ниже, чем у AZ Tree с нормальным MCTS;\n• mcts_simulations в Proxy не разворачивает полное дерево — на силу хода влияют сеть, mcts_top_k, Dirichlet, temperature;\n• для максимальной силы в Viewer обычно лучше Tree или GMZ." },
-        { icon: "◆", title: "Режимы инференса",
-          text: "• MCTS/Search — рекомендуемый режим по умолчанию, обычно сильнее Greedy;\n• Greedy — быстро, без search;\n• у Proxy это не полный Tree-MCTS: поведение ближе к search-lite." },
-        { icon: "✦", title: "Температура",
-          text: "Как у AZ: влияет в search-режиме, в Greedy — нет." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда нужен пайплайн AlphaZero, но важнее скорость self-play / хода, чем абсолютный максимум тактики. Для «лучшего бота в турнире» — чаще Tree или GMZ." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("То же семейство AlphaZero (policy + value, self-play, replay), но на ходу поиск упрощён: вместо полного MCTS — один проход сети и шум Dirichlet в корне.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Так же через self-play и replay, но в акторах используется proxy-режим поиска (не разворачивается полное дерево, как в Tree).") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• быстрее Tree на инференсе и при большом числе акторов;\n• проще тюнить, если не хочется возиться с sims×depth;\n• удобен для длинных прогонов self-play;\n• промежуточный вариант между PPO и AZ Tree.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• потолок силы ниже, чем у AZ Tree с нормальным MCTS;\n• mcts_simulations в Proxy не разворачивает полное дерево;\n• для максимальной силы в Viewer лучше Tree или GMZ.") },
+        { icon: "◆", title: qsTr("Режимы инференса"),
+          text: qsTr("• MCTS/Search — рекомендуемый режим по умолчанию;\n• Greedy — быстро, без search;\n• у Proxy это не полный Tree-MCTS: поведение ближе к search-lite.") },
+        { icon: "✦", title: qsTr("Температура"),
+          text: qsTr("Как у AZ: влияет в search-режиме, в Greedy — нет.") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда нужен пайплайн AlphaZero, но важнее скорость self-play / хода, чем абсолютный максимум тактики.") }
     ]
     readonly property var gmzSections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "ИИ с поиском, который дополнительно использует внутреннюю модель динамики. Он не только выбирает ход, но и внутри модели проигрывает возможное будущее." },
-        { icon: "▶", title: "Как учится",
-          text: "Через self-play и unroll-обучение: representation/dynamics/prediction блоки совместно учатся лучше моделировать состояние, последствия действий и полезность решений." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• высокий потолок качества игры;\n• хорошо работает в сложных и длинных тактических сценариях;\n• search-режим часто даёт сильные решения в eval/viewer;\n• мощный инструмент, когда цель — выжать максимум качества." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• самый тяжёлый режим по вычислениям;\n• дольше тренируется и сложнее в тюнинге;\n• чувствителен к параметрам search/replay/unroll;\n• при малом compute может не раскрывать потенциал полностью." },
-        { icon: "◆", title: "Режимы инференса",
-          text: "• Search — рекомендуемый режим по умолчанию: сильнее, но медленнее;\n• Greedy — быстрее, без search, для baseline/smoke-тестов." },
-        { icon: "✦", title: "Температура",
-          text: "Влияет только в Search (в Greedy не используется)." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда нужен максимум силы модели и есть бюджет по времени/ресурсам для обучения и оценки." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("ИИ с поиском, который дополнительно использует внутреннюю модель динамики. Он не только выбирает ход, но и внутри модели проигрывает возможное будущее.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Через self-play и unroll-обучение: representation/dynamics/prediction блоки совместно учатся лучше моделировать состояние, последствия действий и полезность решений.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• высокий потолок качества игры;\n• хорошо работает в сложных и длинных тактических сценариях;\n• search-режим часто даёт сильные решения в eval/viewer;\n• мощный инструмент для максимума качества.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• самый тяжёлый режим по вычислениям;\n• дольше тренируется и сложнее в тюнинге;\n• чувствителен к параметрам search/replay/unroll;\n• при малом compute может не раскрывать потенциал.") },
+        { icon: "◆", title: qsTr("Режимы инференса"),
+          text: qsTr("• Search — рекомендуемый режим по умолчанию: сильнее, но медленнее;\n• Greedy — быстрее, без search, для baseline/smoke-тестов.") },
+        { icon: "✦", title: qsTr("Температура"),
+          text: qsTr("Влияет только в Search (в Greedy не используется).") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда нужен максимум силы модели и есть бюджет по времени/ресурсам для обучения и оценки.") }
     ]
     readonly property var smzSections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "Sampled MuZero: сэмплирует K цельных (joint) ходов из приора, координирует действия юнитов через importance sampling. v1 — одна машина, без inference server." },
-        { icon: "▶", title: "Как учится",
-          text: "Self-play + replay: актор сэмплирует K joint-действий, оценивает их через модель динамики, обновляет policy с IS-коррекцией. Learner учится через unroll + V-trace." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• явная координация юнитов через joint sampling;\n• IS-коррекция смещения сэмплирования;\n• дедупликация повторных ходов (dedup);\n• совместим с V-trace и reanalyze." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• только одна машина (v1);\n• при малом K поиск слабее GMZ;\n• нет inference server — акторы и learner делят ресурсы GPU." },
-        { icon: "◆", title: "Ключевые параметры",
-          text: "• num_samples (K) — число joint-ходов на шаг;\n• search_temperature — температура в поиске;\n• sample_temperature — температура сэмплирования из приора;\n• prior_weight — доля приора в политике (0 = только IS-цель)." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда нужна координация юнитов через совместные действия и есть желание экспериментировать с IS-based MuZero без распределённого inference." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("Sampled MuZero: сэмплирует K цельных (joint) ходов из приора, координирует действия юнитов через importance sampling. v1 — одна машина, без inference server.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Self-play + replay: актор сэмплирует K joint-действий, оценивает их через модель динамики, обновляет policy с IS-коррекцией. Learner учится через unroll + V-trace.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• явная координация юнитов через joint sampling;\n• IS-коррекция смещения сэмплирования;\n• дедупликация повторных ходов (dedup);\n• совместим с V-trace и reanalyze.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• только одна машина (v1);\n• при малом K поиск слабее GMZ;\n• нет inference server — акторы и learner делят ресурсы GPU.") },
+        { icon: "◆", title: qsTr("Ключевые параметры"),
+          text: qsTr("• num_samples (K) — число joint-ходов на шаг;\n• search_temperature — температура в поиске;\n• sample_temperature — температура сэмплирования из приора;\n• prior_weight — доля приора в политике (0 = только IS-цель).") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда нужна координация юнитов через совместные действия и есть желание экспериментировать с IS-based MuZero без распределённого inference.") }
     ]
     readonly property var gazSections: [
-        { icon: "ⓘ", title: "Что это",
-          text: "AlphaZero с Gumbel-планированием: в корне берётся набор кандидатов (Gumbel top-k), Sequential Halving распределяет бюджет симуляций, а completed-Q даёт цель политики. Реальная модель среды (как у AlphaZero), без выученной динамики MuZero. Поиск — depth-1 (один ход вперёд + ответ врага)." },
-        { icon: "▶", title: "Как учится",
-          text: "Self-play тем же конвейером, что AlphaZero (replay, value/policy, чекпойнты). Отличается только бэкенд поиска у актёра: per-head Gumbel top-k + Sequential Halving вместо PUCT-MCTS." },
-        { icon: "✓", title: "Сильные стороны",
-          text: "• гарантирует улучшение политики даже при крошечном бюджете симуляций (16–64);\n• дешевле полного MCTS на ход;\n• сеть и чекпойнты полностью совместимы с AlphaZero;\n• в eval/play/Viewer теперь по умолчанию используется Search;\n• удобен для LAN/распределёнки (depth-1, мало симуляций)." },
-        { icon: "⚠", title: "Ограничения",
-          text: "• поиск только на 1 ход вперёд (depth-1, root-only), без глубокого дерева как у AZ Tree — это осознанный выбор режима, а не недоделка (глубже — отдельные будущие варианты за тем же алгоритмом);\n• при детерминированном ходе врага рост num_simulations почти не влияет — главный рычаг m (num_considered_actions);\n• потолок тактики ниже, чем у полного AZ Tree с большим MCTS." },
-        { icon: "◆", title: "Режимы инференса",
-          text: "• Search — Gumbel AlphaZero-поиск на инференсе, рекомендуемый режим по умолчанию;\n• Greedy — один проход сети без поиска, быстрее, но обычно слабее." },
-        { icon: "✦", title: "Температура",
-          text: "На дебюте ход сэмплится из улучшённой политики; дальше — детерминированный победитель Sequential Halving." },
-        { icon: "★", title: "Когда выбирать",
-          text: "Когда нужен AlphaZero-пайплайн с гарантией улучшения при малом бюджете поиска — особенно под LAN/распределённое self-play." }
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("AlphaZero с Gumbel-планированием: в корне берётся набор кандидатов (Gumbel top-k), Sequential Halving распределяет бюджет симуляций, а completed-Q даёт цель политики. Поиск — depth-1.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Self-play тем же конвейером, что AlphaZero (replay, value/policy, чекпойнты). Отличается только бэкенд поиска у актёра: per-head Gumbel top-k + Sequential Halving вместо PUCT-MCTS.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• гарантирует улучшение политики даже при крошечном бюджете симуляций (16–64);\n• дешевле полного MCTS на ход;\n• сеть и чекпойнты совместимы с AlphaZero;\n• удобен для LAN/распределёнки (depth-1, мало симуляций).") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• поиск только на 1 ход вперёд (depth-1), без глубокого дерева как у AZ Tree;\n• при детерминированном ходе врага рост num_simulations почти не влияет;\n• потолок тактики ниже, чем у полного AZ Tree с большим MCTS.") },
+        { icon: "◆", title: qsTr("Режимы инференса"),
+          text: qsTr("• Search — Gumbel AlphaZero-поиск, рекомендуемый режим по умолчанию;\n• Greedy — один проход сети без поиска, быстрее, но обычно слабее.") },
+        { icon: "✦", title: qsTr("Температура"),
+          text: qsTr("На дебюте ход сэмплится из улучшённой политики; дальше — детерминированный победитель Sequential Halving.") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда нужен AlphaZero-пайплайн с гарантией улучшения при малом бюджете поиска — особенно под LAN/распределённое self-play.") }
     ]
 
-    title: "Подсказка по моделям обучения"
+    title: qsTr("Подсказка по моделям обучения")
     modal: true
     width: rootUi ? rootUi.dialogWidthXl : 900
     height: Math.round(720 * uiScale)
@@ -181,7 +227,7 @@ Dialog {
         return 0
     }
 
-    onOpened: helpTabBar.currentIndex = tabIndexForAlgo(initialAlgo)
+    onOpened: helpStack.currentIndex = tabIndexForAlgo(initialAlgo)
 
     contentItem: ColumnLayout {
         spacing: dlg.spacingSm
@@ -205,7 +251,7 @@ Dialog {
                     spacing: Math.round(4 * dlg.uiScale)
 
                     Label {
-                        text: "Скорость и простота"
+                        text: qsTr("Скорость и простота")
                         font.bold: true
                         font.pixelSize: Math.round(13 * dlg.uiScale)
                         color: "#93c5fd"
@@ -213,7 +259,7 @@ Dialog {
                         Layout.fillWidth: true
                     }
                     Label {
-                        text: "DQN · PPO — быстрые итерации, удобный старт обучения."
+                        text: qsTr("DQN · PPO — быстрые итерации, удобный старт обучения.")
                         wrapMode: Text.WordWrap
                         color: dlg.textMuted
                         Layout.fillWidth: true
@@ -236,7 +282,7 @@ Dialog {
                     spacing: Math.round(4 * dlg.uiScale)
 
                     Label {
-                        text: "Качество и поиск"
+                        text: qsTr("Качество и поиск")
                         font.bold: true
                         font.pixelSize: Math.round(13 * dlg.uiScale)
                         color: "#c4b5fd"
@@ -244,7 +290,7 @@ Dialog {
                         Layout.fillWidth: true
                     }
                     Label {
-                        text: "AZ Tree · GMZ — просчёт вперёд, дороже по времени.\nAZ Proxy — self-play без полного MCTS, быстрее ход."
+                        text: qsTr("AZ Tree · GMZ — просчёт вперёд, дороже по времени.\nAZ Proxy — self-play без полного MCTS, быстрее ход.")
                         wrapMode: Text.WordWrap
                         color: dlg.textMuted
                         Layout.fillWidth: true
@@ -253,139 +299,160 @@ Dialog {
             }
         }
 
-        TabBar {
-            id: helpTabBar
-            Layout.fillWidth: true
-
-            AlgoHelpTabButton { text: "DQN";       accentColor: dlg.algoColors[0]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "PPO";       accentColor: dlg.algoColors[1]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "AZ Tree";   accentColor: dlg.algoColors[2]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "AZ Proxy";  accentColor: dlg.algoColors[3]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "GMZ";       accentColor: dlg.algoColors[4]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "SMZ";       accentColor: dlg.algoColors[5]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "GAZ";       accentColor: dlg.algoColors[6]; rootUi: dlg.rootUi }
-            AlgoHelpTabButton { text: "Сравнение"; accentColor: "#9ca3af";          rootUi: dlg.rootUi }
-        }
-
-        StackLayout {
-            id: helpStack
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            currentIndex: helpTabBar.currentIndex
+            spacing: 0
 
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
-
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "DQN (Deep Q-Network)"
-                    tldr: "Off-policy value-агент без поиска. Быстрый старт, надёжный базовый бот."
-                    accentColor: dlg.algoColors[0]
-                    badges: dlg.dqnBadges
-                    sections: dlg.dqnSections
-                }
+            AlgoHelpSidebar {
+                id: helpSidebar
+                Layout.preferredWidth: Math.round(190 * dlg.uiScale)
+                Layout.fillHeight: true
+                currentIndex: helpStack.currentIndex
+                rootUi: dlg.rootUi
+                onIndexSelected: function(idx) { helpStack.currentIndex = idx }
             }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "PPO (Proximal Policy Optimization)"
-                    tldr: "On-policy policy-агент. Стабильно учится, удобный дефолт для RL."
-                    accentColor: dlg.algoColors[1]
-                    badges: dlg.ppoBadges
-                    sections: dlg.ppoSections
+            StackLayout {
+                id: helpStack
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("DQN (Deep Q-Network)")
+                        tldr: qsTr("Не «ванильный» DQN, а Rainbow-набор: Double, Dueling, IQN, NoisyNet, n-step, PER. Сильный value-агент без поиска.")
+                        accentColor: dlg.algoColors[0]
+                        abbr: "DQN"
+                        role: qsTr("Rainbow-стрелок")
+                        stats: dlg.dqnStats
+                        badges: dlg.dqnBadges
+                        sections: dlg.dqnSections
+                    }
                 }
-            }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "AlphaZero Tree (AZ Tree)"
-                    tldr: "Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс."
-                    accentColor: dlg.algoColors[2]
-                    badges: dlg.azTreeBadges
-                    sections: dlg.azTreeSections
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("PPO (Proximal Policy Optimization)")
+                        tldr: qsTr("On-policy policy-агент. Стабильно учится, удобный дефолт для RL.")
+                        accentColor: dlg.algoColors[1]
+                        abbr: "PPO"
+                        role: qsTr("Линейный штурмовик")
+                        stats: dlg.ppoStats
+                        badges: dlg.ppoBadges
+                        sections: dlg.ppoSections
+                    }
                 }
-            }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "AlphaZero Proxy (AZ Proxy)"
-                    tldr: "Тот же AZ-пайплайн, на ходу без полного дерева. Быстрее, но потолок ниже."
-                    accentColor: dlg.algoColors[3]
-                    badges: dlg.azProxyBadges
-                    sections: dlg.azProxySections
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("AlphaZero Tree (AZ Tree)")
+                        tldr: qsTr("Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.")
+                        accentColor: dlg.algoColors[2]
+                        abbr: "AZ"
+                        role: qsTr("Тактик-предиктор")
+                        stats: dlg.azTreeStats
+                        badges: dlg.azTreeBadges
+                        sections: dlg.azTreeSections
+                    }
                 }
-            }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "Gumbel MuZero (GMZ)"
-                    tldr: "MuZero с Gumbel-поиском и моделью динамики. Потолок качества, самый дорогой режим."
-                    accentColor: dlg.algoColors[4]
-                    badges: dlg.gmzBadges
-                    sections: dlg.gmzSections
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("AlphaZero Proxy (AZ Proxy)")
+                        tldr: qsTr("Тот же AZ-пайплайн, на ходу без полного дерева. Быстрее, но потолок ниже.")
+                        accentColor: dlg.algoColors[3]
+                        abbr: "AZP"
+                        role: qsTr("Лёгкий тактик")
+                        stats: dlg.azProxyStats
+                        badges: dlg.azProxyBadges
+                        sections: dlg.azProxySections
+                    }
                 }
-            }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "Sampled MuZero (SMZ)"
-                    tldr: "MuZero с сэмплированием K joint-ходов и IS-коррекцией. Координация юнитов, v1 — одна машина."
-                    accentColor: dlg.algoColors[5]
-                    badges: dlg.smzBadges
-                    sections: dlg.smzSections
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("Gumbel MuZero (GMZ)")
+                        tldr: qsTr("MuZero с Gumbel-поиском и моделью динамики. Потолок качества, самый дорогой режим.")
+                        accentColor: dlg.algoColors[4]
+                        abbr: "GMZ"
+                        role: qsTr("Стратег-планировщик")
+                        stats: dlg.gmzStats
+                        badges: dlg.gmzBadges
+                        sections: dlg.gmzSections
+                    }
                 }
-            }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoHelpCard {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
-                    algoTitle: "Gumbel AlphaZero (GAZ)"
-                    tldr: "AlphaZero с Gumbel-планированием (top-k + Sequential Halving, depth-1). Улучшение политики при малом бюджете симуляций."
-                    accentColor: dlg.algoColors[6]
-                    badges: dlg.gazBadges
-                    sections: dlg.gazSections
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("Sampled MuZero (SMZ)")
+                        tldr: qsTr("MuZero с сэмплированием K joint-ходов и IS-коррекцией. Координация юнитов, v1 — одна машина.")
+                        accentColor: dlg.algoColors[5]
+                        abbr: "SMZ"
+                        role: qsTr("Стратег-снайпер")
+                        stats: dlg.smzStats
+                        badges: dlg.smzBadges
+                        sections: dlg.smzSections
+                    }
                 }
-            }
-            ScrollView {
-                clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                AlgoCompareTable {
-                    width: helpStack.width
-                    rootUi: dlg.rootUi
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                        algoTitle: qsTr("Gumbel AlphaZero (GAZ)")
+                        tldr: qsTr("AlphaZero с Gumbel-планированием (top-k + Sequential Halving, depth-1). Улучшение политики при малом бюджете симуляций.")
+                        accentColor: dlg.algoColors[6]
+                        abbr: "GAZ"
+                        role: qsTr("Gumbel-тактик")
+                        stats: dlg.gazStats
+                        badges: dlg.gazBadges
+                        sections: dlg.gazSections
+                    }
+                }
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    AlgoCompareTable {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
+                    }
                 }
             }
         }
@@ -394,7 +461,7 @@ Dialog {
             Layout.fillWidth: true
             Item { Layout.fillWidth: true }
             Button {
-                text: "Закрыть"
+                text: qsTr("Закрыть")
                 onClicked: dlg.close()
             }
         }

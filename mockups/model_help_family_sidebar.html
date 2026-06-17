@@ -1,0 +1,755 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Подсказка по моделям - семейства</title>
+  <style>
+    :root {
+      --bg: #070d1b;
+      --panel: #101928;
+      --panel-2: #142034;
+      --panel-3: #0b1220;
+      --line: #2a3b56;
+      --line-soft: #1c2a40;
+      --text: #e1ebfb;
+      --muted: #9aacbf;
+      --dim: #74869e;
+      --blue: #2d7dff;
+      --teal: #23c8bd;
+      --violet: #8c5cff;
+      --orange: #f49a22;
+      --pink: #e23f87;
+      --cyan: #21b8d7;
+      --gray: #a9b7c7;
+      --ok: #2dd68f;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+      background:
+        linear-gradient(180deg, rgba(22, 33, 52, .78), rgba(7, 13, 27, 1) 280px),
+        repeating-linear-gradient(0deg, transparent 0 36px, rgba(255,255,255,.025) 36px 37px),
+        var(--bg);
+    }
+
+    .page {
+      width: min(1160px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 38px 0 56px;
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 12px;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      background: rgba(35, 200, 189, .14);
+      color: #52f1e6;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .dialog {
+      overflow: hidden;
+      max-width: 920px;
+      min-height: 595px;
+      border: 1px solid #31445f;
+      border-radius: 14px;
+      background: var(--panel);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, .45);
+    }
+
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 54px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line);
+      background: #111b2d;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .head-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #172338;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .body {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 520px;
+    }
+
+    .sidebar {
+      padding: 18px 10px;
+      border-right: 1px solid var(--line);
+      background: #0b1220;
+    }
+
+    .group {
+      margin-bottom: 22px;
+    }
+
+    .group-title {
+      margin: 0 10px 8px;
+      color: #7086a8;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    .item {
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: #b7c7dd;
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .item:hover {
+      background: rgba(255, 255, 255, .04);
+    }
+
+    .item.active {
+      border-color: rgba(45, 125, 255, .28);
+      background: #142c5b;
+      color: #ffffff;
+      font-weight: 800;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--gray);
+    }
+
+    .dot.blue { background: var(--blue); }
+    .dot.teal { background: var(--teal); }
+    .dot.violet { background: var(--violet); }
+    .dot.orange { background: var(--orange); }
+    .dot.pink { background: var(--pink); }
+    .dot.cyan { background: var(--cyan); }
+    .dot.gray { background: var(--gray); }
+
+    .content {
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      background: #111b2d;
+    }
+
+    .model-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .model-name {
+      margin: 0 0 6px;
+      font-size: 22px;
+      line-height: 1.15;
+    }
+
+    .model-subtitle {
+      margin: 0;
+      color: #7aa8ff;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .family-badge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 1px solid rgba(140, 92, 255, .42);
+      border-radius: 999px;
+      background: rgba(140, 92, 255, .12);
+      color: #c8b9ff;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .summary-card {
+      min-height: 82px;
+      padding: 11px;
+      border: 1px solid var(--line-soft);
+      border-radius: 9px;
+      background: #0e1728;
+    }
+
+    .summary-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #edf5ff;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .summary-card span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .text-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .block {
+      min-height: 132px;
+      padding: 13px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #101a2b;
+    }
+
+    .block.full {
+      grid-column: 1 / -1;
+      min-height: 74px;
+      border-color: rgba(140, 92, 255, .42);
+      background: rgba(140, 92, 255, .12);
+    }
+
+    .block h3 {
+      margin: 0 0 8px;
+      color: #f2f6ff;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .block p,
+    .block li {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.48;
+    }
+
+    .block p {
+      margin: 0;
+    }
+
+    .block ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 14px 0 0;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 25px;
+      padding: 0 9px;
+      border: 1px solid #385172;
+      border-radius: 999px;
+      background: #132035;
+      color: #b9c9dd;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      min-height: 62px;
+      margin: auto -20px -20px;
+      padding: 0 20px;
+      border-top: 1px solid var(--line);
+      background: #101928;
+    }
+
+    .hint {
+      color: var(--dim);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #172338;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .button.primary {
+      border-color: #326ef5;
+      background: #245bd8;
+      color: #ffffff;
+    }
+
+    .note {
+      max-width: 920px;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border: 1px dashed #40536f;
+      border-radius: 8px;
+      background: rgba(11, 18, 32, .74);
+      color: #9fb4ce;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 780px) {
+      .dialog {
+        min-height: 0;
+      }
+
+      .body {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .group {
+        margin-bottom: 0;
+      }
+
+      .summary,
+      .text-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .block.full {
+        grid-column: auto;
+      }
+
+      .footer {
+        align-items: stretch;
+        flex-direction: column;
+        padding: 12px 20px;
+      }
+
+      .buttons {
+        justify-content: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="label">Family sidebar - simple mockup</div>
+
+    <section class="dialog" aria-label="Подсказка по моделям обучения">
+      <header class="head">
+        <h1>Подсказка по моделям обучения</h1>
+        <div class="head-actions">
+          <span class="icon-button">?</span>
+          <span class="icon-button">X</span>
+        </div>
+      </header>
+
+      <div class="body">
+        <aside class="sidebar" aria-label="Семейства моделей">
+          <section class="group">
+            <h2 class="group-title">Off-policy</h2>
+            <button class="item" data-model="dqn"><span class="dot blue"></span><span>DQN</span></button>
+          </section>
+
+          <section class="group">
+            <h2 class="group-title">On-policy</h2>
+            <button class="item" data-model="ppo"><span class="dot teal"></span><span>PPO</span></button>
+          </section>
+
+          <section class="group">
+            <h2 class="group-title">AlphaZero</h2>
+            <button class="item active" data-model="az-tree"><span class="dot violet"></span><span>AZ Tree</span></button>
+            <button class="item" data-model="az-proxy"><span class="dot violet"></span><span>AZ Proxy</span></button>
+            <button class="item" data-model="gaz"><span class="dot cyan"></span><span>GAZ</span></button>
+          </section>
+
+          <section class="group">
+            <h2 class="group-title">MuZero</h2>
+            <button class="item" data-model="gmz"><span class="dot orange"></span><span>GMZ</span></button>
+            <button class="item" data-model="smz"><span class="dot pink"></span><span>SMZ</span></button>
+          </section>
+
+          <section class="group">
+            <h2 class="group-title">Обзор</h2>
+            <button class="item" data-model="compare"><span class="dot gray"></span><span>Сравнение</span></button>
+          </section>
+        </aside>
+
+        <article class="content">
+          <div class="model-top">
+            <div>
+              <h2 class="model-name" id="modelName">AlphaZero Tree</h2>
+              <p class="model-subtitle" id="modelSubtitle">Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.</p>
+            </div>
+            <span class="family-badge" id="familyBadge">AlphaZero</span>
+          </div>
+
+          <div class="summary">
+            <div class="summary-card">
+              <strong>Кратко</strong>
+              <span id="shortText">Клик по пункту слева меняет контент. Горизонтальные табы не нужны.</span>
+            </div>
+            <div class="summary-card">
+              <strong>Лучше всего</strong>
+              <span id="bestText">Сложная тактика, проверка силы поиска, партии с важным просчетом вперед.</span>
+            </div>
+            <div class="summary-card">
+              <strong>Осторожно</strong>
+              <span id="careText">Может быть медленно на коротких экспериментах и при большом числе rollout.</span>
+            </div>
+          </div>
+
+          <div class="text-grid">
+            <section class="block">
+              <h3>Что это</h3>
+              <p id="whatText">AlphaZero-подход: сеть оценивает позицию и политику, а дерево поиска уточняет ход перед выбором действия.</p>
+            </section>
+
+            <section class="block">
+              <h3>Когда выбирать</h3>
+              <p id="whenText">Когда baseline уже понятен и хочется проверить, насколько поиск улучшит качество решений.</p>
+            </section>
+
+            <section class="block">
+              <h3>Сильные стороны</h3>
+              <ul id="prosList">
+                <li>лучше видит тактические продолжения;</li>
+                <li>удобно сравнивать с DQN/PPO;</li>
+                <li>хороший кандидат для финального качества.</li>
+              </ul>
+            </section>
+
+            <section class="block">
+              <h3>Ограничения</h3>
+              <ul id="consList">
+                <li>дороже по времени и вычислениям;</li>
+                <li>на LAN важно не разгонять глубину без нужды;</li>
+                <li>на коротких прогонах может не раскрыться.</li>
+              </ul>
+            </section>
+
+            <section class="block full">
+              <h3>Вердикт</h3>
+              <p id="verdictText">Брать после простого baseline. Если нужен быстрый старт, сначала DQN/PPO; если нужна сила поиска, AZ Tree уместен.</p>
+              <div class="chips" id="chips">
+                <span class="chip">MCTS</span>
+                <span class="chip">Policy + Value</span>
+                <span class="chip">Дороже инференс</span>
+              </div>
+            </section>
+          </div>
+
+          <footer class="footer">
+            <div class="hint">Сортировка слева идет по семействам: Off-policy, On-policy, AlphaZero, MuZero. Обзор оставлен отдельным служебным пунктом.</div>
+            <div class="buttons">
+              <span class="button">Закрыть</span>
+              <span class="button primary">Выбрать в конфиге</span>
+            </div>
+          </footer>
+        </article>
+      </div>
+    </section>
+
+    <div class="note">Фишка этого варианта: простая структура без горизонтального скролла. Семейство задает контекст, а модели внутри него остаются коротким списком. На маленьком экране сайдбар можно превратить в сетку 2xN.</div>
+  </main>
+
+  <script>
+    const models = {
+      "dqn": {
+        name: "DQN",
+        family: "Off-policy",
+        subtitle: "Value-based агент с replay buffer. Простой и надежный baseline.",
+        short: "Учится на сохраненных переходах и оценивает пользу действий через Q-значения.",
+        best: "Первый запуск, проверка пайплайна, сравнение с PPO и search-моделями.",
+        care: "Качество сильно зависит от наград, exploration и подбора гиперпараметров.",
+        what: "Off-policy модель: может учиться на опыте, который был собран не текущей политикой. Это удобно для replay buffer и стабильных повторных обновлений.",
+        when: "Когда нужен понятный старт без MCTS и без дорогого инференса.",
+        pros: [
+          "быстро стартует и хорошо подходит для baseline;",
+          "понятная логика Q-оценок;",
+          "удобно сравнивать с PPO, AZ и MuZero."
+        ],
+        cons: [
+          "без поиска может слабее видеть длинные тактические планы;",
+          "чувствителен к exploration и reward shaping;",
+          "на сложных сценариях может потребовать больше тюнинга."
+        ],
+        verdict: "Лучший первый выбор, если нужно быстро получить рабочую модель и понять, что train/eval поток здоров.",
+        chips: ["Off-policy", "Replay buffer", "Q-оценки"]
+      },
+      "ppo": {
+        name: "PPO",
+        family: "On-policy",
+        subtitle: "Policy-gradient агент. Хорош для стабильного сравнения поведения.",
+        short: "Обновляется на свежих траекториях текущей политики и аккуратно ограничивает шаг изменения.",
+        best: "Сравнить с DQN, проверить policy-gradient подход, получить другой стиль поведения.",
+        care: "Может требовать больше свежих rollout и аккуратного выбора batch/update параметров.",
+        what: "On-policy модель: учится в основном на данных, собранных текущей версией агента. PPO ограничивает резкие изменения политики, чтобы обучение не разваливалось.",
+        when: "Когда нужен второй простой baseline рядом с DQN и хочется оценить не Q-learning, а policy-gradient.",
+        pros: [
+          "стабильный и популярный алгоритм;",
+          "часто хорошо переносит непрерывное улучшение политики;",
+          "полезен как независимая точка сравнения."
+        ],
+        cons: [
+          "хуже переиспользует старый опыт, чем off-policy;",
+          "может быть чувствителен к размеру batch и числу update;",
+          "без поиска также ограничен в сложной тактике."
+        ],
+        verdict: "Хорошая пара к DQN. Не обязательно первый выбор, но очень полезен для честного сравнения.",
+        chips: ["On-policy", "Policy gradient", "Сравнение с DQN"]
+      },
+      "az-tree": {
+        name: "AlphaZero Tree",
+        family: "AlphaZero",
+        subtitle: "Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.",
+        short: "Клик по пункту слева меняет контент. Горизонтальные табы не нужны.",
+        best: "Сложная тактика, проверка силы поиска, партии с важным просчетом вперед.",
+        care: "Может быть медленно на коротких экспериментах и при большом числе rollout.",
+        what: "AlphaZero-подход: сеть оценивает позицию и политику, а дерево поиска уточняет ход перед выбором действия.",
+        when: "Когда baseline уже понятен и хочется проверить, насколько поиск улучшит качество решений.",
+        pros: [
+          "лучше видит тактические продолжения;",
+          "удобно сравнивать с DQN/PPO;",
+          "хороший кандидат для финального качества."
+        ],
+        cons: [
+          "дороже по времени и вычислениям;",
+          "на LAN важно не разгонять глубину без нужды;",
+          "на коротких прогонах может не раскрыться."
+        ],
+        verdict: "Брать после простого baseline. Если нужен быстрый старт, сначала DQN/PPO; если нужна сила поиска, AZ Tree уместен.",
+        chips: ["MCTS", "Policy + Value", "Дороже инференс"]
+      },
+      "az-proxy": {
+        name: "AZ Proxy",
+        family: "AlphaZero",
+        subtitle: "AlphaZero-стиль без полного дерева на каждом ходе. Быстрее, но проще.",
+        short: "Компромиссный вариант: сохраняет self-play идею, но снижает стоимость выбора хода.",
+        best: "Когда хочется AlphaZero-поток, но полный MCTS слишком дорогой.",
+        care: "Качество может уступать полноценному AZ Tree в тактически сложных позициях.",
+        what: "Proxy-вариант использует упрощенный путь выбора действия вместо тяжелого дерева поиска на каждом ходе.",
+        when: "Когда нужен баланс между скоростью и AlphaZero-подходом.",
+        pros: [
+          "быстрее полного AZ Tree;",
+          "подходит для промежуточных экспериментов;",
+          "меньше нагрузка на инференс."
+        ],
+        cons: [
+          "меньше силы настоящего MCTS;",
+          "требует проверки качества против AZ Tree;",
+          "может быть менее интерпретируемым как поиск."
+        ],
+        verdict: "Брать как ускоренный AlphaZero-вариант, если полное дерево слишком дорого для текущего бюджета.",
+        chips: ["AlphaZero", "Proxy", "Быстрее MCTS"]
+      },
+      "gaz": {
+        name: "GAZ",
+        family: "AlphaZero",
+        subtitle: "AlphaZero-семейство для более продвинутых self-play экспериментов.",
+        short: "Более экспериментальный AlphaZero-направленный вариант, который стоит держать рядом с AZ Tree.",
+        best: "Исследовательские прогоны, сравнение с классическим AZ Tree, поиск новых конфигураций.",
+        care: "Нужны аккуратные настройки и сравнение на одинаковых условиях.",
+        what: "Модель из AlphaZero-семейства: полезна как продвинутый вариант для self-play и проверки альтернатив к базовому дереву.",
+        when: "Когда DQN/PPO и AZ Tree уже дают понятную точку отсчета.",
+        pros: [
+          "может дать интересное качество в self-play;",
+          "логично группируется рядом с AZ Tree;",
+          "подходит для экспериментов с AlphaZero-подходом."
+        ],
+        cons: [
+          "сложнее объяснить новичку;",
+          "нужно сравнение с базовыми моделями;",
+          "может требовать большего бюджета."
+        ],
+        verdict: "Не первый запуск. Хорошо оставить в AlphaZero-группе как продвинутую модель для экспериментов.",
+        chips: ["AlphaZero", "Self-play", "Продвинутый режим"]
+      },
+      "gmz": {
+        name: "GMZ",
+        family: "MuZero",
+        subtitle: "MuZero-подход с планированием. Сильный, но более сложный путь.",
+        short: "MuZero учит внутреннюю модель динамики и использует ее для планирования.",
+        best: "Когда нужно качество с планированием и есть бюджет на более сложное обучение.",
+        care: "Дороже и сложнее baseline-моделей; требует внимательной диагностики.",
+        what: "MuZero-семейство строит скрытую модель среды: не просто оценивает ход, а пытается планировать через learned dynamics.",
+        when: "Когда простые модели уже проверены, а хочется более сильного поиска и планирования.",
+        pros: [
+          "потенциально сильное планирование;",
+          "интересен для сложных сценариев;",
+          "хорошо отделяется от AlphaZero как отдельное семейство."
+        ],
+        cons: [
+          "больше движущихся частей;",
+          "сложнее отлаживать качество;",
+          "дороже по времени и вычислениям."
+        ],
+        verdict: "Брать после baseline и AZ-сравнений, когда есть задача именно на MuZero-планирование.",
+        chips: ["MuZero", "Learned dynamics", "Планирование"]
+      },
+      "smz": {
+        name: "SMZ",
+        family: "MuZero",
+        subtitle: "Sampled MuZero. Экономит часть перебора, но требует настройки.",
+        short: "MuZero-вариант с sampled-подходом для более гибкого планирования.",
+        best: "Когда GMZ слишком тяжелый или хочется проверить sampled-ветку MuZero.",
+        care: "Качество зависит от sampling и параметров поиска.",
+        what: "Sampled MuZero снижает стоимость полного перебора действий через выборку кандидатов и остается внутри MuZero-семейства.",
+        when: "Когда нужен MuZero-эксперимент, но хочется более управляемой стоимости.",
+        pros: [
+          "может быть дешевле полного варианта;",
+          "подходит для больших action space;",
+          "хорош для исследовательских сравнений."
+        ],
+        cons: [
+          "сложнее DQN/PPO и AZ Proxy;",
+          "нужны аккуратные логи sampling;",
+          "результат сильнее зависит от настроек."
+        ],
+        verdict: "Хороший продвинутый MuZero-вариант, но не стоит показывать как простой старт.",
+        chips: ["MuZero", "Sampled", "Большие action space"]
+      },
+      "compare": {
+        name: "Сравнение семейств",
+        family: "Обзор",
+        subtitle: "Короткая карта выбора: сначала семейство, потом модель внутри него.",
+        short: "Off-policy и On-policy - старт. AlphaZero и MuZero - качество и планирование.",
+        best: "Когда пользователь не знает, с какой модели начать.",
+        care: "Не смешивать семейства с целями вроде скорости или качества: это разные оси выбора.",
+        what: "Семейства отвечают на вопрос 'как учится модель'. Цели запуска отвечают на вопрос 'зачем запускаем сейчас'.",
+        when: "Открывать по умолчанию, если алгоритм еще не выбран.",
+        pros: [
+          "сразу видно архитектурную логику;",
+          "нет длинного ряда вкладок;",
+          "легко добавить новые модели в нужную группу."
+        ],
+        cons: [
+          "нужно коротко объяснить смысл каждого семейства;",
+          "внутри группы все равно нужен вердикт по конкретной модели;",
+          "обзор лучше держать отдельным пунктом."
+        ],
+        verdict: "Оптимальная структура для простого окна: слева семейства, справа выбранная карточка, отдельный пункт 'Сравнение'.",
+        chips: ["Off-policy", "On-policy", "AlphaZero", "MuZero"]
+      }
+    };
+
+    const fields = {
+      name: document.getElementById("modelName"),
+      subtitle: document.getElementById("modelSubtitle"),
+      family: document.getElementById("familyBadge"),
+      short: document.getElementById("shortText"),
+      best: document.getElementById("bestText"),
+      care: document.getElementById("careText"),
+      what: document.getElementById("whatText"),
+      when: document.getElementById("whenText"),
+      pros: document.getElementById("prosList"),
+      cons: document.getElementById("consList"),
+      verdict: document.getElementById("verdictText"),
+      chips: document.getElementById("chips")
+    };
+
+    function render(modelKey) {
+      const model = models[modelKey];
+      fields.name.textContent = model.name;
+      fields.subtitle.textContent = model.subtitle;
+      fields.family.textContent = model.family;
+      fields.short.textContent = model.short;
+      fields.best.textContent = model.best;
+      fields.care.textContent = model.care;
+      fields.what.textContent = model.what;
+      fields.when.textContent = model.when;
+      fields.verdict.textContent = model.verdict;
+      fields.pros.innerHTML = model.pros.map((item) => `<li>${item}</li>`).join("");
+      fields.cons.innerHTML = model.cons.map((item) => `<li>${item}</li>`).join("");
+      fields.chips.innerHTML = model.chips.map((item) => `<span class="chip">${item}</span>`).join("");
+
+      document.querySelectorAll(".item").forEach((item) => {
+        item.classList.toggle("active", item.dataset.model === modelKey);
+      });
+    }
+
+    document.querySelectorAll(".item").forEach((item) => {
+      item.addEventListener("click", () => render(item.dataset.model));
+    });
+  </script>
+</body>
+</html>

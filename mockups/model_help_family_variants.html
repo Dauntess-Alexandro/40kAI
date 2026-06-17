@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Варианты подсказки по семействам моделей</title>
+  <style>
+    :root {
+      --bg: #070d1b;
+      --panel: #101928;
+      --panel-2: #131f33;
+      --panel-3: #0b1220;
+      --line: #2b3d58;
+      --line-soft: #1c2a40;
+      --text: #e2ebfa;
+      --muted: #9babc0;
+      --dim: #70819a;
+      --blue: #2d7dff;
+      --teal: #23c8bd;
+      --violet: #8c5cff;
+      --orange: #f49a22;
+      --pink: #e23f87;
+      --cyan: #21b8d7;
+      --green: #31d08a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+      background:
+        linear-gradient(180deg, rgba(22, 34, 54, .76), rgba(7, 13, 27, 1) 340px),
+        repeating-linear-gradient(0deg, transparent 0 37px, rgba(255,255,255,.024) 37px 38px),
+        var(--bg);
+    }
+
+    .page {
+      width: min(1320px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 34px 0 60px;
+    }
+
+    .top {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 23px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .top p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #10192a;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .variant {
+      margin: 26px 0 42px;
+    }
+
+    .variant-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+
+    .variant-title h2 {
+      margin: 0;
+      font-size: 18px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .variant-title span {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .mock {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      box-shadow: 0 22px 80px rgba(0, 0, 0, .42);
+    }
+
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 54px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      background: #111b2d;
+    }
+
+    .head h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .head-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 31px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #172338;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .btn.primary {
+      border-color: #356ef4;
+      background: #245bd8;
+      color: #fff;
+    }
+
+    .body {
+      padding: 16px;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+    }
+
+    .blue { background: var(--blue); }
+    .teal { background: var(--teal); }
+    .violet { background: var(--violet); }
+    .orange { background: var(--orange); }
+    .pink { background: var(--pink); }
+    .cyan { background: var(--cyan); }
+    .green { background: var(--green); }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #101a2c;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .pill.active {
+      border-color: rgba(45, 125, 255, .55);
+      background: #153063;
+      color: #fff;
+    }
+
+    .card {
+      padding: 13px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #101a2b;
+    }
+
+    .card h4 {
+      margin: 0 0 7px;
+      font-size: 15px;
+    }
+
+    .card p,
+    .card li {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .card p {
+      margin: 0;
+    }
+
+    .card ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .lead {
+      margin: 0 0 14px;
+      color: #7aa8ff;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 58px;
+      padding: 0 18px;
+      border-top: 1px solid var(--line);
+      background: #101928;
+    }
+
+    .hint {
+      color: var(--dim);
+      font-size: 12px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .layout-a {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 520px;
+    }
+
+    .sidebar {
+      padding: 16px 10px;
+      border-right: 1px solid var(--line);
+      background: #0b1220;
+    }
+
+    .group {
+      margin-bottom: 20px;
+    }
+
+    .group-title {
+      margin: 0 10px 8px;
+      color: #7288aa;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    .side-item {
+      display: grid;
+      grid-template-columns: 10px 1fr;
+      align-items: center;
+      gap: 8px;
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 8px;
+      color: #b8c8dc;
+      font-size: 13px;
+    }
+
+    .side-item.active {
+      background: #142c5b;
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .detail {
+      padding: 20px;
+      background: #111b2d;
+    }
+
+    .detail-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .detail-top h4 {
+      margin: 0 0 6px;
+      font-size: 22px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .text-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    .layout-b {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      min-height: 520px;
+    }
+
+    .accordion {
+      padding: 14px;
+      border-right: 1px solid var(--line);
+      background: #0b1220;
+    }
+
+    .acc-group {
+      overflow: hidden;
+      margin-bottom: 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #10192a;
+    }
+
+    .acc-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 12px;
+      color: #e7efff;
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .acc-body {
+      padding: 0 8px 8px;
+    }
+
+    .acc-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 33px;
+      padding: 0 10px;
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .acc-item.active {
+      background: #142c5b;
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .bars {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 92px 1fr 26px;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: #243249;
+      overflow: hidden;
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .layout-c .family-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .family-card {
+      min-height: 112px;
+      padding: 12px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #0f192b;
+    }
+
+    .family-card.active {
+      border-color: rgba(140, 92, 255, .6);
+      background: #201a48;
+    }
+
+    .family-card h4 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 7px;
+      font-size: 14px;
+    }
+
+    .family-card p {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .model-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr .78fr;
+      gap: 12px;
+    }
+
+    .layout-d {
+      display: grid;
+      grid-template-columns: 160px 230px 1fr;
+      min-height: 520px;
+    }
+
+    .family-rail {
+      padding: 14px 10px;
+      border-right: 1px solid var(--line);
+      background: #0a111f;
+    }
+
+    .rail-item {
+      min-height: 54px;
+      padding: 10px;
+      margin-bottom: 8px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .rail-item.active {
+      border-color: rgba(140, 92, 255, .55);
+      background: #201a48;
+      color: #fff;
+    }
+
+    .model-list {
+      padding: 14px;
+      border-right: 1px solid var(--line);
+      background: #0e1728;
+    }
+
+    .model-list h4 {
+      margin: 0 0 10px;
+      color: #c8b9ff;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .model-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 42px;
+      padding: 0 11px;
+      margin-bottom: 8px;
+      border: 1px solid var(--line-soft);
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .model-item.active {
+      border-color: rgba(45, 125, 255, .55);
+      background: #142c5b;
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .layout-e .overview {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .overview-card {
+      padding: 13px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #0f192b;
+    }
+
+    .overview-card h4 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+
+    .overview-card p {
+      min-height: 54px;
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    .table th,
+    .table td {
+      padding: 10px;
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--muted);
+      text-align: left;
+    }
+
+    .table th {
+      background: #0b1220;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    .table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .table td:first-child {
+      color: #fff;
+      font-weight: 900;
+    }
+
+    @media (max-width: 980px) {
+      .top,
+      .variant-title {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        justify-content: flex-start;
+      }
+
+      .layout-a,
+      .layout-b,
+      .layout-d,
+      .split {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar,
+      .accordion,
+      .family-rail,
+      .model-list {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .layout-c .family-row,
+      .layout-e .overview,
+      .summary-grid,
+      .compare,
+      .text-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .layout-c .family-row,
+      .layout-e .overview,
+      .summary-grid,
+      .compare,
+      .text-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .footer {
+        align-items: stretch;
+        flex-direction: column;
+        padding: 12px 18px;
+      }
+
+      .button-row {
+        justify-content: flex-end;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="top">
+      <div>
+        <h1>Варианты подсказки</h1>
+        <p>Все варианты сортируют модели по семействам: Off-policy, On-policy, AlphaZero, MuZero.</p>
+      </div>
+      <nav class="nav">
+        <a href="#a">A. Сайдбар</a>
+        <a href="#b">B. Аккордеон</a>
+        <a href="#c">C. Карточки</a>
+        <a href="#d">D. Два уровня</a>
+        <a href="#e">F. Обзор</a>
+      </nav>
+    </header>
+
+    <section class="variant" id="a">
+      <div class="variant-title">
+        <h2>A. Простой сайдбар</h2>
+        <span>Ближе всего к твоему примеру. Минимум нового UI.</span>
+      </div>
+      <div class="mock">
+        <header class="head">
+          <h3>Подсказка по моделям обучения</h3>
+          <div class="head-actions"><span class="btn">?</span><span class="btn">X</span></div>
+        </header>
+        <div class="layout-a">
+          <aside class="sidebar">
+            <div class="group">
+              <h4 class="group-title">Off-policy</h4>
+              <div class="side-item"><span class="dot blue"></span><span>DQN</span></div>
+            </div>
+            <div class="group">
+              <h4 class="group-title">On-policy</h4>
+              <div class="side-item"><span class="dot teal"></span><span>PPO</span></div>
+            </div>
+            <div class="group">
+              <h4 class="group-title">AlphaZero</h4>
+              <div class="side-item active"><span class="dot violet"></span><span>AZ Tree</span></div>
+              <div class="side-item"><span class="dot violet"></span><span>AZ Proxy</span></div>
+              <div class="side-item"><span class="dot cyan"></span><span>GAZ</span></div>
+            </div>
+            <div class="group">
+              <h4 class="group-title">MuZero</h4>
+              <div class="side-item"><span class="dot orange"></span><span>GMZ</span></div>
+              <div class="side-item"><span class="dot pink"></span><span>SMZ</span></div>
+            </div>
+            <div class="group">
+              <h4 class="group-title">Обзор</h4>
+              <div class="side-item"><span class="dot"></span><span>Сравнение</span></div>
+            </div>
+          </aside>
+          <article class="detail">
+            <div class="detail-top">
+              <div>
+                <h4>AlphaZero Tree</h4>
+                <p class="lead">Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.</p>
+              </div>
+              <span class="pill active"><span class="dot violet"></span>AlphaZero</span>
+            </div>
+            <div class="summary-grid">
+              <div class="card"><h4>Кратко</h4><p>Сеть предлагает ходы, дерево поиска уточняет выбор перед действием.</p></div>
+              <div class="card"><h4>Лучше всего</h4><p>Сложная тактика, когда важен просчет вперед.</p></div>
+              <div class="card"><h4>Осторожно</h4><p>Может быть слишком дорогим для короткого теста.</p></div>
+            </div>
+            <div class="text-grid">
+              <div class="card"><h4>Сильные стороны</h4><ul><li>видит продолжения лучше baseline;</li><li>понятный search-подход;</li><li>кандидат на качество.</li></ul></div>
+              <div class="card"><h4>Ограничения</h4><ul><li>дороже по времени;</li><li>нужен контроль rollout;</li><li>на LAN важна глубина.</li></ul></div>
+              <div class="card wide"><h4>Вердикт</h4><p>Брать после DQN/PPO, когда baseline уже есть и хочется проверить силу поиска.</p></div>
+            </div>
+          </article>
+        </div>
+        <footer class="footer">
+          <span class="hint">Плюс: самый спокойный и понятный вариант для внедрения.</span>
+          <div class="button-row"><span class="btn">Закрыть</span><span class="btn primary">Выбрать в конфиге</span></div>
+        </footer>
+      </div>
+    </section>
+
+    <section class="variant" id="b">
+      <div class="variant-title">
+        <h2>B. Аккордеон семейств</h2>
+        <span>Хорошо, если моделей станет больше и список нужно сжимать.</span>
+      </div>
+      <div class="mock">
+        <header class="head">
+          <h3>Подсказка по моделям обучения</h3>
+          <div class="head-actions"><span class="btn">Все раскрыть</span><span class="btn">X</span></div>
+        </header>
+        <div class="layout-b">
+          <aside class="accordion">
+            <div class="acc-group">
+              <div class="acc-head">Off-policy <span>1</span></div>
+              <div class="acc-body"><div class="acc-item">DQN <span class="dot blue"></span></div></div>
+            </div>
+            <div class="acc-group">
+              <div class="acc-head">On-policy <span>1</span></div>
+              <div class="acc-body"><div class="acc-item">PPO <span class="dot teal"></span></div></div>
+            </div>
+            <div class="acc-group">
+              <div class="acc-head">AlphaZero <span>3</span></div>
+              <div class="acc-body">
+                <div class="acc-item active">AZ Tree <span class="dot violet"></span></div>
+                <div class="acc-item">AZ Proxy <span class="dot violet"></span></div>
+                <div class="acc-item">GAZ <span class="dot cyan"></span></div>
+              </div>
+            </div>
+            <div class="acc-group">
+              <div class="acc-head">MuZero <span>2</span></div>
+              <div class="acc-body">
+                <div class="acc-item">GMZ <span class="dot orange"></span></div>
+                <div class="acc-item">SMZ <span class="dot pink"></span></div>
+              </div>
+            </div>
+          </aside>
+          <article class="detail">
+            <div class="detail-top">
+              <div>
+                <h4>AZ Tree</h4>
+                <p class="lead">Полный MCTS внутри AlphaZero-семейства. Дорого, но сильно.</p>
+              </div>
+              <span class="pill active"><span class="dot violet"></span>семейство раскрыто</span>
+            </div>
+            <div class="compare">
+              <div class="card">
+                <h4>Как выбирать внутри AlphaZero</h4>
+                <ul>
+                  <li>AZ Tree: качество и настоящий поиск;</li>
+                  <li>AZ Proxy: дешевле, быстрее, меньше дерева;</li>
+                  <li>GAZ: продвинутый self-play эксперимент.</li>
+                </ul>
+              </div>
+              <div class="card">
+                <h4>Оценка AZ Tree</h4>
+                <div class="bars">
+                  <div class="bar-row"><span>Качество</span><span class="bar"><i style="width: 88%"></i></span><b>5</b></div>
+                  <div class="bar-row"><span>Скорость</span><span class="bar"><i style="width: 28%"></i></span><b>2</b></div>
+                  <div class="bar-row"><span>Сложность</span><span class="bar"><i style="width: 76%"></i></span><b>4</b></div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+        <footer class="footer">
+          <span class="hint">Плюс: удобно масштабируется, если потом появятся новые алгоритмы.</span>
+          <div class="button-row"><span class="btn">Закрыть</span><span class="btn primary">Выбрать</span></div>
+        </footer>
+      </div>
+    </section>
+
+    <section class="variant" id="c">
+      <div class="variant-title">
+        <h2>C. Карточки семейств сверху</h2>
+        <span>Более визуально, но все еще просто. Сначала семейство, потом модель.</span>
+      </div>
+      <div class="mock layout-c">
+        <header class="head">
+          <h3>Подсказка по моделям обучения</h3>
+          <div class="head-actions"><span class="btn">Сравнение</span><span class="btn">X</span></div>
+        </header>
+        <div class="body">
+          <div class="family-row">
+            <div class="family-card"><h4><span class="dot blue"></span>Off-policy</h4><p>Переиспользует старый опыт. Хороший старт.</p><div class="model-row"><span class="pill">DQN</span></div></div>
+            <div class="family-card"><h4><span class="dot teal"></span>On-policy</h4><p>Учится на свежих rollout текущей политики.</p><div class="model-row"><span class="pill">PPO</span></div></div>
+            <div class="family-card active"><h4><span class="dot violet"></span>AlphaZero</h4><p>Policy + Value, self-play, MCTS или proxy.</p><div class="model-row"><span class="pill active">AZ Tree</span><span class="pill">AZ Proxy</span><span class="pill">GAZ</span></div></div>
+            <div class="family-card"><h4><span class="dot orange"></span>MuZero</h4><p>Планирование через learned dynamics.</p><div class="model-row"><span class="pill">GMZ</span><span class="pill">SMZ</span></div></div>
+          </div>
+          <div class="split">
+            <div class="card">
+              <h4>AlphaZero Tree</h4>
+              <p class="lead">Самый понятный “качественный” вариант: настоящий поиск перед ходом.</p>
+              <ul>
+                <li>выбирать для сложной тактики;</li>
+                <li>не выбирать для быстрого smoke test;</li>
+                <li>сравнивать с DQN/PPO на одинаковых условиях.</li>
+              </ul>
+            </div>
+            <div class="card">
+              <h4>Внутри семейства</h4>
+              <p>AZ Tree для качества, AZ Proxy для ускорения, GAZ для продвинутых экспериментов.</p>
+              <div class="bars">
+                <div class="bar-row"><span>Tree</span><span class="bar"><i style="width: 90%"></i></span><b>Q</b></div>
+                <div class="bar-row"><span>Proxy</span><span class="bar"><i style="width: 64%"></i></span><b>fast</b></div>
+                <div class="bar-row"><span>GAZ</span><span class="bar"><i style="width: 70%"></i></span><b>exp</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <footer class="footer">
+          <span class="hint">Плюс: отлично объясняет сами семейства, выглядит легче сайдбара.</span>
+          <div class="button-row"><span class="btn">Закрыть</span><span class="btn primary">Выбрать</span></div>
+        </footer>
+      </div>
+    </section>
+
+    <section class="variant" id="d">
+      <div class="variant-title">
+        <h2>D. Два уровня слева</h2>
+        <span>Самый “IDE-style”: семейства отдельной колонкой, модели отдельной колонкой.</span>
+      </div>
+      <div class="mock">
+        <header class="head">
+          <h3>Подсказка по моделям обучения</h3>
+          <div class="head-actions"><span class="btn">?</span><span class="btn">X</span></div>
+        </header>
+        <div class="layout-d">
+          <aside class="family-rail">
+            <div class="rail-item">Off-policy</div>
+            <div class="rail-item">On-policy</div>
+            <div class="rail-item active">AlphaZero</div>
+            <div class="rail-item">MuZero</div>
+            <div class="rail-item">Обзор</div>
+          </aside>
+          <aside class="model-list">
+            <h4>AlphaZero</h4>
+            <div class="model-item active">AZ Tree <span class="dot violet"></span></div>
+            <div class="model-item">AZ Proxy <span class="dot violet"></span></div>
+            <div class="model-item">GAZ <span class="dot cyan"></span></div>
+          </aside>
+          <article class="detail">
+            <div class="detail-top">
+              <div>
+                <h4>AZ Tree</h4>
+                <p class="lead">Семейство отдельно от моделей. Пользователь сначала выбирает подход, потом конкретный алгоритм.</p>
+              </div>
+              <span class="pill active"><span class="dot violet"></span>AlphaZero</span>
+            </div>
+            <div class="summary-grid">
+              <div class="card"><h4>Что это</h4><p>Policy + Value с MCTS перед ходом.</p></div>
+              <div class="card"><h4>Когда брать</h4><p>Когда нужна тактика и есть бюджет времени.</p></div>
+              <div class="card"><h4>Следующий шаг</h4><p>Сравнить с AZ Proxy, если поиск слишком дорогой.</p></div>
+            </div>
+            <div class="card">
+              <h4>Вердикт</h4>
+              <p>Вариант D аккуратнее всего масштабируется и лучше всего сохраняет порядок: слева семейства, рядом модели, справа справка.</p>
+            </div>
+          </article>
+        </div>
+        <footer class="footer">
+          <span class="hint">Плюс: самый чистый UX для 7+ моделей, минус: чуть шире окно.</span>
+          <div class="button-row"><span class="btn">Закрыть</span><span class="btn primary">Выбрать</span></div>
+        </footer>
+      </div>
+    </section>
+
+    <section class="variant" id="e">
+      <div class="variant-title">
+        <h2>F. Сначала обзор</h2>
+        <span>Для пользователя, который не знает даже семейство. Хорошо как дефолтный экран.</span>
+      </div>
+      <div class="mock layout-e">
+        <header class="head">
+          <h3>Что выбрать?</h3>
+          <div class="head-actions"><span class="btn">Карточка модели</span><span class="btn">X</span></div>
+        </header>
+        <div class="body">
+          <div class="overview">
+            <div class="overview-card">
+              <h4><span class="dot blue"></span>Off-policy</h4>
+              <p>Быстрый старт и replay buffer. Хорошо для первого baseline.</p>
+              <span class="pill active">DQN</span>
+            </div>
+            <div class="overview-card">
+              <h4><span class="dot teal"></span>On-policy</h4>
+              <p>Свежие rollout текущей политики. Хорошая пара к DQN.</p>
+              <span class="pill">PPO</span>
+            </div>
+            <div class="overview-card">
+              <h4><span class="dot violet"></span>AlphaZero</h4>
+              <p>Self-play, policy/value, MCTS или proxy для качества.</p>
+              <span class="pill">AZ Tree</span>
+            </div>
+            <div class="overview-card">
+              <h4><span class="dot orange"></span>MuZero</h4>
+              <p>Планирование через learned dynamics. Сложнее, но мощнее.</p>
+              <span class="pill">GMZ</span>
+            </div>
+          </div>
+
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Семейство</th>
+                <th>Модели</th>
+                <th>Когда выбирать</th>
+                <th>Главный риск</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Off-policy</td>
+                <td>DQN</td>
+                <td>первый запуск, baseline, быстрые проверки</td>
+                <td>без поиска слабее в сложной тактике</td>
+              </tr>
+              <tr>
+                <td>On-policy</td>
+                <td>PPO</td>
+                <td>сравнение поведения с DQN</td>
+                <td>нужны свежие rollout</td>
+              </tr>
+              <tr>
+                <td>AlphaZero</td>
+                <td>AZ Tree, AZ Proxy, GAZ</td>
+                <td>качество, self-play, search-подход</td>
+                <td>дорогой MCTS или сложная настройка</td>
+              </tr>
+              <tr>
+                <td>MuZero</td>
+                <td>GMZ, SMZ</td>
+                <td>планирование и learned dynamics</td>
+                <td>больше движущихся частей</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <footer class="footer">
+          <span class="hint">Плюс: самый понятный дефолт. Потом пользователь проваливается в карточку модели.</span>
+          <div class="button-row"><span class="btn">Закрыть</span><span class="btn primary">Открыть DQN</span></div>
+        </footer>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

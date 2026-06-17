@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40kAI — варианты D (sidebar по семействам)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-base: #0f172a;
+      --bg-surface: #131b2d;
+      --bg-elevated: #1e293b;
+      --bg-side: #0c1222;
+      --border: #334155;
+      --text: #d7dde7;
+      --muted: #98a4b8;
+      --accent: #2563eb;
+      --radius: 12px;
+      --shadow: 0 24px 80px rgba(0,0,0,.55);
+      --fam-off: #2563eb;
+      --fam-on: #0d9488;
+      --fam-az: #7c3aed;
+      --fam-mz: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg-base); color: var(--text); min-height: 100vh; }
+
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(15,23,42,.94); backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+    }
+    .topbar h1 { margin: 0 0 4px; font-size: 15px; }
+    .topbar p { margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+    .nav { display: flex; flex-wrap: wrap; gap: 6px; }
+    .nav button {
+      border: 1px solid var(--border); background: var(--bg-elevated);
+      color: var(--muted); border-radius: 8px; padding: 7px 12px;
+      font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .nav button:hover { color: var(--text); }
+    .nav button.on { color: #fff; border-color: var(--accent-teal, #0d9488); background: rgba(13,148,136,.18); box-shadow: inset 0 -2px 0 #0d9488; }
+
+    .stage { padding: 20px; display: flex; justify-content: center; }
+    .wrap { width: min(900px, 100%); }
+    .variant { display: none; }
+    .variant.on { display: block; }
+
+    .tag {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      letter-spacing: .07em; text-transform: uppercase;
+      padding: 4px 10px; border-radius: 99px; margin-bottom: 10px;
+      background: rgba(13,148,136,.15); color: #5eead4;
+    }
+    .hint { margin-top: 12px; font-size: 11px; color: var(--muted); line-height: 1.5;
+      padding: 10px 12px; border: 1px dashed #475569; border-radius: 8px; }
+
+    .dialog {
+      background: var(--bg-surface); border: 1px solid var(--border);
+      border-radius: 14px; box-shadow: var(--shadow); overflow: hidden;
+    }
+    .dialog-hd {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      font-size: 16px; font-weight: 600;
+    }
+    .split { display: grid; grid-template-columns: 200px 1fr; min-height: 440px; }
+    .split.wide-side { grid-template-columns: 230px 1fr; }
+    .side {
+      background: var(--bg-side); border-right: 1px solid var(--border);
+      padding: 10px 8px; overflow-y: auto;
+    }
+    .main { padding: 18px 20px; overflow-y: auto; }
+    .main h2 { margin: 0 0 4px; font-size: 17px; }
+    .main .tldr { margin: 0 0 14px; font-size: 12px; line-height: 1.45; }
+    .main .body { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0 0 12px; }
+    .ft { padding: 10px 20px 14px; border-top: 1px solid var(--border); text-align: right; }
+    .btn {
+      border: 1px solid var(--border); background: var(--bg-elevated);
+      color: var(--text); border-radius: 8px; padding: 7px 14px; font-size: 12px; cursor: pointer;
+    }
+
+    /* family label */
+    .fam {
+      font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; padding: 10px 10px 5px; color: #64748b;
+    }
+    .fam:first-child { padding-top: 4px; }
+
+    /* model item */
+    .item {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; text-align: left; padding: 7px 10px;
+      border: none; border-radius: 8px; background: transparent;
+      color: var(--muted); font-size: 12px; font-weight: 500; cursor: pointer;
+    }
+    .item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+    .item.on { color: #fff; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+    /* D1 — plain headers */
+    .d1 .item.on { background: rgba(255,255,255,.06); }
+    .d1 .item.on .dot { box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
+
+    /* D2 — colored family stripe */
+    .d2 .fam { display: flex; align-items: center; gap: 6px; }
+    .d2 .fam-line { width: 3px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    .d2 .item { padding-left: 14px; }
+    .d2 .item.on { border-left: 3px solid var(--item-accent, var(--accent)); padding-left: 11px; background: rgba(255,255,255,.05); }
+
+    /* D3 — compact, family as pill on item */
+    .d3 .side { padding: 12px 10px; }
+    .d3 .fam { padding: 14px 8px 6px; color: var(--fam-color, #64748b); }
+    .d3 .item { flex-wrap: wrap; gap: 4px 8px; padding: 8px 10px; }
+    .d3 .item .mini-fam {
+      font-size: 9px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase; opacity: .55; width: 100%; display: none;
+    }
+    .d3 .item.on { background: color-mix(in srgb, var(--item-accent) 14%, transparent); }
+
+    /* D4 — ultra flat: only dividers */
+    .d4 .fam { font-size: 9px; color: #475569; padding: 12px 10px 4px; letter-spacing: .1em; }
+    .d4 .item { padding: 6px 10px; font-size: 12px; }
+    .d4 .dot { display: none; }
+    .d4 .item.on { font-weight: 600; color: var(--item-accent); background: transparent; }
+    .d4 .divider { height: 1px; background: var(--border); margin: 8px 10px; }
+
+    /* D5 — family tint background blocks */
+    .d5 .fam-block {
+      margin-bottom: 6px; border-radius: 10px; padding: 4px 4px 6px;
+      border: 1px solid transparent;
+    }
+    .d5 .fam-block.off { background: rgba(37,99,235,.06); border-color: rgba(37,99,235,.12); }
+    .d5 .fam-block.onp { background: rgba(13,148,136,.06); border-color: rgba(13,148,136,.12); }
+    .d5 .fam-block.az { background: rgba(124,58,237,.06); border-color: rgba(124,58,237,.12); }
+    .d5 .fam-block.mz { background: rgba(217,119,6,.06); border-color: rgba(217,119,6,.12); }
+    .d5 .fam-block .fam { padding: 6px 8px 2px; }
+    .d5 .item.on { background: rgba(255,255,255,.08); }
+
+    /* D6 — two-line: family muted + model name */
+    .d6 .item {
+      flex-direction: column; align-items: flex-start; gap: 1px;
+      padding: 8px 12px;
+    }
+    .d6 .item .name { font-size: 12px; }
+    .d6 .item .sub { font-size: 10px; color: #64748b; }
+    .d6 .item.on .sub { color: var(--muted); }
+    .d6 .item.on { background: rgba(255,255,255,.05); border-radius: 8px; }
+
+    .callout {
+      margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+      font-size: 12px; border: 1px solid; line-height: 1.45;
+    }
+    .badge { display: inline-block; font-size: 10px; padding: 3px 8px; border-radius: 99px;
+      border: 1px solid; margin-right: 4px; margin-bottom: 4px; }
+
+    .cmp-row {
+      margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border);
+    }
+    .cmp-row .item { color: #94a3b8; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Вариант D — sidebar по семействам</h1>
+  <p>Группы: <strong>Off-policy</strong> · <strong>On-policy</strong> · <strong>AlphaZero</strong> · <strong>MuZero</strong>. Кликай модель слева.</p>
+  <nav class="nav" id="nav">
+    <button class="on" data-v="d1">D1 · Простые заголовки</button>
+    <button data-v="d2">D2 · Цветная полоска семейства</button>
+    <button data-v="d3">D3 · Чуть плотнее</button>
+    <button data-v="d4">D4 · Минимум (без точек)</button>
+    <button data-v="d5">D5 · Блоки по семействам</button>
+    <button data-v="d6">D6 · Две строки (семейство + модель)</button>
+  </nav>
+</header>
+
+<main class="stage">
+  <div class="wrap">
+
+    <!-- D1 -->
+    <section class="variant on" id="d1">
+      <span class="tag">D1 — самый простой · как тебе «+-»</span>
+      <div class="dialog d1">
+        <div class="dialog-hd">Подсказка по моделям обучения</div>
+        <div class="split">
+          <aside class="side" data-variant="d1"></aside>
+          <div class="main" data-main="d1"></div>
+        </div>
+        <div class="ft"><button class="btn">Закрыть</button></div>
+      </div>
+      <p class="hint"><strong>D1</strong> — ровно то, что ты описал: 4 семейства, под каждым модели, активный пункт подсвечен. Без лишнего декора. Рекомендую как базу для QML.</p>
+    </section>
+
+    <!-- D2 -->
+    <section class="variant" id="d2">
+      <span class="tag">D2 — цвет семейства слева от заголовка</span>
+      <div class="dialog d2">
+        <div class="dialog-hd">Подсказка по моделям обучения</div>
+        <div class="split">
+          <aside class="side" data-variant="d2"></aside>
+          <div class="main" data-main="d2"></div>
+        </div>
+        <div class="ft"><button class="btn">Закрыть</button></div>
+      </div>
+      <p class="hint"><strong>D2</strong> — то же D1, но у заголовка семейства цветная черта; у выбранной модели — border-left её accent. Чуть больше ориентира, всё ещё просто.</p>
+    </section>
+
+    <!-- D3 -->
+    <section class="variant" id="d3">
+      <span class="tag">D3 — компактный sidebar, чуть меньше отступов</span>
+      <div class="dialog d3">
+        <div class="dialog-hd">Подсказка по моделям обучения</div>
+        <div class="split wide-side">
+          <aside class="side" data-variant="d3"></aside>
+          <div class="main" data-main="d3"></div>
+        </div>
+        <div class="ft"><button class="btn">Закрыть</button></div>
+      </div>
+      <p class="hint"><strong>D3</strong> — D1 с чуть плотнее списком и tint-фоном у активного пункта. Если моделей станет больше — влезет без скролла дольше.</p>
+    </section>
+
+    <!-- D4 -->
+    <section class="variant" id="d4">
+      <span class="tag">D4 — ультра-минимал: текст + разделители</span>
+      <div class="dialog d4">
+        <div class="dialog-hd">Подсказка по моделям обучения</div>
+        <div class="split">
+          <aside class="side" data-variant="d4"></aside>
+          <div class="main" data-main="d4"></div>
+        </div>
+        <div class="ft"><button class="btn">Закрыть</button></div>
+      </div>
+      <p class="hint"><strong>D4</strong> — без цветных точек: только uppercase-семейства и имена. Активная модель — жирный текст + accent. Максимально «документация».</p>
+    </section>
+
+    <!-- D5 -->
+    <section class="variant" id="d5">
+      <span class="tag">D5 — каждое семейство в своём лёгком блоке</span>
+      <div class="dialog d5">
+        <div class="dialog-hd">Подсказка по моделям обучения</div>
+        <div class="split wide-side">
+          <aside class="side" data-variant="d5"></aside>
+          <div class="main" data-main="d5"></div>
+        </div>
+        <div class="ft"><button class="btn">Закрыть</button></div>
+      </div>
+      <p class="hint"><strong>D5</strong> — семейства визуально отделены tinted-карточками. Чуть «богаче», но всё ещё простая структура. Хорошо, если новичок путает AZ и MZ.</p>
+    </section>
+
+    <!-- D6 -->
+    <section class="variant" id="d6">
+      <span class="tag">D6 — в пункте: крупно модель, мелко семейство</span>
+      <div class="dialog d6">
+        <div class="dialog-hd">Подсказка по моделям обучения</div>
+        <div class="split wide-side">
+          <aside class="side" data-variant="d6"></aside>
+          <div class="main" data-main="d6"></div>
+        </div>
+        <div class="ft"><button class="btn">Закрыть</button></div>
+      </div>
+      <p class="hint"><strong>D6</strong> — заголовки семейств можно убрать и дублировать семейство под именем модели. Sidebar длиннее, зато каждый пункт самодостаточен (удобно при узкой колонке).</p>
+    </section>
+
+  </div>
+</main>
+
+<script>
+const FAMILIES = [
+  {
+    id: 'off', key: 'off-policy', label: 'Off-policy', color: '#2563eb',
+    blockClass: 'off',
+    models: [
+      { id: 'dqn', name: 'DQN', color: '#2563eb',
+        tldr: 'Value-агент без поиска. Быстрый старт, надёжный базовый бот.',
+        body: 'Оценивает ожидаемую пользу каждого действия. Запоминает (s,a,r) и улучшает Q-оценки.' }
+    ]
+  },
+  {
+    id: 'on', key: 'on-policy', label: 'On-policy', color: '#0d9488',
+    blockClass: 'onp',
+    models: [
+      { id: 'ppo', name: 'PPO', color: '#0d9488',
+        tldr: 'Policy-агент. Стабильно учится, удобный дефолт для RL.',
+        body: 'Rollout → оценка полезности → безопасное обновление политики без резких скачков.' }
+    ]
+  },
+  {
+    id: 'az', key: 'alphazero', label: 'AlphaZero', color: '#7c3aed',
+    blockClass: 'az',
+    models: [
+      { id: 'aztree', name: 'AZ Tree', color: '#7c3aed',
+        tldr: 'Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.',
+        body: 'Self-play + MCTS. Лучший потолок среди AZ в проекте.' },
+      { id: 'azproxy', name: 'AZ Proxy', color: '#6366f1',
+        tldr: 'AZ-пайплайн без полного дерева на ходу. Быстрее Tree.',
+        body: 'Search-lite: один проход сети + Dirichlet. Компромисс скорость/сила.' },
+      { id: 'gaz', name: 'GAZ', color: '#0891b2',
+        tldr: 'Gumbel AlphaZero, depth-1. Улучшение политики при малом бюджете sims.',
+        body: 'Top-k + Sequential Halving. Чекпойнты совместимы с AZ.' }
+    ]
+  },
+  {
+    id: 'mz', key: 'muzero', label: 'MuZero', color: '#d97706',
+    blockClass: 'mz',
+    models: [
+      { id: 'gmz', name: 'GMZ', color: '#d97706',
+        tldr: 'MuZero + Gumbel-поиск + модель динамики. Потолок качества.',
+        body: 'Unroll representation/dynamics/prediction. Самый тяжёлый режим.' },
+      { id: 'smz', name: 'SMZ', color: '#be185d',
+        tldr: 'Sampled MuZero: K joint-ходов, IS-коррекция. v1 — одна машина.',
+        body: 'Координация юнитов через joint sampling.' }
+    ]
+  }
+];
+
+const COMPARE = { id: 'cmp', name: 'Сравнение', color: '#9ca3af',
+  tldr: 'Таблица: скорость train/хода, сила, поиск, сложность тюна.',
+  body: 'Быстрый обзор всех моделей в одном месте.' };
+
+function allModels() {
+  return FAMILIES.flatMap(f => f.models.map(m => ({ ...m, family: f })));
+}
+
+function renderSidebar(variant, container) {
+  container.innerHTML = '';
+  const active = container.dataset.active || 'dqn';
+
+  if (variant === 'd5') {
+    FAMILIES.forEach(fam => {
+      const block = document.createElement('div');
+      block.className = `fam-block ${fam.blockClass}`;
+      const lbl = document.createElement('div');
+      lbl.className = 'fam';
+      lbl.textContent = fam.label;
+      lbl.style.color = fam.color;
+      block.appendChild(lbl);
+      fam.models.forEach(m => block.appendChild(makeItem(variant, m, fam, active, container)));
+      container.appendChild(block);
+    });
+  } else if (variant === 'd6') {
+    FAMILIES.forEach(fam => {
+      fam.models.forEach(m => {
+        const btn = makeItem(variant, m, fam, active, container);
+        container.appendChild(btn);
+      });
+    });
+  } else {
+    FAMILIES.forEach((fam, i) => {
+      if (variant === 'd4' && i > 0) {
+        const div = document.createElement('div');
+        div.className = 'divider';
+        container.appendChild(div);
+      }
+      const lbl = document.createElement('div');
+      lbl.className = 'fam';
+      if (variant === 'd2') {
+        lbl.innerHTML = `<span class="fam-line" style="background:${fam.color}"></span>${fam.label}`;
+        lbl.style.color = fam.color;
+      } else if (variant === 'd3') {
+        lbl.textContent = fam.label;
+        lbl.style.color = fam.color;
+      } else {
+        lbl.textContent = fam.label;
+      }
+      container.appendChild(lbl);
+      fam.models.forEach(m => container.appendChild(makeItem(variant, m, fam, active, container)));
+    });
+  }
+
+  const cmpWrap = document.createElement('div');
+  cmpWrap.className = 'cmp-row';
+  const cmpBtn = document.createElement('button');
+  cmpBtn.className = 'item' + (active === 'cmp' ? ' on' : '');
+  cmpBtn.innerHTML = `<span class="dot" style="background:#9ca3af"></span>Сравнение`;
+  cmpBtn.onclick = () => selectModel(variant, COMPARE, null, container);
+  cmpWrap.appendChild(cmpBtn);
+  container.appendChild(cmpWrap);
+}
+
+function makeItem(variant, m, fam, active, container) {
+  const btn = document.createElement('button');
+  btn.className = 'item' + (active === m.id ? ' on' : '');
+  btn.style.setProperty('--item-accent', m.color);
+
+  if (variant === 'd6') {
+    btn.innerHTML = `<span class="name">${m.name}</span><span class="sub">${fam.label}</span>`;
+  } else if (variant === 'd4') {
+    btn.textContent = m.name;
+  } else {
+    btn.innerHTML = `<span class="dot" style="background:${m.color}"></span>${m.name}`;
+  }
+
+  btn.onclick = () => selectModel(variant, m, fam, container);
+  return btn;
+}
+
+function selectModel(variant, m, fam, sideContainer) {
+  sideContainer.dataset.active = m.id;
+  renderSidebar(variant, sideContainer);
+  const main = document.querySelector(`[data-main="${variant}"]`);
+  const famLabel = fam ? fam.label : '';
+  main.innerHTML = `
+    <h2>${m.name}${m.id === 'dqn' ? ' (Deep Q-Network)' : m.id === 'ppo' ? ' (Proximal Policy Optimization)' : ''}</h2>
+    <p class="tldr" style="color:${m.color}">${m.tldr}</p>
+    ${fam ? `<span class="badge" style="border-color:${fam.color}55;color:${fam.color};background:${fam.color}14">${famLabel}</span>` : ''}
+    <p class="body">${m.body}</p>
+    <div class="callout" style="border-color:${m.color}44;background:${m.color}10;color:#d7dde7">
+      <strong>Когда выбирать:</strong> см. полный текст в реальном диалоге — здесь только макет навигации.
+    </div>`;
+}
+
+// init all variants
+['d1','d2','d3','d4','d5','d6'].forEach(v => {
+  const side = document.querySelector(`[data-variant="${v}"]`);
+  side.dataset.active = 'dqn';
+  renderSidebar(v, side);
+  selectModel(v, FAMILIES[0].models[0], FAMILIES[0], side);
+});
+
+document.getElementById('nav').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById(btn.dataset.v).classList.add('on');
+});
+</script>
+</body>
+</html>

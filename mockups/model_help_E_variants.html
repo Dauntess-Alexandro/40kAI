@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40kAI — варианты E (5 макетов подсказки по моделям)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Oswald:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --fam-off: #2d7dff;
+      --fam-on:  #23c8bd;
+      --fam-az:  #8c5cff;
+      --fam-mz:  #f49a22;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, rgba(46,68,110,.35), transparent 60%),
+        #070b15;
+      color: #e1ebfb;
+      min-height: 100vh;
+    }
+
+    /* ---------- gallery chrome ---------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(7,11,21,.92); backdrop-filter: blur(10px);
+      border-bottom: 1px solid #20304b; padding: 14px 22px;
+    }
+    .topbar h1 { margin: 0 0 3px; font-size: 15px; letter-spacing: .2px; }
+    .topbar p  { margin: 0 0 12px; font-size: 12px; color: #8a9ab2; }
+    .nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    .nav button {
+      border: 1px solid #2a3b56; background: #111b2d; color: #9fb1c8;
+      border-radius: 9px; padding: 8px 13px; font: 600 12px Inter, sans-serif;
+      cursor: pointer; transition: .15s;
+    }
+    .nav button:hover { color: #fff; border-color: #3a4f72; }
+    .nav button.on { color: #fff; border-color: #3f7bff; background: #173058; box-shadow: inset 0 -2px 0 #3f7bff; }
+    .nav button b { display: block; font-size: 10px; font-weight: 800; letter-spacing: .06em; }
+    .nav button span { font-size: 10px; opacity: .7; }
+
+    .stage { padding: 26px 20px 60px; display: flex; justify-content: center; }
+    .variant { display: none; width: min(960px, 100%); }
+    .variant.on { display: block; }
+    .vtag {
+      display: inline-block; font: 800 10px Inter; letter-spacing: .09em; text-transform: uppercase;
+      padding: 5px 11px; border-radius: 99px; margin-bottom: 12px;
+    }
+    .vnote {
+      margin-top: 14px; font-size: 12px; color: #9fb4ce; line-height: 1.55;
+      padding: 11px 14px; border: 1px dashed #3a4d6b; border-radius: 9px; background: rgba(11,18,32,.6);
+    }
+
+    /* shared dialog shell */
+    .dlg { border-radius: 16px; overflow: hidden; box-shadow: 0 30px 90px rgba(0,0,0,.5); }
+    .dlg-hd { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 0 20px; min-height: 56px; }
+    .dlg-hd h2 { margin: 0; font-size: 17px; }
+    .x { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; font-weight: 700; cursor: pointer; }
+    .dlg-ft { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 20px; }
+    .dlg-ft .lead { font-size: 12px; }
+    .btn-row { display: flex; gap: 9px; }
+    .btn { border-radius: 9px; padding: 8px 15px; font: 800 12px Inter; cursor: pointer; border: 1px solid transparent; }
+
+    /* ============================================================
+       E1 — ДАТАЩИТ (unit-card)
+       ============================================================ */
+    .v1 .dlg { background: #0e1626; border: 1px solid #2c3e5b; }
+    .v1 .dlg-hd { border-bottom: 1px solid #24344e; background: linear-gradient(90deg, #14213a, #0e1626); }
+    .v1 .x { border: 1px solid #2c3e5b; color: #9aacbf; }
+    .v1 .grid { display: grid; grid-template-columns: 196px 1fr; min-height: 480px; }
+    .v1 .side { border-right: 1px solid #1d2c44; background: #0a1120; padding: 14px 9px; }
+    .v1 .fam { font: 800 10px Inter; letter-spacing: .1em; text-transform: uppercase; color: #607396; margin: 14px 8px 7px; }
+    .v1 .fam:first-child { margin-top: 2px; }
+    .v1 .row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 9px;
+      border: 1px solid transparent; background: none; color: #b7c7dd; font: 600 13px Inter; cursor: pointer; text-align: left; }
+    .v1 .row:hover { background: rgba(255,255,255,.04); }
+    .v1 .row.on { background: #13233f; border-color: #2f4d7e; color: #fff; }
+    .v1 .pip { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; transform: rotate(45deg); }
+    .v1 .main { padding: 20px 22px; }
+    .v1 .crest { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 16px; }
+    .v1 .sigil { width: 54px; height: 54px; flex: 0 0 auto; display: grid; place-items: center;
+      font: 800 18px Oswald; color: #fff; clip-path: polygon(12% 0,88% 0,100% 12%,100% 88%,88% 100%,12% 100%,0 88%,0 12%); }
+    .v1 .crest h3 { margin: 0 0 4px; font: 700 24px Oswald; letter-spacing: .4px; }
+    .v1 .crest .role { font: 700 11px Inter; letter-spacing: .12em; text-transform: uppercase; }
+    .v1 .crest .tl { margin: 5px 0 0; font-size: 13px; color: #9fb2c9; line-height: 1.4; max-width: 460px; }
+    .v1 .stats { display: grid; gap: 10px; margin: 4px 0 18px; padding: 14px; border: 1px solid #21314c; border-radius: 12px; background: #0b1322; }
+    .v1 .stat { display: grid; grid-template-columns: 132px 1fr 32px; align-items: center; gap: 12px; }
+    .v1 .stat .k { font: 700 11px Inter; letter-spacing: .04em; text-transform: uppercase; color: #93a6c0; }
+    .v1 .track { height: 9px; border-radius: 6px; background: #1a2742; overflow: hidden; }
+    .v1 .fill { height: 100%; border-radius: 6px; }
+    .v1 .stat .v { font: 800 13px "Share Tech Mono", monospace; text-align: right; color: #dfeaff; }
+    .v1 .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .v1 .cell { border: 1px solid #21314c; border-radius: 11px; background: #101a2c; padding: 13px; }
+    .v1 .cell h4 { margin: 0 0 6px; font: 800 11px Inter; letter-spacing: .07em; text-transform: uppercase; color: #cdd9ec; }
+    .v1 .cell p { margin: 0; font-size: 12.5px; line-height: 1.5; color: #9db0c8; }
+    .v1 .verdict { grid-column: 1/-1; }
+    .v1 .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+    .v1 .chip { font: 800 11px Inter; padding: 4px 9px; border-radius: 99px; border: 1px solid #36507a; background: #13243f; color: #b9cae0; }
+    .v1 .dlg-ft { border-top: 1px solid #24344e; background: #0c1424; }
+    .v1 .lead { color: #6d809b; }
+    .v1 .btn.ghost { border-color: #2c3e5b; background: #15233a; color: #cdd9ec; }
+    .v1 .btn.go { background: #245bd8; border-color: #3a72ee; color: #fff; }
+
+    /* ============================================================
+       E2 — МАСТЕР ВЫБОРА (goal wizard)
+       ============================================================ */
+    .v2 .dlg { background: #0d1322; border: 1px solid #283a5c; }
+    .v2 .dlg-hd { border-bottom: 1px solid #21314f; }
+    .v2 .x { border: 1px solid #2a3c5e; color: #9aacbf; }
+    .v2 .lead-q { padding: 20px 22px 6px; }
+    .v2 .lead-q .step { font: 800 11px Inter; letter-spacing: .1em; text-transform: uppercase; color: #6f86c9; }
+    .v2 .lead-q h3 { margin: 5px 0 2px; font-size: 19px; }
+    .v2 .lead-q p { margin: 0; font-size: 12.5px; color: #94a6c4; }
+    .v2 .goals { display: grid; grid-template-columns: repeat(3,1fr); gap: 11px; padding: 14px 22px 18px; }
+    .v2 .goal { text-align: left; cursor: pointer; border-radius: 13px; padding: 14px; border: 1px solid #2c3e62; background: #111a2e; transition: .15s; }
+    .v2 .goal:hover { border-color: #41598c; }
+    .v2 .goal.on { border-color: #6c8cff; background: #16223f; box-shadow: 0 0 0 1px #6c8cff inset, 0 10px 30px rgba(80,110,255,.18); }
+    .v2 .goal .ic { font-size: 20px; }
+    .v2 .goal b { display: block; margin: 8px 0 3px; font-size: 14px; }
+    .v2 .goal small { font-size: 11.5px; color: #93a6c4; line-height: 1.4; }
+    .v2 .reco { padding: 4px 22px 20px; }
+    .v2 .reco > .step { font: 800 11px Inter; letter-spacing: .1em; text-transform: uppercase; color: #6f86c9; margin-bottom: 10px; display: block; }
+    .v2 .reclist { display: grid; gap: 9px; }
+    .v2 .rec { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 13px;
+      padding: 12px 14px; border-radius: 12px; border: 1px solid #243657; background: #0f1828; transition: .2s; }
+    .v2 .rec.dim { opacity: .32; filter: grayscale(.4); }
+    .v2 .rec .pip { width: 11px; height: 11px; border-radius: 50%; }
+    .v2 .rec .nm { font: 700 14px Inter; }
+    .v2 .rec .nm small { display: block; font: 600 11.5px Inter; color: #93a6c4; }
+    .v2 .badge { font: 800 10px Inter; letter-spacing: .05em; padding: 5px 10px; border-radius: 99px; text-transform: uppercase; white-space: nowrap; }
+    .v2 .badge.pick { background: rgba(45,214,143,.16); color: #58e6a6; border: 1px solid rgba(45,214,143,.4); }
+    .v2 .badge.alt  { background: rgba(150,170,210,.12); color: #aebbd2; border: 1px solid #36507a; }
+    .v2 .dlg-ft { border-top: 1px solid #21314f; background: #0c1322; }
+    .v2 .lead { color: #7286a3; }
+    .v2 .btn.ghost { border-color: #2a3c5e; background: #14203a; color: #cdd9ec; }
+    .v2 .btn.go { background: #4f6bff; border-color: #6c8cff; color: #fff; }
+
+    /* ============================================================
+       E3 — КОЛОНКИ-СРАВНЕНИЕ (kanban)
+       ============================================================ */
+    .v3 .dlg { background: #0c111d; border: 1px solid #243149; }
+    .v3 .dlg-hd { border-bottom: 1px solid #1d2942; }
+    .v3 .x { border: 1px solid #273750; color: #9aacbf; }
+    .v3 .board { display: grid; grid-template-columns: repeat(4,1fr); gap: 11px; padding: 16px; }
+    .v3 .col { border-radius: 13px; border: 1px solid #1f2c44; background: #0a0f1b; padding: 10px; }
+    .v3 .col h4 { margin: 2px 4px 10px; font: 800 11px Inter; letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+    .v3 .col h4 .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .v3 .mcard { width: 100%; text-align: left; cursor: pointer; border-radius: 10px; padding: 10px 11px; margin-bottom: 8px;
+      border: 1px solid #233450; background: #0f1828; transition: .15s; }
+    .v3 .mcard:hover { border-color: #38507a; transform: translateY(-1px); }
+    .v3 .mcard.on { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; background: #122039; }
+    .v3 .mcard b { font: 700 14px Inter; }
+    .v3 .mcard small { display: block; margin-top: 3px; font-size: 11px; color: #8497b3; line-height: 1.35; }
+    .v3 .mcard .mini { display: flex; gap: 3px; margin-top: 8px; }
+    .v3 .mini i { height: 4px; flex: 1; border-radius: 3px; background: #1c2942; }
+    .v3 .detail { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start;
+      margin: 0 16px 16px; padding: 15px 16px; border-radius: 13px; border: 1px solid #25364f; background: #0f1727; }
+    .v3 .detail .lab { width: 64px; height: 64px; border-radius: 13px; display: grid; place-items: center; font: 700 18px Oswald; color: #fff; }
+    .v3 .detail h3 { margin: 0 0 4px; font: 700 19px Oswald; letter-spacing: .3px; }
+    .v3 .detail .tl { margin: 0 0 8px; font-size: 12.5px; }
+    .v3 .detail p { margin: 0; font-size: 12.5px; line-height: 1.5; color: #a3b5cd; }
+    .v3 .detail .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+    .v3 .detail .chip { font: 800 10.5px Inter; padding: 4px 9px; border-radius: 99px; border: 1px solid #34496e; background: #13233c; color: #b3c4db; }
+    .v3 .dlg-ft { border-top: 1px solid #1d2942; background: #0b1019; }
+    .v3 .lead { color: #70809a; }
+    .v3 .btn.ghost { border-color: #273750; background: #131f34; color: #cdd9ec; }
+    .v3 .btn.go { background: #245bd8; border-color: #3a72ee; color: #fff; }
+
+    /* ============================================================
+       E4 — КОГИТАТОР / ДАТА-СЛЕЙТ (40k terminal)  — эстетическая ставка
+       ============================================================ */
+    .v4 .dlg {
+      background:
+        repeating-linear-gradient(0deg, rgba(255,176,60,.035) 0 2px, transparent 2px 4px),
+        radial-gradient(900px 500px at 70% -20%, rgba(120,70,10,.25), transparent 60%),
+        #0b0a06;
+      border: 1px solid #4a3a1c; box-shadow: 0 30px 90px rgba(0,0,0,.6), inset 0 0 120px rgba(0,0,0,.5);
+      font-family: "Share Tech Mono", monospace;
+    }
+    .v4 .dlg-hd { border-bottom: 1px solid #4a3a1c; color: #ffcb6b; letter-spacing: .12em; }
+    .v4 .dlg-hd h2 { font: 600 14px "Share Tech Mono"; text-transform: uppercase; }
+    .v4 .dlg-hd .sys { font-size: 11px; color: #b98a3a; }
+    .v4 .x { border: 1px solid #5a4520; color: #ffcb6b; }
+    .v4 .grid { display: grid; grid-template-columns: 220px 1fr; min-height: 470px; }
+    .v4 .side { border-right: 1px solid #4a3a1c; padding: 14px 10px; }
+    .v4 .dir { font-size: 11px; color: #8f6a2a; letter-spacing: .14em; margin: 12px 6px 6px; }
+    .v4 .dir:first-child { margin-top: 0; }
+    .v4 .row { display: flex; gap: 8px; width: 100%; padding: 6px 8px; background: none; border: none; cursor: pointer;
+      color: #d8b873; font: 400 13px "Share Tech Mono"; text-align: left; letter-spacing: .04em; }
+    .v4 .row::before { content: ">"; color: #6c5320; }
+    .v4 .row:hover { color: #ffe0a0; }
+    .v4 .row.on { color: #0b0a06; background: #ffcb6b; }
+    .v4 .row.on::before { color: #0b0a06; }
+    .v4 .main { padding: 18px 20px; color: #e6cf99; position: relative; }
+    .v4 .main::before, .v4 .main::after { content: ""; position: absolute; width: 16px; height: 16px; border: 2px solid #6c5320; }
+    .v4 .main::before { top: 10px; right: 10px; border-left: 0; border-bottom: 0; }
+    .v4 .main::after { bottom: 10px; left: 10px; border-right: 0; border-top: 0; }
+    .v4 .echo { font-size: 11px; color: #8f6a2a; letter-spacing: .1em; }
+    .v4 .main h3 { margin: 8px 0 2px; font: 600 22px "Share Tech Mono"; color: #ffcb6b; letter-spacing: .06em; }
+    .v4 .main .tl { margin: 0 0 14px; font-size: 12.5px; color: #c2a35f; line-height: 1.5; }
+    .v4 .meter { display: grid; grid-template-columns: 150px 1fr; gap: 8px 12px; align-items: center; margin: 0 0 14px; font-size: 12px; }
+    .v4 .meter .k { color: #b98a3a; letter-spacing: .06em; }
+    .v4 .meter .b { letter-spacing: 2px; color: #ffcb6b; }
+    .v4 .meter .b i { color: #5a4520; font-style: normal; }
+    .v4 .seg { border-top: 1px dashed #4a3a1c; padding-top: 11px; margin-top: 6px; }
+    .v4 .seg .k { font-size: 11px; color: #8f6a2a; letter-spacing: .1em; }
+    .v4 .seg p { margin: 3px 0 12px; font-size: 12.5px; line-height: 1.55; color: #d8c08a; }
+    .v4 .dlg-ft { border-top: 1px solid #4a3a1c; }
+    .v4 .lead { color: #8f6a2a; font-size: 11px; letter-spacing: .08em; }
+    .v4 .btn { font-family: "Share Tech Mono"; letter-spacing: .08em; }
+    .v4 .btn.ghost { border-color: #5a4520; background: #1a140a; color: #ffcb6b; }
+    .v4 .btn.go { background: #ffcb6b; border-color: #ffcb6b; color: #0b0a06; }
+
+    /* ============================================================
+       E5 — СВЕТЛАЯ ДОК-ПАНЕЛЬ
+       ============================================================ */
+    .v5 .dlg { background: #f6f8fc; border: 1px solid #d4ddea; color: #1d2733; box-shadow: 0 30px 80px rgba(20,40,80,.28); }
+    .v5 .dlg-hd { border-bottom: 1px solid #e3e9f2; background: #fff; }
+    .v5 .dlg-hd h2 { color: #16202c; }
+    .v5 .dlg-hd .sub { font-size: 12px; color: #6b7a8d; }
+    .v5 .x { border: 1px solid #d4ddea; color: #6b7a8d; background: #fff; }
+    .v5 .grid { display: grid; grid-template-columns: 210px 1fr; min-height: 470px; }
+    .v5 .side { border-right: 1px solid #e3e9f2; background: #eef2f8; padding: 14px 10px; }
+    .v5 .fam { font: 800 10px Inter; letter-spacing: .09em; text-transform: uppercase; color: #8493a6; margin: 14px 9px 6px; }
+    .v5 .fam:first-child { margin-top: 2px; }
+    .v5 .row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 11px; border-radius: 8px;
+      border: 1px solid transparent; border-left: 3px solid transparent; background: none; color: #38465a; font: 600 13px Inter; cursor: pointer; text-align: left; }
+    .v5 .row:hover { background: #e3eaf4; }
+    .v5 .row.on { background: #fff; border-color: #d4ddea; border-left-color: var(--c); color: #14202c; font-weight: 800; box-shadow: 0 1px 2px rgba(20,40,80,.06); }
+    .v5 .pip { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+    .v5 .main { padding: 22px 24px; background: #fff; }
+    .v5 .eyebrow { font: 800 11px Inter; letter-spacing: .1em; text-transform: uppercase; }
+    .v5 .main h3 { margin: 6px 0 4px; font-size: 24px; color: #16202c; }
+    .v5 .main .tl { margin: 0 0 18px; font-size: 13.5px; color: #4a5a6e; line-height: 1.5; max-width: 520px; }
+    .v5 .kv { display: grid; grid-template-columns: repeat(3,1fr); gap: 11px; margin-bottom: 18px; }
+    .v5 .kv .c { border: 1px solid #e3e9f2; border-radius: 11px; padding: 12px; background: #fafbfe; }
+    .v5 .kv .c b { display: block; font: 800 10.5px Inter; letter-spacing: .06em; text-transform: uppercase; color: #7a899c; margin-bottom: 5px; }
+    .v5 .kv .c span { font-size: 12.5px; color: #3a4858; line-height: 1.45; }
+    .v5 .prose h4 { margin: 16px 0 5px; font-size: 13px; color: #1d2733; }
+    .v5 .prose p { margin: 0; font-size: 13px; color: #445262; line-height: 1.6; }
+    .v5 .callout { margin-top: 16px; padding: 13px 15px; border-radius: 11px; border: 1px solid;
+      background: color-mix(in srgb, var(--c) 9%, #fff); border-color: color-mix(in srgb, var(--c) 35%, #e3e9f2); }
+    .v5 .callout b { color: var(--c); }
+    .v5 .callout span { color: #3a4858; font-size: 13px; }
+    .v5 .chips { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 12px; }
+    .v5 .chip { font: 800 11px Inter; padding: 4px 10px; border-radius: 99px; border: 1px solid #d4ddea; background: #f1f5fa; color: #44525f; }
+    .v5 .dlg-ft { border-top: 1px solid #e3e9f2; background: #fff; }
+    .v5 .lead { color: #8493a6; }
+    .v5 .btn.ghost { border: 1px solid #d4ddea; background: #fff; color: #2c3a4a; }
+    .v5 .btn.go { background: #245bd8; border-color: #245bd8; color: #fff; }
+
+    @media (max-width: 760px) {
+      .v1 .grid, .v4 .grid, .v5 .grid { grid-template-columns: 1fr; }
+      .v3 .board { grid-template-columns: 1fr 1fr; }
+      .v2 .goals { grid-template-columns: 1fr; }
+      .v1 .cols { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1>40kAI — подсказка по моделям обучения · серия E (мои 5 макетов)</h1>
+    <p>Та же задача, что у D5, но 5 разных визуальных идей. Переключай варианты, кликай по моделям/целям — контент живой.</p>
+    <nav class="nav" id="nav">
+      <button data-v="v1" class="on"><b>E1</b><span>Датащит</span></button>
+      <button data-v="v2"><b>E2</b><span>Мастер выбора</span></button>
+      <button data-v="v3"><b>E3</b><span>Колонки</span></button>
+      <button data-v="v4"><b>E4</b><span>Когитатор</span></button>
+      <button data-v="v5"><b>E5</b><span>Светлая</span></button>
+    </nav>
+  </header>
+
+  <main class="stage">
+
+    <!-- ===================== E1 ДАТАЩИТ ===================== -->
+    <section class="variant v1 on" id="v1">
+      <span class="vtag" style="background:rgba(36,91,216,.18);color:#7fa6ff">E1 — датащит: модель как карточка юнита</span>
+      <div class="dlg">
+        <header class="dlg-hd">
+          <h2>Подсказка по моделям обучения</h2>
+          <div class="x">✕</div>
+        </header>
+        <div class="grid">
+          <aside class="side" id="v1-side"></aside>
+          <div class="main" id="v1-main"></div>
+        </div>
+        <footer class="dlg-ft">
+          <span class="lead">Стат-бары — относительная прикидка, не абсолютные числа: помогают сравнить модели на глаз.</span>
+          <div class="btn-row"><span class="btn ghost">Закрыть</span><span class="btn go">Выбрать в конфиге</span></div>
+        </footer>
+      </div>
+      <p class="vnote"><b>Фишка:</b> 4 стат-бара (старт / сила тактики / цена инференса / сложность) дают мгновенное сравнение. Семейство = «род войск», свой цвет-ромб. Хорошо для тех, кто мыслит характеристиками юнитов W40k.</p>
+    </section>
+
+    <!-- ===================== E2 МАСТЕР ===================== -->
+    <section class="variant v2" id="v2">
+      <span class="vtag" style="background:rgba(108,140,255,.18);color:#9db4ff">E2 — мастер: сначала цель, потом модель</span>
+      <div class="dlg">
+        <header class="dlg-hd">
+          <h2>Подсказка по моделям обучения</h2>
+          <div class="x">✕</div>
+        </header>
+        <div class="lead-q">
+          <span class="step">Шаг 1 · твоя цель</span>
+          <h3>Что важнее прямо сейчас?</h3>
+          <p>Выбери цель — подсветим модели, которые под неё подходят.</p>
+        </div>
+        <div class="goals" id="v2-goals">
+          <button class="goal on" data-goal="fast"><div class="ic">⚡</div><b>Быстрый старт</b><small>Проверить пайплайн, получить рабочий бот без долгого тюнинга.</small></button>
+          <button class="goal" data-goal="quality"><div class="ic">🎯</div><b>Максимум качества</b><small>Сильная тактика и просчёт вперёд, бюджет на инференс есть.</small></button>
+          <button class="goal" data-goal="experiment"><div class="ic">🧪</div><b>Эксперимент</b><small>Исследовать self-play / планирование, сравнить ветки.</small></button>
+        </div>
+        <div class="reco">
+          <span class="step">Шаг 2 · рекомендации</span>
+          <div class="reclist" id="v2-rec"></div>
+        </div>
+        <footer class="dlg-ft">
+          <span class="lead">Зелёный «Рекомендуем» — лучший матч под цель; серый «Можно» — рабочая альтернатива.</span>
+          <div class="btn-row"><span class="btn ghost">Закрыть</span><span class="btn go">Выбрать в конфиге</span></div>
+        </footer>
+      </div>
+      <p class="vnote"><b>Фишка:</b> сценарий «не знаю, с чего начать». Не заставляет читать про все 7 моделей — спрашивает цель и сразу отсекает лишнее. Семейства тут вторичны.</p>
+    </section>
+
+    <!-- ===================== E3 КОЛОНКИ ===================== -->
+    <section class="variant v3" id="v3">
+      <span class="vtag" style="background:rgba(36,91,216,.16);color:#8fb0ff">E3 — колонки: все семейства сразу</span>
+      <div class="dlg">
+        <header class="dlg-hd">
+          <h2>Подсказка по моделям обучения</h2>
+          <div class="x">✕</div>
+        </header>
+        <div class="board" id="v3-board"></div>
+        <div class="detail" id="v3-detail"></div>
+        <footer class="dlg-ft">
+          <span class="lead">Все семейства видны без скролла — клик по карточке открывает деталь снизу.</span>
+          <div class="btn-row"><span class="btn ghost">Закрыть</span><span class="btn go">Выбрать в конфиге</span></div>
+        </footer>
+      </div>
+      <p class="vnote"><b>Фишка:</b> сравнение-первым. 4 колонки-семейства как доска — сразу видно, что AlphaZero и MuZero это разные ветки. Лечит путаницу «AZ vs MZ». Полоски под карточкой — те же 4 стата мини-версией.</p>
+    </section>
+
+    <!-- ===================== E4 КОГИТАТОР ===================== -->
+    <section class="variant v4" id="v4">
+      <span class="vtag" style="background:rgba(255,203,107,.16);color:#ffcb6b">E4 — когитатор: дата-слейт в духе 40k (ставка)</span>
+      <div class="dlg">
+        <header class="dlg-hd">
+          <div><h2>КОДЕКС МОДЕЛЕЙ ОБУЧЕНИЯ</h2></div>
+          <div style="display:flex;align-items:center;gap:12px"><span class="sys">COGITATOR · OK</span><div class="x">✕</div></div>
+        </header>
+        <div class="grid">
+          <aside class="side" id="v4-side"></aside>
+          <div class="main" id="v4-main"></div>
+        </div>
+        <footer class="dlg-ft">
+          <span class="lead">// ВЫБОР ЗАПИСЫВАЕТСЯ В КОНФИГ ОБУЧЕНИЯ</span>
+          <div class="btn-row"><span class="btn ghost">ЗАКРЫТЬ</span><span class="btn go">ВЫБРАТЬ</span></div>
+        </footer>
+      </div>
+      <p class="vnote"><b>Фишка (риск):</b> тематическая обёртка Adeptus Mechanicus — янтарный фосфор, моноширинный, уголки-скобки, стат-бары через «▮▮▮▯▯». Содержание то же. Атмосферно, но проверь читаемость — это сознательная ставка, не дефолт.</p>
+    </section>
+
+    <!-- ===================== E5 СВЕТЛАЯ ===================== -->
+    <section class="variant v5" id="v5">
+      <span class="vtag" style="background:rgba(36,91,216,.14);color:#3f6fd8">E5 — светлая док-панель</span>
+      <div class="dlg">
+        <header class="dlg-hd">
+          <div><h2>Подсказка по моделям обучения</h2><div class="sub">Справка по алгоритмам · выбери модель слева</div></div>
+          <div class="x">✕</div>
+        </header>
+        <div class="grid">
+          <aside class="side" id="v5-side"></aside>
+          <div class="main" id="v5-main"></div>
+        </div>
+        <footer class="dlg-ft">
+          <span class="lead">Светлая тема для дневной работы и скриншотов в доку.</span>
+          <div class="btn-row"><span class="btn ghost">Закрыть</span><span class="btn go">Выбрать в конфиге</span></div>
+        </footer>
+      </div>
+      <p class="vnote"><b>Фишка:</b> единственная светлая — контраст ко всем тёмным окнам. Акцент семейства живёт только в тонкой левой полосе активного пункта и eyebrow-метке. Максимум читаемости, минимум украшений.</p>
+    </section>
+
+  </main>
+
+  <script>
+    // ---------- данные (как в D5) ----------
+    const FAM = {
+      off: { name: "Off-policy" },
+      on:  { name: "On-policy" },
+      az:  { name: "AlphaZero" },
+      mz:  { name: "MuZero" },
+    };
+    const FAMHEX = { off:"#2d7dff", on:"#23c8bd", az:"#8c5cff", mz:"#f49a22" };
+
+    const MODELS = {
+      dqn: { name:"DQN", fam:"off", role:"Rainbow-стрелок", abbr:"DQN", c:"#2d7dff",
+        tl:"Не «ванильный» DQN, а Rainbow-набор: Double, Dueling, IQN, NoisyNet, n-step, PER. Сильный value-агент без поиска.",
+        what:"Off-policy value-агент: оценивает действия через распределение Q (IQN) и учится на приоритетном replay (PER). Собран как Rainbow — Double DQN, dueling-голова, NoisyNet вместо ε-жадного exploration, n-step возвраты (по умолчанию 3), опциональный ensemble голов.",
+        when:"Первый запуск и проверка train/eval-потока, но уже как сильный baseline: часто его одного достаточно без MCTS.",
+        verdict:"Сильный старт без поиска: инференс дешёвый, тактика приличная. Цена — Rainbow-набор тянет за собой больше настроек и тюнинга, чем чистый DQN.",
+        stats:{ start:4, tactic:4, cost:1, hard:4 }, chips:["Rainbow","IQN + NoisyNet","PER + n-step"],
+        goals:{ fast:"pick", quality:"", experiment:"" } },
+      ppo: { name:"PPO", fam:"on", role:"Линейный штурмовик", abbr:"PPO", c:"#23c8bd",
+        tl:"Policy-gradient агент. Стабильная пара к DQN для честного сравнения.",
+        what:"On-policy: учится на свежих траекториях текущей политики и ограничивает шаг изменения.",
+        when:"Когда нужен on-policy взгляд: посмотреть, как policy-gradient ведёт себя на текущих наградах, и получить независимую от Q-обучения точку сравнения. Быстро запускается и почти не требует тяжёлых настроек.",
+        verdict:"Хорошая пара к DQN. Не обязателен первым, но полезен как независимая точка сравнения.",
+        stats:{ start:5, tactic:2, cost:1, hard:3 }, chips:["On-policy","Policy gradient","Сравнение"],
+        goals:{ fast:"alt", quality:"", experiment:"" } },
+      "az-tree": { name:"AZ Tree", fam:"az", role:"Тактик-предиктор", abbr:"AZ", c:"#8c5cff",
+        tl:"Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.",
+        what:"Сеть оценивает позицию и политику, дерево поиска уточняет ход перед выбором действия.",
+        when:"Когда baseline понятен и нужно проверить, насколько поиск улучшит решения.",
+        verdict:"Брать после baseline. Нужен быстрый старт — сначала DQN/PPO; нужна сила поиска — AZ Tree.",
+        stats:{ start:2, tactic:5, cost:4, hard:4 }, chips:["MCTS","Policy + Value","Дороже инференс"],
+        goals:{ fast:"", quality:"pick", experiment:"alt" } },
+      "az-proxy": { name:"AZ Proxy", fam:"az", role:"Лёгкий тактик", abbr:"AZP", c:"#8c5cff",
+        tl:"AlphaZero-стиль без полного дерева на каждом ходе. Быстрее, но проще.",
+        what:"Упрощённый путь выбора действия вместо тяжёлого дерева поиска каждый ход.",
+        when:"Нужен AlphaZero-поток, но полный MCTS слишком дорогой.",
+        verdict:"Ускоренный AlphaZero-вариант, если полное дерево не влезает в бюджет.",
+        stats:{ start:3, tactic:3, cost:2, hard:3 }, chips:["AlphaZero","Proxy","Быстрее MCTS"],
+        goals:{ fast:"alt", quality:"alt", experiment:"" } },
+      gaz: { name:"GAZ", fam:"az", role:"Разведчик-экспериментал", abbr:"GAZ", c:"#21b8d7",
+        tl:"AlphaZero-семейство для продвинутых self-play экспериментов.",
+        what:"Продвинутый AlphaZero-вариант: полезен для self-play и проверки альтернатив базовому дереву.",
+        when:"Когда DQN/PPO и AZ Tree уже дают понятную точку отсчёта.",
+        verdict:"Не первый запуск. Держать в AlphaZero-группе как продвинутую модель для экспериментов.",
+        stats:{ start:2, tactic:4, cost:4, hard:5 }, chips:["AlphaZero","Self-play","Продвинутый"],
+        goals:{ fast:"", quality:"alt", experiment:"pick" } },
+      gmz: { name:"GMZ", fam:"mz", role:"Стратег-планировщик", abbr:"GMZ", c:"#f49a22",
+        tl:"MuZero с планированием через learned dynamics. Сильный, но сложный путь.",
+        what:"MuZero строит скрытую модель среды и планирует через выученную динамику, а не просто оценивает ход.",
+        when:"Простые модели проверены, нужен более сильный поиск и планирование.",
+        verdict:"Брать после baseline и AZ-сравнений, когда задача именно на MuZero-планирование.",
+        stats:{ start:1, tactic:5, cost:5, hard:5 }, chips:["MuZero","Learned dynamics","Планирование"],
+        goals:{ fast:"", quality:"pick", experiment:"alt" } },
+      smz: { name:"SMZ", fam:"mz", role:"Стратег-снайпер", abbr:"SMZ", c:"#e23f87",
+        tl:"Sampled MuZero. Экономит часть перебора, но требует настройки.",
+        what:"Снижает стоимость полного перебора действий через выборку кандидатов; остаётся в MuZero-семействе.",
+        when:"GMZ слишком тяжёлый или хочется проверить sampled-ветку MuZero.",
+        verdict:"Продвинутый MuZero-вариант, но не как простой старт — управляемее по стоимости, чем GMZ.",
+        stats:{ start:2, tactic:4, cost:3, hard:4 }, chips:["MuZero","Sampled","Большой action space"],
+        goals:{ fast:"", quality:"alt", experiment:"pick" } },
+    };
+    const ORDER = ["dqn","ppo","az-tree","az-proxy","gaz","gmz","smz"];
+    const GROUPS = [
+      ["off", ["dqn"]],
+      ["on",  ["ppo"]],
+      ["az",  ["az-tree","az-proxy","gaz"]],
+      ["mz",  ["gmz","smz"]],
+    ];
+    const STAT_LABELS = { start:"Скорость старта", tactic:"Сила тактики", cost:"Цена инференса", hard:"Сложность" };
+
+    // ---------- общий сайдбар по семействам ----------
+    function buildSide(elId, famClass, onPick) {
+      const el = document.getElementById(elId);
+      el.innerHTML = GROUPS.map(([f, keys]) =>
+        `<div class="${famClass}">${FAM[f].name}</div>` +
+        keys.map(k => {
+          const m = MODELS[k];
+          return `<button class="row" data-k="${k}" style="--c:${m.c}"><span class="pip" style="background:${m.c}"></span><span>${m.name}</span></button>`;
+        }).join("")
+      ).join("");
+      el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => onPick(b.dataset.k)));
+    }
+
+    // ---------- E1 датащит ----------
+    function bars(stats) {
+      return Object.keys(STAT_LABELS).map(s => {
+        const v = stats[s];
+        return `<div class="stat"><span class="k">${STAT_LABELS[s]}</span>
+          <span class="track"><span class="fill" style="width:${v*20}%;background:linear-gradient(90deg,#3f7bff,#7fa6ff)"></span></span>
+          <span class="v">${v}/5</span></div>`;
+      }).join("");
+    }
+    function renderV1(k) {
+      const m = MODELS[k];
+      document.querySelectorAll("#v1-side button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
+      document.getElementById("v1-main").innerHTML = `
+        <div class="crest">
+          <div class="sigil" style="background:linear-gradient(135deg,${m.c},${m.c}99)">${m.abbr}</div>
+          <div>
+            <h3>${m.name}</h3>
+            <div class="role" style="color:${m.c}">${FAM[m.fam].name} · ${m.role}</div>
+            <p class="tl">${m.tl}</p>
+          </div>
+        </div>
+        <div class="stats">${bars(m.stats)}</div>
+        <div class="cols">
+          <div class="cell"><h4>Что это</h4><p>${m.what}</p></div>
+          <div class="cell"><h4>Когда выбирать</h4><p>${m.when}</p></div>
+          <div class="cell verdict" style="border-color:${m.c}66;background:${m.c}14">
+            <h4>Вердикт</h4><p>${m.verdict}</p>
+            <div class="chips">${m.chips.map(c=>`<span class="chip">${c}</span>`).join("")}</div>
+          </div>
+        </div>`;
+    }
+
+    // ---------- E2 мастер ----------
+    function renderV2(goal) {
+      document.querySelectorAll("#v2-goals .goal").forEach(g => g.classList.toggle("on", g.dataset.goal === goal));
+      const rank = r => r === "pick" ? 0 : r === "alt" ? 1 : 2;
+      const rows = ORDER.map(k => ({ m: MODELS[k], r: MODELS[k].goals[goal] }))
+        .sort((a, b) => rank(a.r) - rank(b.r));
+      document.getElementById("v2-rec").innerHTML = rows.map(({ m, r }) => {
+        const badge = r === "pick" ? `<span class="badge pick">★ Рекомендуем</span>`
+          : r === "alt" ? `<span class="badge alt">Можно</span>`
+          : `<span class="badge alt" style="opacity:.5">Не сейчас</span>`;
+        return `<div class="rec ${r ? "" : "dim"}">
+          <span class="pip" style="background:${m.c}"></span>
+          <span class="nm">${m.name}<small>${FAM[m.fam].name} · ${m.tl}</small></span>
+          ${badge}</div>`;
+      }).join("");
+    }
+
+    // ---------- E3 колонки ----------
+    function renderV3board() {
+      const board = document.getElementById("v3-board");
+      board.innerHTML = GROUPS.map(([f, keys]) =>
+        `<div class="col"><h4><span class="dot" style="background:${FAMHEX[f]}"></span>${FAM[f].name}</h4>` +
+        keys.map(k => {
+          const m = MODELS[k];
+          const mini = Object.keys(STAT_LABELS).map(s =>
+            `<i style="background:${m.stats[s] >= 3 ? m.c : '#1c2942'}"></i>`).join("");
+          return `<button class="mcard" data-k="${k}" style="--c:${m.c}"><b>${m.name}</b><small>${m.role}</small><div class="mini">${mini}</div></button>`;
+        }).join("") + `</div>`
+      ).join("");
+      board.querySelectorAll(".mcard").forEach(b => b.addEventListener("click", () => renderV3detail(b.dataset.k)));
+    }
+    function renderV3detail(k) {
+      const m = MODELS[k];
+      document.querySelectorAll("#v3-board .mcard").forEach(b => b.classList.toggle("on", b.dataset.k === k));
+      document.getElementById("v3-detail").innerHTML = `
+        <div class="lab" style="background:linear-gradient(135deg,${m.c},${m.c}99)">${m.abbr}</div>
+        <div>
+          <h3>${m.name}</h3>
+          <p class="tl" style="color:${m.c}">${FAM[m.fam].name} · ${m.role}</p>
+          <p>${m.what} <b style="color:#cdd9ec">Когда:</b> ${m.when}</p>
+          <div class="chips">${m.chips.map(c=>`<span class="chip">${c}</span>`).join("")}</div>
+        </div>`;
+    }
+
+    // ---------- E4 когитатор ----------
+    function phosphorBar(v) { return "▮".repeat(v) + `<i>${"▯".repeat(5 - v)}</i>`; }
+    function renderV4(k) {
+      const m = MODELS[k];
+      document.querySelectorAll("#v4-side button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
+      document.getElementById("v4-main").innerHTML = `
+        <div class="echo">&gt;&gt; ДОСТУП К ЗАПИСИ КОДЕКСА... ОК</div>
+        <h3>${m.name}</h3>
+        <p class="tl">[ ${FAM[m.fam].name} :: ${m.role} ] ${m.tl}</p>
+        <div class="meter">
+          ${Object.keys(STAT_LABELS).map(s => `<span class="k">${STAT_LABELS[s].toUpperCase()}</span><span class="b">${phosphorBar(m.stats[s])}</span>`).join("")}
+        </div>
+        <div class="seg"><span class="k">// ЧТО ЭТО</span><p>${m.what}</p>
+          <span class="k">// КОГДА ВЫБИРАТЬ</span><p>${m.when}</p>
+          <span class="k">// ВЕРДИКТ</span><p>${m.verdict}</p></div>`;
+    }
+
+    // ---------- E5 светлая ----------
+    function renderV5(k) {
+      const m = MODELS[k];
+      document.querySelectorAll("#v5-side button").forEach(b => b.classList.toggle("on", b.dataset.k === k));
+      document.getElementById("v5-main").innerHTML = `
+        <div style="--c:${m.c}">
+          <span class="eyebrow" style="color:${m.c}">${FAM[m.fam].name} · ${m.role}</span>
+          <h3>${m.name}</h3>
+          <p class="tl">${m.tl}</p>
+          <div class="kv">
+            <div class="c"><b>Скорость старта</b><span>${m.stats.start}/5</span></div>
+            <div class="c"><b>Сила тактики</b><span>${m.stats.tactic}/5</span></div>
+            <div class="c"><b>Цена инференса</b><span>${m.stats.cost}/5</span></div>
+          </div>
+          <div class="prose">
+            <h4>Что это</h4><p>${m.what}</p>
+            <h4>Когда выбирать</h4><p>${m.when}</p>
+          </div>
+          <div class="callout"><b>Вердикт.</b> <span>${m.verdict}</span></div>
+          <div class="chips">${m.chips.map(c=>`<span class="chip">${c}</span>`).join("")}</div>
+        </div>`;
+    }
+
+    // ---------- nav ----------
+    document.getElementById("nav").addEventListener("click", e => {
+      const btn = e.target.closest("button[data-v]");
+      if (!btn) return;
+      document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b === btn));
+      document.querySelectorAll(".variant").forEach(v => v.classList.toggle("on", v.id === btn.dataset.v));
+    });
+
+    // ---------- init ----------
+    buildSide("v1-side", "fam", renderV1);
+    buildSide("v4-side", "dir", renderV4);
+    buildSide("v5-side", "fam", renderV5);
+    renderV1("az-tree");
+    renderV2("fast");
+    renderV3board(); renderV3detail("az-tree");
+    renderV4("dqn");
+    renderV5("dqn");
+    document.getElementById("v2-goals").addEventListener("click", e => {
+      const g = e.target.closest(".goal"); if (g) renderV2(g.dataset.goal);
+    });
+  </script>
+</body>
+</html>
