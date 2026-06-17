@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.engine.mission import apply_end_of_battle
 from core.engine.phases import stratagem_engine
 from core.engine.phases.legacy_compiler import default_action_dict
 from core.engine.phases.option_generator import (
@@ -230,4 +231,35 @@ def run_fight(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTu
     reward_delta = float(result or 0.0) if result is not None else 0.0
     state.reward_delta += reward_delta
     state.info["fight_reward_delta"] = reward_delta
+    return state
+
+
+def run_turn(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTurnState:
+    """Полный windowed-ход одной стороны: command→movement→shooting→charge→fight через окна.
+
+    decide(window) -> ActionOption применяется на каждом окне. Делегирует исполнение
+    в run_*/фазы движка (без дублирования логики). По завершении — end-of-battle и
+    сброс одноразовых reaction-флагов противоположной стороны (как в legacy step).
+    """
+    e = _unwrap(env)
+    state = _ensure_state(e, side, state)
+    _invalidate(e, f"run_turn_start:{side}")
+    e.unitCharged = [0] * len(e.unit_health)
+    e.enemyCharged = [0] * len(e.enemy_health)
+    e.active_side = side
+
+    state = run_command(e, side, decide, state)
+    state = run_movement(e, side, decide, state)
+    state = run_shooting(e, side, decide, state)
+    state = run_charge(e, side, decide, state)
+    state = run_fight(e, side, decide, state)
+    _invalidate(e, f"run_turn_after_fight:{side}")
+
+    apply_end_of_battle(e, log_fn=getattr(e, "_log", None))
+    if side == "model":
+        e.enemyStrat["overwatch"] = -1
+        e.enemyStrat["smokescreen"] = -1
+    else:
+        e.modelStrat["overwatch"] = -1
+        e.modelStrat["smokescreen"] = -1
     return state

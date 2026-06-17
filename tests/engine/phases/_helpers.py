@@ -1,4 +1,3 @@
-from core.engine.mission import apply_end_of_battle
 from core.engine.phases import phase_engine
 from core.engine.phases.types import ActionKind, Phase
 from core.engine.unit import Unit
@@ -63,23 +62,5 @@ def _default_window_decide(window):
 
 
 def run_windowed_default_turn(env: Warhammer40kEnv, side: str = "model"):
-    """Test-only helper: run one windowed turn using legacy default choices."""
-    env._invalidate_target_cache(f"windowed_default_start:{side}")
-    env.unitCharged = [0] * len(env.unit_health)
-    env.enemyCharged = [0] * len(env.enemy_health)
-    env.active_side = side
-
-    state = phase_engine.run_command(env, side, _default_window_decide)
-    state = phase_engine.run_movement(env, side, _default_window_decide, state)
-    state = phase_engine.run_shooting(env, side, _default_window_decide, state)
-    state = phase_engine.run_charge(env, side, _default_window_decide, state)
-    state = phase_engine.run_fight(env, side, _default_window_decide, state)
-    env._invalidate_target_cache(f"windowed_default_after_fight:{side}")
-    apply_end_of_battle(env, log_fn=env._log)
-    if side == "model":
-        env.enemyStrat["overwatch"] = -1
-        env.enemyStrat["smokescreen"] = -1
-    else:
-        env.modelStrat["overwatch"] = -1
-        env.modelStrat["smokescreen"] = -1
-    return state
+    """Test-only helper: один windowed-ход дефолтными legacy-выборами через run_turn."""
+    return phase_engine.run_turn(env, side, _default_window_decide)
