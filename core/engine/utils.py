@@ -136,11 +136,13 @@ def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_da
     эвристикой врага для выбора цели и определения «добью/не добью». Возвращает
     float (НЕ обрезается по HP цели — обрезание делает вызывающий код).
     """
+    eff = _normalize_effects(effects)
+
     # --- профиль защитника / сейв ---
     sv_base = _to_int(attackee_data.get("Sv"), default=7)
     inv = _to_int(attackee_data.get("IVSave"), default=0)
-    ap = _to_int(attacker_weapon.get("AP"), default=0)
-    cover_bonus = 1 if (effects == "benefit of cover" and rangeOfComb == "Ranged") else 0
+    ap = _to_int(attacker_weapon.get("AP"), default=0) - int(eff["ap_improve"])
+    cover_bonus = 1 if (eff["cover"] and rangeOfComb == "Ranged") else 0
     save_target = sv_base - cover_bonus - ap
     if save_target < 2:
         save_target = 2
@@ -149,6 +151,11 @@ def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_da
     if inv and inv > 0:
         save_target = min(save_target, inv)
     p_save = (7 - save_target) / 6.0 if save_target <= 6 else 0.0
+    # reroll_save (защитник перебрасывает провал): шанс сейва растёт
+    if eff["reroll_save"] == "all":
+        p_save = p_save + (1.0 - p_save) * p_save
+    elif eff["reroll_save"] == "ones":
+        p_save = p_save + (1.0 / 6.0) * p_save
     p_unsaved = 1.0 - p_save
 
     # --- to-hit ---
@@ -161,13 +168,21 @@ def expected_damage(attacker_health, attacker_weapon, attacker_data, attackee_da
         p_hit = 1.0 / 6.0  # только натуральная 6 (crit) попадает
     else:
         p_hit = 1.0
+    if eff["reroll_hits"] == "all":
+        p_hit = p_hit + (1.0 - p_hit) * p_hit
+    elif eff["reroll_hits"] == "ones":
+        p_hit = p_hit + (1.0 / 6.0) * p_hit
     p_crit = 1.0 / 6.0
 
     # --- to-wound ---
-    s = _to_int(attacker_weapon.get("S"), default=0)
+    s = _to_int(attacker_weapon.get("S"), default=0) + int(eff["strength_mod"])
     t = _to_int(attackee_data.get("T"), default=0)
     wt = _wound_target(s, t) if (s and t) else 7
     p_wound = (7 - wt) / 6.0 if wt <= 6 else 0.0
+    if eff["reroll_wounds"] == "all":
+        p_wound = p_wound + (1.0 - p_wound) * p_wound
+    elif eff["reroll_wounds"] == "ones":
+        p_wound = p_wound + (1.0 / 6.0) * p_wound
 
     # --- число атак (зеркалит attack()) ---
     n_models_raw = attacker_data.get("#OfModels")
@@ -315,6 +330,44 @@ def _roll_attacks_expr(expr, _roll_fn):
     return 1, False
 
 
+def _normalize_effects(effects):
+    """Привести effects к dict со стабильными ключами (назад-совместимо).
+
+    None -> дефолты (cover=False); "benefit of cover" -> cover=True; dict -> читаем ключи.
+    """
+    out = {
+        "cover": False,
+        "reroll_hits": None,
+        "reroll_wounds": None,
+        "reroll_save": None,
+        "strength_mod": 0,
+        "ap_improve": 0,
+    }
+    if effects is None:
+        return out
+    if isinstance(effects, str):
+        if effects.strip().lower() == "benefit of cover":
+            out["cover"] = True
+        return out
+    if isinstance(effects, dict):
+        out["cover"] = bool(effects.get("cover") or effects.get("benefit_of_cover"))
+        rh = effects.get("reroll_hits")
+        out["reroll_hits"] = rh if rh in ("ones", "all") else None
+        rw = effects.get("reroll_wounds")
+        out["reroll_wounds"] = rw if rw in ("ones", "all") else None
+        rs = effects.get("reroll_save")
+        out["reroll_save"] = rs if rs in ("ones", "all") else None
+        try:
+            out["strength_mod"] = int(effects.get("strength_mod", 0) or 0)
+        except (TypeError, ValueError):
+            out["strength_mod"] = 0
+        try:
+            out["ap_improve"] = int(effects.get("ap_improve", 0) or 0)
+        except (TypeError, ValueError):
+            out["ap_improve"] = 0
+    return out
+
+
 def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
            rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None, hit_on_6: bool = False):
     """Attack resolution (приведено к "10e-стилю" бросков).
@@ -356,6 +409,8 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             return roller(num=num, max=max, stage=stage)
         return roller(num=num, max=max)
 
+    eff = _normalize_effects(effects)
+
     # --- Targets / profile parsing ---
     sv_base = _to_int(attackeeData.get("Sv"), default=7)
     inv = _to_int(attackeeData.get("IVSave"), default=0)  # 0 = нет инвула
@@ -365,14 +420,14 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         # Overwatch 10e: попадания только на натуральную 6.
         bs = 6
 
-    s = _to_int(attackerWeapon.get("S"), default=0)
+    s = _to_int(attackerWeapon.get("S"), default=0) + int(eff["strength_mod"])
     t = _to_int(attackeeData.get("T"), default=0)
 
     # AP в 10e обычно отрицательный (например -1, -2)
-    ap = _to_int(attackerWeapon.get("AP"), default=0)
+    ap = _to_int(attackerWeapon.get("AP"), default=0) - int(eff["ap_improve"])
 
     # Benefit of cover: +1 к сейву => целевое значение СНИЖАЕТСЯ на 1 (мин 2+)
-    cover_bonus = 1 if (effects == "benefit of cover" and rangeOfComb == "Ranged") else 0
+    cover_bonus = 1 if (eff["cover"] and rangeOfComb == "Ranged") else 0
 
     # Цель сейва: Sv - cover_bonus - AP  (если AP отрицательный, то минус AP => +)
     save_target = sv_base - cover_bonus - ap
@@ -426,6 +481,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     else:
         rolls = np.array(list(rolls), dtype=int)
 
+    if eff["reroll_hits"]:
+        need = []
+        for idx, r in enumerate(rolls):
+            r = int(r)
+            if eff["reroll_hits"] == "ones" and r == 1:
+                need.append(idx)
+            elif eff["reroll_hits"] == "all" and r != 6 and r < bs:
+                need.append(idx)
+        if need:
+            new = _roll_with_stage(num=len(need), stage="hit")
+            new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
+            for j, idx in enumerate(need):
+                rolls[idx] = int(new[j])
+
     lethal = _weapon_has_lethal_hits(attackerWeapon)
 
     hits = 0
@@ -462,6 +531,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             else:
                 wound_rolls = np.array(list(wound_rolls), dtype=int)
 
+            if eff["reroll_wounds"]:
+                need = []
+                for idx, w in enumerate(wound_rolls):
+                    w = int(w)
+                    if eff["reroll_wounds"] == "ones" and w == 1:
+                        need.append(idx)
+                    elif eff["reroll_wounds"] == "all" and w < wt:
+                        need.append(idx)
+                if need:
+                    new = _roll_with_stage(num=len(need), stage="wound")
+                    new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
+                    for j, idx in enumerate(need):
+                        wound_rolls[idx] = int(new[j])
+
             for w in wound_rolls:
                 w = int(w)
                 if w == 1:
@@ -476,6 +559,20 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             save_rolls = np.array([save_rolls], dtype=int)
         else:
             save_rolls = np.array(list(save_rolls), dtype=int)
+
+        if eff["reroll_save"]:
+            need = []
+            for idx, r in enumerate(save_rolls):
+                r = int(r)
+                if eff["reroll_save"] == "ones" and r == 1:
+                    need.append(idx)
+                elif eff["reroll_save"] == "all" and r < save_target:
+                    need.append(idx)
+            if need:
+                new = _roll_with_stage(num=len(need), stage="save")
+                new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
+                for j, idx in enumerate(need):
+                    save_rolls[idx] = int(new[j])
 
         for k in range(len(dmg_instances)):
             r = int(save_rolls[k])

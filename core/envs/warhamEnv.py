@@ -31,6 +31,7 @@ from core.engine.mission import (
     score_end_of_command_phase,
     terrain_cells_from_features,
 )
+from core.engine.phases.stratagem_engine import apply as _apply_stratagem
 from core.engine.skills import apply_end_of_command_phase
 from core.engine.state_export import write_state_json
 from project_paths import ARTIFACTS_METRICS_DIR, BOARD_PATH, RUNTIME_STATE_DIR
@@ -1027,6 +1028,9 @@ class Warhammer40kEnv(gym.Env):
         self.enemyOverwatch = -1
         self.modelStrat = {"overwatch": -1, "smokescreen": -1}
         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
+        self.stratagem_used = []
+        self.active_stratagem_effects = []
+        self.reaction_policy = None
         self.unitFellBack = []
         self.enemyFellBack = []
 
@@ -1186,6 +1190,8 @@ class Warhammer40kEnv(gym.Env):
             "viewer_activation": _ga(_self, "viewer_activation", False),
             "viewer_awaiting_ack": _ga(_self, "viewer_awaiting_ack", False),
             "modelUpdates": _ga(_self, "modelUpdates", ""),
+            "_enemy_cp_on": _ga(_self, "_enemy_cp_on", None),
+            "_enemy_use_cp": _ga(_self, "_enemy_use_cp", None),
         }
 
         # --- numpy array ---
@@ -1229,6 +1235,12 @@ class Warhammer40kEnv(gym.Env):
             v = _ga(_self, _k, None)
             snap[_k] = dict(v) if v is not None else {}
 
+        # --- журнал стратагем (list of (side, id, round, phase, unit_idx)) ---
+        _su = _ga(_self, "stratagem_used", None)
+        snap["stratagem_used"] = [tuple(x) for x in _su] if _su is not None else []
+        _ase = _ga(_self, "active_stratagem_effects", None)
+        snap["active_stratagem_effects"] = [dict(x) for x in _ase] if _ase is not None else []
+
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
             v = _ga(_self, _k, None)
@@ -1258,6 +1270,7 @@ class Warhammer40kEnv(gym.Env):
             "last_end_reason", "last_winner", "current_action_index",
             "viewer_step_seq", "viewer_activation", "viewer_awaiting_ack",
             "modelUpdates",
+            "_enemy_cp_on", "_enemy_use_cp",
         )
         for _k in _SCALAR_KEYS:
             if _k in snapshot:
@@ -1304,6 +1317,11 @@ class Warhammer40kEnv(gym.Env):
         for _k in ("modelStrat", "enemyStrat"):
             if _k in snapshot:
                 setattr(_self, _k, dict(snapshot[_k]))
+
+        if "stratagem_used" in snapshot:
+            _self.stratagem_used = [tuple(x) for x in snapshot["stratagem_used"]]
+        if "active_stratagem_effects" in snapshot:
+            _self.active_stratagem_effects = [dict(x) for x in snapshot["active_stratagem_effects"]]
 
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
@@ -1580,11 +1598,11 @@ class Warhammer40kEnv(gym.Env):
                     return targets
                 if self.unitFellBack[unit_idx]:
                     return targets
-                if bool(getattr(self, "unit_used_advance", [False] * len(self.unit_health))[unit_idx]):
+                if bool(getattr(self, "model_used_advance", [False] * len(self.unit_health))[unit_idx]):
                     return targets
                 move_allowance = float(self.unit_data[unit_idx].get("M", 0))
                 if bool(getattr(self, "unit_has_assault", [False] * len(self.unit_health))[unit_idx]):
-                    adv_roll = getattr(self, "unit_advance_roll", [0] * len(self.unit_health))[unit_idx]
+                    adv_roll = getattr(self, "model_advance_roll", [0] * len(self.unit_health))[unit_idx]
                     move_allowance += float(adv_roll or 0)
                 max_charge_dist = move_allowance + 6.0
                 for e_idx in range(len(self.enemy_health)):
@@ -1638,7 +1656,7 @@ class Warhammer40kEnv(gym.Env):
         fell_back = self.unitFellBack if is_model else self.enemyFellBack
         weapon = self.unit_weapon if is_model else self.enemy_weapon
         move_used_advance = (
-            getattr(self, "unit_used_advance", [False] * len(unit_health))
+            getattr(self, "model_used_advance", [False] * len(unit_health))
             if is_model
             else getattr(self, "enemy_used_advance", [False] * len(unit_health))
         )
@@ -1716,7 +1734,9 @@ class Warhammer40kEnv(gym.Env):
                 overlay = self.get_unit_movement_overlay(side, int(i))
                 # индекс 0 зарезервирован под stay в fallback-режиме контроллера
                 mmask[0] = True
-                lim = min(n, 1 + len(overlay))
+                move_cells = overlay.get("move_cells") or []
+                advance_cells = overlay.get("advance_cells") or []
+                lim = min(n, 1 + len(move_cells) + len(advance_cells))
                 if lim > 1:
                     mmask[1:lim] = True
             if not mmask.any():
@@ -2192,6 +2212,31 @@ class Warhammer40kEnv(gym.Env):
                     self._log(heur_cover_msg)
             return "benefit of cover"
         return base_effect
+
+    def _fight_effects_for_attacker(self, side: str, unit_idx: int):
+        effects: dict = {}
+        for rec in list(getattr(self, "active_stratagem_effects", []) or []):
+            if str(rec.get("phase", "")) != "fight":
+                continue
+            if str(rec.get("side", "")) != str(side):
+                continue
+            if int(rec.get("unit_idx", -1)) != int(unit_idx):
+                continue
+            if int(rec.get("round", getattr(self, "battle_round", 1))) != int(getattr(self, "battle_round", 1)):
+                continue
+            if rec.get("effect_id") == "hungry_void_strength_mod":
+                effects["strength_mod"] = int(effects.get("strength_mod", 0)) + int(rec.get("strength_mod", 1))
+            elif rec.get("effect_id") == "command_reroll_wounds":
+                effects["reroll_wounds"] = str(rec.get("reroll_wounds", "all"))
+        return effects or None
+
+    def _clear_phase_stratagem_effects(self, phase: str) -> None:
+        phase = str(phase)
+        self.active_stratagem_effects = [
+            dict(rec)
+            for rec in list(getattr(self, "active_stratagem_effects", []) or [])
+            if str(rec.get("phase", "")) != phase
+        ]
 
     def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
         if side == "enemy":
@@ -3919,6 +3964,63 @@ class Warhammer40kEnv(gym.Env):
     def _unit_has_smoke(self, unit_data: dict) -> bool:
         return self._unit_has_keyword(unit_data, "smoke")
 
+    def _should_use_reaction(self, stratagem_id, side, chosen, candidates, phase, cp) -> bool:
+        """Решение «использовать реакцию»: без политики — текущее поведение (всегда да)."""
+        policy = getattr(self, "reaction_policy", None)
+        if policy is None:
+            return True
+        ctx = {
+            "side": side,
+            "stratagem_id": stratagem_id,
+            "phase": phase,
+            "chosen": chosen,
+            "candidates": list(candidates),
+            "cp": int(cp),
+        }
+        try:
+            return bool(policy(ctx))
+        except Exception:
+            return True
+
+    def _maybe_use_go_to_ground(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
+        """10e Go to Ground: реакция INFANTRY-защитника при выборе целью стрельбы → benefit of cover.
+
+        Фолбэк Smokescreen для юнитов без SMOKE: требует keyword INFANTRY и 1 CP.
+        """
+        if defender_side == "model":
+            cp = self.modelCP
+            unit_data = self.unit_data[defender_idx]
+        else:
+            cp = self.enemyCP
+            unit_data = self.enemy_data[defender_idx]
+
+        if not self._unit_has_keyword(unit_data, "infantry"):
+            return None
+        if cp < 1:
+            return None
+
+        if manual:
+            strat = self._prompt_yes_no("Использовать Go to Ground (1 CP)? (y/n): ")
+            if strat is None:
+                self.game_over = True
+                return None
+            use_it = strat
+        else:
+            use_it = self._should_use_reaction("go_to_ground", defender_side, defender_idx, [defender_idx], phase, cp)
+
+        if not use_it:
+            return None
+
+        _apply_stratagem(self, defender_side, "go_to_ground", defender_idx, phase=phase)
+        self._log_rule(
+            defender_side,
+            defender_idx,
+            "Go to Ground",
+            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: benefit of cover до конца фазы.",
+            phase=phase,
+        )
+        return "benefit of cover"
+
     def _maybe_use_smokescreen(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """
         10e Smokescreen: реакция защитника в момент выбора цели для стрельбы.
@@ -3933,7 +4035,7 @@ class Warhammer40kEnv(gym.Env):
             unit_data = self.enemy_data[defender_idx]
 
         if not self._unit_has_smoke(unit_data):
-            return None
+            return self._maybe_use_go_to_ground(defender_side, defender_idx, phase, manual=manual)
         if cp < 1:
             self._log_rule(
                 defender_side,
@@ -3944,21 +4046,27 @@ class Warhammer40kEnv(gym.Env):
             )
             return None
 
-        use_it = True
         if manual:
             strat = self._prompt_yes_no("Использовать Smokescreen (1 CP)? (y/n): ")
             if strat is None:
                 self.game_over = True
                 return None
             use_it = strat
+        else:
+            use_it = self._should_use_reaction("smokescreen", defender_side, defender_idx, [defender_idx], phase, cp)
 
         if not use_it:
+            if not manual:
+                self._log_rule(
+                    defender_side,
+                    defender_idx,
+                    "Smokescreen",
+                    "Реакция пропущена политикой реакций.",
+                    phase=phase,
+                )
             return None
 
-        if defender_side == "model":
-            self.modelCP -= 1
-        else:
-            self.enemyCP -= 1
+        _apply_stratagem(self, defender_side, "smokescreen", defender_idx, phase=phase)
 
         self._log_rule(
             defender_side,
@@ -4020,7 +4128,6 @@ class Warhammer40kEnv(gym.Env):
             f"Триггер Overwatch: цель переместилась. Цель: {target_label}.",
         )
 
-        use_it = True
         chosen = candidates[0]
         if manual:
             ids = [c + (21 if defender_side == "model" else 11) for c in candidates]
@@ -4045,16 +4152,20 @@ class Warhammer40kEnv(gym.Env):
                 self._log_phase_msg(side_label, phase, "Overwatch отменён: выбран недоступный юнит.")
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
+        else:
+            if not self._should_use_reaction("overwatch", defender_side, chosen, candidates, phase, cp):
+                self._log_phase_msg(side_label, phase, "Overwatch пропущен политикой реакций.")
+                return
 
         if defender_side == "model":
-            self.modelCP -= 1
+            _apply_stratagem(self, "model", "overwatch", chosen, phase=phase)
             attacker_health = self.unit_health
             attacker_weapon = self.unit_weapon
             attacker_data = self.unit_data
             target_health = self.enemy_health if moving_unit_side == "enemy" else self.unit_health
             target_data = self.enemy_data if moving_unit_side == "enemy" else self.unit_data
         else:
-            self.enemyCP -= 1
+            _apply_stratagem(self, "enemy", "overwatch", chosen, phase=phase)
             attacker_health = self.enemy_health
             attacker_weapon = self.enemy_weapon
             attacker_data = self.enemy_data
@@ -4170,7 +4281,6 @@ class Warhammer40kEnv(gym.Env):
         unit_choices = self._format_unit_choices(defender_side, eligible)
         self._log_phase_msg(side_label, phase, f"Доступные юниты для Heroic Intervention: {unit_choices}.")
 
-        use_it = True
         chosen = eligible[0]
         if manual:
             strat = self._prompt_yes_no("Использовать Heroic Intervention (2 CP)? (y/n): ")
@@ -4192,11 +4302,15 @@ class Warhammer40kEnv(gym.Env):
                 self._log_phase_msg(side_label, phase, "Heroic Intervention отменён: выбран недоступный юнит.")
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
+        else:
+            if not self._should_use_reaction("heroic_intervention", defender_side, chosen, eligible, phase, defender_cp):
+                self._log_phase_msg(side_label, phase, "Heroic Intervention пропущен политикой реакций.")
+                return
 
         if defender_side == "model":
-            self.modelCP -= 2
+            _apply_stratagem(self, "model", "heroic_intervention", chosen, phase=phase)
         else:
-            self.enemyCP -= 2
+            _apply_stratagem(self, "enemy", "heroic_intervention", chosen, phase=phase)
 
         pos_before = tuple(defender_coords[chosen])
         defender_coords[chosen][0] = charging_coords[charging_idx][0] + 1
@@ -4299,7 +4413,7 @@ class Warhammer40kEnv(gym.Env):
             self.active_side = self.turn_order[current_index + 1]
         self.phase = "command"
 
-    def command_phase(self, side: str, action=None, manual: bool = False):
+    def command_phase(self, side: str, action=None, manual: bool = False, decide_bravery=None):
         self.begin_phase(side, "command")
         if side == "model":
             self._terrain_shaping_shot_bonus_units = set()
@@ -4329,8 +4443,13 @@ class Warhammer40kEnv(gym.Env):
                         self.modelOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if action and action.get("use_cp") == 1 and action.get("cp_on") == i:
-                            if self.modelCP - 1 >= 0:
+                        if decide_bravery is not None:
+                            _use_bravery = bool(decide_bravery(i))
+                        else:
+                            _use_bravery = bool(action and action.get("use_cp") == 1 and action.get("cp_on") == i)
+                        if _use_bravery:
+                            _bravery = _apply_stratagem(self, "model", "insane_bravery", i, phase="command")
+                            if _bravery["ok"]:
                                 battle_shock[i] = False
                                 reward_delta += reward_cfg.COMMAND_INSANE_BRAVERY_REWARD
                                 self._log_reward_unit(
@@ -4340,7 +4459,6 @@ class Warhammer40kEnv(gym.Env):
                                     "Reward (командование): "
                                     f"Insane Bravery bonus=+{reward_cfg.COMMAND_INSANE_BRAVERY_REWARD:.3f}",
                                 )
-                                self.modelCP -= 1
                                 if self.trunc is False:
                                     self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
                             else:
@@ -4400,12 +4518,13 @@ class Warhammer40kEnv(gym.Env):
                         self.enemyOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
-                            battle_shock[i] = False
-                            self.enemyCP -= 1
-                            self.enemyOC[i] = self.enemy_data[i]["OC"]
-                            if self.trunc is False:
-                                self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
+                        if use_cp == 1 and cp_on == i:
+                            _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
+                            if _bravery["ok"]:
+                                battle_shock[i] = False
+                                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                                if self.trunc is False:
+                                    self._log(f"{unit_label}: применена Insane Bravery (-1 CP), тест пройден.")
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
             apply_end_of_command_phase(self, side="enemy", dice_fn=dice_fn, log_fn=self._log)
             score_end_of_command_phase(self, "enemy", log_fn=self._log)
@@ -4445,9 +4564,10 @@ class Warhammer40kEnv(gym.Env):
                                 self.game_over = True
                                 return None
                             if strat:
-                                battleSh = False
-                                self.enemyCP -= 1
-                                self.enemyOC[i] = self.enemy_data[i]["OC"]
+                                _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
+                                if _bravery["ok"]:
+                                    battleSh = False
+                                    self.enemyOC[i] = self.enemy_data[i]["OC"]
                 battle_shock[i] = battleSh
                 if battleSh:
                     continue
@@ -4489,10 +4609,11 @@ class Warhammer40kEnv(gym.Env):
                         self.enemyOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if use_cp == 1 and cp_on == i and self.enemyCP - 1 >= 0:
-                            battleSh = False
-                            self.enemyCP -= 1
-                            self.enemyOC[i] = self.enemy_data[i]["OC"]
+                        if use_cp == 1 and cp_on == i:
+                            _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
+                            if _bravery["ok"]:
+                                battleSh = False
+                                self.enemyOC[i] = self.enemy_data[i]["OC"]
 
                 battle_shock[i] = battleSh
             dice_fn = player_dice if os.getenv("MANUAL_DICE", "0") == "1" and side == "enemy" else auto_dice
@@ -4502,7 +4623,7 @@ class Warhammer40kEnv(gym.Env):
 
         return None
 
-    def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None):
+    def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None, decide_move=None):
         self.begin_phase(side, "movement")
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
@@ -4531,7 +4652,7 @@ class Warhammer40kEnv(gym.Env):
                 if self.unitInAttack[i][0] == 0 and self.unit_health[i] > 0:
                     base_m = int(self.unit_data[i]["Movement"])
                     label = "move_num_" + str(i)
-                    want = int(action[label])
+                    want = int(decide_move(i)) if decide_move is not None else int(action[label])
                     move_dir = int(action.get("move", 4))
                     advance_roll = None
                     movement = 0.0
@@ -5337,7 +5458,7 @@ class Warhammer40kEnv(gym.Env):
 
         return None
 
-    def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+    def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_shoot=None):
         self.begin_phase(side, "shooting")
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
@@ -5367,7 +5488,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = self.get_shoot_targets_for_unit("model", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
-                    raw = action["shoot"]
+                    raw = int(decide_shoot(i)) if decide_shoot is not None else action["shoot"]
                     if 0 <= raw < len(valid_target_ids):
                         idOfE = valid_target_ids[raw]
                         target_hp_prev = self.enemy_health[idOfE]
@@ -5967,7 +6088,7 @@ class Warhammer40kEnv(gym.Env):
                                 )
         return None
 
-    def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False):
+    def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_charge=None):
         self.begin_phase(side, "charge")
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
@@ -6011,7 +6132,13 @@ class Warhammer40kEnv(gym.Env):
                                 potential_targets.append(j)
                     if potential_targets:
                         any_charge_targets = True
-                    if action["attack"] != 1:
+                    if decide_charge is not None:
+                        _charge_target = decide_charge(i)
+                        _do_charge = _charge_target is not None
+                    else:
+                        _charge_target = None
+                        _do_charge = action["attack"] == 1
+                    if not _do_charge:
                         if potential_targets:
                             target_list = self._format_unit_choices("enemy", potential_targets)
                             self._log_unit(
@@ -6026,7 +6153,7 @@ class Warhammer40kEnv(gym.Env):
                     chargeAble = []
                     dice_vals = dice(num=2)
                     diceRoll = sum(dice_vals)
-                    if action["attack"] == 1:
+                    if _do_charge:
                         if potential_targets:
                             for j in potential_targets:
                                 if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
@@ -6037,7 +6164,7 @@ class Warhammer40kEnv(gym.Env):
                                     if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
                                         chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfE = action["charge"]
+                        idOfE = int(_charge_target) if decide_charge is not None else action["charge"]
                         target_list = self._format_unit_choices("enemy", chargeAble)
                         dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i]) if idOfE in chargeAble else None
                         if _verbose_logs_enabled():
@@ -6517,6 +6644,7 @@ class Warhammer40kEnv(gym.Env):
                         elif model_power < enemy_power:
                             strength_term -= reward_cfg.MELEE_STRENGTH_SCALE
         self.resolve_fight_phase(active_side=side, trunc=self.trunc)
+        self._clear_phase_stratagem_effects("fight")
 
         if side == "model" and engaged_pairs:
             post_enemy_hp_total = float(sum(self.enemy_health))
@@ -6731,6 +6859,8 @@ class Warhammer40kEnv(gym.Env):
         self.enemyCP = 0
         self.modelVP = 0
         self.enemyVP = 0
+        self.stratagem_used = []
+        self.active_stratagem_effects = []
         self.battle_round = 1
         self.active_side = self.turn_order[0]
         self.phase = "command"
@@ -6892,6 +7022,7 @@ class Warhammer40kEnv(gym.Env):
                 defender_data = self.enemy_data[def_idx]
                 hp_before = self.enemy_health[def_idx]
                 models_before = _remaining_models("enemy", def_idx, hp_before)
+                fight_effect = self._fight_effects_for_attacker("model", att_idx)
 
                 _logger = None
                 if quiet is False and use_roll_logger:
@@ -6904,6 +7035,7 @@ class Warhammer40kEnv(gym.Env):
                         self.enemy_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                         roller=_logger.roll,
                     )
                 else:
@@ -6914,6 +7046,7 @@ class Warhammer40kEnv(gym.Env):
                         self.enemy_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                     )
 
                 self._apply_health_update("enemy", def_idx, modHealth, reason="fight")
@@ -6938,7 +7071,7 @@ class Warhammer40kEnv(gym.Env):
                         attacker_data=attacker_data,
                         defender_data=defender_data,
                         dmg_list=dmg,
-                        effect=None,
+                        effect=fight_effect,
                         attacker_label=self._format_unit_label("model", att_idx),
                         defender_label=self._format_unit_label("enemy", def_idx),
                         hp_before=hp_before,
@@ -6975,6 +7108,7 @@ class Warhammer40kEnv(gym.Env):
                 defender_data = self.unit_data[def_idx]
                 hp_before = self.unit_health[def_idx]
                 models_before = _remaining_models("model", def_idx, hp_before)
+                fight_effect = self._fight_effects_for_attacker("enemy", att_idx)
 
                 _logger = None
                 manual_dice = os.getenv("MANUAL_DICE", "0") == "1"
@@ -6988,6 +7122,7 @@ class Warhammer40kEnv(gym.Env):
                         self.unit_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                         roller=_logger.roll,
                     )
                 else:
@@ -6999,6 +7134,7 @@ class Warhammer40kEnv(gym.Env):
                         self.unit_health[def_idx],
                         defender_data,
                         rangeOfComb="Melee",
+                        effects=fight_effect,
                         **extra_kwargs,
                     )
 
@@ -7023,7 +7159,7 @@ class Warhammer40kEnv(gym.Env):
                         attacker_data=attacker_data,
                         defender_data=defender_data,
                         dmg_list=dmg,
-                        effect=None,
+                        effect=fight_effect,
                         attacker_label=self._format_unit_label("enemy", att_idx),
                         defender_label=self._format_unit_label("model", def_idx),
                         hp_before=hp_before,
@@ -7067,6 +7203,7 @@ class Warhammer40kEnv(gym.Env):
         # есть ли вообще кому драться?
         any_fight = any(x[0] == 1 for x in self.unitInAttack) or any(x[0] == 1 for x in self.enemyInAttack)
         if not any_fight:
+            self._clear_phase_stratagem_effects("fight")
             return
 
         model_eligible = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
@@ -7228,6 +7365,7 @@ class Warhammer40kEnv(gym.Env):
 
         if quiet is False:
             self._log("⚔️ Combat resolution complete.\n")
+        self._clear_phase_stratagem_effects("fight")
 
 
 
@@ -7866,6 +8004,44 @@ class Warhammer40kEnv(gym.Env):
     def close(self):
         pass
 
+    _PHASE_OBS_ORDER = ("command", "movement", "shooting", "charge", "fight", "scoring")
+
+    def _phase_obs_block(self, side: str) -> list[float]:
+        """Доп. блок observation за флагом PHASE_OBS_FEATURES: фаза/timing/CP/стратагемы.
+
+        Длина детерминирована: 6 (phase one-hot) + 1 (timing main) + 2 (cp self/enemy norm)
+        + K (стратагема доступна сейчас) + K (использована в этом раунде), K = len(REGISTRY).
+        """
+        from core.engine.phases.stratagems import REGISTRY
+
+        cur_phase = str(getattr(self, "phase", "command") or "command")
+        phase_onehot = [1.0 if cur_phase == p else 0.0 for p in self._PHASE_OBS_ORDER]
+        # timing: считаем MAIN (1.0); reaction-окна пока вне obs-петли
+        timing_main = [1.0]
+
+        cp_norm = 12.0
+        cp_self = float(self.modelCP if side == "model" else self.enemyCP) / cp_norm
+        cp_enemy = float(self.enemyCP if side == "model" else self.modelCP) / cp_norm
+        cp_block = [cp_self, cp_enemy]
+
+        cp_have = float(self.modelCP if side == "model" else self.enemyCP)
+        avail = []
+        for d in REGISTRY:
+            ok = (cur_phase in tuple(p.value for p in d.phases)) and (cp_have >= d.cp_cost)
+            avail.append(1.0 if ok else 0.0)
+
+        cur_round = int(getattr(self, "battle_round", 1))
+        used_recs = list(getattr(self, "stratagem_used", []) or [])
+        used = []
+        for d in REGISTRY:
+            was_used = any(
+                rec[0] == side and rec[1] == d.id and (len(rec) < 3 or int(rec[2]) == cur_round)
+                for rec in used_recs
+            )
+            used.append(1.0 if was_used else 0.0)
+
+        return phase_onehot + timing_main + cp_block + avail + used
+
     def get_observation_for_side(self, side: str):
         obs = []
         if side == "enemy":
@@ -7902,6 +8078,9 @@ class Warhammer40kEnv(gym.Env):
             obs.append(OM[1])
 
         obs.append(int(self.game_over))
+
+        if os.getenv("PHASE_OBS_FEATURES", "0") == "1":
+            obs.extend(self._phase_obs_block(side))
 
         return np.array(obs, dtype=np.float32)
 
