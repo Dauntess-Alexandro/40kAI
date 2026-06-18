@@ -31,6 +31,15 @@ from core.engine.mission import (
     score_end_of_command_phase,
     terrain_cells_from_features,
 )
+from core.engine.phases.obs_features import (
+    PHASE_OBS_EXTENSION_SIZE,
+    append_phase_obs_features,
+    base_observation_length,
+    build_phase_obs_signature_suffix,
+    legacy_observation_space_size,
+    phase_obs_features_enabled,
+    phase_obs_vector,
+)
 from core.engine.phases.stratagem_engine import apply as _apply_stratagem
 from core.engine.skills import apply_end_of_command_phase
 from core.engine.state_export import write_state_json
@@ -71,9 +80,15 @@ ENV_RULESET_VERSION = os.getenv("ENV_RULESET_VERSION", "only_war_v1")
 _ACTION_KEYS_LOGGED = False
 
 
-def build_env_contract_from_spaces(*, n_observations: int, n_actions: list[int], mission_name: str) -> dict:
+def build_env_contract_from_spaces(
+    *,
+    n_observations: int,
+    n_actions: list[int],
+    mission_name: str,
+    phase_obs_features: bool = False,
+) -> dict:
     """Стабильный контракт пространства состояния/действий для матчмейкера."""
-    obs_signature = f"vec:{int(n_observations)}"
+    obs_signature = f"vec:{int(n_observations)}{build_phase_obs_signature_suffix(bool(phase_obs_features))}"
     action_signature = "heads:" + ",".join(str(int(v)) for v in n_actions)
     return {
         "ruleset_version": str(ENV_RULESET_VERSION),
@@ -1118,7 +1133,10 @@ class Warhammer40kEnv(gym.Env):
 
         self._init_model_state_from_health()
 
-        obsSpace = (len(model) * 3) + (len(enemy) * 3) + len(self.coordsOfOM * 2) + 1
+        obsSpace = legacy_observation_space_size(len(model), len(enemy), len(self.coordsOfOM))
+        self._phase_obs_features = phase_obs_features_enabled()
+        if self._phase_obs_features:
+            obsSpace = base_observation_length(len(model), len(enemy), len(self.coordsOfOM)) + PHASE_OBS_EXTENSION_SIZE
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obsSpace,), dtype=np.float32)
 
     def _in_simulation_mode(self) -> bool:
@@ -8062,6 +8080,9 @@ class Warhammer40kEnv(gym.Env):
             obs.append(OM[1])
 
         obs.append(int(self.game_over))
+
+        if getattr(self, "_phase_obs_features", False):
+            append_phase_obs_features(self, side, obs)
 
         return np.array(obs, dtype=np.float32)
 

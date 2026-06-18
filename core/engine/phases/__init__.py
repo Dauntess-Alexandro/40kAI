@@ -29,6 +29,15 @@ from core.engine.phases.stratagems import (
     for_trigger,
     legal_stratagem_options,
 )
+from core.engine.phases.obs_features import (
+    PHASE_OBS_EXTENSION_SIZE,
+    append_phase_obs_features,
+    base_observation_length,
+    build_phase_obs_signature_suffix,
+    legacy_observation_space_size,
+    phase_obs_features_enabled,
+    phase_obs_vector,
+)
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -42,6 +51,13 @@ from core.engine.phases.types import (
 )
 
 __all__ = [
+    "phase_obs_features_enabled",
+    "PHASE_OBS_EXTENSION_SIZE",
+    "base_observation_length",
+    "legacy_observation_space_size",
+    "build_phase_obs_signature_suffix",
+    "append_phase_obs_features",
+    "phase_obs_vector",
     "ActionKind",
     "ActionOption",
     "DecisionWindow",
