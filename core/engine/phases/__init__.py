@@ -15,9 +15,11 @@ from core.engine.phases.obs_features import (
     append_phase_obs_features,
     base_observation_length,
     build_phase_obs_signature_suffix,
+    describe_obs_dim_mismatch,
     legacy_observation_space_size,
     phase_obs_features_enabled,
     phase_obs_vector,
+    resolve_phase_obs_features,
 )
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
@@ -26,6 +28,10 @@ from core.engine.phases.option_generator import (
     generate_windows,
     movement_options_for_unit,
     shooting_options_for_unit,
+)
+from core.engine.phases.reaction_windows import (
+    build_reaction_windows,
+    windowed_reaction_windows_enabled,
 )
 from core.engine.phases.replay_meta import (
     ReplayPhaseMeta,
@@ -60,10 +66,6 @@ from core.engine.phases.types import (
     SubStep,
     Timing,
 )
-from core.engine.phases.reaction_windows import (
-    build_reaction_windows,
-    windowed_reaction_windows_enabled,
-)
 from core.engine.phases.windowed_selfplay import (
     command_replay_meta_from_action,
     make_charge_decide_from_action_dict,
@@ -91,6 +93,8 @@ __all__ = [
     "build_phase_obs_signature_suffix",
     "append_phase_obs_features",
     "phase_obs_vector",
+    "resolve_phase_obs_features",
+    "describe_obs_dim_mismatch",
     "ReplayPhaseMeta",
     "replay_phase_meta_enabled",
     "capture_replay_phase_meta",

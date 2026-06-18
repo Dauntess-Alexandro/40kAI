@@ -29,6 +29,7 @@ from core.engine.mission import (
     normalize_mission_name,
     post_deploy_setup,
 )
+from core.engine.phases.obs_features import phase_obs_features_enabled
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumbel_az_algo
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
@@ -1073,6 +1074,11 @@ def main():
     )
     n_actions = n_actions_from_env(env, len(model_units))
     n_observations = len(state)
+    # B6: phase_obs_features меняет размер obs (+24). Фиксируем в логе для сверки с чекпойнтом.
+    log(
+        f"[EVAL][AZ][CONFIG] phase_obs_features={int(phase_obs_features_enabled())} "
+        f"obs_size={int(n_observations)}"
+    )
     eval_contract = make_env_contract(
         n_observations=n_observations,
         n_actions=n_actions,

@@ -4875,6 +4875,9 @@ class GUIController(QtCore.QObject):
         joint_best = int(payload.get("mcts_joint_action_from_best_child", 0))
         if joint_best not in (0, 1):
             return f"{section}.mcts_joint_action_from_best_child должен быть 0 или 1"
+        phase_obs = int(payload.get("phase_obs_features", 0))
+        if phase_obs not in (0, 1):
+            return f"{section}.phase_obs_features должен быть 0 или 1"
         return None
 
     def _apply_dqn_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
@@ -5581,6 +5584,14 @@ class GUIController(QtCore.QObject):
             az_opponent_mode = opponent_mode
         env.insert("AZ_EVAL_MODE", az_eval_mode)
         env.insert("AZ_EVAL_OPPONENT_MODE", az_opponent_mode)
+        # B6: phase_obs_features меняет размер obs (+24) и в greedy, и в mcts — ставим всегда для AZ.
+        env.insert(
+            "PHASE_OBS_FEATURES",
+            os.getenv(
+                "PHASE_OBS_FEATURES",
+                str(int(self._az_tree_hyperparams.get("phase_obs_features", 0))),
+            ),
+        )
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
             az_hp_eval = self._az_tree_hyperparams
             env.insert("MCTS_CANDIDATE_MODE", str(az_hp_eval.get("mcts_candidate_mode", "option")))
@@ -6673,6 +6684,10 @@ class GUIController(QtCore.QObject):
                     str(int(az_hp.get("mcts_joint_action_from_best_child", 0))),
                 ),
             )
+            env.insert(
+                "PHASE_OBS_FEATURES",
+                os.getenv("PHASE_OBS_FEATURES", str(int(az_hp.get("phase_obs_features", 0)))),
+            )
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
             env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
@@ -6683,10 +6698,11 @@ class GUIController(QtCore.QObject):
             az_windowed = env.value("WINDOWED_SELFPLAY", "1")
             az_wn = env.value("MCTS_WINDOW_NODES", "0")
             az_joint_best = env.value("AZ_MCTS_JOINT_BEST_CHILD", "0")
+            az_phase_obs = env.value("PHASE_OBS_FEATURES", "0")
             self._emit_log(
                 f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
                 f"candidate_mode={az_cand} windowed_selfplay={az_windowed} window_nodes={az_wn} "
-                f"joint_best_child={az_joint_best} "
+                f"joint_best_child={az_joint_best} phase_obs_features={az_phase_obs} "
                 f"sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )

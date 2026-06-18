@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 
-from core.engine.phases.stratagems import REGISTRY, legal_stratagem_options, Trigger
+from core.engine.phases.stratagems import REGISTRY, Trigger, legal_stratagem_options
 from core.engine.phases.types import ActionKind, Phase, Timing
 
 _PHASE_ORDER: tuple[Phase, ...] = (
@@ -37,11 +37,51 @@ PHASE_OBS_EXTENSION_SIZE = (
 _CP_NORM_DENOM = 12.0
 
 
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
 def phase_obs_features_enabled(explicit: bool | None = None) -> bool:
     if explicit is not None:
         return bool(explicit)
     raw = str(os.getenv("PHASE_OBS_FEATURES", "0")).strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return raw in _TRUTHY
+
+
+def resolve_phase_obs_features(*, env_value: str | None, cfg_value) -> bool:
+    """Резолв флага phase_obs_features: env-переменная приоритетнее hyperparams.
+
+    `env_value` — сырое значение `PHASE_OBS_FEATURES` (или None/пустая строка, если не задано);
+    `cfg_value` — значение из hyperparams `alphazero_tree.phase_obs_features` (0/1/bool/str).
+    Используется в train/eval/GUI, чтобы значение совпадало во всех путях.
+    """
+    if env_value is not None and str(env_value).strip() != "":
+        return str(env_value).strip().lower() in _TRUTHY
+    return str(cfg_value).strip().lower() in _TRUTHY
+
+
+def describe_obs_dim_mismatch(*, checkpoint_obs_dim: int, current_obs_dim: int) -> str | None:
+    """Понятная ошибка при несовпадении размера obs (чекпойнт ↔ текущий env).
+
+    Возвращает None, если размеры совпадают. Иначе — RU-сообщение (что/где/что делать).
+    Если разница ровно PHASE_OBS_EXTENSION_SIZE — подсказываем переключить флаг phase_obs_features.
+    """
+    ckpt = int(checkpoint_obs_dim)
+    cur = int(current_obs_dim)
+    if ckpt == cur:
+        return None
+    base = (
+        f"Размер obs не совпадает: чекпойнт={ckpt}, текущий env={cur}. "
+        "Где: resume AlphaZero (train.py). "
+    )
+    if abs(ckpt - cur) == PHASE_OBS_EXTENSION_SIZE:
+        ckpt_flag = "1" if ckpt > cur else "0"
+        return (
+            base
+            + f"Разница = {PHASE_OBS_EXTENSION_SIZE} dims (phase_obs_features). "
+            + f"Что делать: задайте phase_obs_features={ckpt_flag} (env PHASE_OBS_FEATURES={ckpt_flag}), "
+            "как при обучении этого чекпойнта, либо начните обучение с нуля."
+        )
+    return base + "Что делать: укажите чекпойнт той же архитектуры/ростера или начните с нуля."
 
 
 def base_observation_length(n_model: int, n_enemy: int, n_objective_points: int) -> int:

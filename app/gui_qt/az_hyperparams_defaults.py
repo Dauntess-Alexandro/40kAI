@@ -31,6 +31,7 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "windowed_selfplay",
     "mcts_window_nodes",
     "mcts_joint_action_from_best_child",
+    "phase_obs_features",
     "mcts_top_k_per_head",
     "mcts_max_depth",
     "mcts_root_dirichlet_only",
@@ -158,6 +159,7 @@ _AZ_BASE: dict[str, int | float | str] = {
     "windowed_selfplay": 1,
     "mcts_window_nodes": 0,
     "mcts_joint_action_from_best_child": 0,
+    "phase_obs_features": 0,
 }
 
 # DEFAULT_AZ_TREE_HYPERPARAMS определён ниже как base + balanced-пресет
@@ -282,6 +284,7 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
             "windowed_selfplay",
             "mcts_window_nodes",
             "mcts_joint_action_from_best_child",
+            "phase_obs_features",
             "mcts_simulations",
             "mcts_max_depth",
             "mcts_top_k_per_head",
@@ -394,6 +397,10 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "mcts_joint_action_from_best_child": (
         "1 = execute coherent joint action from best MCTS child in option/filter mode. "
         "0 = old independent marginal head execution."
+    ),
+    "phase_obs_features": (
+        "1 = добавить в obs +24 dims (фаза one-hot, timing, CP norm, флаги стратагем available/used). "
+        "0 = старый размер obs. Меняет размер obs → несовместимо со старыми чекпойнтами (env PHASE_OBS_FEATURES)."
     ),
     "mcts_top_k_per_head": "Top-K действий на голову.",
     "mcts_max_depth": "Глубина rollout в MCTS (Tree).",

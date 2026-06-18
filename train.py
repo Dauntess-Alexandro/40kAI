@@ -33,16 +33,20 @@ from core.engine.agent_registry import (
 )
 from core.engine.game_io import ConsoleIO, set_active_io
 from core.engine.io_profiler import get_io_profiler
-from core.engine.phases.replay_meta import (
-    az_transition_from_rollout_dict,
-    az_transition_to_rollout_dict,
-    gmz_transition_from_rollout_dict,
-)
 from core.engine.mission import (
     board_dims_for_mission,
     deploy_for_mission,
     normalize_mission_name,
     post_deploy_setup,
+)
+from core.engine.phases.obs_features import (
+    describe_obs_dim_mismatch,
+    resolve_phase_obs_features,
+)
+from core.engine.phases.replay_meta import (
+    az_transition_from_rollout_dict,
+    az_transition_to_rollout_dict,
+    gmz_transition_from_rollout_dict,
 )
 from core.envs.warhamEnv import *
 from project_paths import (
@@ -2623,6 +2627,13 @@ if "WINDOWED_SELFPLAY" not in os.environ:
     os.environ["WINDOWED_SELFPLAY"] = "1" if AZ_WINDOWED_SELFPLAY else "0"
 if "MCTS_WINDOW_NODES" not in os.environ:
     os.environ["MCTS_WINDOW_NODES"] = "1" if AZ_MCTS_WINDOW_NODES else "0"
+# B6: phase_obs_features (+24 dims obs). env-var приоритетнее hyperparams; прокидываем в os.environ,
+# чтобы spawn-акторы (Windows) построили env с тем же размером obs, что и learner.
+AZ_PHASE_OBS_FEATURES = resolve_phase_obs_features(
+    env_value=os.getenv("PHASE_OBS_FEATURES"),
+    cfg_value=AZ_CFG.get("phase_obs_features", 0),
+)
+os.environ["PHASE_OBS_FEATURES"] = "1" if AZ_PHASE_OBS_FEATURES else "0"
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
     os.getenv("AZ_MCTS_ROOT_DIRICHLET_ONLY", str(AZ_CFG.get("mcts_root_dirichlet_only", 1)))
@@ -9286,6 +9297,15 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             append_agent_log(
                 f"[AZ][RESUME][WARN] arch mismatch checkpoint={arch} current={az_kw}; strict=False load"
             )
+        # B6: явная проверка размера obs (phase_obs_features меняет input-слой) — понятная остановка.
+        _ckpt_input_w = policy_state.get("input_fc.weight")
+        if hasattr(_ckpt_input_w, "shape") and len(getattr(_ckpt_input_w, "shape", ())) == 2:
+            _obs_mismatch = describe_obs_dim_mismatch(
+                checkpoint_obs_dim=int(_ckpt_input_w.shape[1]),
+                current_obs_dim=int(n_observations),
+            )
+            if _obs_mismatch:
+                _raise_resume_error("AZ", RESUME_CHECKPOINT, _obs_mismatch)
         try:
             load_alphazero_state_dict(
                 az_net,
@@ -9362,7 +9382,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
         f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
         f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} window_nodes={int(AZ_MCTS_WINDOW_NODES)} "
-        f"joint_best_child={int(AZ_MCTS_JOINT_BEST_CHILD)} mcts={_AZ_LOG_SIMS} "
+        f"joint_best_child={int(AZ_MCTS_JOINT_BEST_CHILD)} phase_obs_features={int(AZ_PHASE_OBS_FEATURES)} "
+        f"mcts={_AZ_LOG_SIMS} "
         f"{f'joint_action={int(GAZ_JOINT_ACTION)} ' if is_gumbel_az_algo(TRAIN_ALGO) else ''}"
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
