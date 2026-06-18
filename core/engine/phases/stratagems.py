@@ -38,6 +38,13 @@ class StratagemDef:
 
 
 REGISTRY: tuple[StratagemDef, ...] = (
+    # Insane Bravery — Core Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Insane-Bravery
+    #   WHEN: Battle-shock step of your Command phase, just after a unit fails a Battle-shock test.
+    #   COST: 1 CP. EFFECT: that unit is not Battle-shocked.
+    #   RESTRICTION (usage_limit): once per battle (PER_BATTLE).
+    # Реализация: command_phase() при провале теста зовёт _apply_stratagem(insane_bravery) →
+    # списывает 1 CP, снимает battle_shock с юнита. Правила берём из Wahapedia, не выдумываем.
     StratagemDef(
         id="insane_bravery",
         name_ru="Insane Bravery",
