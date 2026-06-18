@@ -3,9 +3,12 @@ from __future__ import annotations
 import random
 from collections import deque
 from dataclasses import dataclass
-from typing import List
+from typing import List, TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from core.engine.phases.replay_meta import ReplayPhaseMeta
 
 
 @dataclass
@@ -15,6 +18,7 @@ class AZTransition:
     value_target: float
     policy_version: int = 0
     faction: str = ""
+    phase_meta: "ReplayPhaseMeta | None" = None
 
 
 class AlphaZeroReplayBuffer:
@@ -120,17 +124,23 @@ class AlphaZeroReplayBuffer:
         return out
 
     def state_dict(self) -> dict:
+        from core.engine.phases.replay_meta import ReplayPhaseMeta
+
         items = []
         for t in self.buffer:
-            items.append(
-                {
-                    "state": np.asarray(t.state, dtype=np.float32),
-                    "policy_targets": [np.asarray(p, dtype=np.float32) for p in list(t.policy_targets)],
-                    "value_target": float(t.value_target),
-                    "policy_version": int(getattr(t, "policy_version", 0)),
-                    "faction": str(getattr(t, "faction", "") or ""),
-                }
-            )
+            row = {
+                "state": np.asarray(t.state, dtype=np.float32),
+                "policy_targets": [np.asarray(p, dtype=np.float32) for p in list(t.policy_targets)],
+                "value_target": float(t.value_target),
+                "policy_version": int(getattr(t, "policy_version", 0)),
+                "faction": str(getattr(t, "faction", "") or ""),
+            }
+            meta = getattr(t, "phase_meta", None)
+            if isinstance(meta, ReplayPhaseMeta):
+                extra = meta.to_dict()
+                if extra:
+                    row["phase_meta"] = extra
+            items.append(row)
         return {
             "type": "alphazero_replay",
             "capacity": int(self.capacity),
@@ -138,6 +148,8 @@ class AlphaZeroReplayBuffer:
         }
 
     def load_state_dict(self, state: dict) -> int:
+        from core.engine.phases.replay_meta import ReplayPhaseMeta
+
         if not isinstance(state, dict):
             return 0
         items = state.get("items")
@@ -155,6 +167,7 @@ class AlphaZeroReplayBuffer:
             value_target = float(raw.get("value_target", 0.0) or 0.0)
             policy_version = int(raw.get("policy_version", 0) or 0)
             faction = str(raw.get("faction", "") or "")
+            phase_meta = ReplayPhaseMeta.from_dict(raw.get("phase_meta"))
             self.buffer.append(
                 AZTransition(
                     state=state_np,
@@ -162,6 +175,7 @@ class AlphaZeroReplayBuffer:
                     value_target=value_target,
                     policy_version=policy_version,
                     faction=faction,
+                    phase_meta=phase_meta,
                 )
             )
         return len(self.buffer)

@@ -7,6 +7,11 @@ from typing import Any, Callable, Optional, Protocol
 import numpy as np
 import torch
 
+from core.engine.phases.replay_meta import (
+    capture_replay_phase_meta,
+    replay_phase_meta_enabled,
+    snapshot_cp_before,
+)
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.gumbel_muzero_replay import GMZTransition
 from core.models.utils import unwrap_env
@@ -98,7 +103,15 @@ def play_episode_with_gumbel_muzero(
             )
 
         action_dict = action_tensor_to_dict(torch.tensor([action_list], dtype=torch.long), len_model=int(len_model))
+        cp_before = snapshot_cp_before(env_u) if replay_phase_meta_enabled() else None
+        phase_at_move = str(getattr(env_u, "phase", "") or "")
         next_state, reward, done, trunc, info = env.step(action_dict)
+        phase_meta = capture_replay_phase_meta(
+            env_u,
+            action_dict=action_dict,
+            cp_before=cp_before,
+            phase=phase_at_move,
+        )
         if isinstance(info, dict):
             last_info = dict(info)
         try:
@@ -124,6 +137,7 @@ def play_episode_with_gumbel_muzero(
                 "behavior_logits": [np.asarray(x, dtype=np.float32) for x in behavior_logits],
                 "value_est": float(value_est),
                 "legal_masks_by_head": [np.asarray(x, dtype=np.float32) for x in legal_masks],  # B2: for reanalysis
+                "phase_meta": phase_meta,
             }
         )
         final_value = float(np.tanh(float(value_est)))
@@ -160,6 +174,7 @@ def play_episode_with_gumbel_muzero(
                 value_target=float(final_value),
                 legal_masks_by_head=rec.get("legal_masks_by_head", []),  # B2: for real-search reanalysis
                 policy_version=int(step_policy_version),
+                phase_meta=rec.get("phase_meta"),
             )
         )
 

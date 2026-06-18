@@ -3,9 +3,12 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 import random
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from core.engine.phases.replay_meta import ReplayPhaseMeta
 
 
 @dataclass
@@ -19,6 +22,7 @@ class GMZTransition:
     behavior_logits: list[np.ndarray] | None = None  # A3: pre-softmax root logits for V-trace IS
     legal_masks_by_head: list[np.ndarray] | None = None  # B2: for real-search reanalysis
     policy_version: int = 0
+    phase_meta: "ReplayPhaseMeta | None" = None
 
 
 class GumbelMuZeroReplayBuffer:
@@ -100,29 +104,39 @@ class GumbelMuZeroReplayBuffer:
         return out
 
     def state_dict(self) -> dict[str, Any]:
+        from core.engine.phases.replay_meta import ReplayPhaseMeta
+
+        rows = []
+        for x in self.buffer:
+            row = {
+                "state": np.asarray(x.state, dtype=np.float32),
+                "action": np.asarray(x.action, dtype=np.int64),
+                "reward": float(x.reward),
+                "done": bool(x.done),
+                "policy_targets": [np.asarray(p, dtype=np.float32) for p in x.policy_targets],
+                "behavior_logits": [
+                    np.asarray(b, dtype=np.float32) for b in (x.behavior_logits or [])
+                ],
+                "legal_masks_by_head": [
+                    np.asarray(m, dtype=np.float32) for m in (x.legal_masks_by_head or [])
+                ],
+                "value_target": float(x.value_target),
+                "policy_version": int(x.policy_version),
+            }
+            meta = getattr(x, "phase_meta", None)
+            if isinstance(meta, ReplayPhaseMeta):
+                extra = meta.to_dict()
+                if extra:
+                    row["phase_meta"] = extra
+            rows.append(row)
         return {
             "capacity": int(self.capacity),
-            "buffer": [
-                {
-                    "state": np.asarray(x.state, dtype=np.float32),
-                    "action": np.asarray(x.action, dtype=np.int64),
-                    "reward": float(x.reward),
-                    "done": bool(x.done),
-                    "policy_targets": [np.asarray(p, dtype=np.float32) for p in x.policy_targets],
-                    "behavior_logits": [
-                        np.asarray(b, dtype=np.float32) for b in (x.behavior_logits or [])
-                    ],
-                    "legal_masks_by_head": [
-                        np.asarray(m, dtype=np.float32) for m in (x.legal_masks_by_head or [])
-                    ],
-                    "value_target": float(x.value_target),
-                    "policy_version": int(x.policy_version),
-                }
-                for x in self.buffer
-            ],
+            "buffer": rows,
         }
 
     def load_state_dict(self, payload: dict[str, Any]) -> None:
+        from core.engine.phases.replay_meta import ReplayPhaseMeta
+
         self.capacity = int(payload.get("capacity", self.capacity) or self.capacity)
         self.buffer = deque(maxlen=self.capacity)
         rows = payload.get("buffer") if isinstance(payload, dict) else None
@@ -146,5 +160,6 @@ class GumbelMuZeroReplayBuffer:
                     ],
                     value_target=float(row.get("value_target", 0.0) or 0.0),
                     policy_version=int(row.get("policy_version", 0) or 0),
+                    phase_meta=ReplayPhaseMeta.from_dict(row.get("phase_meta")),
                 )
             )

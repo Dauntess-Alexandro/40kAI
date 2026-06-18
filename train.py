@@ -33,7 +33,11 @@ from core.engine.agent_registry import (
 )
 from core.engine.game_io import ConsoleIO, set_active_io
 from core.engine.io_profiler import get_io_profiler
-from core.engine.matchmaker import choose_opponent, record_matchup
+from core.engine.phases.replay_meta import (
+    az_transition_from_rollout_dict,
+    az_transition_to_rollout_dict,
+    gmz_transition_from_rollout_dict,
+)
 from core.engine.mission import (
     board_dims_for_mission,
     deploy_for_mission,
@@ -8818,12 +8822,10 @@ def _actor_learner_actor_entry_alphazero(
             )
             for t in transitions:
                 rollout_batch.append(
-                    {
-                        "state": np.asarray(t.state, dtype=np.float32),
-                        "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
-                        "value_target": float(t.value_target),
-                        "policy_version": int(getattr(t, "policy_version", current_policy_version)),
-                    }
+                    az_transition_to_rollout_dict(
+                        t,
+                        policy_version=int(getattr(t, "policy_version", current_policy_version)),
+                    )
                 )
             if len(rollout_batch) >= int(batch_send):
                 sink.put(
@@ -9044,12 +9046,12 @@ def _az_env_worker_entry(
                 current_policy_version = int(evaluator._last_policy_version)
 
             for t in transitions:
-                rollout_batch.append({
-                    "state": np.asarray(t.state, dtype=np.float32),
-                    "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
-                    "value_target": float(t.value_target),
-                    "policy_version": int(getattr(t, "policy_version", current_policy_version)),
-                })
+                rollout_batch.append(
+                    az_transition_to_rollout_dict(
+                        t,
+                        policy_version=int(getattr(t, "policy_version", current_policy_version)),
+                    )
+                )
             if len(rollout_batch) >= int(batch_send):
                 sink.put(
                     "rollout",
@@ -9906,27 +9908,19 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             min_policy_ver = int(policy_version) - int(AZ_MAX_POLICY_STALENESS_UPDATES)
         transitions: list[AZTransition] = []
         for raw in raw_transitions:
-            if not isinstance(raw, dict):
+            tr = az_transition_from_rollout_dict(
+                raw,
+                default_policy_version=int(payload.get("policy_version", 0) or 0),
+            )
+            if tr is None:
                 continue
-            state_np = np.asarray(raw.get("state", []), dtype=np.float32)
-            pi_raw = raw.get("policy_targets", [])
-            if not isinstance(pi_raw, list):
-                continue
-            pi = [np.asarray(p, dtype=np.float32) for p in pi_raw]
-            tr_pv = int(raw.get("policy_version", payload.get("policy_version", 0)) or 0)
+            tr_pv = int(tr.policy_version)
             if rollout_source == "remote":
                 dist_remote_transitions_total += 1
                 if min_policy_ver >= 0 and tr_pv < min_policy_ver:
                     dist_remote_stale_total += 1
                     continue
-            transitions.append(
-                AZTransition(
-                    state=state_np,
-                    policy_targets=pi,
-                    value_target=float(raw.get("value_target", 0.0) or 0.0),
-                    policy_version=tr_pv,
-                )
-            )
+            transitions.append(tr)
         if not transitions:
             continue
         if rollout_source == "remote" and dist_remote_transitions_total > 0:
@@ -10090,19 +10084,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
 
 
 def _gmz_rollout_dict_from_transition(t: GMZTransition, policy_version: int) -> dict:
-    beh = getattr(t, "behavior_logits", None) or []
-    masks = getattr(t, "legal_masks_by_head", None) or []
-    return {
-        "state": np.asarray(t.state, dtype=np.float32),
-        "action": np.asarray(t.action, dtype=np.int64),
-        "reward": float(t.reward),
-        "done": bool(t.done),
-        "policy_targets": [np.asarray(p, dtype=np.float32) for p in t.policy_targets],
-        "behavior_logits": [np.asarray(b, dtype=np.float32) for b in beh],
-        "legal_masks_by_head": [np.asarray(m, dtype=np.float32) for m in masks],
-        "value_target": float(t.value_target),
-        "policy_version": int(getattr(t, "policy_version", policy_version) or policy_version),
-    }
+    from core.engine.phases.replay_meta import gmz_transition_to_rollout_dict
+
+    return gmz_transition_to_rollout_dict(t, policy_version=policy_version)
 
 
 def _gmz_env_worker_entry(
@@ -11363,32 +11347,13 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             continue
         transitions: list[GMZTransition] = []
         for raw in raw_transitions:
-            if not isinstance(raw, dict):
-                continue
-            pi_raw = raw.get("policy_targets", [])
-            if not isinstance(pi_raw, list):
-                continue
-            beh_raw = raw.get("behavior_logits", [])
-            masks_raw = raw.get("legal_masks_by_head", [])
-            transitions.append(
-                GMZTransition(
-                    state=np.asarray(raw.get("state", []), dtype=np.float32),
-                    action=np.asarray(raw.get("action", []), dtype=np.int64),
-                    reward=float(raw.get("reward", 0.0) or 0.0),
-                    done=bool(raw.get("done", False)),
-                    policy_targets=[np.asarray(p, dtype=np.float32) for p in pi_raw],
-                    behavior_logits=[
-                        np.asarray(b, dtype=np.float32)
-                        for b in (beh_raw if isinstance(beh_raw, list) else [])
-                    ],
-                    legal_masks_by_head=[
-                        np.asarray(m, dtype=np.float32)
-                        for m in (masks_raw if isinstance(masks_raw, list) else [])
-                    ],
-                    value_target=float(raw.get("value_target", 0.0) or 0.0),
-                    policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
-                )
+            tr = gmz_transition_from_rollout_dict(
+                raw,
+                default_policy_version=int(payload.get("policy_version", 0) or 0),
             )
+            if tr is None:
+                continue
+            transitions.append(tr)
         if not transitions:
             continue
         replay.push_many(transitions)
@@ -12144,32 +12109,13 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
             continue
         transitions: list[GMZTransition] = []
         for raw in raw_transitions:
-            if not isinstance(raw, dict):
-                continue
-            pi_raw = raw.get("policy_targets", [])
-            if not isinstance(pi_raw, list):
-                continue
-            beh_raw = raw.get("behavior_logits", [])
-            masks_raw = raw.get("legal_masks_by_head", [])
-            transitions.append(
-                GMZTransition(
-                    state=np.asarray(raw.get("state", []), dtype=np.float32),
-                    action=np.asarray(raw.get("action", []), dtype=np.int64),
-                    reward=float(raw.get("reward", 0.0) or 0.0),
-                    done=bool(raw.get("done", False)),
-                    policy_targets=[np.asarray(p, dtype=np.float32) for p in pi_raw],
-                    behavior_logits=[
-                        np.asarray(b, dtype=np.float32)
-                        for b in (beh_raw if isinstance(beh_raw, list) else [])
-                    ],
-                    legal_masks_by_head=[
-                        np.asarray(m, dtype=np.float32)
-                        for m in (masks_raw if isinstance(masks_raw, list) else [])
-                    ],
-                    value_target=float(raw.get("value_target", 0.0) or 0.0),
-                    policy_version=int(raw.get("policy_version", payload.get("policy_version", 0)) or 0),
-                )
+            tr = gmz_transition_from_rollout_dict(
+                raw,
+                default_policy_version=int(payload.get("policy_version", 0) or 0),
             )
+            if tr is None:
+                continue
+            transitions.append(tr)
         if not transitions:
             continue
         replay.push_many(transitions)

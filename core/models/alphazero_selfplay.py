@@ -11,6 +11,11 @@ import torch
 from core.models.action_contract import ordered_action_keys
 from core.models.alphazero_replay import AZTransition
 from core.models.utils import convertToDict, unwrap_env
+from core.engine.phases.replay_meta import (
+    capture_replay_phase_meta,
+    replay_phase_meta_enabled,
+    snapshot_cp_before,
+)
 
 
 @dataclass
@@ -53,7 +58,7 @@ def play_episode_with_mcts(
     state, _ = env.reset(options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode})
     done = False
     steps = 0
-    records: list[tuple[np.ndarray, list[np.ndarray]]] = []
+    records: list[tuple[np.ndarray, list[np.ndarray], Any]] = []
     final_value = 0.0
     last_info: dict = {}
 
@@ -91,7 +96,15 @@ def play_episode_with_mcts(
             action_list = [int(np.argmax(pi)) for pi in pi_targets]
 
         action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
+        cp_before = snapshot_cp_before(env_u) if replay_phase_meta_enabled() else None
+        phase_at_move = str(getattr(env_u, "phase", "") or "")
         next_state, reward, done, trunc, info = env.step(action_dict)
+        phase_meta = capture_replay_phase_meta(
+            env_u,
+            action_dict=action_dict,
+            cp_before=cp_before,
+            phase=phase_at_move,
+        )
         if isinstance(info, dict):
             last_info = dict(info)
         try:
@@ -107,7 +120,7 @@ def play_episode_with_mcts(
         except Exception:
             pass
         done = bool(done or trunc)
-        records.append((obs_np, pi_targets))
+        records.append((obs_np, pi_targets, phase_meta))
         if not outcome_only:
             final_value = float(np.tanh(float(reward)))
         state = next_state
@@ -130,7 +143,7 @@ def play_episode_with_mcts(
     if hasattr(faction, "__class__") and not isinstance(faction, str):
         faction = str(getattr(env_u, "model_faction", "") or "")
     out: list[AZTransition] = []
-    for s, pi in records:
+    for s, pi, phase_meta in records:
         out.append(
             AZTransition(
                 state=s,
@@ -138,6 +151,7 @@ def play_episode_with_mcts(
                 value_target=final_value,
                 policy_version=int(policy_version),
                 faction=str(faction),
+                phase_meta=phase_meta,
             )
         )
     if not last_info:
