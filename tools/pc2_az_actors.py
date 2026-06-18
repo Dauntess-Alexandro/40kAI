@@ -21,6 +21,7 @@ from core.models.az_rollout_sink import (  # noqa: E402
     az_dist_stop_requested,
     build_az_dist_worker_payloads,
     build_gaz_dist_worker_payloads,
+    apply_az_dist_worker_env,
     normalize_az_dist_hyperparams,
     read_az_dist_train_context,
     wait_az_dist_train_context,
@@ -234,6 +235,7 @@ def _worker_main(worker_id: int) -> None:
         payloads = build_gaz_dist_worker_payloads(hp_pc1, defaults=_train_gaz_dist_defaults(train_mod))
     else:
         payloads = build_az_dist_worker_payloads(hp_pc1, defaults=_train_dist_defaults(train_mod))
+    apply_az_dist_worker_env(hp_pc1)
     mcts_payload = payloads["mcts"]
     sp_payload = payloads["sp"]
     outcome_payload = payloads["outcome"]

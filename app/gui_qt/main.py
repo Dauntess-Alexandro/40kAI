@@ -4866,6 +4866,12 @@ class GUIController(QtCore.QObject):
         mode = str(payload.get("mcts_candidate_mode", "option")).strip().lower()
         if mode not in {"joint", "filter", "option", "option_plus"}:
             return f"{section}.mcts_candidate_mode должен быть joint, filter, option или option_plus"
+        windowed = int(payload.get("windowed_selfplay", 1))
+        if windowed not in (0, 1):
+            return f"{section}.windowed_selfplay должен быть 0 или 1"
+        mwn = int(payload.get("mcts_window_nodes", 0))
+        if mwn not in (0, 1):
+            return f"{section}.mcts_window_nodes должен быть 0 или 1"
         return None
 
     def _apply_dqn_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
@@ -6642,6 +6648,14 @@ class GUIController(QtCore.QObject):
                 "MCTS_CANDIDATE_MODE",
                 os.getenv("MCTS_CANDIDATE_MODE", str(az_hp.get("mcts_candidate_mode", "option"))),
             )
+            env.insert(
+                "WINDOWED_SELFPLAY",
+                os.getenv("WINDOWED_SELFPLAY", str(int(az_hp.get("windowed_selfplay", 1)))),
+            )
+            env.insert(
+                "MCTS_WINDOW_NODES",
+                os.getenv("MCTS_WINDOW_NODES", str(int(az_hp.get("mcts_window_nodes", 0)))),
+            )
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
             env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
@@ -6649,9 +6663,12 @@ class GUIController(QtCore.QObject):
             az_actors = env.value("AZ_NUM_ACTORS", "8")
             az_depth = env.value("AZ_MCTS_MAX_DEPTH", "2")
             az_cand = env.value("MCTS_CANDIDATE_MODE", "option")
+            az_windowed = env.value("WINDOWED_SELFPLAY", "1")
+            az_wn = env.value("MCTS_WINDOW_NODES", "0")
             self._emit_log(
                 f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
-                f"candidate_mode={az_cand} sims={az_sims} depth={az_depth} actors={az_actors}",
+                f"candidate_mode={az_cand} windowed_selfplay={az_windowed} window_nodes={az_wn} "
+                f"sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )
         elif self._training_algo == "sampled_muzero":

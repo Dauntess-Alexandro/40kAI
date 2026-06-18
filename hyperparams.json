@@ -108,7 +108,7 @@
         "outcome_only": 1,
         "outcome_value_win": 1.0,
         "outcome_value_loss": -1.0,
-        "outcome_value_draw": -0.25,
+        "outcome_value_draw": -0.9,
         "hidden_size": 256,
         "num_layers": 2,
         "value_ensemble": 1,
@@ -126,6 +126,8 @@
         "mcts_parallel_sims": 8,
         "mcts_simulate_enemy": 0,
         "mcts_candidate_mode": "option",
+        "windowed_selfplay": 0,
+        "mcts_window_nodes": 0,
         "mcts_mode": "tree"
     },
     "alphazero_proxy": {
@@ -192,6 +194,8 @@
         "mcts_parallel_sims": 0,
         "mcts_simulate_enemy": 1,
         "mcts_candidate_mode": "option",
+        "windowed_selfplay": 1,
+        "mcts_window_nodes": 0,
         "mcts_mode": "proxy"
     },
     "gumbel_muzero": {

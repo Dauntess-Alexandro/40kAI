@@ -135,7 +135,7 @@ ColumnLayout {
 
                 SpinBox {
                     visible: !azEditor.isStringKey(modelData) && !azEditor.isIntKey(modelData)
-                    from: 0
+                    from: -10000000
                     to: 10000000
                     stepSize: 1
                     editable: true

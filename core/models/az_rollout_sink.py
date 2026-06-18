@@ -131,6 +131,9 @@ AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
     "mcts_parallel_sims",
     "mcts_max_depth",
     "mcts_top_k_per_head",
+    "mcts_candidate_mode",
+    "windowed_selfplay",
+    "mcts_window_nodes",
     "mcts_batch_eval_size",
     "mcts_simulate_enemy",
     "mcts_mode",
@@ -204,6 +207,20 @@ def _hp_bool(hp: dict[str, Any], key: str, default: bool) -> bool:
     if isinstance(raw, bool):
         return raw
     return str(raw).strip().lower() in ("1", "true", "yes")
+
+
+def apply_az_dist_worker_env(hp: dict[str, Any] | None) -> None:
+    """Прокинуть флаги self-play (SMB hyperparams → os.environ) на dist-акторах ПК2."""
+    src = hp if isinstance(hp, dict) else {}
+    if "WINDOWED_SELFPLAY" not in os.environ:
+        ws = _hp_bool(src, "windowed_selfplay", True)
+        os.environ["WINDOWED_SELFPLAY"] = "1" if ws else "0"
+    if "MCTS_CANDIDATE_MODE" not in os.environ:
+        mode = str(_hp_pick(src, "mcts_candidate_mode", "option")).strip().lower() or "option"
+        os.environ["MCTS_CANDIDATE_MODE"] = mode
+    if "MCTS_WINDOW_NODES" not in os.environ:
+        wn = _hp_bool(src, "mcts_window_nodes", False)
+        os.environ["MCTS_WINDOW_NODES"] = "1" if wn else "0"
 
 
 def build_az_dist_worker_payloads(

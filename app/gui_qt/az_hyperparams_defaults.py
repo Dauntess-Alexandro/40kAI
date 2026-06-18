@@ -28,6 +28,8 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "dirichlet_eps",
     "mcts_mode",
     "mcts_candidate_mode",
+    "windowed_selfplay",
+    "mcts_window_nodes",
     "mcts_top_k_per_head",
     "mcts_max_depth",
     "mcts_root_dirichlet_only",
@@ -152,6 +154,8 @@ _AZ_BASE: dict[str, int | float | str] = {
     "mcts_parallel_sims": 1,
     "mcts_simulate_enemy": 0,
     "mcts_candidate_mode": "option",
+    "windowed_selfplay": 1,
+    "mcts_window_nodes": 0,
 }
 
 # DEFAULT_AZ_TREE_HYPERPARAMS определён ниже как base + balanced-пресет
@@ -273,6 +277,8 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
         "keys": (
             "mcts_mode",
             "mcts_candidate_mode",
+            "windowed_selfplay",
+            "mcts_window_nodes",
             "mcts_simulations",
             "mcts_max_depth",
             "mcts_top_k_per_head",
@@ -373,6 +379,14 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "mcts_candidate_mode": (
         "Режим кандидатов корня tree-MCTS: joint (как раньше), filter (joint ∩ легальные планы), "
         "option (окна ActionOption), option_plus (option + legacy greedy). Только при mcts_mode=tree."
+    ),
+    "windowed_selfplay": (
+        "1 = self-play через PhaseEngine (command сейчас; movement/shoot/charge/fight — этап 8.4). "
+        "0 = legacy env.step по плоскому action_dict."
+    ),
+    "mcts_window_nodes": (
+        "1 = корень tree-MCTS perturb одного DecisionWindow (command на move 0). "
+        "0 = полный turn-plan (option mode). Только при mcts_mode=tree."
     ),
     "mcts_top_k_per_head": "Top-K действий на голову.",
     "mcts_max_depth": "Глубина rollout в MCTS (Tree).",

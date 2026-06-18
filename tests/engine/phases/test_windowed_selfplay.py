@@ -12,14 +12,14 @@ from tests.engine.phases._helpers import build_env
 from tests.engine.phases.test_phase_engine_command import _action, _setup_failing_unit0
 
 
-def test_windowed_selfplay_disabled_by_default(monkeypatch):
+def test_windowed_selfplay_enabled_by_default(monkeypatch):
     monkeypatch.delenv("WINDOWED_SELFPLAY", raising=False)
-    assert windowed_selfplay_enabled() is False
-
-
-def test_windowed_selfplay_enabled_from_env(monkeypatch):
-    monkeypatch.setenv("WINDOWED_SELFPLAY", "1")
     assert windowed_selfplay_enabled() is True
+
+
+def test_windowed_selfplay_disabled_when_env_zero(monkeypatch):
+    monkeypatch.setenv("WINDOWED_SELFPLAY", "0")
+    assert windowed_selfplay_enabled() is False
 
 
 def test_command_decide_maps_use_cp_to_stratagem():
@@ -75,7 +75,7 @@ def test_command_replay_meta_when_windowed(monkeypatch):
     action = _action(1, 0, len(env.unit_health))
     meta = merge_command_meta_into(None, env, action, cp_before=2)
     assert meta is not None
-    assert meta.window_id == "command:model"
+    assert meta.window_id == "windowed_turn:model"
     assert meta.stratagem_id == "insane_bravery"
     assert meta.sub_step == "battle_shock"
 

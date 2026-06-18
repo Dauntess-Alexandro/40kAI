@@ -1258,6 +1258,8 @@ class Warhammer40kEnv(gym.Env):
         snap["stratagem_used"] = [tuple(x) for x in _su] if _su is not None else []
         _ase = _ga(_self, "active_stratagem_effects", None)
         snap["active_stratagem_effects"] = [dict(x) for x in _ase] if _ase is not None else []
+        _pfsp = _ga(_self, "_pending_fight_stratagem_plan", None)
+        snap["_pending_fight_stratagem_plan"] = dict(_pfsp) if isinstance(_pfsp, dict) else None
 
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
@@ -1340,6 +1342,9 @@ class Warhammer40kEnv(gym.Env):
             _self.stratagem_used = [tuple(x) for x in snapshot["stratagem_used"]]
         if "active_stratagem_effects" in snapshot:
             _self.active_stratagem_effects = [dict(x) for x in snapshot["active_stratagem_effects"]]
+        if "_pending_fight_stratagem_plan" in snapshot:
+            _pfsp = snapshot.get("_pending_fight_stratagem_plan")
+            _self._pending_fight_stratagem_plan = dict(_pfsp) if isinstance(_pfsp, dict) else None
 
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
@@ -1763,10 +1768,13 @@ class Warhammer40kEnv(gym.Env):
 
         return masks
 
-    def _use_windowed_command_for_step(self, _action) -> bool:
+    def _use_windowed_selfplay_for_step(self, _action) -> bool:
         from core.engine.phases.windowed_selfplay import windowed_selfplay_enabled
 
         return bool(windowed_selfplay_enabled())
+
+    def _use_windowed_command_for_step(self, _action) -> bool:
+        return self._use_windowed_selfplay_for_step(_action)
 
     def _action_signature(self, action) -> tuple[int, int, int, int, int, int]:
         if not isinstance(action, dict):
@@ -2263,6 +2271,12 @@ class Warhammer40kEnv(gym.Env):
 
     def _apply_pending_fight_stratagem_plan(self, side: str) -> None:
         """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan)."""
+        if side == "model":
+            from core.engine.phases.windowed_selfplay import windowed_selfplay_enabled
+
+            if windowed_selfplay_enabled():
+                self._pending_fight_stratagem_plan = None
+                return
         plan = getattr(self, "_pending_fight_stratagem_plan", None)
         self._pending_fight_stratagem_plan = None
         if not plan:
@@ -7450,31 +7464,46 @@ class Warhammer40kEnv(gym.Env):
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         self.active_side = "model"
-        if self._use_windowed_command_for_step(action):
-            from core.engine.phases.windowed_selfplay import run_model_command_from_action
+        if self._use_windowed_selfplay_for_step(action):
+            from core.engine.phases.windowed_selfplay import run_model_turn_from_action
 
-            cmd_state = run_model_command_from_action(self, action)
-            battle_shock = list(cmd_state.battle_shock)
-            delta = float(cmd_state.info.get("command_reward_delta", 0.0) or 0.0)
+            turn = run_model_turn_from_action(self, action)
+            battle_shock = list(turn.battle_shock)
+            delta = float(turn.info.get("command_reward_delta", 0.0) or 0.0)
+            advanced_flags = list(turn.advanced_flags)
+            movement_meta = turn.info.get("movement_meta")
+            if not isinstance(movement_meta, dict):
+                movement_meta = {
+                    "applied_hold_penalty": False,
+                    "hold_penalty_events": 0,
+                    "moved_units": 0,
+                    "moved_any": False,
+                }
+            movement_delta = float(turn.info.get("movement_reward_delta", 0.0) or 0.0)
+            shoot_delta = float(turn.info.get("shooting_reward_delta", 0.0) or 0.0)
+            charge_delta = float(turn.info.get("charge_reward_delta", 0.0) or 0.0)
+            fight_delta = float(turn.info.get("fight_reward_delta", 0.0) or 0.0)
         else:
             battle_shock, delta = self.command_phase("model", action=action)
+            advanced_flags, movement_delta, movement_meta = self.movement_phase(
+                "model", action=action, battle_shock=battle_shock
+            )
+            shoot_delta = self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+            charge_delta = self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
+            fight_delta = self.fight_phase("model") or 0
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
-        advanced_flags, delta, movement_meta = self.movement_phase("model", action=action, battle_shock=battle_shock)
         self._invalidate_target_cache("model_after_movement")
-        reward += delta
-        if delta != 0:
-            self._log_reward(f"Reward (шаг): движение delta={delta:+.3f}")
-        shoot_delta = self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
+        reward += movement_delta
+        if movement_delta != 0:
+            self._log_reward(f"Reward (шаг): движение delta={movement_delta:+.3f}")
         reward += shoot_delta
         if shoot_delta != 0:
             self._log_reward(f"Reward (шаг): стрельба delta={shoot_delta:+.3f}")
-        charge_delta = self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
         reward += charge_delta
         if charge_delta != 0:
             self._log_reward(f"Reward (шаг): чардж delta={charge_delta:+.3f}")
-        fight_delta = self.fight_phase("model") or 0
         self._invalidate_target_cache("model_after_fight")
         reward += fight_delta
         if fight_delta != 0:

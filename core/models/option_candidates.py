@@ -303,6 +303,78 @@ def filter_joint_candidates(
     return filtered if filtered else [joint_tuples[0]]
 
 
+def build_window_layer_plan_candidates(
+    env,
+    len_model: int,
+    priors: list[np.ndarray],
+    legal_masks: list[np.ndarray],
+    *,
+    side: str = "model",
+    window_index: int = 0,
+    max_candidates: int = 64,
+    perturb_top_m: int = 8,
+) -> list[TurnPlanCandidate]:
+    """Turn-планы с perturb только одного окна (Stage 8.4f)."""
+    e = unwrap_env(env)
+    windows = generate_windows(e, str(side))
+    if not windows:
+        return build_turn_plan_candidates(
+            env,
+            int(len_model),
+            priors,
+            legal_masks,
+            side=str(side),
+            max_candidates=int(max_candidates),
+        )
+
+    wi = max(0, min(int(window_index), len(windows) - 1))
+    greedy_map: dict[str, int] = {}
+    for w in windows:
+        if not w.options:
+            continue
+        best_i = 0
+        best_score = -1.0
+        for i, opt in enumerate(w.options):
+            sc = _score_option_isolated(opt, priors, legal_masks, int(len_model))
+            if sc > best_score:
+                best_score = sc
+                best_i = i
+        greedy_map[w.window_id] = best_i
+
+    by_tuple: dict[tuple[int, ...], TurnPlanCandidate] = {}
+    target = windows[wi]
+    if not target.options:
+        return build_turn_plan_candidates(
+            env,
+            int(len_model),
+            priors,
+            legal_masks,
+            side=str(side),
+            max_candidates=int(max_candidates),
+        )
+
+    top_m = max(1, int(perturb_top_m))
+    ranked = sorted(
+        enumerate(target.options),
+        key=lambda item: _score_option_isolated(item[1], priors, legal_masks, int(len_model)),
+        reverse=True,
+    )
+    for oi, _opt in ranked[:top_m]:
+        variant = dict(greedy_map)
+        variant[target.window_id] = int(oi)
+        cand = _turn_plan_from_choices(windows, variant, priors, legal_masks, int(len_model))
+        by_tuple[cand.joint_tuple] = cand
+        if len(by_tuple) >= int(max_candidates):
+            break
+
+    if not by_tuple:
+        cand = _turn_plan_from_choices(windows, greedy_map, priors, legal_masks, int(len_model))
+        by_tuple[cand.joint_tuple] = cand
+
+    out = sorted(by_tuple.values(), key=lambda c: c.projected_prior, reverse=True)
+    return out[: max(1, int(max_candidates))]
+
+
 def root_joint_candidates(
     *,
     mode: str,
@@ -313,10 +385,26 @@ def root_joint_candidates(
     top_k_per_head: int = 8,
     max_candidates: int = 64,
     perturb_top_m: int = 4,
+    move_count: int = 0,
+    window_nodes: bool = False,
 ) -> RootJointCandidates:
     """Единая точка выбора кандидатов корня MCTS."""
     resolved = resolve_candidate_mode(mode)
     joint = joint_action_candidates(priors, legal_masks, int(top_k_per_head), int(max_candidates))
+
+    use_window_nodes = bool(window_nodes) and resolved in {"option", "option_plus"}
+    if use_window_nodes:
+        from core.models.windowed_mcts import root_joint_candidates_window_nodes
+
+        return root_joint_candidates_window_nodes(
+            env=env,
+            len_model=int(len_model),
+            priors=priors,
+            legal_masks=legal_masks,
+            move_count=int(move_count),
+            max_candidates=int(max_candidates),
+            perturb_top_m=max(int(perturb_top_m), 4),
+        )
 
     if resolved == "joint":
         return RootJointCandidates(tuples=tuple(joint))

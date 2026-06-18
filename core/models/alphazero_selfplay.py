@@ -16,7 +16,7 @@ from core.engine.phases.replay_meta import (
     replay_phase_meta_enabled,
     snapshot_cp_before,
 )
-from core.engine.phases.windowed_selfplay import merge_command_meta_into
+from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 
 
 @dataclass
@@ -106,7 +106,7 @@ def play_episode_with_mcts(
             cp_before=cp_before,
             phase=phase_at_move,
         )
-        phase_meta = merge_command_meta_into(
+        phase_meta = merge_windowed_meta_into(
             phase_meta,
             env_u,
             action_dict,

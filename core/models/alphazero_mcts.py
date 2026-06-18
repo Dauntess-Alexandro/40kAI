@@ -51,6 +51,8 @@ class MCTSConfig:
     parallel_simulations: int = 0
     # Stage 4: joint | filter | option | option_plus (дефолт joint — без регрессии)
     candidate_mode: str = "option"
+    # Stage 8.4f: корень MCTS = одно DecisionWindow (command на move 0)
+    window_nodes: bool = False
 
 
 @dataclass
@@ -568,7 +570,12 @@ class AlphaZeroFactorizedMCTS:
             len_model=int(len_model),
             top_k_per_head=int(self.cfg.top_k_per_head),
             max_candidates=64,
+            move_count=int(getattr(self.cfg, "move_count", 0) or 0),
+            window_nodes=bool(getattr(self.cfg, "window_nodes", False)),
         )
+        if bool(getattr(self.cfg, "window_nodes", False)) and not getattr(self, "_window_nodes_logged", False):
+            self._window_nodes_logged = True
+            print("[MCTS][WINDOW_NODES] корень MCTS = perturb одного DecisionWindow", flush=True)
         sim_values: list[float] = []
         sim_depths: list[float] = []
 
