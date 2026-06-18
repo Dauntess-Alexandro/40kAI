@@ -1763,6 +1763,11 @@ class Warhammer40kEnv(gym.Env):
 
         return masks
 
+    def _use_windowed_command_for_step(self, _action) -> bool:
+        from core.engine.phases.windowed_selfplay import windowed_selfplay_enabled
+
+        return bool(windowed_selfplay_enabled())
+
     def _action_signature(self, action) -> tuple[int, int, int, int, int, int]:
         if not isinstance(action, dict):
             return (-1, -1, -1, -1, -1, -1)
@@ -7445,7 +7450,14 @@ class Warhammer40kEnv(gym.Env):
         self.unitCharged = [0] * len(self.unit_health)
         self.enemyCharged = [0] * len(self.enemy_health)
         self.active_side = "model"
-        battle_shock, delta = self.command_phase("model", action=action)
+        if self._use_windowed_command_for_step(action):
+            from core.engine.phases.windowed_selfplay import run_model_command_from_action
+
+            cmd_state = run_model_command_from_action(self, action)
+            battle_shock = list(cmd_state.battle_shock)
+            delta = float(cmd_state.info.get("command_reward_delta", 0.0) or 0.0)
+        else:
+            battle_shock, delta = self.command_phase("model", action=action)
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")

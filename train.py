@@ -2597,6 +2597,12 @@ AZ_MCTS_CANDIDATE_MODE = str(
 ).strip().lower() or "option"
 if AZ_MCTS_CANDIDATE_MODE not in {"joint", "filter", "option", "option_plus"}:
     AZ_MCTS_CANDIDATE_MODE = "option"
+AZ_WINDOWED_SELFPLAY = str(os.getenv("WINDOWED_SELFPLAY", "0")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
     os.getenv("AZ_MCTS_ROOT_DIRICHLET_ONLY", str(AZ_CFG.get("mcts_root_dirichlet_only", 1)))
@@ -9325,7 +9331,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"sync_every_updates={AZ_SYNC_EVERY_UPDATES} updates_per_rollout={AZ_UPDATES_PER_ROLLOUT} "
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
-        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} mcts={_AZ_LOG_SIMS} "
+        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
+        f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} mcts={_AZ_LOG_SIMS} "
         f"{f'joint_action={int(GAZ_JOINT_ACTION)} ' if is_gumbel_az_algo(TRAIN_ALGO) else ''}"
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "

@@ -12,6 +12,7 @@ from core.engine.phases.replay_meta import (
     replay_phase_meta_enabled,
     snapshot_cp_before,
 )
+from core.engine.phases.windowed_selfplay import merge_command_meta_into
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.gumbel_muzero_replay import GMZTransition
 from core.models.utils import unwrap_env
@@ -111,6 +112,12 @@ def play_episode_with_gumbel_muzero(
             action_dict=action_dict,
             cp_before=cp_before,
             phase=phase_at_move,
+        )
+        phase_meta = merge_command_meta_into(
+            phase_meta,
+            env_u,
+            action_dict,
+            cp_before=cp_before,
         )
         if isinstance(info, dict):
             last_info = dict(info)

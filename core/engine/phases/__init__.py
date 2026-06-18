@@ -10,6 +10,15 @@ from core.engine.phases.legacy_compiler import (
     compile_options_to_action_dict,
     default_action_dict,
 )
+from core.engine.phases.obs_features import (
+    PHASE_OBS_EXTENSION_SIZE,
+    append_phase_obs_features,
+    base_observation_length,
+    build_phase_obs_signature_suffix,
+    legacy_observation_space_size,
+    phase_obs_features_enabled,
+    phase_obs_vector,
+)
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
     command_window,
@@ -17,6 +26,17 @@ from core.engine.phases.option_generator import (
     generate_windows,
     movement_options_for_unit,
     shooting_options_for_unit,
+)
+from core.engine.phases.replay_meta import (
+    ReplayPhaseMeta,
+    az_transition_from_rollout_dict,
+    az_transition_to_rollout_dict,
+    capture_replay_phase_meta,
+    gmz_transition_from_rollout_dict,
+    gmz_transition_to_rollout_dict,
+    replay_phase_meta_enabled,
+    snapshot_cp_before,
+    wire_dict_for_phase_meta,
 )
 from core.engine.phases.stratagem_engine import apply as apply_stratagem
 from core.engine.phases.stratagems import (
@@ -29,15 +49,6 @@ from core.engine.phases.stratagems import (
     for_trigger,
     legal_stratagem_options,
 )
-from core.engine.phases.obs_features import (
-    PHASE_OBS_EXTENSION_SIZE,
-    append_phase_obs_features,
-    base_observation_length,
-    build_phase_obs_signature_suffix,
-    legacy_observation_space_size,
-    phase_obs_features_enabled,
-    phase_obs_vector,
-)
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -48,6 +59,13 @@ from core.engine.phases.types import (
     PhaseTurnState,
     SubStep,
     Timing,
+)
+from core.engine.phases.windowed_selfplay import (
+    command_replay_meta_from_action,
+    make_command_decide_from_action_dict,
+    merge_command_meta_into,
+    run_model_command_from_action,
+    windowed_selfplay_enabled,
 )
 
 __all__ = [
@@ -67,6 +85,11 @@ __all__ = [
     "gmz_transition_to_rollout_dict",
     "gmz_transition_from_rollout_dict",
     "wire_dict_for_phase_meta",
+    "windowed_selfplay_enabled",
+    "make_command_decide_from_action_dict",
+    "run_model_command_from_action",
+    "command_replay_meta_from_action",
+    "merge_command_meta_into",
     "ActionKind",
     "ActionOption",
     "DecisionWindow",
