@@ -53,6 +53,8 @@ class MCTSConfig:
     candidate_mode: str = "option"
     # Stage 8.4f: корень MCTS = одно DecisionWindow (command на move 0)
     window_nodes: bool = False
+    # Part B/B5: execute coherent joint action from the most visited option child.
+    joint_action_from_best_child: bool = False
 
 
 @dataclass
@@ -207,6 +209,7 @@ class AlphaZeroFactorizedMCTS:
         self.cfg = config or MCTSConfig()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.last_run_stats: dict[str, float] = {}
+        self.last_selected_fight_plan: dict[int, str] = {}
         cache_size = int(getattr(self.cfg, "eval_cache_size", 10000) or 10000)
         self._eval_cache = EvalCache(max_size=cache_size)
         self._evaluator = evaluator  # Optional[Evaluator]
@@ -347,6 +350,7 @@ class AlphaZeroFactorizedMCTS:
             "eval_cache_hits": float(self._eval_cache.hits),
             "eval_cache_misses": float(self._eval_cache.misses),
         }
+        self.last_selected_fight_plan = {}
         return policy_targets, selected_actions, value
 
     def _run_one_sim_on_clone(
@@ -486,6 +490,71 @@ class AlphaZeroFactorizedMCTS:
             node.visit_count += 1
             node.value_sum += v
 
+    @staticmethod
+    def _truthy(raw: Any) -> bool:
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _joint_best_child_enabled_for(self, candidate_mode: str | None) -> bool:
+        raw = getattr(self.cfg, "joint_action_from_best_child", False)
+        if not self._truthy(raw):
+            import os
+
+            raw = os.getenv("AZ_MCTS_JOINT_BEST_CHILD", "0")
+        if not self._truthy(raw):
+            return False
+        mode = str(candidate_mode or getattr(self.cfg, "candidate_mode", "option") or "option").strip().lower()
+        return mode in {"option", "filter", "option_plus"}
+
+    @staticmethod
+    def _action_tuple_is_legal(action_tuple: tuple[int, ...], legal_masks: list[np.ndarray]) -> bool:
+        if len(action_tuple) != len(legal_masks):
+            return False
+        for head_i, action in enumerate(action_tuple):
+            legal = np.asarray(legal_masks[head_i], dtype=bool)
+            ai = int(action)
+            if ai < 0 or ai >= int(legal.size) or not bool(legal[ai]):
+                return False
+        return True
+
+    def _best_child_selected_actions(
+        self,
+        root: MCTSNode,
+        legal_masks: list[np.ndarray],
+        *,
+        candidate_mode: str | None,
+    ) -> list[int] | None:
+        if not self._joint_best_child_enabled_for(candidate_mode):
+            return None
+        ranked = sorted(
+            (child for child in root.children.values() if child.action_tuple is not None),
+            key=lambda child: (int(child.visit_count), float(child.mean_value()), float(child.prior)),
+            reverse=True,
+        )
+        if not ranked:
+            return None
+
+        top_tuple = ranked[0].action_tuple
+        top_is_legal = top_tuple is not None and self._action_tuple_is_legal(top_tuple, legal_masks)
+        for child in ranked:
+            action_tuple = child.action_tuple
+            if action_tuple is None or not self._action_tuple_is_legal(action_tuple, legal_masks):
+                continue
+            if not top_is_legal:
+                import sys
+
+                print(
+                    "[AZ][MCTS][JOINT_FALLBACK] Лучший child MCTS нелегален по текущим legal masks; "
+                    "использую следующий легальный child по visits. "
+                    "Где: core/models/alphazero_mcts.py:_best_child_selected_actions. "
+                    "Что дальше: проверить генерацию кандидатов и legal masks, если сообщение повторяется часто.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            return [int(a) for a in action_tuple]
+        return None
+
     def _final_policy_from_visits(
         self,
         root: MCTSNode,
@@ -493,6 +562,7 @@ class AlphaZeroFactorizedMCTS:
         legal_masks: list[np.ndarray],
         temperature: float,
         move_count: int,
+        candidate_mode: str | None = None,
     ) -> tuple[list[np.ndarray], list[int]]:
         temp = max(1e-6, float(temperature))
         opening_moves = int(getattr(self.cfg, "temperature_opening_moves", 12) or 12)
@@ -530,6 +600,14 @@ class AlphaZeroFactorizedMCTS:
                 action = int(np.random.choice(np.arange(pi.size), p=pi))
             policy_targets.append(pi.astype(np.float32))
             selected_actions.append(action)
+
+        best_child_actions = self._best_child_selected_actions(
+            root,
+            legal_masks,
+            candidate_mode=candidate_mode,
+        )
+        if best_child_actions is not None:
+            selected_actions = best_child_actions
 
         return policy_targets, selected_actions
 
@@ -802,9 +880,11 @@ class AlphaZeroFactorizedMCTS:
             self.last_run_stats["snapshot_fallback"] = 1.0
 
         move_count = int(getattr(self.cfg, "move_count", 0) or 0)
+        candidate_mode = str(getattr(self.cfg, "candidate_mode", "option") or "option")
         policy_targets, selected_actions = self._final_policy_from_visits(
-            root, priors, legal_masks, temperature, move_count
+            root, priors, legal_masks, temperature, move_count, candidate_mode=candidate_mode
         )
+        self.last_selected_fight_plan = candidates.fight_plan_for(tuple(int(a) for a in selected_actions))
 
         self.last_run_stats = {
             "mode": "tree",

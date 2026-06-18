@@ -30,6 +30,7 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "mcts_candidate_mode",
     "windowed_selfplay",
     "mcts_window_nodes",
+    "mcts_joint_action_from_best_child",
     "mcts_top_k_per_head",
     "mcts_max_depth",
     "mcts_root_dirichlet_only",
@@ -156,6 +157,7 @@ _AZ_BASE: dict[str, int | float | str] = {
     "mcts_candidate_mode": "option",
     "windowed_selfplay": 1,
     "mcts_window_nodes": 0,
+    "mcts_joint_action_from_best_child": 0,
 }
 
 # DEFAULT_AZ_TREE_HYPERPARAMS определён ниже как base + balanced-пресет
@@ -279,6 +281,7 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
             "mcts_candidate_mode",
             "windowed_selfplay",
             "mcts_window_nodes",
+            "mcts_joint_action_from_best_child",
             "mcts_simulations",
             "mcts_max_depth",
             "mcts_top_k_per_head",
@@ -387,6 +390,10 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "mcts_window_nodes": (
         "1 = корень tree-MCTS perturb одного DecisionWindow (command на move 0). "
         "0 = полный turn-plan (option mode). Только при mcts_mode=tree."
+    ),
+    "mcts_joint_action_from_best_child": (
+        "1 = execute coherent joint action from best MCTS child in option/filter mode. "
+        "0 = old independent marginal head execution."
     ),
     "mcts_top_k_per_head": "Top-K действий на голову.",
     "mcts_max_depth": "Глубина rollout в MCTS (Tree).",

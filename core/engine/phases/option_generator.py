@@ -38,6 +38,16 @@ def shooting_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOptio
     return options
 
 
+def _legacy_move_dir_for_destination(row: int, col: int, x: int, y: int) -> int:
+    dr = int(y) - int(row)
+    dc = int(x) - int(col)
+    if dr == 0 and dc == 0:
+        return 4
+    if abs(dr) >= abs(dc):
+        return 0 if dr > 0 else 1
+    return 3 if dc > 0 else 2
+
+
 def movement_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOption]:
     """STAY/MOVE/ADVANCE-опции, индекс-в-индекс с _pick_destination_by_reachable_index.
 
@@ -60,12 +70,16 @@ def movement_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOptio
 
     options: list[ActionOption] = []
     for k, (x, y, kind) in enumerate(candidates):
+        legacy_patch = {f"move_num_{int(unit_idx)}": int(k)}
+        move_dir = _legacy_move_dir_for_destination(row, col, int(x), int(y))
+        if kind is not ActionKind.STAY and move_dir != 4:
+            legacy_patch["move"] = int(move_dir)
         options.append(
             ActionOption(
                 kind=kind,
                 unit_idx=int(unit_idx),
                 param={"reachable_index": int(k), "dest": (int(x), int(y))},
-                legacy_patch={f"move_num_{int(unit_idx)}": int(k)},
+                legacy_patch=legacy_patch,
             )
         )
     return options

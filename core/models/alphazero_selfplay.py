@@ -17,6 +17,7 @@ from core.engine.phases.replay_meta import (
     snapshot_cp_before,
 )
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
+from core.models.option_candidates import attach_fight_stratagem_plan
 
 
 @dataclass
@@ -30,6 +31,16 @@ def _state_to_np(state: Any) -> np.ndarray:
     if isinstance(state, dict):
         return np.asarray(list(state.values()), dtype=np.float32)
     return np.asarray(state, dtype=np.float32)
+
+
+def _mcts_uses_joint_best_child(mcts) -> bool:
+    cfg = getattr(mcts, "cfg", None)
+    raw = getattr(cfg, "joint_action_from_best_child", False)
+    enabled = raw if isinstance(raw, bool) else str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return False
+    mode = str(getattr(cfg, "candidate_mode", "option") or "option").strip().lower()
+    return mode in {"option", "filter", "option_plus"}
 
 
 def play_episode_with_mcts(
@@ -93,13 +104,17 @@ def play_episode_with_mcts(
             move_count=int(steps),
             reset_options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode},
         )
-        if bool(policy_argmax):
+        if bool(policy_argmax) and not _mcts_uses_joint_best_child(mcts):
             action_list = [int(np.argmax(pi)) for pi in pi_targets]
 
         action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
         cp_before = snapshot_cp_before(env_u) if replay_phase_meta_enabled() else None
         phase_at_move = str(getattr(env_u, "phase", "") or "")
-        next_state, reward, done, trunc, info = env.step(action_dict)
+        attach_fight_stratagem_plan(env, getattr(mcts, "last_selected_fight_plan", None))
+        try:
+            next_state, reward, done, trunc, info = env.step(action_dict)
+        finally:
+            attach_fight_stratagem_plan(env, None)
         phase_meta = capture_replay_phase_meta(
             env_u,
             action_dict=action_dict,

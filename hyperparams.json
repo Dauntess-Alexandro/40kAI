@@ -126,8 +126,9 @@
         "mcts_parallel_sims": 8,
         "mcts_simulate_enemy": 0,
         "mcts_candidate_mode": "option",
-        "windowed_selfplay": 0,
+        "windowed_selfplay": 1,
         "mcts_window_nodes": 0,
+        "mcts_joint_action_from_best_child": 1,
         "mcts_mode": "tree"
     },
     "alphazero_proxy": {
@@ -196,6 +197,7 @@
         "mcts_candidate_mode": "option",
         "windowed_selfplay": 1,
         "mcts_window_nodes": 0,
+        "mcts_joint_action_from_best_child": 0,
         "mcts_mode": "proxy"
     },
     "gumbel_muzero": {

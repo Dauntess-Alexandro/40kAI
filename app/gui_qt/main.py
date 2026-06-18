@@ -4248,7 +4248,7 @@ class GUIController(QtCore.QObject):
             return
         preserved = {
             k: self._az_tree_hyperparams[k]
-            for k in (*AZ_INFERENCE_PRESERVE_KEYS, "mcts_candidate_mode")
+            for k in (*AZ_INFERENCE_PRESERVE_KEYS, "mcts_candidate_mode", "mcts_joint_action_from_best_child")
             if k in self._az_tree_hyperparams
         }
         base = dict(self._default_az_tree_hyperparams)
@@ -4309,7 +4309,7 @@ class GUIController(QtCore.QObject):
             return
         preserved = {
             k: self._az_proxy_hyperparams[k]
-            for k in AZ_INFERENCE_PRESERVE_KEYS
+            for k in (*AZ_INFERENCE_PRESERVE_KEYS, "mcts_joint_action_from_best_child")
             if k in self._az_proxy_hyperparams
         }
         base = dict(self._default_az_proxy_hyperparams)
@@ -4872,6 +4872,9 @@ class GUIController(QtCore.QObject):
         mwn = int(payload.get("mcts_window_nodes", 0))
         if mwn not in (0, 1):
             return f"{section}.mcts_window_nodes должен быть 0 или 1"
+        joint_best = int(payload.get("mcts_joint_action_from_best_child", 0))
+        if joint_best not in (0, 1):
+            return f"{section}.mcts_joint_action_from_best_child должен быть 0 или 1"
         return None
 
     def _apply_dqn_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
@@ -5579,6 +5582,13 @@ class GUIController(QtCore.QObject):
         env.insert("AZ_EVAL_MODE", az_eval_mode)
         env.insert("AZ_EVAL_OPPONENT_MODE", az_opponent_mode)
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
+            az_hp_eval = self._az_tree_hyperparams
+            env.insert("MCTS_CANDIDATE_MODE", str(az_hp_eval.get("mcts_candidate_mode", "option")))
+            env.insert("MCTS_WINDOW_NODES", str(int(az_hp_eval.get("mcts_window_nodes", 0))))
+            env.insert(
+                "AZ_MCTS_JOINT_BEST_CHILD",
+                str(int(az_hp_eval.get("mcts_joint_action_from_best_child", 0))),
+            )
             if is_az_algo(learner_algo) and az_eval_mode == "mcts":
                 env.insert("AZ_EVAL_MCTS_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
                 env.insert("AZ_EVAL_MCTS_SIMS", str(self._eval_side_search_sims(learner_side)))
@@ -6656,6 +6666,13 @@ class GUIController(QtCore.QObject):
                 "MCTS_WINDOW_NODES",
                 os.getenv("MCTS_WINDOW_NODES", str(int(az_hp.get("mcts_window_nodes", 0)))),
             )
+            env.insert(
+                "AZ_MCTS_JOINT_BEST_CHILD",
+                os.getenv(
+                    "AZ_MCTS_JOINT_BEST_CHILD",
+                    str(int(az_hp.get("mcts_joint_action_from_best_child", 0))),
+                ),
+            )
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
             env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
@@ -6665,9 +6682,11 @@ class GUIController(QtCore.QObject):
             az_cand = env.value("MCTS_CANDIDATE_MODE", "option")
             az_windowed = env.value("WINDOWED_SELFPLAY", "1")
             az_wn = env.value("MCTS_WINDOW_NODES", "0")
+            az_joint_best = env.value("AZ_MCTS_JOINT_BEST_CHILD", "0")
             self._emit_log(
                 f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
                 f"candidate_mode={az_cand} windowed_selfplay={az_windowed} window_nodes={az_wn} "
+                f"joint_best_child={az_joint_best} "
                 f"sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )

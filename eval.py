@@ -38,6 +38,7 @@ from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
+from core.models.option_candidates import attach_fight_stratagem_plan
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
 from core.models.sampled_muzero_model import (
     load_sampled_muzero_state_dict,
@@ -112,6 +113,10 @@ def log(message: str) -> None:
         rendered = f"[EVAL] {message}"
     print(rendered, flush=True)
     _append_eval_log(message)
+
+
+def _env_bool(name: str, default: str = "0") -> bool:
+    return str(os.getenv(str(name), str(default))).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _find_checkpoint_for_pickle(pickle_path: str) -> str | None:
@@ -319,6 +324,12 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
                 top_k_per_head=max(1, int(os.getenv("AZ_EVAL_MCTS_TOP_K_PER_HEAD", "8"))),
                 max_depth=max(1, int(os.getenv("AZ_EVAL_MCTS_MAX_DEPTH", "1"))),
                 mode=str(os.getenv("AZ_EVAL_MCTS_MODE", "tree")).strip().lower() or "tree",
+                candidate_mode=str(os.getenv("AZ_EVAL_MCTS_CANDIDATE_MODE", os.getenv("MCTS_CANDIDATE_MODE", "option"))).strip().lower() or "option",
+                window_nodes=_env_bool("AZ_EVAL_MCTS_WINDOW_NODES", os.getenv("MCTS_WINDOW_NODES", "0")),
+                joint_action_from_best_child=_env_bool(
+                    "AZ_EVAL_MCTS_JOINT_BEST_CHILD",
+                    os.getenv("AZ_MCTS_JOINT_BEST_CHILD", "0"),
+                ),
             ),
             device=state.device,
         )
@@ -330,9 +341,13 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
             len_model=len_model,
             enemy_policy_fn=None,
         )
-        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
-        if not action_list:
+        if bool(getattr(mcts.cfg, "joint_action_from_best_child", False)):
             action_list = [int(x) for x in selected]
+        else:
+            action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+            if not action_list:
+                action_list = [int(x) for x in selected]
+        attach_fight_stratagem_plan(env, getattr(mcts, "last_selected_fight_plan", None))
         return torch.tensor([action_list], device="cpu")
     masks = [m.to(state.device).unsqueeze(0) for m in masks_cpu]
     with torch.no_grad():
@@ -732,6 +747,7 @@ def run_episode(
             break
 
         state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+        attach_fight_stratagem_plan(env, None)
         if algo == "ppo":
             action = select_action_with_epsilon_ppo(
                 env,
@@ -808,7 +824,10 @@ def run_episode(
         _trace(f"[TRACE][STEP_VERDICT] step={step_no} verdict={verdict}")
         if trace_style == "warhammer":
             _trace(f"[WH40K][TACTIC_VERDICT] step={step_no} { _step_verdict_ru(verdict) }")
-        next_observation, reward, done, _, info = env.step(action_dict)
+        try:
+            next_observation, reward, done, _, info = env.step(action_dict)
+        finally:
+            attach_fight_stratagem_plan(env, None)
         battle_round = _safe_int(info.get("battle round", 0), 0)
         if battle_round > 0 and battle_round != current_round:
             current_round = battle_round

@@ -2603,6 +2603,14 @@ AZ_MCTS_WINDOW_NODES = str(os.getenv("MCTS_WINDOW_NODES", str(AZ_CFG.get("mcts_w
     "yes",
     "on",
 }
+AZ_MCTS_JOINT_BEST_CHILD = str(
+    os.getenv("AZ_MCTS_JOINT_BEST_CHILD", str(AZ_CFG.get("mcts_joint_action_from_best_child", 0)))
+).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 AZ_WINDOWED_SELFPLAY = str(
     os.getenv("WINDOWED_SELFPLAY", str(AZ_CFG.get("windowed_selfplay", 1)))
 ).strip().lower() in {
@@ -2932,6 +2940,7 @@ def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig
         simulate_enemy_in_tree=bool(AZ_MCTS_SIMULATE_ENEMY),
         candidate_mode=str(AZ_MCTS_CANDIDATE_MODE),
         window_nodes=bool(AZ_MCTS_WINDOW_NODES),
+        joint_action_from_best_child=bool(AZ_MCTS_JOINT_BEST_CHILD),
     )
 
 
@@ -2958,6 +2967,7 @@ def _az_honest_eval_mcts_config(*, mcts_mode: str) -> MCTSConfig:
         parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
         candidate_mode=str(AZ_MCTS_CANDIDATE_MODE),
         window_nodes=bool(AZ_MCTS_WINDOW_NODES),
+        joint_action_from_best_child=bool(AZ_MCTS_JOINT_BEST_CHILD),
     )
 
 
@@ -3042,6 +3052,11 @@ def _build_az_search(net, payload: dict, device, *, evaluator=None):
             batch_eval_size=int(payload.get("batch_eval_size", AZ_MCTS_BATCH_EVAL_SIZE)),
             parallel_simulations=int(payload.get("parallel_simulations", AZ_MCTS_PARALLEL_SIMS)),
             simulate_enemy_in_tree=bool(payload.get("simulate_enemy_in_tree", AZ_MCTS_SIMULATE_ENEMY)),
+            candidate_mode=str(payload.get("candidate_mode", AZ_MCTS_CANDIDATE_MODE)),
+            window_nodes=bool(payload.get("window_nodes", AZ_MCTS_WINDOW_NODES)),
+            joint_action_from_best_child=bool(
+                payload.get("joint_action_from_best_child", AZ_MCTS_JOINT_BEST_CHILD)
+            ),
         ),
         device=device,
         evaluator=evaluator,
@@ -9346,7 +9361,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
         f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
-        f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} window_nodes={int(AZ_MCTS_WINDOW_NODES)} mcts={_AZ_LOG_SIMS} "
+        f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} window_nodes={int(AZ_MCTS_WINDOW_NODES)} "
+        f"joint_best_child={int(AZ_MCTS_JOINT_BEST_CHILD)} mcts={_AZ_LOG_SIMS} "
         f"{f'joint_action={int(GAZ_JOINT_ACTION)} ' if is_gumbel_az_algo(TRAIN_ALGO) else ''}"
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
@@ -9439,6 +9455,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "batch_eval_size": AZ_MCTS_BATCH_EVAL_SIZE,
             "parallel_simulations": AZ_MCTS_PARALLEL_SIMS,
             "simulate_enemy_in_tree": AZ_MCTS_SIMULATE_ENEMY,
+            "candidate_mode": AZ_MCTS_CANDIDATE_MODE,
+            "window_nodes": AZ_MCTS_WINDOW_NODES,
+            "joint_action_from_best_child": AZ_MCTS_JOINT_BEST_CHILD,
         }
     _sp_cfg_payload = {
         "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,
@@ -9496,6 +9515,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         "mcts_candidate_mode": str(AZ_MCTS_CANDIDATE_MODE),
                         "windowed_selfplay": int(AZ_WINDOWED_SELFPLAY),
                         "mcts_window_nodes": int(AZ_MCTS_WINDOW_NODES),
+                        "mcts_joint_action_from_best_child": int(AZ_MCTS_JOINT_BEST_CHILD),
                         "mcts_batch_eval_size": int(AZ_MCTS_BATCH_EVAL_SIZE),
                         "mcts_simulate_enemy": int(AZ_MCTS_SIMULATE_ENEMY),
                         "mcts_mode": str(AZ_MCTS_MODE),

@@ -134,6 +134,7 @@ AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
     "mcts_candidate_mode",
     "windowed_selfplay",
     "mcts_window_nodes",
+    "mcts_joint_action_from_best_child",
     "mcts_batch_eval_size",
     "mcts_simulate_enemy",
     "mcts_mode",
@@ -221,6 +222,9 @@ def apply_az_dist_worker_env(hp: dict[str, Any] | None) -> None:
     if "MCTS_WINDOW_NODES" not in os.environ:
         wn = _hp_bool(src, "mcts_window_nodes", False)
         os.environ["MCTS_WINDOW_NODES"] = "1" if wn else "0"
+    if "AZ_MCTS_JOINT_BEST_CHILD" not in os.environ:
+        jb = _hp_bool(src, "mcts_joint_action_from_best_child", False)
+        os.environ["AZ_MCTS_JOINT_BEST_CHILD"] = "1" if jb else "0"
 
 
 def build_az_dist_worker_payloads(
@@ -257,6 +261,13 @@ def build_az_dist_worker_payloads(
         "parallel_simulations": int(_hp_pick(hp, "mcts_parallel_sims", d.get("parallel_simulations", 1))),
         "simulate_enemy_in_tree": _hp_bool(
             hp, "mcts_simulate_enemy", bool(d.get("simulate_enemy_in_tree", True))
+        ),
+        "candidate_mode": str(_hp_pick(hp, "mcts_candidate_mode", d.get("candidate_mode", "option"))),
+        "window_nodes": _hp_bool(hp, "mcts_window_nodes", bool(d.get("window_nodes", False))),
+        "joint_action_from_best_child": _hp_bool(
+            hp,
+            "mcts_joint_action_from_best_child",
+            bool(d.get("joint_action_from_best_child", False)),
         ),
     }
     sp_payload = {

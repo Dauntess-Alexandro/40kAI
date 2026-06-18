@@ -108,7 +108,13 @@ def test_movement_options_index_parity_with_executor():
         assert dest is not None
         assert chosen_idx == k
         assert o.param["dest"] == (int(dest[0]), int(dest[1]))
-        assert o.legacy_patch == {"move_num_0": k}
+        expected_patch = {"move_num_0": k}
+        if o.kind in (ActionKind.MOVE, ActionKind.ADVANCE):
+            assert o.legacy_patch.get("move") in {0, 1, 2, 3}
+            expected_patch["move"] = o.legacy_patch["move"]
+        else:
+            assert "move" not in o.legacy_patch
+        assert o.legacy_patch == expected_patch
     # Генератор покрывает ровно весь исполнительный диапазон reachable.
     assert len(opts) == total
 

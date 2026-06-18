@@ -11,6 +11,12 @@ import subprocess
 import sys
 
 
+def _configure_console_encoding() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
 def _run(windowed: str, episodes: int, seed: int) -> str:
     env = dict(os.environ)
     env["WINDOWED_SELFPLAY"] = windowed
@@ -25,11 +31,12 @@ def _run(windowed: str, episodes: int, seed: int) -> str:
         "--modes",
         "option",
     ]
-    out = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8")
+    out = subprocess.run(cmd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return out.stdout + out.stderr
 
 
 def main() -> int:
+    _configure_console_encoding()
     p = argparse.ArgumentParser(description="windowed 0 vs 1 winrate parity")
     p.add_argument("--episodes", type=int, default=100)
     p.add_argument("--seed", type=int, default=1000)
