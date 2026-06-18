@@ -27,6 +27,7 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "dirichlet_alpha",
     "dirichlet_eps",
     "mcts_mode",
+    "mcts_candidate_mode",
     "mcts_top_k_per_head",
     "mcts_max_depth",
     "mcts_root_dirichlet_only",
@@ -149,7 +150,8 @@ _AZ_BASE: dict[str, int | float | str] = {
     "prior_weight_early": 0.25,
     "mcts_batch_eval_size": 16,
     "mcts_parallel_sims": 1,
-    "mcts_simulate_enemy": 1,
+    "mcts_simulate_enemy": 0,
+    "mcts_candidate_mode": "option",
 }
 
 # DEFAULT_AZ_TREE_HYPERPARAMS определён ниже как base + balanced-пресет
@@ -270,6 +272,7 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
         "title": "MCTS",
         "keys": (
             "mcts_mode",
+            "mcts_candidate_mode",
             "mcts_simulations",
             "mcts_max_depth",
             "mcts_top_k_per_head",
@@ -367,6 +370,10 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
     "dirichlet_alpha": "Alpha шума Дирихле в корне.",
     "dirichlet_eps": "Смешивание с prior (eps).",
     "mcts_mode": "tree или proxy (только чтение).",
+    "mcts_candidate_mode": (
+        "Режим кандидатов корня tree-MCTS: joint (как раньше), filter (joint ∩ легальные планы), "
+        "option (окна ActionOption), option_plus (option + legacy greedy). Только при mcts_mode=tree."
+    ),
     "mcts_top_k_per_head": "Top-K действий на голову.",
     "mcts_max_depth": "Глубина rollout в MCTS (Tree).",
     "mcts_root_dirichlet_only": "1 = шум только в корне.",

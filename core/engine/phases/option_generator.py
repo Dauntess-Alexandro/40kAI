@@ -143,9 +143,11 @@ def command_window(env, side: str) -> DecisionWindow:
 
 
 def generate_windows(env, side: str = "model") -> list[DecisionWindow]:
-    """Упорядоченные окна хода: command → movement → shooting → charge.
+    """Упорядоченные окна хода: command → movement → shooting → charge → fight.
 
-    Бой/скоринг в текущей модели не дают выбора агента — окон не порождаем.
+    Fight-окна: стратагемы боя (Hungry Void, Command Re-roll) на живого юнита;
+    исполнение в env.step — через _pending_fight_stratagem_plan (option/MCTS)
+    или PhaseEngine.run_fight.
     """
     e = _unwrap(env)
     health = e.unit_health if side == "model" else e.enemy_health
@@ -186,6 +188,18 @@ def generate_windows(env, side: str = "model") -> list[DecisionWindow]:
                 timing=Timing.MAIN,
                 cursor_unit_idx=int(u),
                 options=charge_options_for_unit(e, side, u),
+            )
+        )
+    for u in alive:
+        windows.append(
+            DecisionWindow(
+                window_id=f"fight:{side}:{u}",
+                owner_side=side,
+                phase=Phase.FIGHT,
+                sub_step=SubStep.FIGHT_UNIT,
+                timing=Timing.MAIN,
+                cursor_unit_idx=int(u),
+                options=fight_stratagem_options_for_unit(e, side, u),
             )
         )
     return windows

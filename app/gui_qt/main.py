@@ -4171,7 +4171,7 @@ class GUIController(QtCore.QObject):
         self._emit_status(f"Применен профиль Sampled MuZero: {mode}. Сохраните настройки.")
 
     def _coerce_az_hyperparam(self, key: str, value: str, default: int | float | str) -> int | float | str:
-        if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "inference_server_mode"}:
+        if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "mcts_candidate_mode", "inference_server_mode"}:
             parsed = str(value or "").strip().lower()
             return parsed or str(default)
         if key in {
@@ -4203,6 +4203,13 @@ class GUIController(QtCore.QObject):
             return
         if normalized_key == "mcts_mode" and parsed != "tree":
             parsed = "tree"
+        if normalized_key == "mcts_candidate_mode" and parsed not in {
+            "joint",
+            "filter",
+            "option",
+            "option_plus",
+        }:
+            parsed = "joint"
         if current == parsed:
             return
         self._az_tree_hyperparams[normalized_key] = parsed
@@ -4241,7 +4248,7 @@ class GUIController(QtCore.QObject):
             return
         preserved = {
             k: self._az_tree_hyperparams[k]
-            for k in AZ_INFERENCE_PRESERVE_KEYS
+            for k in (*AZ_INFERENCE_PRESERVE_KEYS, "mcts_candidate_mode")
             if k in self._az_tree_hyperparams
         }
         base = dict(self._default_az_tree_hyperparams)
@@ -4856,6 +4863,9 @@ class GUIController(QtCore.QObject):
             return f"{section}.num_actors должен быть >= 1"
         if replay_min_size < 1:
             return f"{section}.replay_min_size должен быть >= 1"
+        mode = str(payload.get("mcts_candidate_mode", "option")).strip().lower()
+        if mode not in {"joint", "filter", "option", "option_plus"}:
+            return f"{section}.mcts_candidate_mode должен быть joint, filter, option или option_plus"
         return None
 
     def _apply_dqn_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
@@ -4896,7 +4906,7 @@ class GUIController(QtCore.QObject):
                 continue
             raw_val = raw.get(key, default_value)
             try:
-                if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "inference_server_mode"}:
+                if key in {"lr_scheduler", "c_puct_schedule", "mcts_mode", "mcts_candidate_mode", "inference_server_mode"}:
                     updated[key] = str(raw_val).strip().lower() or str(default_value)
                 elif key in {"inference_remote_host", "inference_remote_auth_token", "distributed_actors_bind_host", "distributed_actors_auth_token"}:
                     updated[key] = str(raw_val if raw_val is not None else default_value).strip()
@@ -6628,15 +6638,20 @@ class GUIController(QtCore.QObject):
             env.insert("AZ_NUM_ACTORS", os.getenv("AZ_NUM_ACTORS", env_overrides.get("NUM_ACTORS", str(int(az_hp.get("num_actors", 8))))))
             env.insert("AZ_MCTS_MAX_DEPTH", os.getenv("AZ_MCTS_MAX_DEPTH", str(int(az_hp.get("mcts_max_depth", 2 if az_mode == "tree" else 1)))))
             env.insert("AZ_MCTS_TOP_K_PER_HEAD", os.getenv("AZ_MCTS_TOP_K_PER_HEAD", str(int(az_hp.get("mcts_top_k_per_head", 8)))))
+            env.insert(
+                "MCTS_CANDIDATE_MODE",
+                os.getenv("MCTS_CANDIDATE_MODE", str(az_hp.get("mcts_candidate_mode", "option"))),
+            )
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
             env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
             az_sims = env.value("AZ_MCTS_SIMULATIONS", "32")
             az_actors = env.value("AZ_NUM_ACTORS", "8")
             az_depth = env.value("AZ_MCTS_MAX_DEPTH", "2")
+            az_cand = env.value("MCTS_CANDIDATE_MODE", "option")
             self._emit_log(
                 f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
-                f"sims={az_sims} depth={az_depth} actors={az_actors}",
+                f"candidate_mode={az_cand} sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )
         elif self._training_algo == "sampled_muzero":

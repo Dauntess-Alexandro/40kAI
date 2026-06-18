@@ -46,6 +46,11 @@ ColumnLayout {
     function isStringKey(key) {
         var k = String(key)
         return k === "lr_scheduler" || k === "c_puct_schedule" || k === "mcts_mode"
+            || k === "mcts_candidate_mode"
+    }
+
+    function isCandidateModeKey(key) {
+        return String(key) === "mcts_candidate_mode"
     }
 
     RowLayout {
@@ -95,8 +100,21 @@ ColumnLayout {
                     Layout.preferredWidth: Math.round(200 * (rootUi ? rootUi.uiScale : 1))
                 }
 
+                ComboBox {
+                    visible: azEditor.isCandidateModeKey(modelData) && section === "tree"
+                    model: ["joint", "filter", "option", "option_plus"]
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
+                    Component.onCompleted: {
+                        var cur = String(azEditor.hpMap[modelData] ?? "joint")
+                        var idx = model.indexOf(cur)
+                        currentIndex = idx >= 0 ? idx : 0
+                    }
+                    onActivated: azEditor.setKey(modelData, model[currentIndex])
+                }
+
                 TextField {
-                    visible: azEditor.isStringKey(modelData)
+                    visible: azEditor.isStringKey(modelData) && !azEditor.isCandidateModeKey(modelData)
                     readOnly: modelData === "mcts_mode"
                     text: String(azEditor.hpMap[modelData] ?? "")
                     Layout.fillWidth: true

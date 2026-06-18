@@ -2588,6 +2588,11 @@ else:
 if AZ_MCTS_MODE not in {"proxy", "tree", "gumbel"}:
     AZ_MCTS_MODE = "tree"
 AZ_MCTS_TOP_K_PER_HEAD = int(os.getenv("AZ_MCTS_TOP_K_PER_HEAD", str(AZ_CFG.get("mcts_top_k_per_head", 8))))
+AZ_MCTS_CANDIDATE_MODE = str(
+    os.getenv("MCTS_CANDIDATE_MODE", str(AZ_CFG.get("mcts_candidate_mode", "option")))
+).strip().lower() or "option"
+if AZ_MCTS_CANDIDATE_MODE not in {"joint", "filter", "option", "option_plus"}:
+    AZ_MCTS_CANDIDATE_MODE = "option"
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
     os.getenv("AZ_MCTS_ROOT_DIRICHLET_ONLY", str(AZ_CFG.get("mcts_root_dirichlet_only", 1)))
@@ -2903,6 +2908,7 @@ def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig
         batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
         parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
         simulate_enemy_in_tree=bool(AZ_MCTS_SIMULATE_ENEMY),
+        candidate_mode=str(AZ_MCTS_CANDIDATE_MODE),
     )
 
 
@@ -2927,6 +2933,7 @@ def _az_honest_eval_mcts_config(*, mcts_mode: str) -> MCTSConfig:
         temperature_opening_moves=int(AZ_TEMP_OPENING_MOVES),
         batch_eval_size=int(AZ_MCTS_BATCH_EVAL_SIZE),
         parallel_simulations=int(AZ_MCTS_PARALLEL_SIMS),
+        candidate_mode=str(AZ_MCTS_CANDIDATE_MODE),
     )
 
 
@@ -9316,7 +9323,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"sync_every_updates={AZ_SYNC_EVERY_UPDATES} updates_per_rollout={AZ_UPDATES_PER_ROLLOUT} "
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
-        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} mcts={_AZ_LOG_SIMS} "
+        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} mcts={_AZ_LOG_SIMS} "
         f"{f'joint_action={int(GAZ_JOINT_ACTION)} ' if is_gumbel_az_algo(TRAIN_ALGO) else ''}"
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "
         f"hidden={az_kw['hidden_size']} layers={az_kw['num_layers']} value_ensemble={az_kw['n_value_ensemble']} "
@@ -9463,6 +9470,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         "mcts_parallel_sims": int(AZ_MCTS_PARALLEL_SIMS),
                         "mcts_max_depth": int(AZ_MCTS_MAX_DEPTH),
                         "mcts_top_k_per_head": int(AZ_MCTS_TOP_K_PER_HEAD),
+                        "mcts_candidate_mode": str(AZ_MCTS_CANDIDATE_MODE),
                         "mcts_batch_eval_size": int(AZ_MCTS_BATCH_EVAL_SIZE),
                         "mcts_simulate_enemy": int(AZ_MCTS_SIMULATE_ENEMY),
                         "mcts_mode": str(AZ_MCTS_MODE),

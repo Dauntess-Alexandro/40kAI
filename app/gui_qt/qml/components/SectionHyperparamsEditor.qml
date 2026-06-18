@@ -264,8 +264,22 @@ ColumnLayout {
     function isStringKey(key) {
         var k = String(key)
         return k === "lr_scheduler" || k === "c_puct_schedule" || k === "mcts_mode"
+            || k === "mcts_candidate_mode"
             || k === "dist_type" || k === "eps_schedule"
             || k === "actor_device" || k === "atom_range"
+    }
+
+    function isCandidateModeKey(key) {
+        return String(key) === "mcts_candidate_mode"
+    }
+
+    function candidateModeLabel(mode) {
+        var m = String(mode || "joint")
+        if (m === "joint") return "joint — как раньше"
+        if (m === "filter") return "filter — без мусорных joint"
+        if (m === "option") return "option — из окон"
+        if (m === "option_plus") return "option_plus — option + страховка"
+        return m
     }
 
     Label {
@@ -492,8 +506,30 @@ ColumnLayout {
                                     }
                                 }
 
+                                ComboBox {
+                                    id: candidateModeCombo
+                                    visible: hpEditor.isCandidateModeKey(fieldKey)
+                                    enabled: hpEditor.algoSection === "tree"
+                                    model: ["joint", "filter", "option", "option_plus"]
+                                    displayText: hpEditor.candidateModeLabel(
+                                        model[currentIndex] ?? hpEditor.hpMap[fieldKey] ?? "joint"
+                                    )
+                                    Layout.preferredWidth: Math.round(220 * (rootUi ? rootUi.uiScale : 1))
+                                    Layout.maximumWidth: Math.round(280 * (rootUi ? rootUi.uiScale : 1))
+                                    Component.onCompleted: {
+                                        var cur = String(hpEditor.hpMap[fieldKey] ?? "joint")
+                                        var idx = model.indexOf(cur)
+                                        currentIndex = idx >= 0 ? idx : 0
+                                    }
+                                    onActivated: hpEditor.setKey(fieldKey, model[currentIndex])
+                                    ToolTip.visible: hovered && hpEditor.tooltipFor(fieldKey).length > 0
+                                    ToolTip.text: hpEditor.algoSection === "tree"
+                                        ? hpEditor.tooltipFor(fieldKey)
+                                        : "Только для AlphaZero Tree (mcts_mode=tree); в Proxy игнорируется."
+                                }
+
                                 TextField {
-                                    visible: hpEditor.isStringKey(fieldKey)
+                                    visible: hpEditor.isStringKey(fieldKey) && !hpEditor.isCandidateModeKey(fieldKey)
                                     readOnly: fieldKey === "mcts_mode"
                                     text: String(hpEditor.hpMap[fieldKey] ?? "")
                                     Layout.preferredWidth: Math.round(168 * (rootUi ? rootUi.uiScale : 1))

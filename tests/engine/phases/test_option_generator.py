@@ -161,15 +161,15 @@ def test_generate_windows_orders_phases():
 
     windows = generate_windows(env, "model")
     phases_seen = [w.phase for w in windows]
-    # command идёт первым, бой/скоринг не порождают окон выбора в этом слое
     assert phases_seen[0] is Phase.COMMAND
     assert Phase.MOVEMENT in phases_seen
     assert Phase.SHOOTING in phases_seen
     assert Phase.CHARGE in phases_seen
-    # порядок фаз неубывающий по индексу в каноне
-    order = {Phase.COMMAND: 0, Phase.MOVEMENT: 1, Phase.SHOOTING: 2, Phase.CHARGE: 3}
+    assert Phase.FIGHT in phases_seen
+    order = {Phase.COMMAND: 0, Phase.MOVEMENT: 1, Phase.SHOOTING: 2, Phase.CHARGE: 3, Phase.FIGHT: 4}
     idxs = [order[p] for p in phases_seen]
     assert idxs == sorted(idxs)
-    # window_id стабильны и уникальны
     ids = [w.window_id for w in windows]
     assert len(ids) == len(set(ids))
+    fight_ids = [w.window_id for w in windows if w.phase is Phase.FIGHT]
+    assert fight_ids == [f"fight:model:{u}" for u in range(len(env.unit_health)) if env.unit_health[u] > 0]

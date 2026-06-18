@@ -12,7 +12,15 @@ import numpy as np
 import torch
 
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
+from core.models.option_candidates import (
+    attach_fight_stratagem_plan,
+    joint_action_candidates,
+    root_joint_candidates,
+)
 from core.models.utils import unwrap_env
+
+# Обратная совместимость тестов/импортов.
+_joint_action_candidates = joint_action_candidates
 
 
 @dataclass
@@ -41,6 +49,8 @@ class MCTSConfig:
     simulate_enemy_in_tree: bool = True
     # Sprint 5: parallel simulations via thread pool (0 or 1 = disabled)
     parallel_simulations: int = 0
+    # Stage 4: joint | filter | option | option_plus (дефолт joint — без регрессии)
+    candidate_mode: str = "option"
 
 
 @dataclass
@@ -170,45 +180,6 @@ def progressive_widening_allowed(parent_visits: int, num_children: int, pw_alpha
         return True
     threshold = float(pw_alpha) * (float(max(1, num_children)) ** float(pw_beta))
     return float(parent_visits) >= threshold
-
-
-def _joint_action_candidates(
-    priors: list[np.ndarray],
-    legal_masks: list[np.ndarray],
-    top_k_per_head: int,
-    max_candidates: int = 64,
-) -> list[tuple[int, ...]]:
-    per_head_idx: list[list[int]] = []
-    for prior, legal in zip(priors, legal_masks):
-        legal = np.asarray(legal, dtype=bool)
-        legal_idx = np.where(legal)[0]
-        if legal_idx.size == 0:
-            per_head_idx.append([0])
-            continue
-        k = max(1, int(top_k_per_head))
-        if legal_idx.size <= k:
-            per_head_idx.append([int(i) for i in legal_idx])
-        else:
-            scores = np.asarray(prior[legal_idx], dtype=np.float32)
-            top_local = np.argsort(scores)[-k:]
-            per_head_idx.append([int(legal_idx[i]) for i in top_local])
-
-    out: list[tuple[int, ...]] = []
-    # Greedy Cartesian: start from argmax per head, then add top-scoring variants.
-    greedy = tuple(int(np.argmax(np.where(legal_masks[i], priors[i], -1e9))) for i in range(len(priors)))
-    out.append(greedy)
-    seen = {greedy}
-    for head_i, indices in enumerate(per_head_idx):
-        for a in indices:
-            base = list(greedy)
-            base[head_i] = int(a)
-            tup = tuple(base)
-            if tup not in seen:
-                seen.add(tup)
-                out.append(tup)
-            if len(out) >= max_candidates:
-                return out
-    return out
 
 
 class AlphaZeroFactorizedMCTS:
@@ -390,6 +361,7 @@ class AlphaZeroFactorizedMCTS:
         simulate_enemy: bool,
         reset_options: dict | None,
         rng_seed: int | None = None,
+        fight_plan: dict[int, str] | None = None,
     ) -> dict:
         """Run one MCTS simulation on a clone env. Thread-safe: uses its own snapshot/restore."""
         import numpy as _np
@@ -410,6 +382,10 @@ class AlphaZeroFactorizedMCTS:
                 current_action = list(action_list)
                 for depth in range(max_depth):
                     depth_reached = depth + 1
+                    attach_fight_stratagem_plan(
+                        clone_env,
+                        fight_plan if depth == 0 else None,
+                    )
                     action_dict = action_tensor_to_dict(
                         torch.tensor([current_action], dtype=torch.long),
                         len_model=int(len_model),
@@ -584,7 +560,15 @@ class AlphaZeroFactorizedMCTS:
         pw_alpha = float(getattr(self.cfg, "pw_alpha", 1.0) or 1.0)
         pw_beta = float(getattr(self.cfg, "pw_beta", 0.5) or 0.5)
 
-        candidates = _joint_action_candidates(priors, legal_masks, int(self.cfg.top_k_per_head))
+        candidates = root_joint_candidates(
+            mode=str(getattr(self.cfg, "candidate_mode", "option") or "option"),
+            priors=priors,
+            legal_masks=legal_masks,
+            env=env,
+            len_model=int(len_model),
+            top_k_per_head=int(self.cfg.top_k_per_head),
+            max_candidates=64,
+        )
         sim_values: list[float] = []
         sim_depths: list[float] = []
 
@@ -634,6 +618,7 @@ class AlphaZeroFactorizedMCTS:
 
             def _pool_worker(sim_idx: int, action_list_i: list[int]) -> tuple[int, dict]:
                 with _pool.acquire() as clone_env:
+                    fp = candidates.fight_plan_for(tuple(action_list_i))
                     result = self._run_one_sim_on_clone(
                         clone_env=clone_env,
                         obs=obs,
@@ -646,6 +631,7 @@ class AlphaZeroFactorizedMCTS:
                         simulate_enemy=simulate_enemy,
                         reset_options=reset_options,
                         rng_seed=sim_idx,
+                        fight_plan=fp,
                     )
                 return sim_idx, result
 
@@ -708,6 +694,7 @@ class AlphaZeroFactorizedMCTS:
                     action_list = [int(np.argmax(priors[i])) for i in range(len(priors))]
                 else:
                     action_list = list(child.action_tuple)
+                fight_plan = candidates.fight_plan_for(tuple(action_list))
 
                 snapshot = env_u.snapshot_state() if hasattr(env_u, "snapshot_state") else None
                 current_obs = np.asarray(obs, dtype=np.float32)
@@ -725,6 +712,10 @@ class AlphaZeroFactorizedMCTS:
                         current_action = list(action_list)
                         for depth in range(max_depth):
                             depth_reached = depth + 1
+                            attach_fight_stratagem_plan(
+                                env,
+                                fight_plan if depth == 0 else None,
+                            )
                             action_dict = action_tensor_to_dict(
                                 torch.tensor([current_action], dtype=torch.long),
                                 len_model=int(len_model),

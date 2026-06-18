@@ -2238,6 +2238,27 @@ class Warhammer40kEnv(gym.Env):
             if str(rec.get("phase", "")) != phase
         ]
 
+    def _apply_pending_fight_stratagem_plan(self, side: str) -> None:
+        """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan)."""
+        plan = getattr(self, "_pending_fight_stratagem_plan", None)
+        self._pending_fight_stratagem_plan = None
+        if not plan:
+            return
+        health = self.unit_health if side == "model" else self.enemy_health
+        in_attack = self.unitInAttack if side == "model" else self.enemyInAttack
+        for u, sid in dict(plan).items():
+            ui = int(u)
+            if not (0 <= ui < len(health)) or health[ui] <= 0:
+                continue
+            if in_attack[ui][0] != 1:
+                continue
+            try:
+                _apply_stratagem(self, side, str(sid), ui, phase="fight")
+            except Exception as exc:
+                self._log(
+                    f"[STRATAGEM] pending fight plan: не применили {sid!r} на юните {ui}: {exc}"
+                )
+
     def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
         if side == "enemy":
             if not (0 <= unit_idx < len(self.enemy_health)):
@@ -6590,6 +6611,7 @@ class Warhammer40kEnv(gym.Env):
 
     def fight_phase(self, side: str):
         self.begin_phase(side, "fight")
+        self._apply_pending_fight_stratagem_plan(side)
         reward_delta = 0.0
         engaged_pairs = []
         pre_enemy_hp_total = None
