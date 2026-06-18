@@ -652,5 +652,5 @@ git commit -m "tools: winrate-гейт windowed 0 vs 1 (после парите�
 | 4 shooting gate | ✅ | no-op |
 | 5 fight + full_turn | ✅ | fix теста advanced_flags в legacy |
 | 6 log out-of-range | ✅ | через warhamEnv._log |
-| 7 winrate 0 vs 1 | ⬜ | см. artifacts/results |
-| дефолт hyperparams | 0 | пока windowed=0 в alphazero_tree |
+| 7 winrate 0 vs 1 | ✅ | 50ep seed1000: win 16% vs 18%, Δ=2pp |
+| дефолт hyperparams | 0 | паритет OK; можно включить 1 вручную |
