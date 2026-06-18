@@ -72,7 +72,14 @@ def run_command(env, side, decide, state: PhaseTurnState | None = None) -> Phase
     return state
 
 
-def run_movement(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTurnState:
+def run_movement(
+    env,
+    side,
+    decide,
+    state: PhaseTurnState | None = None,
+    *,
+    base_action: dict | None = None,
+) -> PhaseTurnState:
     """Исполнить фазу движения через окна решений (по юниту).
 
     decide(window) -> ActionOption: выбирает опцию движения (STAY/MOVE/ADVANCE).
@@ -98,12 +105,16 @@ def run_movement(env, side, decide, state: PhaseTurnState | None = None) -> Phas
         opt = decide(win)
         if opt is not None and opt.param.get("reachable_index") is not None:
             chosen_idx[int(u)] = int(opt.param["reachable_index"])
-    action = default_action_dict(len(health))
+    action = dict(base_action) if base_action is not None else default_action_dict(len(health))
+    if base_action is not None:
+        decide_move = lambda i: int(action.get(f"move_num_{i}", 0))  # noqa: E731
+    else:
+        decide_move = lambda i: chosen_idx.get(i, 0)  # noqa: E731
     result = e.movement_phase(
         side,
         action=action,
         battle_shock=list(state.battle_shock or [False] * len(health)),
-        decide_move=lambda i: chosen_idx.get(i, 0),
+        decide_move=decide_move,
     )
     if isinstance(result, tuple):
         advanced_flags = result[0] if len(result) > 0 else []
@@ -121,7 +132,14 @@ def run_movement(env, side, decide, state: PhaseTurnState | None = None) -> Phas
     return state
 
 
-def run_shooting(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTurnState:
+def run_shooting(
+    env,
+    side,
+    decide,
+    state: PhaseTurnState | None = None,
+    *,
+    base_action: dict | None = None,
+) -> PhaseTurnState:
     """Исполнить фазу стрельбы через окна решений (по юниту).
 
     decide(window) -> ActionOption: SHOOT (с param local_rank) или PASS.
@@ -146,12 +164,13 @@ def run_shooting(env, side, decide, state: PhaseTurnState | None = None) -> Phas
         opt = decide(win)
         if opt is not None and opt.kind is ActionKind.SHOOT and opt.param.get("local_rank") is not None:
             chosen_rank[int(u)] = int(opt.param["local_rank"])
-    action = default_action_dict(len(health))
+    action = dict(base_action) if base_action is not None else default_action_dict(len(health))
+    decide_shoot = None if base_action is not None else (lambda i: chosen_rank.get(i, -1))
     result = e.shooting_phase(
         side,
         advanced_flags=list(state.advanced_flags or [False] * len(health)),
         action=action,
-        decide_shoot=lambda i: chosen_rank.get(i, -1),
+        decide_shoot=decide_shoot,
     )
     reward_delta = float(result or 0.0) if result is not None else 0.0
     state.reward_delta += reward_delta
@@ -159,7 +178,14 @@ def run_shooting(env, side, decide, state: PhaseTurnState | None = None) -> Phas
     return state
 
 
-def run_charge(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTurnState:
+def run_charge(
+    env,
+    side,
+    decide,
+    state: PhaseTurnState | None = None,
+    *,
+    base_action: dict | None = None,
+) -> PhaseTurnState:
     """Исполнить фазу чарджа через окна решений (по юниту).
 
     decide(window) -> ActionOption: CHARGE (target_idx — глобальный id врага) или PASS.
@@ -184,12 +210,13 @@ def run_charge(env, side, decide, state: PhaseTurnState | None = None) -> PhaseT
         opt = decide(win)
         if opt is not None and opt.kind is ActionKind.CHARGE and opt.target_idx is not None:
             chosen_target[int(u)] = int(opt.target_idx)
-    action = default_action_dict(len(health))
+    action = dict(base_action) if base_action is not None else default_action_dict(len(health))
+    decide_charge = None if base_action is not None else (lambda i: chosen_target.get(i))
     result = e.charge_phase(
         side,
         advanced_flags=list(state.advanced_flags or [False] * len(health)),
         action=action,
-        decide_charge=lambda i: chosen_target.get(i),
+        decide_charge=decide_charge,
     )
     reward_delta = float(result or 0.0) if result is not None else 0.0
     state.reward_delta += reward_delta

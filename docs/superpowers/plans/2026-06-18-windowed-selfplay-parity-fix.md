@@ -646,11 +646,11 @@ git commit -m "tools: winrate-гейт windowed 0 vs 1 (после парите�
 
 | Task | Статус | Примечание |
 |------|--------|------------|
-| 1 parity-харнесс | ⬜ | какие фазы упали: _ |
-| 2 base_action | ⬜ | |
-| 3 charge gate | ⬜ | no-op / fix |
-| 4 shooting gate | ⬜ | no-op / fix |
-| 5 fight + full_turn | ⬜ | |
-| 6 log out-of-range | ⬜ | |
-| 7 winrate 0 vs 1 | ⬜ | Δwin=_, Δturn_limit=_ |
-| дефолт hyperparams | ⬜ | 0 / 1 |
+| 1 parity-харнесс | ✅ | 10 per-phase + full_turn + log |
+| 2 base_action | ✅ | phase_engine + windowed bridge |
+| 3 charge gate | ✅ | no-op (зелёный после Task 2) |
+| 4 shooting gate | ✅ | no-op |
+| 5 fight + full_turn | ✅ | fix теста advanced_flags в legacy |
+| 6 log out-of-range | ✅ | через warhamEnv._log |
+| 7 winrate 0 vs 1 | ⬜ | см. artifacts/results |
+| дефолт hyperparams | 0 | пока windowed=0 в alphazero_tree |

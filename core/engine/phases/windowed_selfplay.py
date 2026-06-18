@@ -141,17 +141,17 @@ def run_model_command_from_action(env, action_dict: dict | None):
 
 def run_model_movement_from_action(env, action_dict: dict | None, state=None):
     decide = make_movement_decide_from_action_dict(action_dict)
-    return phase_engine.run_movement(env, "model", decide, state)
+    return phase_engine.run_movement(env, "model", decide, state, base_action=action_dict)
 
 
 def run_model_shooting_from_action(env, action_dict: dict | None, state=None):
     decide = make_shooting_decide_from_action_dict(action_dict)
-    return phase_engine.run_shooting(env, "model", decide, state)
+    return phase_engine.run_shooting(env, "model", decide, state, base_action=action_dict)
 
 
 def run_model_charge_from_action(env, action_dict: dict | None, state=None):
     decide = make_charge_decide_from_action_dict(action_dict)
-    return phase_engine.run_charge(env, "model", decide, state)
+    return phase_engine.run_charge(env, "model", decide, state, base_action=action_dict)
 
 
 def run_model_fight_from_action(env, action_dict: dict | None, state=None):
