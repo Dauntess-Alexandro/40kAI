@@ -63,8 +63,8 @@
         "entropy_adapt_lr": 0.05
     },
     "alphazero_tree": {
-        "inference_server_enabled": 1,
-        "inference_server_mode": "remote",
+        "inference_server_enabled": 0,
+        "inference_server_mode": "local",
         "num_env_workers": 8,
         "inference_batch_size": 32,
         "inference_batch_interval_ms": 10,
@@ -72,7 +72,7 @@
         "inference_remote_host": "192.168.0.101",
         "inference_remote_port": 5555,
         "inference_remote_auth_token": "",
-        "distributed_actors_enabled": 1,
+        "distributed_actors_enabled": 0,
         "distributed_actors_port": 5557,
         "distributed_actors_bind_host": "0.0.0.0",
         "distributed_actors_auth_token": "",
@@ -123,8 +123,9 @@
         "pw_beta": 0.5,
         "prior_weight_early": 0.25,
         "mcts_batch_eval_size": 16,
-        "mcts_parallel_sims": 4,
-        "mcts_simulate_enemy": 1,
+        "mcts_parallel_sims": 8,
+        "mcts_simulate_enemy": 0,
+        "mcts_candidate_mode": "option",
         "mcts_mode": "tree"
     },
     "alphazero_proxy": {
@@ -190,6 +191,7 @@
         "mcts_batch_eval_size": 1,
         "mcts_parallel_sims": 0,
         "mcts_simulate_enemy": 1,
+        "mcts_candidate_mode": "option",
         "mcts_mode": "proxy"
     },
     "gumbel_muzero": {
@@ -335,6 +337,9 @@
         "lr_total_steps": 0,
         "det_eval_gate_win_min": 0.45,
         "det_eval_gate_turn_limit_max": 0.65,
+        "num_env_workers": 8,
+        "inference_batch_size": 32,
+        "inference_batch_interval_ms": 10,
         "inference_server_enabled": 0,
         "inference_server_mode": "local",
         "inference_remote_host": "127.0.0.1",
