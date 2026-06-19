@@ -981,17 +981,18 @@ class Warhammer40kEnv(gym.Env):
         action_spaces = {
             'move':   spaces.Discrete(5),          # legacy: глобальное направление (используется как fallback)
             'attack': spaces.Discrete(2),          # 0 = fallback/leave fight, 1 = try charge/engage
-            'shoot':  spaces.Discrete(len(enemy)), # индекс цели для стрельбы
-            'charge': spaces.Discrete(len(enemy)), # индекс цели для чарджа
             'use_cp': spaces.Discrete(5),          # 0 none, 1 bravery, 2 overwatch, 3 smokescreen, 4 heroic
             'cp_on':  spaces.Discrete(len(model))  # на какого своего юнита тратить CP
         }
 
-        # ✅ 2) Добавляем индивидуальные "move_num_i" для каждого модельного юнита
-        # move_num_i теперь трактуется как индекс клетки в списке reachable-клеток
-        # (с fallback на старую directional-логику при невалидном выборе).
+        # ✅ 2) Добавляем индивидуальные per-unit головы для каждого модельного юнита:
+        #   move_num_i  — индекс клетки в списке reachable-клеток (fallback на directional);
+        #   shoot_num_i — локальный ранг в легальных целях юнита (idOfE = valid[raw]);
+        #   charge_num_i — глобальный enemy-index цели чарджа.
         for i in range(len(model)):
             action_spaces[f"move_num_{i}"] = spaces.Discrete(24)
+            action_spaces[f"shoot_num_{i}"] = spaces.Discrete(len(enemy))
+            action_spaces[f"charge_num_{i}"] = spaces.Discrete(len(enemy))
 
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
@@ -1713,29 +1714,35 @@ class Warhammer40kEnv(gym.Env):
             attack_mask[1] = True
         masks["attack"] = attack_mask
 
-        # shoot/charge -> глобальные id
-        shoot_n = int(spaces["shoot"].n)
-        shoot_mask = np.zeros(shoot_n, dtype=bool)
-        for u_idx in can_shoot_units:
-            for t_idx in self.get_shoot_targets_for_unit(side, u_idx):
-                if 0 <= int(t_idx) < shoot_n:
-                    shoot_mask[int(t_idx)] = True
-        if not shoot_mask.any():
-            # no-op semantics: при отсутствии валидных целей оставляем только индекс 0
-            # вместо all-true, чтобы policy не получала ложные альтернативы.
-            shoot_mask[0] = True
-        masks["shoot"] = shoot_mask
+        # shoot_num_i: ранг в легальных целях юнита i (idOfE = valid[raw]).
+        for u_idx in range(len(unit_health)):
+            key = f"shoot_num_{u_idx}"
+            if key not in spaces:
+                continue
+            n = int(spaces[key].n)
+            m = np.zeros(n, dtype=bool)
+            if u_idx in can_shoot_units:
+                k = len(self.get_shoot_targets_for_unit(side, u_idx))
+                if k > 0:
+                    m[: min(n, k)] = True
+            if not m.any():
+                m[0] = True
+            masks[key] = m
 
-        charge_n = int(spaces["charge"].n)
-        charge_mask = np.zeros(charge_n, dtype=bool)
-        for u_idx in can_charge_units:
-            for t_idx in self.get_charge_targets_for_unit(side, u_idx):
-                if 0 <= int(t_idx) < charge_n:
-                    charge_mask[int(t_idx)] = True
-        if not charge_mask.any():
-            # no-op semantics: при отсутствии валидных целей оставляем только индекс 0.
-            charge_mask[0] = True
-        masks["charge"] = charge_mask
+        # charge_num_i: глобальный enemy-index целей чарджа юнита i.
+        for u_idx in range(len(unit_health)):
+            key = f"charge_num_{u_idx}"
+            if key not in spaces:
+                continue
+            n = int(spaces[key].n)
+            m = np.zeros(n, dtype=bool)
+            if u_idx in can_charge_units:
+                for t_idx in self.get_charge_targets_for_unit(side, u_idx):
+                    if 0 <= int(t_idx) < n:
+                        m[int(t_idx)] = True
+            if not m.any():
+                m[0] = True
+            masks[key] = m
 
         # cp_on: только живые юниты цели
         cp_n = int(spaces["cp_on"].n)
