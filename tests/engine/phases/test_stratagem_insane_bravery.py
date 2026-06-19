@@ -72,3 +72,22 @@ def test_insane_bravery_blocked_without_cp():
     assert env.modelCP == 0
     assert state.battle_shock[0] is True
     assert all(rec[1] != "insane_bravery" for rec in env.stratagem_used)
+
+
+def test_insane_bravery_value_gate_used_when_policy(monkeypatch):
+    from tests.engine.phases._helpers import build_env
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    calls = {}
+    def fake_gate(sid, side, chosen, cand, phase, cp, **k):
+        calls["sid"] = sid
+        return True
+    env.reaction_policy = object()  # не None
+    monkeypatch.setattr(env, "_should_use_stratagem", fake_gate)
+    # форсим провал battle-shock на юните 0
+    monkeypatch.setattr("core.envs.warhamEnv.dice", lambda num=1: [1, 1])
+    env.unit_health[0] = 1
+    env.unit_data[0]["W"] = 4  # ниже половины
+    env.modelCP = 3
+    env.command_phase("model", action={"use_cp": 0, "cp_on": -1})
+    assert calls.get("sid") == "insane_bravery"

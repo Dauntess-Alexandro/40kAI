@@ -4657,7 +4657,12 @@ class Warhammer40kEnv(gym.Env):
                         self.modelOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if decide_bravery is not None:
+                        if getattr(self, "reaction_policy", None) is not None and decide_bravery is None:
+                            _use_bravery = self._should_use_stratagem(
+                                "insane_bravery", "model", i, [i], "command", int(self.modelCP),
+                                net=getattr(self, "_reaction_net_by_side", {}).get("model"),
+                            )
+                        elif decide_bravery is not None:
                             _use_bravery = bool(decide_bravery(i))
                         else:
                             _use_bravery = bool(action and action.get("use_cp") == 1 and action.get("cp_on") == i)
