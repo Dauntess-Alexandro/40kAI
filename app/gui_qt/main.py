@@ -7319,11 +7319,22 @@ class GUIController(QtCore.QObject):
         if self._handle_progress_phase_line(line):
             return
         normalized = line.strip()
-        if self._dist_progress_enabled and str(self._dist_progress_mode or "") == "pool":
-            az_ep_m = re.search(r"\[AZ\]\s+ep=\d+/\d+\s+actor=(\d+)", normalized)
-            if az_ep_m and int(az_ep_m.group(1)) < 100:
-                self._dist_pc1_ep_done += 1
-                self._update_dist_progress_display()
+        if (
+            self._dist_progress_enabled
+            and str(self._dist_progress_mode or "") == "pool"
+            and not self._dist_pc1_marker_seen
+        ):
+            # Fallback для старых прогонов без pc1_ep_collected: [TRAIN][EP] от learner'а
+            # (отстаёт на очередь, но лучше нуля). Актуальный путь — маркер актора.
+            train_ep_m = re.search(
+                r"\[TRAIN\]\[EP\]\s+ep=\d+/\d+\s+algo=(?:az|gumbel_az)(?:\s+actor=(\d+))?",
+                normalized,
+            )
+            if train_ep_m:
+                actor_raw = train_ep_m.group(1)
+                if actor_raw is None or int(actor_raw) < 100:
+                    self._dist_pc1_ep_done += 1
+                    self._update_dist_progress_display()
         if is_az_algo(str(self._training_algo)) and re.search(
             r"\[AZ\]\[ACTOR_LEARNER\] done\b", normalized
         ):

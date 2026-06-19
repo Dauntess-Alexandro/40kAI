@@ -9258,6 +9258,15 @@ def _az_env_worker_entry(
                     "policy_version": int(current_policy_version),
                 },
             )
+            if str(rollout_sink_mode or "local").strip().lower() == "local":
+                # Своевременный маркер сбора ПК1 для GUI (аналог pc2_ep_accepted у приёмника).
+                try:
+                    print(
+                        f"[TRAIN][DIST][PC1] pc1_ep_collected actor={int(worker_id)}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
 
         if rollout_batch:
             sink.put(
@@ -9609,6 +9618,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     }
     _init_weights_cpu = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
     _az_contract_hash = str(env_contract.get("contract_hash", "") or "")
+    _az_dist_stop_flag = str(az_dist_stop_flag_path(TRAIN_ALGO)) if AZ_DISTRIBUTED_ACTORS else ""
     rollout_receiver = None
     if AZ_DISTRIBUTED_ACTORS:
         _clear_az_dist_stop_flag()
@@ -9828,7 +9838,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         int(AZ_DIST_ROLLOUT_PORT),
                         str(AZ_DIST_AUTH_TOKEN),
                         str(_az_contract_hash),
-                        "",
+                        _az_dist_stop_flag,
                     ),
                     daemon=True,
                 )
@@ -9867,7 +9877,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         int(AZ_DIST_ROLLOUT_PORT),
                         str(AZ_DIST_AUTH_TOKEN),
                         str(_az_contract_hash),
-                        "",
+                        _az_dist_stop_flag,
                     ),
                     daemon=True,
                 )
@@ -9887,6 +9897,30 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     dist_drain_until = 0.0
     dist_remote_transitions_total = 0
     dist_remote_stale_total = 0
+
+    def _az_dist_remote_alive() -> int:
+        if rollout_receiver is None:
+            return 0
+        return int(rollout_receiver.active_remote_workers())
+
+    def _az_dist_should_finish_drain() -> tuple[bool, str]:
+        if not dist_draining:
+            return False, ""
+        remote_alive = _az_dist_remote_alive()
+        if remote_alive == 0 and done_actors >= active_actors:
+            return True, "all_workers_idle"
+        if time.monotonic() >= dist_drain_until:
+            return True, "drain_budget_elapsed"
+        return False, "drain_waiting"
+
+    def _az_dist_log_drain_done(reason: str) -> None:
+        _ln = (
+            f"[TRAIN][DIST] drain_done reason={reason} "
+            f"ep_done={int(episodes_finished)}/{int(totLifeT)} "
+            f"local_done={done_actors}/{active_actors} remote_alive={_az_dist_remote_alive()}"
+        )
+        append_agent_log(_ln)
+        print(_ln, flush=True)
 
     # P2: фаза прогресса для GUI (collecting → draining → done). Только distributed AZ.
     if AZ_DISTRIBUTED_ACTORS:
@@ -9910,16 +9944,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     append_agent_log(_ln)
                     print(_ln, flush=True)
                 if not dist_draining:
-                    _remote_alive = (
-                        rollout_receiver.active_remote_workers() if rollout_receiver is not None else 0
-                    )
+                    _remote_alive = _az_dist_remote_alive()
                     _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
-                    if _drain_left <= 0 and done_actors >= active_actors:
-                        append_agent_log(
-                            f"[TRAIN][DIST] drain_skipped remote_alive={_remote_alive} "
-                            f"ep_done={int(episodes_finished)}/{int(totLifeT)} reason=budget_elapsed"
-                        )
-                        break
                     dist_draining = True
                     for _ln in (
                         "[TRAIN][PHASE] draining",
@@ -9928,7 +9954,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     ):
                         append_agent_log(_ln)
                         print(_ln, flush=True)
-                if dist_draining and time.monotonic() >= dist_drain_until and done_actors >= active_actors:
+                _finish_drain, _drain_reason = _az_dist_should_finish_drain()
+                if _finish_drain:
+                    _az_dist_log_drain_done(_drain_reason)
                     break
             elif active_actors > 0 and done_actors >= active_actors:
                 # Локальные воркеры закончили, ждём эпизоды с PC2 до totLifeT.
@@ -9949,9 +9977,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 print(wait_line, flush=True)
                 append_agent_log(wait_line)
                 if dist_draining:
-                    _remote_alive = (
-                        rollout_receiver.active_remote_workers() if rollout_receiver is not None else 0
-                    )
+                    _remote_alive = _az_dist_remote_alive()
                     _drain_left = max(0, int(round(dist_drain_until - time.monotonic())))
                     dist_line = (
                         f"[TRAIN][DIST] remote_alive={_remote_alive} "
@@ -9959,6 +9985,10 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     )
                     print(dist_line, flush=True)
                     append_agent_log(dist_line)
+                    _finish_drain, _drain_reason = _az_dist_should_finish_drain()
+                    if _finish_drain:
+                        _az_dist_log_drain_done(_drain_reason)
+                        break
                 last_heartbeat = now
             continue
 

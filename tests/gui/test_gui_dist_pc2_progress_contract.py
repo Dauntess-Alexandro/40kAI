@@ -43,7 +43,15 @@ class TestGuiDistPc2ProgressContract(unittest.TestCase):
     def test_az_dist_progress_uses_pool_mode(self):
         self.assertIn('self._dist_progress_mode = "pool"', self.source)
         self.assertIn("alphazero_tree", self.source)
-        self.assertIn(r"\[AZ\]\s+ep=\d+/\d+\s+actor=(\d+)", self.source)
+        self.assertIn(r"\[TRAIN\]\[EP\]\s+ep=\d+/\d+\s+algo=(?:az|gumbel_az)", self.source)
+
+    def test_az_env_worker_emits_pc1_ep_collected_marker(self):
+        train_src = Path("train.py").read_text(encoding="utf-8")
+        start = train_src.index("def _az_env_worker_entry(")
+        end = train_src.index("\ndef _main_actor_learner_alphazero", start)
+        body = train_src[start:end]
+        self.assertIn("[TRAIN][DIST][PC1] pc1_ep_collected actor=", body)
+        self.assertIn('rollout_sink_mode or "local"', body)
 
     def test_az_rollout_receiver_emits_pc2_ep_marker(self):
         train_src = Path("train.py").read_text(encoding="utf-8")
