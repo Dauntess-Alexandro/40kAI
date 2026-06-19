@@ -57,3 +57,30 @@ def test_overwatch_skipped_when_no_damage(monkeypatch):
 
     assert "overwatch" not in [r[1] for r in env.stratagem_used]
     assert env.modelCP == cp_before
+
+
+def test_overwatch_blocked_beyond_24(monkeypatch):
+    import core.envs.warhamEnv as warham_mod
+
+    def fake_attack(ah, w, ad, dh, dd, *a, **k):
+        return [3.0], max(0.0, dh - 3.0)
+
+    monkeypatch.setattr(warham_mod, "attack", fake_attack)
+    env = build_env()
+    _setup(env)
+    # Перемещаем обе стороны через unit_coords; сбрасываем model_positions,
+    # чтобы _distance_between_units опирался на unit_coords (иначе model_positions в приоритете).
+    env.unit_model_positions = [[] for _ in env.unit_model_positions]
+    env.enemy_model_positions = [[] for _ in env.enemy_model_positions]
+    # увести цель за 24" (грид-координаты), дальность оружия 24
+    env.unit_coords[0] = [0.0, 0.0]
+    env.unit_coords[1] = [0.0, 0.0]
+    env.enemy_coords[0] = [25.0, 0.0]
+    env._resolve_overwatch("model", "enemy", 0, "movement")
+    assert "overwatch" not in [r[1] for r in env.stratagem_used]
+
+
+def test_overwatch_usage_limit_per_turn():
+    from core.engine.phases.stratagems import UsageLimit, by_id
+
+    assert by_id("overwatch").usage_limit is UsageLimit.PER_TURN

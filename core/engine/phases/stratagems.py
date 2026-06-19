@@ -62,8 +62,9 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   WHEN: ход оппонента, когда вражеский юнит начинает/заканчивает Normal/Advance/Fall Back/Charge
     #   move в пределах 24" и видимости. COST: 1 CP. EFFECT: ваш юнит немедленно стреляет по нему,
     #   но попадания только на немодифицированную 6. RESTRICTION: once per turn (на ваш ход).
-    # Реализация (песочница): effect_id=shoot_hits_on_6 на ENEMY_ENDED_MOVE в movement/charge,
-    # usage_limit PER_PHASE (упрощение «once per turn»). Условия 24"/видимости — на стороне движка.
+    # Реализация: effect_id=shoot_hits_on_6 на ENEMY_ENDED_MOVE в movement/charge,
+    # usage_limit PER_TURN (раз в ход, согласно правилам). Условия: дальность 24", требуется LOS,
+    # once per turn (PER_TURN). Гейт кандидатов — на стороне движка (_collect_overwatch_candidates).
     StratagemDef(
         id="overwatch",
         name_ru="Fire Overwatch",
@@ -73,7 +74,7 @@ REGISTRY: tuple[StratagemDef, ...] = (
         trigger=Trigger.ENEMY_ENDED_MOVE,
         scope="reacting_unit",
         keyword_req=(),
-        usage_limit=UsageLimit.PER_PHASE,
+        usage_limit=UsageLimit.PER_TURN,
         effect_id="shoot_hits_on_6",
     ),
     # Smokescreen — Core Stratagem 10ed (Wahapedia):

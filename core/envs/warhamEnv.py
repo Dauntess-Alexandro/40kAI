@@ -4268,8 +4268,14 @@ class Warhammer40kEnv(gym.Env):
                 continue
             if defender_weapon[i] == "None":
                 continue
-            if self._distance_between_units(defender_side, i, target_side, moving_idx) <= defender_weapon[i]["Range"]:
-                candidates.append(i)
+            within = self._distance_between_units(defender_side, i, target_side, moving_idx)
+            weapon_range = float(defender_weapon[i]["Range"])
+            if within > min(24.0, weapon_range):
+                continue
+            rep = self._visibility_report_between_units(defender_side, i, target_side, moving_idx)
+            if not bool(rep.get("los", False)):
+                continue
+            candidates.append(i)
         return candidates
 
     def _resolve_overwatch(self, defender_side: str, moving_unit_side: str, moving_idx: int, phase: str, manual: bool = False):
