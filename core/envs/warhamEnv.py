@@ -4147,6 +4147,28 @@ class Warhammer40kEnv(gym.Env):
 
         self._pending_reaction_trigger = _rt
 
+    def _stratagem_already_active(self, side: str, stratagem_id: str, unit_idx: int, phase: str) -> bool:
+        """True, если стратагема уже применена на этом юните в текущем (battle_round, phase).
+
+        Cover-стратагемы (go to ground/smokescreen) действуют «до конца фазы» — повторное
+        применение на том же юните бессмысленно и зря тратит CP/дублирует журнал.
+        """
+        rnd = int(getattr(self, "battle_round", 1) or 1)
+        phase_str = str(phase)
+        for rec in list(getattr(self, "stratagem_used", None) or []):
+            if len(rec) < 5:
+                continue
+            if (
+                str(rec[0]) == str(side)
+                and str(rec[1]) == str(stratagem_id)
+                and int(rec[2]) == rnd
+                and str(rec[3]) == phase_str
+                and rec[4] is not None
+                and int(rec[4]) == int(unit_idx)
+            ):
+                return True
+        return False
+
     def _maybe_use_go_to_ground(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """10e Go to Ground: реакция INFANTRY-защитника при выборе целью стрельбы → benefit of cover.
 
@@ -4161,6 +4183,9 @@ class Warhammer40kEnv(gym.Env):
 
         if not self._unit_has_keyword(unit_data, "infantry"):
             return None
+        # Уже укрыт в этой фазе → возвращаем активный эффект без повторного применения/расхода CP.
+        if self._stratagem_already_active(defender_side, "go_to_ground", defender_idx, phase):
+            return {"cover": True, "invuln_grant": 6}
         if cp < 1:
             return None
 
@@ -4210,6 +4235,9 @@ class Warhammer40kEnv(gym.Env):
 
         if not self._unit_has_smoke(unit_data):
             return self._maybe_use_go_to_ground(defender_side, defender_idx, phase, manual=manual)
+        # Уже укрыт в этой фазе → возвращаем активный эффект без повторного применения/расхода CP.
+        if self._stratagem_already_active(defender_side, "smokescreen", defender_idx, phase):
+            return {"cover": True, "hit_penalty": 1}
         if cp < 1:
             self._log_rule(
                 defender_side,

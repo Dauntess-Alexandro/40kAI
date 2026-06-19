@@ -30,6 +30,26 @@ def test_go_to_ground_gives_cover_for_infantry_without_smoke():
     assert any(rec[1] == "go_to_ground" for rec in env.stratagem_used)
 
 
+def test_go_to_ground_not_reapplied_same_phase():
+    # Повторный вызов в той же фазе на том же юните не должен дублировать журнал и тратить CP,
+    # но обязан вернуть активный cover-эффект для текущего выстрела.
+    env = build_env()
+    env.reaction_policy = None  # без политики гейт = legacy «да»
+    env.modelCP = 3
+    env.battle_round = 1
+    env.stratagem_used = []
+    _infantry(env, 0)
+    eff1 = env._maybe_use_go_to_ground("model", 0, "shooting")
+    cp_after_first = env.modelCP
+    n_after_first = len([r for r in env.stratagem_used if r[1] == "go_to_ground"])
+    eff2 = env._maybe_use_go_to_ground("model", 0, "shooting")  # повтор той же фазы
+    assert eff1 == {"cover": True, "invuln_grant": 6}
+    assert eff2 == {"cover": True, "invuln_grant": 6}
+    assert env.modelCP == cp_after_first  # CP не списан повторно
+    assert len([r for r in env.stratagem_used if r[1] == "go_to_ground"]) == n_after_first  # без дубля
+    assert n_after_first == 1
+
+
 def test_go_to_ground_skipped_when_no_cp():
     env = build_env()
     env.modelCP = 0

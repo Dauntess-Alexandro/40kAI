@@ -72,3 +72,22 @@ def test_smokescreen_returns_cover_and_stealth():
     assert isinstance(eff, dict)
     assert eff.get("cover") is True
     assert int(eff.get("hit_penalty", 0)) == 1
+
+
+def test_smokescreen_not_reapplied_same_phase():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.reaction_policy = None
+    env.modelCP = 3
+    env.battle_round = 1
+    env.stratagem_used = []
+    env.unit_data[0]["Keywords"] = ["Smoke"]
+    eff1 = env._maybe_use_smokescreen("model", 0, "shooting")
+    cp_after_first = env.modelCP
+    n_after_first = len([r for r in env.stratagem_used if r[1] == "smokescreen"])
+    eff2 = env._maybe_use_smokescreen("model", 0, "shooting")  # повтор той же фазы
+    assert eff1 == {"cover": True, "hit_penalty": 1}
+    assert eff2 == {"cover": True, "hit_penalty": 1}
+    assert env.modelCP == cp_after_first  # CP не списан повторно
+    assert len([r for r in env.stratagem_used if r[1] == "smokescreen"]) == n_after_first
+    assert n_after_first == 1
