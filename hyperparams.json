@@ -35,7 +35,7 @@
         "noisy_disable_eps": 1,
         "noisy_sigma_anneal": 0,
         "per_ensemble_priority_lambda": 0.1,
-        "distributed_actors_enabled": 1,
+        "distributed_actors_enabled": 0,
         "distributed_rollout_port": 5558,
         "distributed_auth_token": "",
         "distributed_local_episode_fraction": 0.6,

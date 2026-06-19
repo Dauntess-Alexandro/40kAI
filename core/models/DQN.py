@@ -519,3 +519,22 @@ class DQN(nn.Module):
                     continue
             probs.append(torch.softmax(head_logits, dim=1))
         return probs, None
+
+    def infer_with_value(self, obs, masks_by_head=None):
+        """Как infer, но второй элемент — V(s) ≈ mean(masked max per head). Один проход q_values."""
+        q_lists = self.q_values(obs)
+        probs = []
+        q_max_per_head = []
+        for idx, head_logits in enumerate(q_lists):
+            if masks_by_head is not None and idx < len(masks_by_head):
+                mask = masks_by_head[idx]
+                if mask is not None and mask.shape == head_logits.shape:
+                    safe_mask = torch.where(mask.any(dim=1, keepdim=True), mask, torch.ones_like(mask))
+                    masked = head_logits.masked_fill(~safe_mask, -1e9)
+                    probs.append(torch.softmax(masked, dim=1))
+                    q_max_per_head.append(masked.max(dim=1).values)
+                    continue
+            probs.append(torch.softmax(head_logits, dim=1))
+            q_max_per_head.append(head_logits.max(dim=1).values)
+        v = torch.stack(q_max_per_head, dim=1).mean(dim=1)
+        return probs, v

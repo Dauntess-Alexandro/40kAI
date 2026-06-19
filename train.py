@@ -170,6 +170,8 @@ from core.models.sampled_muzero_trainer import (
 from core.models.smz_inference_server import smz_inference_server_entry
 from core.models.smz_remote_search_cfg_builder import publish_smz_remote_search_cfg
 from core.models.utils import *
+from core.models.utils import _build_select_action_masks
+from core.engine.matchmaker import record_matchup
 
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
@@ -295,6 +297,9 @@ if DQN_NUM_LAYERS < 1:
     DQN_NUM_LAYERS = 1
 if DQN_ENSEMBLE_SIZE < 1:
     DQN_ENSEMBLE_SIZE = 1
+DQN_REACTION_VALUE_POLICY = _cfg_bool("DQN_REACTION_VALUE_POLICY", "reaction_value_policy", "1")
+if "DQN_REACTION_VALUE_POLICY" not in os.environ:
+    os.environ["DQN_REACTION_VALUE_POLICY"] = "1" if DQN_REACTION_VALUE_POLICY else "0"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
@@ -2617,18 +2622,23 @@ if "MCTS_WINDOW_NODES" not in os.environ:
     os.environ["MCTS_WINDOW_NODES"] = "1" if AZ_MCTS_WINDOW_NODES else "0"
 # B6: phase_obs_features (+24 dims obs). env-var приоритетнее hyperparams; прокидываем в os.environ,
 # чтобы spawn-акторы (Windows) построили env с тем же размером obs, что и learner.
-AZ_PHASE_OBS_FEATURES = resolve_phase_obs_features(
-    env_value=os.getenv("PHASE_OBS_FEATURES"),
-    cfg_value=AZ_CFG.get("phase_obs_features", 0),
-)
-os.environ["PHASE_OBS_FEATURES"] = "1" if AZ_PHASE_OBS_FEATURES else "0"
-# B3-full: стратагемы через net-value lookahead (дефолт 1 для AZ; 0 = legacy «всегда реагировать»).
-# resolve_phase_obs_features — generic-резолвер «env > cfg, truthy», переиспользуем.
-AZ_REACTION_VALUE_POLICY = resolve_phase_obs_features(
-    env_value=os.getenv("AZ_REACTION_VALUE_POLICY"),
-    cfg_value=AZ_CFG.get("reaction_value_policy", 1),
-)
-os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if AZ_REACTION_VALUE_POLICY else "0"
+AZ_PHASE_OBS_FEATURES = False
+AZ_REACTION_VALUE_POLICY = False
+if is_az_algo(TRAIN_ALGO):
+    AZ_PHASE_OBS_FEATURES = resolve_phase_obs_features(
+        env_value=os.getenv("PHASE_OBS_FEATURES"),
+        cfg_value=AZ_CFG.get("phase_obs_features", 0),
+    )
+    os.environ["PHASE_OBS_FEATURES"] = "1" if AZ_PHASE_OBS_FEATURES else "0"
+    # B3-full: стратагемы через net-value lookahead (дефолт 1 для AZ; 0 = legacy «всегда реагировать»).
+    AZ_REACTION_VALUE_POLICY = resolve_phase_obs_features(
+        env_value=os.getenv("AZ_REACTION_VALUE_POLICY"),
+        cfg_value=AZ_CFG.get("reaction_value_policy", 1),
+    )
+    os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if AZ_REACTION_VALUE_POLICY else "0"
+else:
+    os.environ["PHASE_OBS_FEATURES"] = "0"
+    os.environ["AZ_REACTION_VALUE_POLICY"] = "0"
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
     os.getenv("AZ_MCTS_ROOT_DIRICHLET_ONLY", str(AZ_CFG.get("mcts_root_dirichlet_only", 1)))
@@ -4680,6 +4690,15 @@ def main():
             append_agent_log(warn_msg)
 
     target_net.eval()
+
+    if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+        from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
+
+        for ctx in env_contexts:
+            install_dqn_stratagem_policy(ctx["env"], policy_net, device)
+        append_agent_log(
+            "[DQN][CONFIG] reaction_value_policy установлена (max-Q proxy, learner_only)"
+        )
     
     if USE_COMPILE and hasattr(torch, "compile"):
         try:
@@ -5352,16 +5371,28 @@ def main():
                 next_observation, reward, done, res, info, next_shoot_mask = step_results[idx]
                 ctx["shoot_mask"] = next_shoot_mask
             else:
-                tracer = ctx.get("stratagem_tracer")
-                if tracer is not None:
-                    next_observation, reward, done, res, info = tracer.run_model_step(
-                        ctx["env"],
-                        unwrap_env(ctx["env"]),
-                        int(ctx["ep_len"]),
-                        action_dicts[idx],
-                    )
-                else:
-                    next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
+                if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+                    from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
+                    from core.models.option_candidates import attach_fight_stratagem_plan
+
+                    fight_plan = dqn_build_fight_plan(ctx["env"], policy_net, device, side="model")
+                    attach_fight_stratagem_plan(ctx["env"], fight_plan)
+                try:
+                    tracer = ctx.get("stratagem_tracer")
+                    if tracer is not None:
+                        next_observation, reward, done, res, info = tracer.run_model_step(
+                            ctx["env"],
+                            unwrap_env(ctx["env"]),
+                            int(ctx["ep_len"]),
+                            action_dicts[idx],
+                        )
+                    else:
+                        next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
+                finally:
+                    if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+                        from core.models.option_candidates import attach_fight_stratagem_plan
+
+                        attach_fight_stratagem_plan(ctx["env"], None)
                 perf_stats["env_step_s"] += time.perf_counter() - step_start
                 perf_counts["env_steps"] += 1
             raw_reward = float(reward)
@@ -6653,6 +6684,11 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             )
     target_net.eval()
     scaler = torch.cuda.amp.GradScaler(enabled=bool(USE_AMP and device.type == "cuda"))
+
+    if DQN_REACTION_VALUE_POLICY:
+        append_agent_log(
+            "[DQN][CONFIG] reaction_value_policy=ON (max-Q proxy, learner_only; actors устанавливают на env)"
+        )
 
     # Веса для акторов (CPU). MVP: без онлайн-синхронизации, только стартовая копия.
     init_weights = {
@@ -8174,6 +8210,17 @@ def _actor_learner_actor_entry(
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
 
+        if DQN_REACTION_VALUE_POLICY:
+            try:
+                from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
+
+                install_dqn_stratagem_policy(env, cpu_net, torch.device("cpu"))
+                append_agent_log(f"[DQN][ACTOR] actor={int(actor_idx)} reaction_value_policy=ON")
+            except Exception as exc:
+                append_agent_log(
+                    f"[DQN][ACTOR][WARN] actor={int(actor_idx)} reaction_value_policy install failed: {exc}"
+                )
+
         sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
         sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_policy.pth")
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "10")))
@@ -8333,7 +8380,20 @@ def _actor_learner_actor_entry(
                     env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
                 else:
                     env_unwrapped.enemyTurn(trunc=trunc)
-                next_obs, reward, done, res, info2 = env.step(action_dict)
+                if DQN_REACTION_VALUE_POLICY:
+                    from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
+                    from core.models.option_candidates import attach_fight_stratagem_plan
+
+                    attach_fight_stratagem_plan(
+                        env, dqn_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
+                    )
+                try:
+                    next_obs, reward, done, res, info2 = env.step(action_dict)
+                finally:
+                    if DQN_REACTION_VALUE_POLICY:
+                        from core.models.option_candidates import attach_fight_stratagem_plan
+
+                        attach_fight_stratagem_plan(env, None)
                 last_info = info2 if isinstance(info2, dict) else {}
                 last_res = res
                 ep_reward += float(reward)

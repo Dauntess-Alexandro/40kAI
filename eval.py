@@ -40,6 +40,7 @@ from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 from core.models.option_candidates import attach_fight_stratagem_plan
+from core.models.dqn_stratagem_bridge import dqn_reaction_value_policy_enabled
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
 from core.models.sampled_muzero_model import (
     load_sampled_muzero_state_dict,
@@ -832,6 +833,12 @@ def run_episode(
                 len(model_units),
                 action_masks=action_masks,
             )
+            if dqn_reaction_value_policy_enabled():
+                from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
+
+                attach_fight_stratagem_plan(
+                    env, dqn_build_fight_plan(env, policy_net, device, side="model")
+                )
         action_dict = convertToDict(action)
         masks_counts = _head_masks_counts()
         shoot_targets = 0
@@ -1326,6 +1333,11 @@ def main():
             target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
         policy_net.eval()
         target_net.eval()
+        if dqn_reaction_value_policy_enabled():
+            from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
+
+            install_dqn_stratagem_policy(env, policy_net, device)
+            log("[EVAL][DQN][CONFIG] reaction_value_policy установлена (max-Q proxy, learner_only)")
 
     az_eval_mode = str(os.getenv("AZ_EVAL_MODE", "mcts")).strip().lower() or "mcts"
     az_opp_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts")).strip().lower() or "mcts"

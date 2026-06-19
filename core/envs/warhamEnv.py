@@ -1746,15 +1746,29 @@ class Warhammer40kEnv(gym.Env):
                 m[0] = True
             masks[key] = m
 
-        # cp_on: только живые юниты цели
+        # cp_on: legacy bravery target; при reaction_policy head мёртв (движок выбирает юнит).
         cp_n = int(spaces["cp_on"].n)
+        rvp_on = getattr(self, "reaction_policy", None) is not None
         cp_mask = np.zeros(cp_n, dtype=bool)
-        for idx in range(min(cp_n, len(unit_health))):
-            if unit_health[idx] > 0:
-                cp_mask[idx] = True
-        if not cp_mask.any():
-            cp_mask[:] = True
+        if rvp_on:
+            cp_mask[0] = True
+        else:
+            for idx in range(min(cp_n, len(unit_health))):
+                if unit_health[idx] > 0:
+                    cp_mask[idx] = True
+            if not cp_mask.any():
+                cp_mask[:] = True
         masks["cp_on"] = cp_mask
+
+        # use_cp: реакции (2/3/4) не исполняются через action head.
+        use_cp_n = int(spaces["use_cp"].n)
+        use_cp_mask = np.zeros(use_cp_n, dtype=bool)
+        use_cp_mask[0] = True
+        cp_now = int(self.modelCP if is_model else self.enemyCP)
+        phase_cmd = str(getattr(self, "phase", "")).lower() == "command"
+        if not rvp_on and cp_now > 0 and phase_cmd:
+            use_cp_mask[1] = True
+        masks["use_cp"] = use_cp_mask
 
         # move_num_i: legal overlay для каждого юнита
         for i in range(len(unit_health)):
@@ -4103,10 +4117,22 @@ class Warhammer40kEnv(gym.Env):
                     resolve_trigger(apply)
                 import torch
 
+                from core.models.action_contract import ordered_action_keys
+
                 obs = torch.tensor(
                     np.asarray([self.get_observation_for_side(side)], dtype=np.float32), dtype=torch.float32
                 )
-                _, value = net.infer(obs)
+                if hasattr(net, "infer_with_value"):
+                    legal = self.get_legal_action_masks_by_head(side=side)
+                    n_units = len(self.unit_data) if side == "model" else len(self.enemy_data)
+                    keys = ordered_action_keys(int(n_units))
+                    masks_by_head = [
+                        torch.tensor(legal[k], dtype=torch.bool, device=obs.device).unsqueeze(0)
+                        for k in keys
+                    ]
+                    _, value = net.infer_with_value(obs, masks_by_head=masks_by_head)
+                else:
+                    _, value = net.infer(obs)
                 v = float(value.reshape(-1)[0])
         finally:
             self._reaction_sim_active = False
