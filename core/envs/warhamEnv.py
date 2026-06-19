@@ -4104,7 +4104,16 @@ class Warhammer40kEnv(gym.Env):
                 return None
             use_it = strat
         else:
-            use_it = self._should_use_reaction("go_to_ground", defender_side, defender_idx, [defender_idx], phase, cp)
+            use_it = self._should_use_reaction(
+                "go_to_ground",
+                defender_side,
+                defender_idx,
+                [defender_idx],
+                phase,
+                cp,
+                resolve_trigger=getattr(self, "_pending_reaction_trigger", None),
+                net=getattr(self, "_reaction_net_by_side", {}).get(defender_side),
+            )
 
         if not use_it:
             return None
