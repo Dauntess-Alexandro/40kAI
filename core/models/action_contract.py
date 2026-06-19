@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
 
 import numpy as np
 import torch
 
-
-BASE_ACTION_HEADS = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+BASE_ACTION_HEADS = ["move", "attack", "use_cp", "cp_on"]
 
 
 def ordered_action_keys(len_model: int) -> list[str]:
+    n = int(len_model)
     keys = list(BASE_ACTION_HEADS)
-    for i_u in range(int(len_model)):
-        keys.append(f"move_num_{i_u}")
+    keys += [f"move_num_{i}" for i in range(n)]
+    keys += [f"shoot_num_{i}" for i in range(n)]
+    keys += [f"charge_num_{i}" for i in range(n)]
     return keys
 
 
@@ -36,7 +36,7 @@ def action_tensor_to_dict(action, len_model: int) -> dict:
     else:
         naction = np.asarray(action)[0]
     keys = ordered_action_keys(int(len_model))
-    action_dict: Dict[str, int] = {}
+    action_dict: dict[str, int] = {}
     for idx, key in enumerate(keys):
         action_dict[key] = int(naction[idx])
     return action_dict
@@ -46,8 +46,8 @@ def action_tensor_to_dict(action, len_model: int) -> dict:
 class FactorizedLegalMasks:
     masks: dict[str, np.ndarray]
 
-    def as_ordered_list(self, len_model: int) -> List[torch.Tensor]:
-        out: List[torch.Tensor] = []
+    def as_ordered_list(self, len_model: int) -> list[torch.Tensor]:
+        out: list[torch.Tensor] = []
         for key in ordered_action_keys(int(len_model)):
             arr = self.masks.get(key)
             if arr is None:
