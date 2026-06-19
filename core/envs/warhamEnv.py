@@ -2224,7 +2224,15 @@ class Warhammer40kEnv(gym.Env):
         """Возвращает итоговый effect для ranged-атаки c учётом LOS/obscured.
 
         При obscured=True автоматически даём benefit of cover (если он ещё не активен).
+        Если base_effect — dict (например, от Go to Ground), мёржим cover в него и возвращаем dict.
         """
+        if isinstance(base_effect, dict):
+            report = self._visibility_report_between_units(attacker_side, int(attacker_idx), defender_side, int(defender_idx))
+            if bool(report.get("los", False)) and bool(report.get("obscured", False)):
+                base_effect = dict(base_effect)
+                base_effect["cover"] = True
+            return base_effect
+
         effect_norm = str(base_effect).strip().lower() if base_effect is not None else ""
         if effect_norm == "benefit of cover":
             return "benefit of cover"
@@ -4163,10 +4171,10 @@ class Warhammer40kEnv(gym.Env):
             defender_side,
             defender_idx,
             "Go to Ground",
-            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: benefit of cover до конца фазы.",
+            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: Benefit of Cover + 6+ invulnerable save до конца фазы.",
             phase=phase,
         )
-        return "benefit of cover"
+        return {"cover": True, "invuln_grant": 6}
 
     def _maybe_use_smokescreen(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """

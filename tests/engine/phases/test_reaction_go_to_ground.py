@@ -44,7 +44,10 @@ def test_go_to_ground_applied_when_cover_saves_damage():
     cp_before = env.enemyCP
     effect = env._maybe_use_go_to_ground("enemy", 0, "shooting")
 
-    assert effect == "benefit of cover"
+    # Go to Ground теперь возвращает dict: Benefit of Cover + 6+ invuln (Task A5)
+    assert isinstance(effect, dict)
+    assert effect.get("cover") is True
+    assert int(effect.get("invuln_grant", 0)) == 6
     assert "go_to_ground" in [r[1] for r in env.stratagem_used]
     assert env.enemyCP == cp_before - 1
 

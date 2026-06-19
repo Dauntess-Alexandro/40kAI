@@ -153,8 +153,9 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Go-to-Ground
     #   WHEN: Shooting phase оппонента, когда выбрана цель — ваш INFANTRY-юнит. COST: 1 CP.
     #   EFFECT: до конца фазы юнит получает Benefit of Cover и +1 к save throws.
-    # Реализация (песочница): моделируем только Benefit of Cover (effect_id=benefit_of_cover);
-    # +1 к save НЕ моделируется. keyword_req=("infantry",); usage_limit UNLIMITED.
+    # Реализация (песочница): реальный эффект — Benefit of Cover + 6+ invulnerable save; моделируем оба.
+    # effect_id=benefit_of_cover; _maybe_use_go_to_ground возвращает {"cover": True, "invuln_grant": 6}.
+    # keyword_req=("infantry",); usage_limit UNLIMITED.
     StratagemDef(
         id="go_to_ground",
         name_ru="Go to Ground",
