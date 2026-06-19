@@ -49,6 +49,11 @@ from core.engine.phases.replay_meta import (
     gmz_transition_from_rollout_dict,
 )
 from core.envs.warhamEnv import *
+from core.telemetry.stratagem_trace import (
+    StratagemEpisodeTracer,
+    make_stratagem_tracer_for_train,
+    train_stratagem_trace_enabled,
+)
 from project_paths import (
     AGENT_TRAIN_LOG_PATH,
     ARTIFACTS_METRICS_DIR,
@@ -57,11 +62,6 @@ from project_paths import (
     RUNTIME_STATE_DIR,
     TRAIN_DATA_PATH,
     ensure_runtime_dirs,
-)
-from core.telemetry.stratagem_trace import (
-    StratagemEpisodeTracer,
-    make_stratagem_tracer_for_train,
-    train_stratagem_trace_enabled,
 )
 
 plt.rcParams.update(
@@ -2622,11 +2622,11 @@ AZ_PHASE_OBS_FEATURES = resolve_phase_obs_features(
     cfg_value=AZ_CFG.get("phase_obs_features", 0),
 )
 os.environ["PHASE_OBS_FEATURES"] = "1" if AZ_PHASE_OBS_FEATURES else "0"
-# B3-full: реакции через net-value lookahead (дефолт 0 = legacy «всегда реагировать»).
+# B3-full: стратагемы через net-value lookahead (дефолт 1 для AZ; 0 = legacy «всегда реагировать»).
 # resolve_phase_obs_features — generic-резолвер «env > cfg, truthy», переиспользуем.
 AZ_REACTION_VALUE_POLICY = resolve_phase_obs_features(
     env_value=os.getenv("AZ_REACTION_VALUE_POLICY"),
-    cfg_value=AZ_CFG.get("reaction_value_policy", 0),
+    cfg_value=AZ_CFG.get("reaction_value_policy", 1),
 )
 os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if AZ_REACTION_VALUE_POLICY else "0"
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))

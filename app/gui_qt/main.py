@@ -5599,7 +5599,7 @@ class GUIController(QtCore.QObject):
             "AZ_REACTION_VALUE_POLICY",
             os.getenv(
                 "AZ_REACTION_VALUE_POLICY",
-                str(int(self._az_tree_hyperparams.get("reaction_value_policy", 0))),
+                str(int(self._az_tree_hyperparams.get("reaction_value_policy", 1))),
             ),
         )
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
@@ -6700,7 +6700,7 @@ class GUIController(QtCore.QObject):
             )
             env.insert(
                 "AZ_REACTION_VALUE_POLICY",
-                os.getenv("AZ_REACTION_VALUE_POLICY", str(int(az_hp.get("reaction_value_policy", 0)))),
+                os.getenv("AZ_REACTION_VALUE_POLICY", str(int(az_hp.get("reaction_value_policy", 1)))),
             )
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
@@ -6713,7 +6713,7 @@ class GUIController(QtCore.QObject):
             az_wn = env.value("MCTS_WINDOW_NODES", "0")
             az_joint_best = env.value("AZ_MCTS_JOINT_BEST_CHILD", "0")
             az_phase_obs = env.value("PHASE_OBS_FEATURES", "0")
-            az_reaction_vp = env.value("AZ_REACTION_VALUE_POLICY", "0")
+            az_reaction_vp = env.value("AZ_REACTION_VALUE_POLICY", "1")
             self._emit_log(
                 f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
                 f"candidate_mode={az_cand} windowed_selfplay={az_windowed} window_nodes={az_wn} "

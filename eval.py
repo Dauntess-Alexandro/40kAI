@@ -1175,8 +1175,8 @@ def main():
         f"[EVAL][AZ][CONFIG] phase_obs_features={int(phase_obs_features_enabled())} "
         f"obs_size={int(n_observations)}"
     )
-    # B3-full: реакции через net-value lookahead (env AZ_REACTION_VALUE_POLICY, дефолт 0 = legacy).
-    _reaction_vp_on = str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on")
+    # B3-full: стратагемы через net-value lookahead (env AZ_REACTION_VALUE_POLICY, дефолт 1 для AZ; 0 = legacy).
+    _reaction_vp_on = str(os.getenv("AZ_REACTION_VALUE_POLICY", "1")).strip().lower() in ("1", "true", "yes", "on")
     log(f"[EVAL][AZ][CONFIG] reaction_value_policy={int(_reaction_vp_on)}")
     eval_contract = make_env_contract(
         n_observations=n_observations,
@@ -1273,7 +1273,7 @@ def main():
         load_alphazero_state_dict(policy_net, normalize_state_dict(az_state))
         policy_net.eval()
         # B3-full: установка reaction_value_policy для learner-стороны (model). Оппонент → legacy.
-        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on"):
+        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "1")).strip().lower() in ("1", "true", "yes", "on"):
             try:
                 from core.models.reaction_value_policy import make_reaction_value_policy
 

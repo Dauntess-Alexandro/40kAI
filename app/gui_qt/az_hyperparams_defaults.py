@@ -161,7 +161,7 @@ _AZ_BASE: dict[str, int | float | str] = {
     "mcts_window_nodes": 0,
     "mcts_joint_action_from_best_child": 0,
     "phase_obs_features": 0,
-    "reaction_value_policy": 0,
+    "reaction_value_policy": 1,
 }
 
 # DEFAULT_AZ_TREE_HYPERPARAMS определён ниже как base + balanced-пресет
@@ -406,8 +406,9 @@ AZ_FIELD_TOOLTIPS: dict[str, str] = {
         "0 = старый размер obs. Меняет размер obs → несовместимо со старыми чекпойнтами (env PHASE_OBS_FEATURES)."
     ),
     "reaction_value_policy": (
-        "1 = реакции (go to ground/smokescreen/overwatch/heroic) решает net-value 1-ply lookahead "
-        "с резолвом триггера. 0 = всегда реагировать (legacy). env AZ_REACTION_VALUE_POLICY."
+        "1 = стратагемы (реакции go to ground/smokescreen/overwatch/heroic + fight + Insane Bravery) "
+        "решает net-value 1-ply lookahead с резолвом триггера (дефолт для AZ). "
+        "0 = всегда реагировать/legacy. env AZ_REACTION_VALUE_POLICY."
     ),
     "mcts_top_k_per_head": "Top-K действий на голову.",
     "mcts_max_depth": "Глубина rollout в MCTS (Tree).",
