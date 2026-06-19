@@ -18,6 +18,10 @@ from core.engine.phases.replay_meta import (
 )
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 from core.models.option_candidates import attach_fight_stratagem_plan
+from core.telemetry.stratagem_trace import (
+    make_stratagem_tracer_for_train,
+    stratagem_trace_actor_ok,
+)
 
 
 @dataclass
@@ -67,6 +71,11 @@ def play_episode_with_mcts(
         or str(os.getenv("VERBOSE_LOGS", "0")).strip() == "1"
     )
     trunc_mode = not full_trace_enabled
+    strat_tracer = (
+        make_stratagem_tracer_for_train()
+        if stratagem_trace_actor_ok(int(actor_idx))
+        else None
+    )
     state, _ = env.reset(options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode})
     done = False
     steps = 0
@@ -111,8 +120,14 @@ def play_episode_with_mcts(
         cp_before = snapshot_cp_before(env_u) if replay_phase_meta_enabled() else None
         phase_at_move = str(getattr(env_u, "phase", "") or "")
         attach_fight_stratagem_plan(env, getattr(mcts, "last_selected_fight_plan", None))
+        step_no = int(steps) + 1
         try:
-            next_state, reward, done, trunc, info = env.step(action_dict)
+            if strat_tracer is not None:
+                next_state, reward, done, trunc, info = strat_tracer.run_model_step(
+                    env, env_u, step_no, action_dict
+                )
+            else:
+                next_state, reward, done, trunc, info = env.step(action_dict)
         finally:
             attach_fight_stratagem_plan(env, None)
         phase_meta = capture_replay_phase_meta(
@@ -130,7 +145,15 @@ def play_episode_with_mcts(
         if isinstance(info, dict):
             last_info = dict(info)
         try:
-            env_u.enemyTurn(trunc=trunc_mode, policy_fn=enemy_policy_fn)
+            if strat_tracer is not None:
+                strat_tracer.run_enemy_turn(
+                    env_u,
+                    step_no,
+                    trunc=trunc_mode,
+                    policy_fn=enemy_policy_fn,
+                )
+            else:
+                env_u.enemyTurn(trunc=trunc_mode, policy_fn=enemy_policy_fn)
             if bool(getattr(env_u, "game_over", False)):
                 done = True
                 try:
@@ -183,4 +206,11 @@ def play_episode_with_mcts(
                 last_info = dict(gi)
         except Exception:
             last_info = {}
+    if strat_tracer is not None:
+        ep_label = (
+            f"actor={int(actor_idx)} steps={int(steps)}"
+            if int(actor_idx) >= 0
+            else f"steps={int(steps)}"
+        )
+        strat_tracer.log_episode_summary(ep_label)
     return out, last_info

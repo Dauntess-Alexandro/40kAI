@@ -58,6 +58,11 @@ from project_paths import (
     TRAIN_DATA_PATH,
     ensure_runtime_dirs,
 )
+from core.telemetry.stratagem_trace import (
+    StratagemEpisodeTracer,
+    make_stratagem_tracer_for_train,
+    train_stratagem_trace_enabled,
+)
 
 plt.rcParams.update(
     {
@@ -533,6 +538,15 @@ DEFAULT_MISSION_NAME = "only_war"
 LEAGUE_ENABLE = os.getenv("LEAGUE_ENABLE", "1") == "1"
 LEARNER_SIDE = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
 LEARNER_FACTION = str(os.getenv("LEARNER_FACTION", "Necrons")).strip() or "Necrons"
+
+
+def _make_train_stratagem_tracer() -> StratagemEpisodeTracer | None:
+    if USE_SUBPROC_ENVS:
+        return None
+    side = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    return make_stratagem_tracer_for_train(append_agent_log, learner_side=side)
+
+
 OPPONENT_POLICY = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
 OPPONENT_AGENT_ID = str(os.getenv("OPPONENT_AGENT_ID", "")).strip()
 RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v2")).strip() or "only_war_v2"
@@ -3624,6 +3638,12 @@ def run_ppo_training(
         f"adaptive_entropy={int(PPO_ADAPTIVE_ENTROPY)} vectorized_gae={os.getenv('PPO_VECTORIZED_GAE', '0')}"
     )
 
+    strat_tracer = _make_train_stratagem_tracer()
+    if strat_tracer is not None:
+        append_agent_log(
+            "[TRAIN][STRATAGEM] trace включён для PPO (VERBOSE_LOGS=1 / TRAIN_STRATAGEM_TRACE=1)."
+        )
+
     for episode in range(1, int(totLifeT) + 1):
         state, info0 = env.reset(options={"m": model, "e": enemy, "trunc": True})
         obs = to_np_state(state)
@@ -3637,7 +3657,11 @@ def run_ppo_training(
         final_info = {}
         while not done:
             env_unwrapped = unwrap_env(env)
-            env_unwrapped.enemyTurn(trunc=True)
+            step_no = int(ep_len) + 1
+            if strat_tracer is not None:
+                strat_tracer.run_enemy_turn(env_unwrapped, step_no, trunc=True)
+            else:
+                env_unwrapped.enemyTurn(trunc=True)
             if bool(getattr(env_unwrapped, "game_over", False)):
                 done = True
                 final_info = env_unwrapped.get_info() if hasattr(env_unwrapped, "get_info") else {}
@@ -3648,7 +3672,12 @@ def run_ppo_training(
             action_t, logprob_t, value_t = actor_critic.act(obs_t, masks_by_head=masks_batch, deterministic=False)
             action_np = action_t.squeeze(0).detach().cpu().numpy()
             action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-            next_obs, reward, done, _, info = env.step(action_dict)
+            if strat_tracer is not None:
+                next_obs, reward, done, _, info = strat_tracer.run_model_step(
+                    env, env_unwrapped, step_no, action_dict
+                )
+            else:
+                next_obs, reward, done, _, info = env.step(action_dict)
             final_info = info or {}
             buffer.add(
                 obs=obs,
@@ -3705,6 +3734,8 @@ def run_ppo_training(
             result = "loss"
         else:
             result = "draw"
+        if strat_tracer is not None:
+            strat_tracer.log_episode_summary(episode)
         episode_row = {
             "episode": int(episode),
             "ep_reward": float(ep_reward),
@@ -5023,6 +5054,7 @@ def main():
         ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
         ctx["shoot_windows_with_targets"] = 0
         ctx["shoot_windows_without_targets"] = 0
+        ctx["stratagem_tracer"] = _make_train_stratagem_tracer() if ctx is env_contexts[0] else None
     
     state = primary_ctx["state"]
     info = primary_ctx["info"]
@@ -5094,9 +5126,21 @@ def main():
         )
         if trunc:
             append_agent_log(
-                "Логи фаз/ходов отключены (trunc=True). "
-                "Чтобы включить подробные логи: VERBOSE_LOGS=1 или MANUAL_DICE=1."
+                "Логи фаз/ходов движка отключены (trunc=True). "
+                "Подробные логи движка: VERBOSE_LOGS=1 + trunc=False (play/viewer)."
             )
+        if train_stratagem_trace_enabled():
+            if USE_SUBPROC_ENVS:
+                append_agent_log(
+                    "[TRAIN][STRATAGEM][WARN] trace недоступен при USE_SUBPROC_ENVS=1 "
+                    "(журнал стратагем только primary env in-process)."
+                )
+            else:
+                append_agent_log(
+                    "[TRAIN][STRATAGEM] trace включён (VERBOSE_LOGS=1 / TRAIN_STRATAGEM_TRACE=1). "
+                    "Логируется: DQN/PPO primary env; AZ/GAZ — play_episode_with_mcts (actor 0). "
+                    "Теги: [ATTEMPT], applied=, [MISS], [STRATAGEM_SUMMARY]."
+                )
         if initial_model_hp <= 0 or initial_enemy_hp <= 0:
             append_agent_log(
                 "ВНИМАНИЕ: на старте эпизода обнаружено нулевое здоровье. "
@@ -5214,7 +5258,21 @@ def main():
         else:
             for idx, ctx in enumerate(env_contexts):
                 env_unwrapped = unwrap_env(ctx["env"])
-                if SELF_PLAY_ENABLED and opponent_policy_net is not None:
+                tracer = ctx.get("stratagem_tracer")
+                step_no = int(ctx.get("ep_len", 0)) + 1
+                if tracer is not None:
+                    if SELF_PLAY_ENABLED and opponent_policy_net is not None:
+                        tracer.run_enemy_turn(
+                            env_unwrapped,
+                            step_no,
+                            trunc=trunc,
+                            policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(
+                                obs, env, lm
+                            ),
+                        )
+                    else:
+                        tracer.run_enemy_turn(env_unwrapped, step_no, trunc=trunc)
+                elif SELF_PLAY_ENABLED and opponent_policy_net is not None:
                     env_unwrapped.enemyTurn(
                         trunc=trunc,
                         policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
@@ -5294,7 +5352,16 @@ def main():
                 next_observation, reward, done, res, info, next_shoot_mask = step_results[idx]
                 ctx["shoot_mask"] = next_shoot_mask
             else:
-                next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
+                tracer = ctx.get("stratagem_tracer")
+                if tracer is not None:
+                    next_observation, reward, done, res, info = tracer.run_model_step(
+                        ctx["env"],
+                        unwrap_env(ctx["env"]),
+                        int(ctx["ep_len"]),
+                        action_dicts[idx],
+                    )
+                else:
+                    next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
                 perf_stats["env_step_s"] += time.perf_counter() - step_start
                 perf_counts["env_steps"] += 1
             raw_reward = float(reward)
@@ -5548,6 +5615,9 @@ def main():
                         reason=str(resolved_end_reason),
                     )
                 if TRAIN_LOG_TO_FILE:
+                    strat_tracer = ctx.get("stratagem_tracer")
+                    if strat_tracer is not None:
+                        strat_tracer.log_episode_summary(int(numLifeT + 1))
                     append_agent_log(
                         "Конец эпизода: "
                         f"reason={resolved_end_reason} "
@@ -5938,6 +6008,8 @@ def main():
                 ctx["action_head_invalid"] = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
                 ctx["shoot_windows_with_targets"] = 0
                 ctx["shoot_windows_without_targets"] = 0
+                if idx == 0:
+                    ctx["stratagem_tracer"] = _make_train_stratagem_tracer()
                 perf_stats["logging_s"] += time.perf_counter() - logging_start
     
             if numLifeT == totLifeT:

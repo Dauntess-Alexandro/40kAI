@@ -60,6 +60,16 @@ from core.models.utils import (
     unwrap_env,
 )
 from core.models.action_contract import ordered_action_keys
+from core.telemetry.stratagem_trace import (
+    collect_stratagem_attempt_specs,
+    cp_for_env_side,
+    eval_side_label,
+    log_stratagem_attempts,
+    log_stratagem_journal_diff,
+    new_stratagem_records,
+    stratagem_attempt_from_action,
+    stratagem_used_snapshot,
+)
 
 
 def _append_eval_log(message: str) -> None:
@@ -480,6 +490,8 @@ def run_episode(
     trace_lines: list[str] = []
     current_round = 0
     round_stats: dict[int, dict[str, int]] = {}
+    ep_stratagem_attempts: Counter[str] = Counter()
+    ep_stratagem_applied: Counter[str] = Counter()
     move_dir_labels = {
         0: "up",
         1: "left",
@@ -713,19 +725,37 @@ def run_episode(
             f"[TRACE][STEP] idx={step_no} phase=enemy_turn mode={enemy_mode} "
             f"game_over_before={int(bool(getattr(env_unwrapped, 'game_over', False)))}"
         )
+        enemy_su_before = stratagem_used_snapshot(env_unwrapped)
+        cp_model_before_enemy = cp_for_env_side(env_unwrapped, "model")
+        cp_enemy_before_enemy = cp_for_env_side(env_unwrapped, "enemy")
+        enemy_attempt_specs: list[tuple[str, int | None, str]] = []
         if opponent_policy_fn is not None:
             def _logged_opponent_policy(obs_any):
                 try:
                     action = opponent_policy_fn(obs_any)
                     _trace(f"[TRACE][ENEMY_ACTION] step={step_no} action={action}")
-                    if trace_style == "warhammer" and isinstance(action, dict):
-                        _emit_wh40k_phase_report(
-                            side_label=opponent_side,
-                            step_no=step_no,
-                            action_dict=action,
-                            masks_counts=None,
-                            shoot_targets=None,
+                    if isinstance(action, dict):
+                        enemy_attempt_specs.extend(
+                            log_stratagem_attempts(
+                                _trace,
+                                step_no=step_no,
+                                env_side="enemy",
+                                learner_side=learner_side,
+                                action_dict=action,
+                                fight_plan=None,
+                                ep_attempts=ep_stratagem_attempts,
+                                emit=(trace_style == "warhammer"),
+                                tag="WH40K",
+                            )
                         )
+                        if trace_style == "warhammer":
+                            _emit_wh40k_phase_report(
+                                side_label=opponent_side,
+                                step_no=step_no,
+                                action_dict=action,
+                                masks_counts=None,
+                                shoot_targets=None,
+                            )
                     return action
                 except Exception as exc:
                     _trace(f"[TRACE][ENEMY_ACTION][WARN] step={step_no} exc={exc}")
@@ -734,6 +764,21 @@ def run_episode(
             env_unwrapped.enemyTurn(trunc=True, policy_fn=_logged_opponent_policy)
         else:
             env_unwrapped.enemyTurn(trunc=True)
+        log_stratagem_journal_diff(
+            _trace,
+            step_no=step_no,
+            env_side_acting="enemy",
+            learner_side=learner_side,
+            su_before=enemy_su_before,
+            su_after=stratagem_used_snapshot(env_unwrapped),
+            cp_model_before=cp_model_before_enemy,
+            cp_enemy_before=cp_enemy_before_enemy,
+            env_unwrapped=env_unwrapped,
+            attempt_specs=enemy_attempt_specs,
+            ep_applied=ep_stratagem_applied,
+            emit=(trace_style == "warhammer"),
+            tag="WH40K",
+        )
         if env_unwrapped.game_over:
             info = env_unwrapped.get_info()
             _trace(
@@ -806,24 +851,54 @@ def run_episode(
         )
         if trace_style == "warhammer":
             _trace(
-                f"[WH40K][ORDERS] step={step_no} side={learner_side} "
+                f"[WH40K][ORDERS] step={step_no} side={eval_side_label('model', learner_side)} "
                 f"{_human_action_with_units(action_dict)}"
             )
             _emit_wh40k_phase_report(
-                side_label=learner_side,
+                side_label=eval_side_label("model", learner_side),
                 step_no=step_no,
                 action_dict=action_dict,
                 masks_counts=masks_counts,
                 shoot_targets=int(shoot_targets),
             )
+        fight_plan = dict(getattr(env_unwrapped, "_pending_fight_stratagem_plan", None) or {})
+        model_attempt_specs = log_stratagem_attempts(
+            _trace,
+            step_no=step_no,
+            env_side="model",
+            learner_side=learner_side,
+            action_dict=action_dict,
+            fight_plan=fight_plan,
+            ep_attempts=ep_stratagem_attempts,
+            emit=(trace_style == "warhammer"),
+            tag="WH40K",
+        )
         verdict = _step_verdict(action_dict, masks_counts=masks_counts, shoot_targets=shoot_targets)
         _trace(f"[TRACE][STEP_VERDICT] step={step_no} verdict={verdict}")
         if trace_style == "warhammer":
             _trace(f"[WH40K][TACTIC_VERDICT] step={step_no} { _step_verdict_ru(verdict) }")
+        su_before = stratagem_used_snapshot(env_unwrapped)
+        cp_model_before = cp_for_env_side(env_unwrapped, "model")
+        cp_enemy_before = cp_for_env_side(env_unwrapped, "enemy")
         try:
             next_observation, reward, done, _, info = env.step(action_dict)
         finally:
             attach_fight_stratagem_plan(env, None)
+        new_strat_records = log_stratagem_journal_diff(
+            _trace,
+            step_no=step_no,
+            env_side_acting="model",
+            learner_side=learner_side,
+            su_before=su_before,
+            su_after=stratagem_used_snapshot(env_unwrapped),
+            cp_model_before=cp_model_before,
+            cp_enemy_before=cp_enemy_before,
+            env_unwrapped=env_unwrapped,
+            attempt_specs=model_attempt_specs,
+            ep_applied=ep_stratagem_applied,
+            emit=(trace_style == "warhammer"),
+            tag="WH40K",
+        )
         battle_round = _safe_int(info.get("battle round", 0), 0)
         if battle_round > 0 and battle_round != current_round:
             current_round = battle_round
@@ -844,6 +919,8 @@ def run_episode(
                     "shoot_nonzero": 0,
                     "charge_nonzero": 0,
                     "cp_used": 0,
+                    "strat_attempt": 0,
+                    "strat_applied": 0,
                 },
             )
             st["steps"] += 1
@@ -858,6 +935,8 @@ def run_episode(
                 for i in range(int(len(model_units)))
             ) else 0
             st["cp_used"] += 1 if _safe_int(action_dict.get("use_cp", 0), 0) > 0 else 0
+            st["strat_attempt"] += len(model_attempt_specs)
+            st["strat_applied"] += len(new_strat_records)
         model_ctrl = info.get("model controlled objectives", []) if isinstance(info, dict) else []
         enemy_ctrl = info.get("player controlled objectives", []) if isinstance(info, dict) else []
         model_health = info.get("model health", []) if isinstance(info, dict) else []
@@ -928,6 +1007,12 @@ def run_episode(
         f"model_vp={model_vp} enemy_vp={enemy_vp} vp_diff={vp_diff} "
         f"episode_len={episode_len} reward_total={float(total_reward):.4f}"
     )
+    _trace(
+        "[TRACE][STRATAGEM_SUMMARY] "
+        f"attempts={dict(ep_stratagem_attempts)} applied={dict(ep_stratagem_applied)} "
+        f"attempt_total={sum(ep_stratagem_attempts.values())} "
+        f"applied_total={sum(ep_stratagem_applied.values())}"
+    )
     if trace_style == "warhammer":
         winner_side = "draw"
         if winner == "model":
@@ -940,6 +1025,12 @@ def run_episode(
             f"{learner_side}_vp={_safe_int(model_vp, 0)} {opponent_side}_vp={_safe_int(enemy_vp, 0)} "
             f"len={episode_len} reward_total={float(total_reward):.4f}"
         )
+        _trace(
+            "[WH40K][STRATAGEM_SUMMARY] "
+            f"attempts={dict(ep_stratagem_attempts)} applied={dict(ep_stratagem_applied)} "
+            f"attempt_total={sum(ep_stratagem_attempts.values())} "
+            f"applied_total={sum(ep_stratagem_applied.values())}"
+        )
     for r_idx in sorted(round_stats.keys()):
         rs = round_stats.get(r_idx, {})
         steps_r = int(rs.get("steps", 0) or 0)
@@ -950,7 +1041,9 @@ def run_episode(
             f"attack_nonzero={int(rs.get('attack_nonzero', 0) or 0)} "
             f"shoot_nonzero={int(rs.get('shoot_nonzero', 0) or 0)} "
             f"charge_nonzero={int(rs.get('charge_nonzero', 0) or 0)} "
-            f"cp_used={int(rs.get('cp_used', 0) or 0)}"
+            f"cp_used={int(rs.get('cp_used', 0) or 0)} "
+            f"strat_attempt={int(rs.get('strat_attempt', 0) or 0)} "
+            f"strat_applied={int(rs.get('strat_applied', 0) or 0)}"
         )
         if trace_style == "warhammer":
             _trace(
@@ -959,7 +1052,9 @@ def run_episode(
                 f"attack={int(rs.get('attack_nonzero', 0) or 0)} "
                 f"shoot={int(rs.get('shoot_nonzero', 0) or 0)} "
                 f"charge={int(rs.get('charge_nonzero', 0) or 0)} "
-                f"cp_used={int(rs.get('cp_used', 0) or 0)}"
+                f"cp_used={int(rs.get('cp_used', 0) or 0)} "
+                f"strat_attempt={int(rs.get('strat_attempt', 0) or 0)} "
+                f"strat_applied={int(rs.get('strat_applied', 0) or 0)}"
             )
     if trace_enabled and len(trace_lines) >= trace_max_lines:
         trace_lines.append(
@@ -1334,6 +1429,8 @@ def main():
         r"shoot:(?P<shoot_v>\d+)/(?P<shoot_t>\d+), charge:(?P<charge_v>\d+)/(?P<charge_t>\d+),"
     )
     step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
+    strat_attempt_re = re.compile(r"stratagem=(?P<sid>\S+)")
+    strat_applied_re = re.compile(r"applied=(?P<sid>\S+)")
 
     clear_eval_stop_flag()
 
@@ -1391,6 +1488,18 @@ def main():
                         step_metrics["charge_opt_steps"] += 1
                         if charge == 0:
                             step_metrics["charge_zero_opt_steps"] += 1
+            elif line.startswith("[WH40K][STRATAGEM][ATTEMPT]"):
+                step_metrics["stratagem_attempt_total"] += 1
+                m = strat_attempt_re.search(line)
+                if m:
+                    step_metrics[f"strat_attempt_{m.group('sid')}"] += 1
+            elif line.startswith("[WH40K][STRATAGEM] applied="):
+                step_metrics["stratagem_applied_total"] += 1
+                m = strat_applied_re.search(line)
+                if m:
+                    step_metrics[f"strat_applied_{m.group('sid')}"] += 1
+            elif line.startswith("[WH40K][STRATAGEM][MISS]"):
+                step_metrics["stratagem_miss_total"] += 1
             elif line.startswith("[TRACE][STEP_VERDICT]"):
                 verdict_raw = line.split("verdict=", 1)[-1].strip()
                 for token in verdict_raw.split(","):
@@ -1558,6 +1667,9 @@ def main():
         f"charge_zero_rate_when_charge_options={charge_zero_rate_when_charge_options:.3f} "
         f"model_ctrl_zero_rate={model_ctrl_zero_rate:.3f} "
         f"top1_action_share={top1_action_share:.3f} top5_action_share={top5_action_share:.3f} "
+        f"stratagem_attempt_total={int(step_metrics.get('stratagem_attempt_total', 0) or 0)} "
+        f"stratagem_applied_total={int(step_metrics.get('stratagem_applied_total', 0) or 0)} "
+        f"stratagem_miss_total={int(step_metrics.get('stratagem_miss_total', 0) or 0)} "
         f"turn_limit_count={turn_limit_count} "
         f"wipeout_model_count={wipeout_model_count} wipeout_enemy_count={wipeout_enemy_count} "
         f"wipeout_p1_count={wipeout_p1_count} wipeout_p2_count={wipeout_p2_count} "
