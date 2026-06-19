@@ -80,6 +80,20 @@ def test_overwatch_blocked_beyond_24(monkeypatch):
     assert "overwatch" not in [r[1] for r in env.stratagem_used]
 
 
+def test_overwatch_blocked_when_no_los(monkeypatch):
+    def fake_attack(ah, w, ad, dh, dd, *a, **k):
+        return [3.0], max(0.0, dh - 3.0)
+
+    monkeypatch.setattr(warham_mod, "attack", fake_attack)
+    env = build_env()
+    _setup(env)
+    env.unit_coords[0] = [0.0, 0.0]
+    env.enemy_coords[0] = [1.0, 1.0]  # within 24"
+    monkeypatch.setattr(env, "_visibility_report_between_units", lambda *a, **k: {"los": False})
+    env._resolve_overwatch("model", "enemy", 0, "movement")
+    assert "overwatch" not in [r[1] for r in env.stratagem_used]
+
+
 def test_overwatch_usage_limit_per_turn():
     from core.engine.phases.stratagems import UsageLimit, by_id
 

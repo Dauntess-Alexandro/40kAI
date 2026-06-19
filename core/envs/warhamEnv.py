@@ -4281,7 +4281,7 @@ class Warhammer40kEnv(gym.Env):
     def _resolve_overwatch(self, defender_side: str, moving_unit_side: str, moving_idx: int, phase: str, manual: bool = False):
         """
         10e Fire Overwatch: реакция защитника после завершения перемещения врага.
-        Упрощение: проверяем дальность, не учитываем LOS.
+        Проверяем дальность (≤24") и LOS через _collect_overwatch_candidates.
         """
         side_label = self._side_label(defender_side, manual=manual)
         candidates = self._collect_overwatch_candidates(defender_side, moving_unit_side, moving_idx)
