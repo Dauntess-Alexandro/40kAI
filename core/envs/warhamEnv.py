@@ -1069,7 +1069,7 @@ class Warhammer40kEnv(gym.Env):
         self._distance_cache = {}
         self._shoot_target_cache = {}
         self._shoot_target_reject_cache = {}
-        self._last_action_signature: tuple[int, int, int, int, int, int] | None = None
+        self._last_action_signature: tuple[int, int, int, int] | None = None
         self._action_repeat_streak = 0
         self.terrain_features = list(getattr(self, "terrain_features", []) or [])
         self.terrain_opaque_cells: set[tuple[int, int]] = set()
@@ -1784,14 +1784,13 @@ class Warhammer40kEnv(gym.Env):
     def _use_windowed_command_for_step(self, _action) -> bool:
         return self._use_windowed_selfplay_for_step(_action)
 
-    def _action_signature(self, action) -> tuple[int, int, int, int, int, int]:
+    def _action_signature(self, action) -> tuple[int, int, int, int]:
+        # B2: shoot/charge стали per-unit головами — в сигнатуре повтора их больше нет.
         if not isinstance(action, dict):
-            return (-1, -1, -1, -1, -1, -1)
+            return (-1, -1, -1, -1)
         return (
             self._coerce_int(action.get("move", -1), default=-1),
             self._coerce_int(action.get("attack", -1), default=-1),
-            self._coerce_int(action.get("shoot", -1), default=-1),
-            self._coerce_int(action.get("charge", -1), default=-1),
             self._coerce_int(action.get("use_cp", -1), default=-1),
             self._coerce_int(action.get("cp_on", -1), default=-1),
         )
