@@ -982,6 +982,8 @@ class Warhammer40kEnv(gym.Env):
             'move':   spaces.Discrete(5),          # legacy: глобальное направление (используется как fallback)
             'attack': spaces.Discrete(2),          # 0 = fallback/leave fight, 1 = try charge/engage
             'use_cp': spaces.Discrete(5),          # 0 none, 1 bravery, 2 overwatch, 3 smokescreen, 4 heroic
+                                                   # реально исполняется только 1 (Insane Bravery);
+                                                   # 2/3/4 — реакции через value-gate, не плоский head
             'cp_on':  spaces.Discrete(len(model))  # на какого своего юнита тратить CP
         }
 

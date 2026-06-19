@@ -52,6 +52,7 @@ from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, EVAL_STOP_F
 
 AGENT_EVAL_LOG_FILE = str(AGENT_EVAL_LOG_PATH.relative_to(AGENT_EVAL_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_EVAL_LOG_FILE)
+from core.models.action_contract import ordered_action_keys
 from core.models.utils import (
     build_action_masks_by_head,
     build_shoot_action_mask,
@@ -59,7 +60,6 @@ from core.models.utils import (
     sample_action_list_from_space,
     unwrap_env,
 )
-from core.models.action_contract import ordered_action_keys
 from core.telemetry.stratagem_trace import (
     collect_stratagem_attempt_specs,
     cp_for_env_side,
@@ -918,7 +918,7 @@ def run_episode(
                     "attack_nonzero": 0,
                     "shoot_nonzero": 0,
                     "charge_nonzero": 0,
-                    "cp_used": 0,
+                    "use_cp_head_set": 0,  # head активирован (use_cp>0) — НЕ факт применения стратагемы
                     "strat_attempt": 0,
                     "strat_applied": 0,
                 },
@@ -934,7 +934,7 @@ def run_episode(
                 _safe_int(action_dict.get(f"charge_num_{i}", 0), 0) > 0
                 for i in range(int(len(model_units)))
             ) else 0
-            st["cp_used"] += 1 if _safe_int(action_dict.get("use_cp", 0), 0) > 0 else 0
+            st["use_cp_head_set"] += 1 if _safe_int(action_dict.get("use_cp", 0), 0) > 0 else 0
             st["strat_attempt"] += len(model_attempt_specs)
             st["strat_applied"] += len(new_strat_records)
         model_ctrl = info.get("model controlled objectives", []) if isinstance(info, dict) else []
@@ -1041,7 +1041,7 @@ def run_episode(
             f"attack_nonzero={int(rs.get('attack_nonzero', 0) or 0)} "
             f"shoot_nonzero={int(rs.get('shoot_nonzero', 0) or 0)} "
             f"charge_nonzero={int(rs.get('charge_nonzero', 0) or 0)} "
-            f"cp_used={int(rs.get('cp_used', 0) or 0)} "
+            f"use_cp_head_set={int(rs.get('use_cp_head_set', 0) or 0)} "
             f"strat_attempt={int(rs.get('strat_attempt', 0) or 0)} "
             f"strat_applied={int(rs.get('strat_applied', 0) or 0)}"
         )
@@ -1052,7 +1052,7 @@ def run_episode(
                 f"attack={int(rs.get('attack_nonzero', 0) or 0)} "
                 f"shoot={int(rs.get('shoot_nonzero', 0) or 0)} "
                 f"charge={int(rs.get('charge_nonzero', 0) or 0)} "
-                f"cp_used={int(rs.get('cp_used', 0) or 0)} "
+                f"use_cp_head_set={int(rs.get('use_cp_head_set', 0) or 0)} "
                 f"strat_attempt={int(rs.get('strat_attempt', 0) or 0)} "
                 f"strat_applied={int(rs.get('strat_applied', 0) or 0)}"
             )

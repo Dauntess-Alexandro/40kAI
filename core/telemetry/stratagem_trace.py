@@ -5,11 +5,13 @@ import os
 from collections import Counter
 
 # use_cp head → id стратагемы (см. warhamEnv action_space); fight — через fight_plan.
+# ВАЖНО: heads 2/3/4 — только для трейс-логов; в плоском action_dict они НЕ исполняются
+# (реакции идут через value-gate). Реально применяется только head 1 (insane_bravery).
 USE_CP_STRATAGEM_HEAD: dict[int, str] = {
     1: "insane_bravery",
-    2: "overwatch",
-    3: "smokescreen",
-    4: "heroic_intervention",
+    2: "overwatch",       # трейс-only; в flat path не исполняется
+    3: "smokescreen",     # трейс-only; в flat path не исполняется
+    4: "heroic_intervention",  # трейс-only; в flat path не исполняется
 }
 
 
