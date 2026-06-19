@@ -69,6 +69,7 @@ def test_legal_options_drops_exhausted_per_phase():
     _fresh(env)
     env.modelCP = 5
     env.unit_health[0] = 6.0
+    env.unit_data[0]["Keywords"] = ["Necrons"]
     opts_before = fight_stratagem_options_for_unit(env, "model", 0)
     assert any(o.meta.get("stratagem_id") == "hungry_void" for o in opts_before)
     stratagem_engine.apply(env, "model", "hungry_void", 0, phase="fight")

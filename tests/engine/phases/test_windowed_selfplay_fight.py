@@ -39,6 +39,7 @@ def test_run_model_fight_applies_pending_plan(monkeypatch):
     monkeypatch.setenv("WINDOWED_SELFPLAY", "1")
     env = build_env()
     _setup_engaged(env)
+    env.unit_data[0]["Keywords"] = ["Necrons"]
     env._pending_fight_stratagem_plan = {0: "hungry_void"}
     env.modelCP = 2
     snap = env.snapshot_state()

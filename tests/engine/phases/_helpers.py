@@ -12,7 +12,7 @@ def flat_default_action(n: int, **overrides: int) -> dict[str, int]:
     return action
 
 
-def make_unit(name: str, movement: int = 6, models: int = 3, wounds: int = 2, rng: int = 24) -> Unit:
+def make_unit(name: str, movement: int = 6, models: int = 3, wounds: int = 2, rng: int = 24, keywords: list[str] | None = None) -> Unit:
     data = {
         "Name": name,
         "Movement": movement,
@@ -23,8 +23,9 @@ def make_unit(name: str, movement: int = 6, models: int = 3, wounds: int = 2, rn
         "Ld": 7,
         "T": 4,
         "Sv": 3,
-        "Keywords": ["Necrons", "Infantry"],
     }
+    if keywords is not None:
+        data["Keywords"] = list(keywords)
     weapon = {
         "Name": "Stub gun",
         "Type": "Ranged",

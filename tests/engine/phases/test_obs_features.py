@@ -88,6 +88,7 @@ def test_phase_obs_fight_stratagem_available_with_cp(monkeypatch):
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     env.phase = "fight"
     env.modelCP = 2
+    env.unit_data[0]["Keywords"] = ["Necrons"]
     tail = phase_obs_vector(env, "model")
     avail_start = 10
     avail = tail[avail_start : avail_start + len(REGISTRY)]

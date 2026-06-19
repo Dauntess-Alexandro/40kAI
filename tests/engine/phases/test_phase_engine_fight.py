@@ -50,6 +50,7 @@ def test_run_fight_hungry_void_spends_cp_and_records_journal():
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     _engaged(env)
+    env.unit_data[0]["Keywords"] = ["Necrons"]
     random.seed(3)
     np.random.seed(3)
     with env.simulation_mode():
