@@ -11,6 +11,7 @@ from core.engine.agent_registry import (
     resolve_latest_opponent_agent_id,
 )
 from core.models.az_rollout_sink import (
+    apply_az_dist_worker_env,
     az_dist_context_path,
     build_az_dist_worker_payloads,
     normalize_az_dist_hyperparams,
@@ -18,6 +19,32 @@ from core.models.az_rollout_sink import (
     read_az_dist_train_context,
     write_az_dist_train_context,
 )
+
+
+def test_pack_keeps_phase_obs_and_reaction_flags():
+    # ПК2-актёры обязаны совпадать с ПК1 по obs-size и value-гейту → флаги едут в SMB-контекст.
+    smb = pack_az_dist_hyperparams({"phase_obs_features": 1, "reaction_value_policy": 1, "noise": 9})
+    assert smb["phase_obs_features"] == 1
+    assert smb["reaction_value_policy"] == 1
+    assert "noise" not in smb
+
+
+def test_apply_worker_env_propagates_phase_obs_and_reaction(monkeypatch):
+    # С ПК1 пришло phase_obs=1, reaction=1 → перекрываем локальные значения ПК2 (obs-size критичен).
+    monkeypatch.setenv("PHASE_OBS_FEATURES", "0")
+    monkeypatch.setenv("AZ_REACTION_VALUE_POLICY", "0")
+    apply_az_dist_worker_env({"phase_obs_features": 1, "reaction_value_policy": 1})
+    assert os.environ["PHASE_OBS_FEATURES"] == "1"
+    assert os.environ["AZ_REACTION_VALUE_POLICY"] == "1"
+
+
+def test_apply_worker_env_no_flags_leaves_env_untouched(monkeypatch):
+    # Нет флагов в hp (нет SMB-контекста) → не трогаем то, что выставил импорт train на ПК2.
+    monkeypatch.setenv("PHASE_OBS_FEATURES", "1")
+    monkeypatch.setenv("AZ_REACTION_VALUE_POLICY", "1")
+    apply_az_dist_worker_env({})
+    assert os.environ["PHASE_OBS_FEATURES"] == "1"
+    assert os.environ["AZ_REACTION_VALUE_POLICY"] == "1"
 
 
 def test_write_and_read_dist_context(tmp_path, monkeypatch):

@@ -135,6 +135,8 @@ AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
     "windowed_selfplay",
     "mcts_window_nodes",
     "mcts_joint_action_from_best_child",
+    "phase_obs_features",
+    "reaction_value_policy",
     "mcts_batch_eval_size",
     "mcts_simulate_enemy",
     "mcts_mode",
@@ -225,6 +227,14 @@ def apply_az_dist_worker_env(hp: dict[str, Any] | None) -> None:
     if "AZ_MCTS_JOINT_BEST_CHILD" not in os.environ:
         jb = _hp_bool(src, "mcts_joint_action_from_best_child", False)
         os.environ["AZ_MCTS_JOINT_BEST_CHILD"] = "1" if jb else "0"
+    # phase_obs_features и reaction_value_policy — авторитетно с ПК1 (SMB-контекст), а не из
+    # локального hyperparams.json ПК2: obs-size актёра ОБЯЗАН совпадать с сетью ПК1 (иначе mismatch),
+    # value-гейт — для паритета self-play. Поэтому при наличии в hp перекрываем значение,
+    # выставленное импортом train на ПК2.
+    if "phase_obs_features" in src:
+        os.environ["PHASE_OBS_FEATURES"] = "1" if _hp_bool(src, "phase_obs_features", True) else "0"
+    if "reaction_value_policy" in src:
+        os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if _hp_bool(src, "reaction_value_policy", True) else "0"
 
 
 def build_az_dist_worker_payloads(

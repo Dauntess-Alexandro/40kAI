@@ -9652,6 +9652,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                         "windowed_selfplay": int(AZ_WINDOWED_SELFPLAY),
                         "mcts_window_nodes": int(AZ_MCTS_WINDOW_NODES),
                         "mcts_joint_action_from_best_child": int(AZ_MCTS_JOINT_BEST_CHILD),
+                        "phase_obs_features": int(AZ_PHASE_OBS_FEATURES),
+                        "reaction_value_policy": int(AZ_REACTION_VALUE_POLICY),
                         "mcts_batch_eval_size": int(AZ_MCTS_BATCH_EVAL_SIZE),
                         "mcts_simulate_enemy": int(AZ_MCTS_SIMULATE_ENEMY),
                         "mcts_mode": str(AZ_MCTS_MODE),
