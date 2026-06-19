@@ -23,7 +23,7 @@ class UsageLimit(StrEnum):
 
 @dataclass(frozen=True)
 class StratagemDef:
-    """Описание стратагемы (data-only). usage_limit пока НЕ enforced (Stage 6)."""
+    """Описание стратагемы (data-only). usage_limit enforced через stratagems.usage_limit_reached (B1c)."""
 
     id: str
     name_ru: str
@@ -57,6 +57,13 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_BATTLE,
         effect_id="auto_pass_battle_shock",
     ),
+    # Fire Overwatch — Core Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Fire-Overwatch
+    #   WHEN: ход оппонента, когда вражеский юнит начинает/заканчивает Normal/Advance/Fall Back/Charge
+    #   move в пределах 24" и видимости. COST: 1 CP. EFFECT: ваш юнит немедленно стреляет по нему,
+    #   но попадания только на немодифицированную 6. RESTRICTION: once per turn (на ваш ход).
+    # Реализация (песочница): effect_id=shoot_hits_on_6 на ENEMY_ENDED_MOVE в movement/charge,
+    # usage_limit PER_PHASE (упрощение «once per turn»). Условия 24"/видимости — на стороне движка.
     StratagemDef(
         id="overwatch",
         name_ru="Fire Overwatch",
@@ -69,6 +76,12 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="shoot_hits_on_6",
     ),
+    # Smokescreen — Core Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Smokescreen
+    #   WHEN: Shooting phase оппонента, когда выбрана цель — ваш SMOKE-юнит. COST: 1 CP.
+    #   EFFECT: до конца фазы юнит получает Benefit of Cover и Stealth.
+    # Реализация (песочница): моделируем только Benefit of Cover (effect_id=benefit_of_cover);
+    # Stealth НЕ моделируется. keyword_req=("smoke",); usage_limit UNLIMITED (как в правилах нет «1 раз»).
     StratagemDef(
         id="smokescreen",
         name_ru="Smokescreen",
@@ -81,6 +94,11 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.UNLIMITED,
         effect_id="benefit_of_cover",
     ),
+    # Heroic Intervention — Core Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Heroic-Intervention
+    #   WHEN: Charge phase оппонента, после того как вражеский юнит закончил charge move. COST: 2 CP.
+    #   EFFECT: ваш eligible-юнит в пределах дистанции может объявить и совершить charge по тому юниту.
+    # Реализация (песочница): effect_id=counter_charge на ENEMY_CHARGED_IN; usage_limit PER_PHASE.
     StratagemDef(
         id="heroic_intervention",
         name_ru="Heroic Intervention",
@@ -100,7 +118,7 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   юнит ведёт NECRONS CHARACTER — улучшить AP melee на 1 (не суммируется с другими AP-модификаторами).
     # Реализация (песочница): моделируем только +1 Strength (effect_id=hungry_void_strength_mod,
     # strength_mod=1). НЕ моделируем: условный AP+1 при CHARACTER-лидере и таргет «не выбран драться».
-    # keyword_req пуст (в песочнице нет NECRONS-кейворда); usage_limit PER_PHASE пока НЕ enforced (B1c).
+    # keyword_req пуст (в песочнице нет NECRONS-кейворда); usage_limit PER_PHASE enforced (B1c).
     StratagemDef(
         id="hungry_void",
         name_ru="Hungry Void",
@@ -131,6 +149,12 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="command_reroll_wounds",
     ),
+    # Go to Ground — Core Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Go-to-Ground
+    #   WHEN: Shooting phase оппонента, когда выбрана цель — ваш INFANTRY-юнит. COST: 1 CP.
+    #   EFFECT: до конца фазы юнит получает Benefit of Cover и +1 к save throws.
+    # Реализация (песочница): моделируем только Benefit of Cover (effect_id=benefit_of_cover);
+    # +1 к save НЕ моделируется. keyword_req=("infantry",); usage_limit UNLIMITED.
     StratagemDef(
         id="go_to_ground",
         name_ru="Go to Ground",
