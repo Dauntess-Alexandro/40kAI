@@ -38,7 +38,6 @@ from core.engine.phases.obs_features import (
     build_phase_obs_signature_suffix,
     legacy_observation_space_size,
     phase_obs_features_enabled,
-    phase_obs_vector,
 )
 from core.engine.phases.stratagem_engine import apply as _apply_stratagem
 from core.engine.skills import apply_end_of_command_phase
@@ -1085,6 +1084,8 @@ class Warhammer40kEnv(gym.Env):
         )
         # Simulation sandbox depth counter (MCTS rollouts).
         self._simulation_mode_depth = 0
+        # B3-full: guard «идёт branch-симуляция реакции» (предотвращает рекурсивный lookahead).
+        self._reaction_sim_active = False
 
         self.modelOC = []
         self.enemyOC = []
@@ -4022,8 +4023,14 @@ class Warhammer40kEnv(gym.Env):
     def _unit_has_smoke(self, unit_data: dict) -> bool:
         return self._unit_has_keyword(unit_data, "smoke")
 
-    def _should_use_reaction(self, stratagem_id, side, chosen, candidates, phase, cp) -> bool:
-        """Решение «использовать реакцию»: без политики — текущее поведение (всегда да)."""
+    def _should_use_reaction(
+        self, stratagem_id, side, chosen, candidates, phase, cp, *, resolve_trigger=None, net=None
+    ) -> bool:
+        """Решение «использовать реакцию»: без политики — текущее поведение (всегда да).
+
+        B3-full: для net-value политики прокидываем в ctx ссылку на env, resolve_trigger
+        (досимуляция триггер-взаимодействия) и net реагирующей стороны. Legacy игнорирует их.
+        """
         policy = getattr(self, "reaction_policy", None)
         if policy is None:
             return True
@@ -4034,11 +4041,44 @@ class Warhammer40kEnv(gym.Env):
             "chosen": chosen,
             "candidates": list(candidates),
             "cp": int(cp),
+            "env": self,
+            "resolve_trigger": resolve_trigger,
+            "net": net,
         }
         try:
             return bool(policy(ctx))
         except Exception:
             return True
+
+    def _simulate_reaction_branch(self, ctx, *, apply: bool) -> float:
+        """B3-full: оценить value реагирующей стороны при apply/pass, досимулировав триггер.
+
+        Внешний snapshot/restore делает reaction_policy; здесь — внутренний снапшот (чтобы
+        точно не оставить side-effects), recursion guard, применение реакции (apply), резолв
+        триггера через ctx["resolve_trigger"] и value-голова сети ctx["net"].
+        """
+        side = str(ctx["side"])
+        net = ctx.get("net")
+        resolve_trigger = ctx.get("resolve_trigger")
+        inner = self.snapshot_state()
+        self._reaction_sim_active = True
+        try:
+            with self.simulation_mode():
+                if apply:
+                    _apply_stratagem(self, side, str(ctx["stratagem_id"]), int(ctx["chosen"]), phase=str(ctx["phase"]))
+                if resolve_trigger is not None:
+                    resolve_trigger(apply)
+                import torch
+
+                obs = torch.tensor(
+                    np.asarray([self.get_observation_for_side(side)], dtype=np.float32), dtype=torch.float32
+                )
+                _, value = net.infer(obs)
+                v = float(value.reshape(-1)[0])
+        finally:
+            self._reaction_sim_active = False
+            self.restore_state(inner)
+        return v
 
     def _maybe_use_go_to_ground(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """10e Go to Ground: реакция INFANTRY-защитника при выборе целью стрельбы → benefit of cover.
