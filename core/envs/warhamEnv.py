@@ -2290,31 +2290,33 @@ class Warhammer40kEnv(gym.Env):
         ]
 
     def _apply_pending_fight_stratagem_plan(self, side: str) -> None:
-        """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan)."""
-        if side == "model":
-            from core.engine.phases.windowed_selfplay import windowed_selfplay_enabled
+        """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan).
 
-            if windowed_selfplay_enabled():
-                self._pending_fight_stratagem_plan = None
-                return
+        B3: ранний return под windowed_selfplay удалён — каждый юнит проходит
+        value-гейт _should_use_stratagem (без политики → всегда True, т.е. legacy-поведение).
+        """
         plan = getattr(self, "_pending_fight_stratagem_plan", None)
         self._pending_fight_stratagem_plan = None
         if not plan:
             return
         health = self.unit_health if side == "model" else self.enemy_health
         in_attack = self.unitInAttack if side == "model" else self.enemyInAttack
+        cp = self.modelCP if side == "model" else self.enemyCP
         for u, sid in dict(plan).items():
             ui = int(u)
             if not (0 <= ui < len(health)) or health[ui] <= 0:
                 continue
             if in_attack[ui][0] != 1:
                 continue
+            if not self._should_use_stratagem(
+                str(sid), side, ui, [ui], "fight", cp,
+                net=getattr(self, "_reaction_net_by_side", {}).get(side),
+            ):
+                continue
             try:
                 _apply_stratagem(self, side, str(sid), ui, phase="fight")
             except Exception as exc:
-                self._log(
-                    f"[STRATAGEM] pending fight plan: не применили {sid!r} на юните {ui}: {exc}"
-                )
+                self._log(f"[STRATAGEM] pending fight plan: не применили {sid!r} на юните {ui}: {exc}")
 
     def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
         if side == "enemy":

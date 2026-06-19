@@ -18,10 +18,12 @@ def _setup_engaged(env):
     env._invalidate_target_cache("test")
 
 
-def test_fight_phase_skips_pending_plan_when_windowed(monkeypatch):
+def test_fight_phase_applies_pending_plan_when_windowed(monkeypatch):
+    # B3: дыра закрыта — plan применяется под windowed через value-гейт (без политики → True).
     monkeypatch.setenv("WINDOWED_SELFPLAY", "1")
     env = build_env()
     _setup_engaged(env)
+    env.unit_data[0]["Keywords"] = ["Necrons"]
     env._pending_fight_stratagem_plan = {0: "hungry_void"}
     env.modelCP = 2
     snap = env.snapshot_state()
@@ -32,7 +34,7 @@ def test_fight_phase_skips_pending_plan_when_windowed(monkeypatch):
         assert env._pending_fight_stratagem_plan is None
     env.restore_state(snap)
 
-    assert not any("hungry_void" in str(x) for x in used)
+    assert any("hungry_void" in str(x) for x in used)
 
 
 def test_run_model_fight_applies_pending_plan(monkeypatch):
