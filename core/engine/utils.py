@@ -435,6 +435,10 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     if inv and inv > 0:
         save_target = min(save_target, inv)
 
+    granted = int(eff["invuln_grant"])
+    if granted > 0:
+        save_target = min(save_target, granted)
+
     # --- How many attacks? ---
     n_models_raw = attackerData.get("#OfModels")
     n_models = int(n_models_raw) if n_models_raw is not None else None

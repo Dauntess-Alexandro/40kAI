@@ -202,3 +202,15 @@ def test_hit_penalty_natural_six_still_hits():
     stealth, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"hit_penalty": 3},
                         roller=StubRoller(hit=[6], wound=[6]))
     assert float(sum(stealth)) == 1.0
+
+
+def test_invuln_grant_saves_against_ap():
+    # Sv4 против AP-3 → 7+ (нельзя). invuln_grant=6 → 6+. save [6]: без грант урон 1, с грантом 0.
+    weapon = _ranged_weapon(S=4, AP=-3)
+    defender = {"Sv": 4, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[5], wound=[6], save=[6]))
+    grant, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"invuln_grant": 6},
+                      roller=StubRoller(hit=[5], wound=[6], save=[6]))
+    assert float(sum(base)) == 1.0
+    assert float(sum(grant)) == 0.0
