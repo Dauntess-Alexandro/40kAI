@@ -4269,7 +4269,16 @@ class Warhammer40kEnv(gym.Env):
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
         else:
-            if not self._should_use_reaction("overwatch", defender_side, chosen, candidates, phase, cp):
+            if not self._should_use_reaction(
+                "overwatch",
+                defender_side,
+                chosen,
+                candidates,
+                phase,
+                cp,
+                resolve_trigger=getattr(self, "_pending_reaction_trigger", None),
+                net=getattr(self, "_reaction_net_by_side", {}).get(defender_side),
+            ):
                 self._log_phase_msg(side_label, phase, "Overwatch пропущен политикой реакций.")
                 return
 
