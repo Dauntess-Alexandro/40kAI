@@ -127,10 +127,10 @@
         "mcts_simulate_enemy": 0,
         "mcts_candidate_mode": "option",
         "windowed_selfplay": 1,
-        "mcts_window_nodes": 0,
+        "mcts_window_nodes": 1,
         "mcts_joint_action_from_best_child": 1,
-        "phase_obs_features": 0,
-        "reaction_value_policy": 0,
+        "phase_obs_features": 1,
+        "reaction_value_policy": 1,
         "mcts_mode": "tree"
     },
     "alphazero_proxy": {
@@ -200,6 +200,8 @@
         "windowed_selfplay": 1,
         "mcts_window_nodes": 0,
         "mcts_joint_action_from_best_child": 0,
+        "phase_obs_features": 0,
+        "reaction_value_policy": 0,
         "mcts_mode": "proxy"
     },
     "gumbel_muzero": {
