@@ -1,4 +1,4 @@
-from core.models.reaction_value_policy import make_reaction_value_policy
+from core.models.reaction_value_policy import make_reaction_value_policy, make_stratagem_value_policy
 
 
 class FakeEnv:
@@ -70,3 +70,7 @@ def test_net_injected_into_ctx_for_harness():
     pol = make_reaction_value_policy({"model": sentinel}, device="cpu")
     pol(_ctx(env))
     assert seen["net"] is sentinel
+
+
+def test_stratagem_value_policy_alias_exists():
+    assert make_reaction_value_policy is make_stratagem_value_policy

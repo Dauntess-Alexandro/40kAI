@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 
-def make_reaction_value_policy(net_by_side: dict, *, device, eps: float = 0.0) -> Callable[[dict], bool]:
+def make_stratagem_value_policy(net_by_side: dict, *, device, eps: float = 0.0) -> Callable[[dict], bool]:
     def policy(ctx: dict) -> bool:
         env = ctx["env"]
         side = str(ctx["side"])
@@ -34,3 +34,6 @@ def make_reaction_value_policy(net_by_side: dict, *, device, eps: float = 0.0) -
         return values["apply"] > values["pass"] + float(eps)
 
     return policy
+
+
+make_reaction_value_policy = make_stratagem_value_policy
