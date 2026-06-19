@@ -27,12 +27,11 @@ AZ_HYPERPARAM_KEYS: tuple[str, ...] = (
     "dirichlet_alpha",
     "dirichlet_eps",
     "mcts_mode",
-    "mcts_candidate_mode",
-    "windowed_selfplay",
-    "mcts_window_nodes",
-    "mcts_joint_action_from_best_child",
-    "phase_obs_features",
-    "reaction_value_policy",
+    # mcts_candidate_mode / windowed_selfplay / mcts_window_nodes /
+    # mcts_joint_action_from_best_child / phase_obs_features / reaction_value_policy
+    # вшиты в дефолты (BASE_AZ_TREE_HYPERPARAMS) и убраны из GUI-редактора, чтобы не мешались.
+    # Off-switch для legacy остался через env (WINDOWED_SELFPLAY=0, PHASE_OBS_FEATURES=0,
+    # AZ_REACTION_VALUE_POLICY=0, MCTS_CANDIDATE_MODE=...) и прямую правку hyperparams.json.
     "mcts_top_k_per_head",
     "mcts_max_depth",
     "mcts_root_dirichlet_only",
@@ -158,9 +157,9 @@ _AZ_BASE: dict[str, int | float | str] = {
     "mcts_simulate_enemy": 0,
     "mcts_candidate_mode": "option",
     "windowed_selfplay": 1,
-    "mcts_window_nodes": 0,
-    "mcts_joint_action_from_best_child": 0,
-    "phase_obs_features": 0,
+    "mcts_window_nodes": 1,
+    "mcts_joint_action_from_best_child": 1,
+    "phase_obs_features": 1,
     "reaction_value_policy": 1,
 }
 
@@ -282,12 +281,8 @@ AZ_GROUPS: tuple[dict[str, object], ...] = (
         "title": "MCTS",
         "keys": (
             "mcts_mode",
-            "mcts_candidate_mode",
-            "windowed_selfplay",
-            "mcts_window_nodes",
-            "mcts_joint_action_from_best_child",
-            "phase_obs_features",
-            "reaction_value_policy",
+            # mcts_candidate_mode/windowed_selfplay/mcts_window_nodes/mcts_joint_action_from_best_child/
+            # phase_obs_features/reaction_value_policy — вшиты в дефолты, скрыты из редактора.
             "mcts_simulations",
             "mcts_max_depth",
             "mcts_top_k_per_head",
