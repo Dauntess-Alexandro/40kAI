@@ -47,7 +47,7 @@ def test_smokescreen_fires_with_default_policy():
     env.battle_round = 1
     with env.simulation_mode():
         effect = env._maybe_use_smokescreen("model", 0, "shooting")
-    assert effect == "benefit of cover"
+    assert isinstance(effect, dict) and effect.get("cover") is True and effect.get("hit_penalty") == 1
     assert env.modelCP == 1
     assert ("model", "smokescreen", 1, "shooting", 0) in env.stratagem_used
 

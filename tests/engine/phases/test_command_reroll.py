@@ -34,7 +34,7 @@ def test_apply_command_reroll_writes_reroll_effect():
     assert env.modelCP == 1
     assert ("model", "command_reroll", 3, "fight", 0) in env.stratagem_used
     assert any(
-        rec.get("effect_id") == "command_reroll_wounds" and rec.get("reroll_wounds") == "all"
+        rec.get("effect_id") == "command_reroll_wounds" and rec.get("reroll_wounds") == "one"
         for rec in env.active_stratagem_effects
     )
 

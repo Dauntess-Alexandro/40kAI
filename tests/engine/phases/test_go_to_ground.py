@@ -60,7 +60,7 @@ def test_smoke_still_preferred_over_go_to_ground():
     env.unit_data[0]["Keywords"] = ["INFANTRY", "SMOKE"]
     with env.simulation_mode():
         effect = env._maybe_use_smokescreen("model", 0, "shooting")
-    assert effect == "benefit of cover"
+    assert isinstance(effect, dict) and effect.get("hit_penalty") == 1
     assert any(rec[1] == "smokescreen" for rec in env.stratagem_used)
     assert not any(rec[1] == "go_to_ground" for rec in env.stratagem_used)
 
