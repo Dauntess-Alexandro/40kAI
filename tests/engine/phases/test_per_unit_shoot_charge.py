@@ -41,3 +41,14 @@ def test_flat_shoot_uses_per_unit_head(monkeypatch):
     action = {"shoot_num_0": 0, "shoot_num_1": 0}
     env.shooting_phase("model", action=action)
     assert len(hits) >= 1  # выстрелы по per-unit головам, без KeyError 'shoot'
+
+
+def test_flat_charge_uses_per_unit_head():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.unitCharged = [0] * len(env.unit_health)
+    env.enemyCharged = [0] * len(env.enemy_health)
+    action = {"attack": 1, "charge_num_0": 0, "charge_num_1": 0}
+    # не должно падать с KeyError 'charge'
+    env.charge_phase("model", action=action, advanced_flags=[False] * len(env.unit_health))
+    assert True

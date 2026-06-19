@@ -6366,7 +6366,7 @@ class Warhammer40kEnv(gym.Env):
                                     if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
                                         chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfE = int(_charge_target) if decide_charge is not None else action["charge"]
+                        idOfE = int(_charge_target) if decide_charge is not None else int(action.get(f"charge_num_{i}", 0))
                         target_list = self._format_unit_choices("enemy", chargeAble)
                         dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i]) if idOfE in chargeAble else None
                         if _verbose_logs_enabled():
@@ -6523,7 +6523,7 @@ class Warhammer40kEnv(gym.Env):
                             if distance(self.unit_coords[j], self.enemy_coords[i]) - diceRoll <= 5:
                                 chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfM = action.get("charge", 0)
+                        idOfM = int(action.get(f"charge_num_{i}", 0))
                         heur_charge_target, charge_scored = self._enemy_heur_pick_charge_target(i, [int(v) for v in chargeAble])
                         target_list = self._format_unit_choices("model", chargeAble)
                         dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i]) if idOfM in chargeAble else None
@@ -6595,7 +6595,7 @@ class Warhammer40kEnv(gym.Env):
                                     f"(delta={_meta.get('delta', 0.0):.2f},dist={_meta.get('dist_term', 0.0):.2f},obj={_meta.get('obj', 0.0):.0f},ev={_meta.get('ev', 0.0):.2f},p={_meta.get('p_success', 0.0):.2f})"
                                     for tid, score, _meta in top
                                 )
-                                self._heur_log(f"[ENEMY][HEUR][CHARGE] unit={unit_id} raw={action.get('charge', 0)} fallback_target={idOfM + 21} top_targets: {rendered}")
+                                self._heur_log(f"[ENEMY][HEUR][CHARGE] unit={unit_id} raw={action.get(f'charge_num_{i}', 0)} fallback_target={idOfM + 21} top_targets: {rendered}")
                     else:
                         if potential_targets:
                             target_list = self._format_unit_choices("model", potential_targets)
