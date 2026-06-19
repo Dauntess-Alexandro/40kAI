@@ -135,8 +135,8 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Command-Re-roll
     #   WHEN: любой момент игры, перед/после броска. COST: 1 CP. EFFECT: ре-ролл ОДНОГО броска
     #   (hit/wound/save/charge/D6 и т.п.). RESTRICTION: 1 раз на бросок.
-    # Реализация (песочница): упрощено до fight-phase — ре-ролл всех проваленных wound-бросков
-    # атаки юнита (а не одного броска). Правила core берём из Wahapedia, аппроксимацию помечаем явно.
+    # Реализация (песочница): упрощено до fight-phase — ре-ролл ОДНОГО проваленного wound-броска
+    # атаки юнита (fight-only упрощение реального per-roll правила).
     StratagemDef(
         id="command_reroll",
         name_ru="Command Re-roll (упрощённо)",

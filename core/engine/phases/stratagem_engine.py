@@ -42,7 +42,7 @@ def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase:
     )
     _FIGHT_EFFECT_PAYLOAD = {
         "hungry_void_strength_mod": {"strength_mod": 1},
-        "command_reroll_wounds": {"reroll_wounds": "all"},
+        "command_reroll_wounds": {"reroll_wounds": "one"},
     }
     if d.effect_id in _FIGHT_EFFECT_PAYLOAD and unit_idx is not None:
         active = getattr(e, "active_stratagem_effects", None)
