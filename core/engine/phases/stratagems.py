@@ -93,6 +93,14 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="counter_charge",
     ),
+    # Protocol of the Hungry Void — Necrons Awakened Dynasty Battle Tactic Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/factions/necrons/Stratagems
+    #   WHEN: Fight phase. TARGET: одна NECRONS-юнит, ещё не выбранная драться в этой фазе.
+    #   COST: 1 CP. EFFECT: до конца фазы +1 к Strength melee-оружия юнита; дополнительно, если
+    #   юнит ведёт NECRONS CHARACTER — улучшить AP melee на 1 (не суммируется с другими AP-модификаторами).
+    # Реализация (песочница): моделируем только +1 Strength (effect_id=hungry_void_strength_mod,
+    # strength_mod=1). НЕ моделируем: условный AP+1 при CHARACTER-лидере и таргет «не выбран драться».
+    # keyword_req пуст (в песочнице нет NECRONS-кейворда); usage_limit PER_PHASE пока НЕ enforced (B1c).
     StratagemDef(
         id="hungry_void",
         name_ru="Hungry Void",
@@ -105,10 +113,14 @@ REGISTRY: tuple[StratagemDef, ...] = (
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="hungry_void_strength_mod",
     ),
+    # Command Re-roll — Core Stratagem 10ed (Wahapedia):
+    #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Command-Re-roll
+    #   WHEN: любой момент игры, перед/после броска. COST: 1 CP. EFFECT: ре-ролл ОДНОГО броска
+    #   (hit/wound/save/charge/D6 и т.п.). RESTRICTION: 1 раз на бросок.
+    # Реализация (песочница): упрощено до fight-phase — ре-ролл всех проваленных wound-бросков
+    # атаки юнита (а не одного броска). Правила core берём из Wahapedia, аппроксимацию помечаем явно.
     StratagemDef(
         id="command_reroll",
-        # Approximation: по правилам 10e Command Re-roll = ре-ролл ОДНОГО броска в любой фазе.
-        # В песочнице упрощено до fight-phase: ре-ролл всех проваленных wound-бросков атаки юнита.
         name_ru="Command Re-roll (упрощённо)",
         cp_cost=1,
         phases=(Phase.FIGHT,),
