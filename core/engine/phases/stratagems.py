@@ -116,9 +116,10 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   WHEN: Fight phase. TARGET: одна NECRONS-юнит, ещё не выбранная драться в этой фазе.
     #   COST: 1 CP. EFFECT: до конца фазы +1 к Strength melee-оружия юнита; дополнительно, если
     #   юнит ведёт NECRONS CHARACTER — улучшить AP melee на 1 (не суммируется с другими AP-модификаторами).
-    # Реализация (песочница): моделируем только +1 Strength (effect_id=hungry_void_strength_mod,
-    # strength_mod=1). НЕ моделируем: условный AP+1 при CHARACTER-лидере и таргет «не выбран драться».
-    # keyword_req пуст (в песочнице нет NECRONS-кейворда); usage_limit PER_PHASE enforced (B1c).
+    # Реализация (песочница): моделируем +1 Strength (effect_id=hungry_void_strength_mod,
+    # strength_mod=1) + AP+1 при CHARACTER-лидере (в _fight_effects_for_attacker).
+    # keyword_req=("necrons",) — только NECRONS-юниты могут использовать стратагему (A7).
+    # usage_limit PER_PHASE enforced (B1c).
     StratagemDef(
         id="hungry_void",
         name_ru="Hungry Void",
@@ -127,7 +128,7 @@ REGISTRY: tuple[StratagemDef, ...] = (
         timing=Timing.MAIN,
         trigger=Trigger.FIGHT_PHASE,
         scope="self_unit",
-        keyword_req=(),
+        keyword_req=("necrons",),
         usage_limit=UsageLimit.PER_PHASE,
         effect_id="hungry_void_strength_mod",
     ),

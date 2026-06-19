@@ -2272,6 +2272,9 @@ class Warhammer40kEnv(gym.Env):
                 continue
             if rec.get("effect_id") == "hungry_void_strength_mod":
                 effects["strength_mod"] = int(effects.get("strength_mod", 0)) + int(rec.get("strength_mod", 1))
+                unit_data_list = self.unit_data if str(side) == "model" else self.enemy_data
+                if 0 <= int(unit_idx) < len(unit_data_list) and self._unit_has_keyword(unit_data_list[int(unit_idx)], "character"):
+                    effects["ap_improve"] = int(effects.get("ap_improve", 0)) + 1
             elif rec.get("effect_id") == "command_reroll_wounds":
                 effects["reroll_wounds"] = str(rec.get("reroll_wounds", "all"))
         return effects or None

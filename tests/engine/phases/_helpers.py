@@ -23,6 +23,7 @@ def make_unit(name: str, movement: int = 6, models: int = 3, wounds: int = 2, rn
         "Ld": 7,
         "T": 4,
         "Sv": 3,
+        "Keywords": ["Necrons", "Infantry"],
     }
     weapon = {
         "Name": "Stub gun",
