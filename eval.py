@@ -1079,6 +1079,9 @@ def main():
         f"[EVAL][AZ][CONFIG] phase_obs_features={int(phase_obs_features_enabled())} "
         f"obs_size={int(n_observations)}"
     )
+    # B3-full: реакции через net-value lookahead (env AZ_REACTION_VALUE_POLICY, дефолт 0 = legacy).
+    _reaction_vp_on = str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on")
+    log(f"[EVAL][AZ][CONFIG] reaction_value_policy={int(_reaction_vp_on)}")
     eval_contract = make_env_contract(
         n_observations=n_observations,
         n_actions=n_actions,

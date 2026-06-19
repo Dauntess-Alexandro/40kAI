@@ -2634,6 +2634,13 @@ AZ_PHASE_OBS_FEATURES = resolve_phase_obs_features(
     cfg_value=AZ_CFG.get("phase_obs_features", 0),
 )
 os.environ["PHASE_OBS_FEATURES"] = "1" if AZ_PHASE_OBS_FEATURES else "0"
+# B3-full: реакции через net-value lookahead (дефолт 0 = legacy «всегда реагировать»).
+# resolve_phase_obs_features — generic-резолвер «env > cfg, truthy», переиспользуем.
+AZ_REACTION_VALUE_POLICY = resolve_phase_obs_features(
+    env_value=os.getenv("AZ_REACTION_VALUE_POLICY"),
+    cfg_value=AZ_CFG.get("reaction_value_policy", 0),
+)
+os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if AZ_REACTION_VALUE_POLICY else "0"
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
     os.getenv("AZ_MCTS_ROOT_DIRICHLET_ONLY", str(AZ_CFG.get("mcts_root_dirichlet_only", 1)))
@@ -9383,6 +9390,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
         f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} window_nodes={int(AZ_MCTS_WINDOW_NODES)} "
         f"joint_best_child={int(AZ_MCTS_JOINT_BEST_CHILD)} phase_obs_features={int(AZ_PHASE_OBS_FEATURES)} "
+        f"reaction_value_policy={int(AZ_REACTION_VALUE_POLICY)} "
         f"mcts={_AZ_LOG_SIMS} "
         f"{f'joint_action={int(GAZ_JOINT_ACTION)} ' if is_gumbel_az_algo(TRAIN_ALGO) else ''}"
         f"top_k={AZ_MCTS_TOP_K_PER_HEAD} depth={_AZ_LOG_DEPTH} "

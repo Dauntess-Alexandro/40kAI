@@ -4878,6 +4878,9 @@ class GUIController(QtCore.QObject):
         phase_obs = int(payload.get("phase_obs_features", 0))
         if phase_obs not in (0, 1):
             return f"{section}.phase_obs_features должен быть 0 или 1"
+        reaction_vp = int(payload.get("reaction_value_policy", 0))
+        if reaction_vp not in (0, 1):
+            return f"{section}.reaction_value_policy должен быть 0 или 1"
         return None
 
     def _apply_dqn_hyperparams_to_env(self, env: QtCore.QProcessEnvironment) -> None:
@@ -5590,6 +5593,13 @@ class GUIController(QtCore.QObject):
             os.getenv(
                 "PHASE_OBS_FEATURES",
                 str(int(self._az_tree_hyperparams.get("phase_obs_features", 0))),
+            ),
+        )
+        env.insert(
+            "AZ_REACTION_VALUE_POLICY",
+            os.getenv(
+                "AZ_REACTION_VALUE_POLICY",
+                str(int(self._az_tree_hyperparams.get("reaction_value_policy", 0))),
             ),
         )
         if az_eval_mode == "mcts" or az_opponent_mode == "mcts":
@@ -6688,6 +6698,10 @@ class GUIController(QtCore.QObject):
                 "PHASE_OBS_FEATURES",
                 os.getenv("PHASE_OBS_FEATURES", str(int(az_hp.get("phase_obs_features", 0)))),
             )
+            env.insert(
+                "AZ_REACTION_VALUE_POLICY",
+                os.getenv("AZ_REACTION_VALUE_POLICY", str(int(az_hp.get("reaction_value_policy", 0)))),
+            )
             env.insert("AZ_HEARTBEAT_SEC", os.getenv("AZ_HEARTBEAT_SEC", "15"))
             env.insert("AZ_ACTOR_HEARTBEAT_MOVES", os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5"))
             env.insert("ACTOR_PROGRESS_STDOUT_EVERY", "1")
@@ -6699,10 +6713,12 @@ class GUIController(QtCore.QObject):
             az_wn = env.value("MCTS_WINDOW_NODES", "0")
             az_joint_best = env.value("AZ_MCTS_JOINT_BEST_CHILD", "0")
             az_phase_obs = env.value("PHASE_OBS_FEATURES", "0")
+            az_reaction_vp = env.value("AZ_REACTION_VALUE_POLICY", "0")
             self._emit_log(
                 f"[GUI] [AZ][CONFIG] train8: algo={self._training_algo} mcts_mode={az_mode} "
                 f"candidate_mode={az_cand} windowed_selfplay={az_windowed} window_nodes={az_wn} "
                 f"joint_best_child={az_joint_best} phase_obs_features={az_phase_obs} "
+                f"reaction_value_policy={az_reaction_vp} "
                 f"sims={az_sims} depth={az_depth} actors={az_actors}",
                 level="INFO",
             )
