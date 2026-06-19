@@ -2230,9 +2230,16 @@ class Warhammer40kEnv(gym.Env):
         """
         if isinstance(base_effect, dict):
             report = self._visibility_report_between_units(attacker_side, int(attacker_idx), defender_side, int(defender_idx))
-            if bool(report.get("los", False)) and bool(report.get("obscured", False)):
+            if bool(report.get("los", False)) and bool(report.get("obscured", False)) and not bool(base_effect.get("cover")):
                 base_effect = dict(base_effect)
                 base_effect["cover"] = True
+                cover_msg = (
+                    f"[COVER][{phase.upper()}] {self._format_unit_label(attacker_side, int(attacker_idx))} -> "
+                    f"{self._format_unit_label(defender_side, int(defender_idx))}: "
+                    "применён Benefit of Cover (причина: obscured=True по LOS_DEBUG; эффект-словарь)."
+                )
+                self._log(cover_msg)
+                self._append_agent_log(cover_msg)
             return base_effect
 
         effect_norm = str(base_effect).strip().lower() if base_effect is not None else ""
@@ -2301,13 +2308,15 @@ class Warhammer40kEnv(gym.Env):
             return
         health = self.unit_health if side == "model" else self.enemy_health
         in_attack = self.unitInAttack if side == "model" else self.enemyInAttack
-        cp = self.modelCP if side == "model" else self.enemyCP
         for u, sid in dict(plan).items():
             ui = int(u)
             if not (0 <= ui < len(health)) or health[ui] <= 0:
                 continue
             if in_attack[ui][0] != 1:
                 continue
+            # B3 follow-up: читаем CP заново на каждой итерации — соседний юнит мог уже списать CP,
+            # иначе value-гейт оценивал бы по устаревшему запасу.
+            cp = self.modelCP if side == "model" else self.enemyCP
             if not self._should_use_stratagem(
                 str(sid), side, ui, [ui], "fight", cp,
                 net=getattr(self, "_reaction_net_by_side", {}).get(side),

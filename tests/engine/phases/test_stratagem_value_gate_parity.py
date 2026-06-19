@@ -9,4 +9,4 @@ def test_no_policy_runs_turn_without_error_and_no_strat_applied():
     env.stratagem_used = []
     run_windowed_default_turn(env, side="model")
     # без политики/плана авто-fight-стратагемы не применяются молча
-    assert isinstance(env.stratagem_used, list)
+    assert env.stratagem_used == []
