@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.engine.phases.stratagems import by_id
+from core.engine.phases.stratagems import by_id, usage_limit_reached
 
 
 def _unwrap(env):
@@ -17,6 +17,9 @@ def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase:
     e = _unwrap(env)
     d = by_id(stratagem_id)
     is_model = side == "model"
+    # B1c: hard-guard по usage_limit — нельзя применить стратагему сверх лимита окна.
+    if usage_limit_reached(e, side, d, phase=phase):
+        return {"ok": False, "cp_spent": 0, "reason": "usage_limit"}
     cp = int(e.modelCP if is_model else e.enemyCP)
     if cp < d.cp_cost:
         return {"ok": False, "cp_spent": 0, "reason": "not_enough_cp"}

@@ -172,6 +172,37 @@ def _unwrap(env):
     return getattr(env, "unwrapped", env)
 
 
+def usage_limit_reached(env, side: str, d: StratagemDef, *, phase: str | None = None) -> bool:
+    """B1c: исчерпан ли usage_limit стратагемы для стороны по журналу stratagem_used.
+
+    Окно подсчёта по типу лимита (каждый ограниченный тип = максимум 1 раз в окне):
+      PER_PHASE  — в текущем (battle_round, phase);
+      PER_TURN   — в текущем battle_round (ход стороны = раунд);
+      PER_BATTLE — за всю партию;
+      UNLIMITED  — без ограничения.
+    `phase` — строка фазы окна/применения; если None, берём env.phase.
+    """
+    if d.usage_limit is UsageLimit.UNLIMITED:
+        return False
+    e = _unwrap(env)
+    phase_str = str(phase if phase is not None else getattr(e, "phase", "") or "")
+    battle_round = int(getattr(e, "battle_round", 1) or 1)
+    used = getattr(e, "stratagem_used", None) or []
+    for rec in used:
+        if len(rec) < 4:
+            continue
+        r_side, r_id, r_round, r_phase = rec[0], rec[1], rec[2], rec[3]
+        if str(r_side) != side or str(r_id) != d.id:
+            continue
+        if d.usage_limit is UsageLimit.PER_BATTLE:
+            return True
+        if d.usage_limit is UsageLimit.PER_TURN and int(r_round) == battle_round:
+            return True
+        if d.usage_limit is UsageLimit.PER_PHASE and int(r_round) == battle_round and str(r_phase) == phase_str:
+            return True
+    return False
+
+
 def legal_stratagem_options(
     env,
     side: str,
@@ -196,6 +227,9 @@ def legal_stratagem_options(
     options: list[ActionOption] = []
     for d in defs:
         if cp < d.cp_cost:
+            continue
+        # B1c: исчерпанные по usage_limit стратагемы не предлагаем как опцию.
+        if usage_limit_reached(e, side, d, phase=phase.value):
             continue
         if candidate_unit_idxs is None:
             continue
