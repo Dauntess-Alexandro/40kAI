@@ -8779,6 +8779,21 @@ def _actor_learner_actor_entry_alphazero(
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
         len_model = int(len(model))
 
+        # B3-full: установка reaction_value_policy (net-value lookahead реакций) — прямой az_net.
+        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from core.models.reaction_value_policy import make_reaction_value_policy
+
+                _eu = env.unwrapped
+                _eu._reaction_net_by_side = {"model": az_net, "enemy": az_net}
+                _eu.reaction_policy = make_reaction_value_policy(_eu._reaction_net_by_side, device=cpu_device)
+                print(f"[{_AZ_LOG_TAG}][ACTOR] actor={int(actor_idx)} reaction_value_policy=ON", flush=True)
+            except Exception as exc:
+                print(
+                    f"[{_AZ_LOG_TAG}][ACTOR][WARN] actor={int(actor_idx)} reaction_value_policy install failed: {exc}",
+                    flush=True,
+                )
+
         sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
         # Путь sync должен совпадать с тем, что пишет learner (_save_az_sync, train.py ~8377):
         # learner использует тег tree/proxy по TRAIN_ALGO. Раньше актор читал untagged
@@ -9036,6 +9051,44 @@ def _az_env_worker_entry(
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
         len_model = int(len(model))
+
+        # B3-full: установка reaction_value_policy (net-value lookahead реакций) через evaluator-адаптер.
+        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                import numpy as _np
+
+                from core.models.reaction_value_policy import make_reaction_value_policy
+
+                _react_sizes = action_sizes_from_env(env, len_model)
+
+                class _ReactionEvalNet:
+                    """Адаптер evaluator.evaluate_one → net.infer-совместимый value (для harness)."""
+
+                    def __init__(self, _ev, _sizes):
+                        self._ev = _ev
+                        self._masks = [_np.ones(int(a), dtype=bool) for a in _sizes]
+
+                    def infer(self, obs_tensor, masks_by_head=None):
+                        obs = _np.asarray(obs_tensor.detach().cpu().numpy()[0], dtype=_np.float32)
+                        _, value = self._ev.evaluate_one(obs, self._masks)
+                        return None, torch.tensor([float(value)])
+
+                _react_net = _ReactionEvalNet(evaluator, _react_sizes)
+                _eu = env.unwrapped
+                _eu._reaction_net_by_side = {"model": _react_net, "enemy": _react_net}
+                _eu.reaction_policy = make_reaction_value_policy(
+                    _eu._reaction_net_by_side, device=torch.device("cpu")
+                )
+                print(
+                    f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} reaction_value_policy=ON",
+                    flush=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[{_AZ_LOG_TAG}][ENV_WORKER][WARN] worker={int(worker_id)} "
+                    f"reaction_value_policy install failed: {exc}",
+                    flush=True,
+                )
 
         opponent_policy_fn = None
         if int(self_play_enabled) == 1 and opponent_spec is not None:

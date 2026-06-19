@@ -5643,12 +5643,26 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('enemy', idOfE)} (причина: {reason})",
                         )
+                        # B3-full: триггер-резолв этого выстрела для net-value lookahead реакции защитника
+                        # (строим только при активной reaction_policy — иначе нулевой оверхед/parity).
+                        if getattr(self, "reaction_policy", None) is not None:
+                            def _rt_shot(apply, _i=i, _e=idOfE):
+                                eff = "benefit of cover" if apply else None
+                                eff = self._resolve_cover_effect_for_shot("model", _i, "enemy", _e, base_effect=eff, phase="shooting")
+                                _, mh = attack(
+                                    self.unit_health[_i], self.unit_weapon[_i], self.unit_data[_i],
+                                    self.enemy_health[_e], self.enemy_data[_e], effects=eff,
+                                    distance_to_target=self._shooting_distance_between_units("model", _i, "enemy", _e),
+                                )
+                                self._apply_health_update("enemy", _e, mh, reason="shooting_sim")
+                            self._pending_reaction_trigger = _rt_shot
                         effect = self._maybe_use_smokescreen(
                             defender_side="enemy",
                             defender_idx=idOfE,
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        self._pending_reaction_trigger = None
                         effect = self._resolve_cover_effect_for_shot("model", i, "enemy", idOfE, base_effect=effect, phase="shooting")
                         threat_count_before_shot, _, _ = self._count_real_threats_to_model_unit(i)
                         _logger = None
