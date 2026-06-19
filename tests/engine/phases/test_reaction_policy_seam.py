@@ -136,3 +136,10 @@ def test_heroic_skipped_by_policy_false():
         env._resolve_heroic_intervention("model", "enemy", 0, "charge")
     assert env.modelCP == 2
     assert env.stratagem_used == []
+
+
+def test_should_use_stratagem_no_policy_returns_true():
+    from tests.engine.phases._helpers import build_env
+    env = build_env()
+    env.reaction_policy = None
+    assert env._should_use_stratagem("insane_bravery", "model", 0, [0], "command", 1) is True

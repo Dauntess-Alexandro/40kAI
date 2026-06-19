@@ -4042,10 +4042,10 @@ class Warhammer40kEnv(gym.Env):
     def _unit_has_smoke(self, unit_data: dict) -> bool:
         return self._unit_has_keyword(unit_data, "smoke")
 
-    def _should_use_reaction(
+    def _should_use_stratagem(
         self, stratagem_id, side, chosen, candidates, phase, cp, *, resolve_trigger=None, net=None
     ) -> bool:
-        """Решение «использовать реакцию»: без политики — текущее поведение (всегда да).
+        """Общий гейт «использовать стратагему»: без политики — всегда да.
 
         B3-full: для net-value политики прокидываем в ctx ссылку на env, resolve_trigger
         (досимуляция триггер-взаимодействия) и net реагирующей стороны. Legacy игнорирует их.
@@ -4068,6 +4068,9 @@ class Warhammer40kEnv(gym.Env):
             return bool(policy(ctx))
         except Exception:
             return True
+
+    def _should_use_reaction(self, *args, **kwargs) -> bool:
+        return self._should_use_stratagem(*args, **kwargs)
 
     def _simulate_reaction_branch(self, ctx, *, apply: bool) -> float:
         """B3-full: оценить value реагирующей стороны при apply/pass, досимулировав триггер.
