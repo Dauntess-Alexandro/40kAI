@@ -327,6 +327,8 @@ def _normalize_effects(effects):
         "reroll_save": None,
         "strength_mod": 0,
         "ap_improve": 0,
+        "hit_penalty": 0,
+        "invuln_grant": 0,
     }
     if effects is None:
         return out
@@ -350,6 +352,14 @@ def _normalize_effects(effects):
             out["ap_improve"] = int(effects.get("ap_improve", 0) or 0)
         except (TypeError, ValueError):
             out["ap_improve"] = 0
+        try:
+            out["hit_penalty"] = max(0, int(effects.get("hit_penalty", 0) or 0))
+        except (TypeError, ValueError):
+            out["hit_penalty"] = 0
+        try:
+            out["invuln_grant"] = max(0, int(effects.get("invuln_grant", 0) or 0))
+        except (TypeError, ValueError):
+            out["invuln_grant"] = 0
     return out
 
 
@@ -482,6 +492,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
 
     lethal = _weapon_has_lethal_hits(attackerWeapon)
 
+    hit_threshold = bs + int(eff["hit_penalty"])
     hits = 0
     crit_hits = 0
     for r in rolls:
@@ -493,7 +504,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             hits += 1
             crit_hits += 1
             continue
-        if r >= bs:
+        if r >= hit_threshold:
             hits += 1
 
     # --- WOUND ROLLS ---

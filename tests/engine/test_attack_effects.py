@@ -36,6 +36,8 @@ def test_normalize_effects_variants():
         "reroll_save": None,
         "strength_mod": 0,
         "ap_improve": 0,
+        "hit_penalty": 0,
+        "invuln_grant": 0,
     }
     assert _normalize_effects("benefit of cover")["cover"] is True
     d = _normalize_effects({"cover": True, "reroll_hits": "ones", "strength_mod": 1, "ap_improve": 2})
@@ -46,6 +48,8 @@ def test_normalize_effects_variants():
         "reroll_save": None,
         "strength_mod": 1,
         "ap_improve": 2,
+        "hit_penalty": 0,
+        "invuln_grant": 0,
     }
     # неизвестный reroll → None
     assert _normalize_effects({"reroll_hits": "weird"})["reroll_hits"] is None
@@ -177,3 +181,24 @@ def test_reroll_wounds_one_rerolls_single_failure():
 
 def test_normalize_effects_reroll_one_allowed():
     assert _normalize_effects({"reroll_wounds": "one"})["reroll_wounds"] == "one"
+
+
+def test_hit_penalty_stealth_reduces_hits():
+    # bs4. hit [4]: без штрафа хит (4>=4) → урон; hit_penalty=1 → нужно 5+ → [4] промах.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    base, _ = attack(1, weapon, _ATT_DATA, 10, defender,
+                     roller=StubRoller(hit=[4], wound=[6]))
+    stealth, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"hit_penalty": 1},
+                        roller=StubRoller(hit=[4], wound=[6]))
+    assert float(sum(base)) == 1.0
+    assert float(sum(stealth)) == 0.0
+
+
+def test_hit_penalty_natural_six_still_hits():
+    # hit [6] всегда попадает даже со штрафом.
+    weapon = _ranged_weapon(S=4)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    stealth, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"hit_penalty": 3},
+                        roller=StubRoller(hit=[6], wound=[6]))
+    assert float(sum(stealth)) == 1.0
