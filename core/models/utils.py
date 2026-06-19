@@ -132,6 +132,26 @@ def normalize_state_dict(state_dict):
         normalized[new_key] = value
     return normalized
 
+def _per_unit_mask_keys(key: str) -> bool:
+    """B2: головы, к которым применяем per-unit legal-маски (shoot/charge per юнит)."""
+    return key.startswith("shoot_num_") or key.startswith("charge_num_")
+
+
+def _build_select_action_masks(env, len_model):
+    """B2: per-head legal-маски по ключам контракта (dict key -> bool-np.ndarray).
+
+    Берём готовый per-unit контракт из env.get_legal_action_masks_by_head(side="model").
+    Если env его не предоставляет — возвращаем пустой dict (маски не применяются).
+    """
+    env_unwrapped = unwrap_env(env)
+    if not hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
+        return {}
+    try:
+        return env_unwrapped.get_legal_action_masks_by_head(side="model")
+    except Exception:
+        return {}
+
+
 def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None):
     force_greedy = os.getenv("FORCE_GREEDY", "0") == "1" or os.getenv("PLAY_NO_EXPLORATION", "0") == "1"
     noisy_disable_eps = os.getenv("NOISY_DISABLE_EPS", "1") == "1"
@@ -140,7 +160,13 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
     steps_done += 1
     dev = next(policy_net.parameters()).device
 
-    
+    # B2: маски shoot/charge стали per-unit. Хардкод головы №2 больше не валиден,
+    # поэтому применяем маски по КЛЮЧУ из ordered_action_keys. Источник масок —
+    # per-head контракт env (legacy-параметр shoot_mask больше не используется).
+    ordered_keys = ordered_action_keys(int(len_model))
+    legal_by_head = _build_select_action_masks(env, int(len_model))
+
+
     if isinstance(state, collections.OrderedDict):
         state = np.array(list(state.values()), dtype=np.float32)
     elif isinstance(state, np.ndarray):
@@ -168,8 +194,9 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
             action = []
             for head_idx, head in enumerate(decision):
                 head = head.squeeze(0)
-                if head_idx == 2 and shoot_mask is not None:
-                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
+                key = ordered_keys[head_idx] if head_idx < len(ordered_keys) else None
+                if key is not None and _per_unit_mask_keys(key) and key in legal_by_head:
+                    mask = torch.as_tensor(legal_by_head[key], dtype=torch.bool, device=head.device)
                     if mask.numel() == head.numel() and mask.any():
                         masked_head = head.clone()
                         masked_head[~mask] = -1e9
@@ -179,23 +206,16 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
             return torch.tensor([action], device="cpu")
     else:
         sampled_action = env.action_space.sample()
-        shoot_choice = sampled_action["shoot"]
-        if shoot_mask is not None:
-            mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-            valid_indices = torch.where(mask)[0].tolist()
-            if valid_indices:
-                shoot_choice = random.choice(valid_indices)
-        action_list = [
-            sampled_action["move"],
-            sampled_action["attack"],
-            shoot_choice,
-            sampled_action["charge"],
-            sampled_action["use_cp"],
-            sampled_action["cp_on"],
-        ]
-        for i in range(len_model):
-            label = "move_num_" + str(i)
-            action_list.append(sampled_action[label])
+        action_list = []
+        for key in ordered_keys:
+            choice = int(sampled_action[key])
+            # B2: per-unit shoot/charge — ограничиваем случайный выбор легальной маской головы.
+            if _per_unit_mask_keys(key) and key in legal_by_head:
+                mask = torch.as_tensor(legal_by_head[key], dtype=torch.bool)
+                valid_indices = torch.where(mask)[0].tolist()
+                if valid_indices:
+                    choice = random.choice(valid_indices)
+            action_list.append(choice)
         action = torch.tensor([action_list], device="cpu")
         return action
 
