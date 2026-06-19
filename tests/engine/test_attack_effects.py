@@ -164,3 +164,16 @@ def test_normalize_effects_reroll_wounds_save():
     assert _normalize_effects({})["reroll_wounds"] is None
     assert _normalize_effects({})["reroll_save"] is None
     assert _normalize_effects({"reroll_wounds": "weird"})["reroll_wounds"] is None
+
+
+def test_reroll_wounds_one_rerolls_single_failure():
+    # S4 vs T4 → wound 4+. Два хита, оба провал [3,3]; "one" рероллит только первый → [5,_].
+    weapon = _ranged_weapon(S=4, Attacks=2)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    one, _ = attack(1, weapon, _ATT_DATA, 10, defender, effects={"reroll_wounds": "one"},
+                    roller=StubRoller(hit=[5, 5], wound=[3, 3, 5]))
+    assert float(sum(one)) == 1.0  # только один реролл стал успешным
+
+
+def test_normalize_effects_reroll_one_allowed():
+    assert _normalize_effects({"reroll_wounds": "one"})["reroll_wounds"] == "one"

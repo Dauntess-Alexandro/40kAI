@@ -339,7 +339,7 @@ def _normalize_effects(effects):
         rh = effects.get("reroll_hits")
         out["reroll_hits"] = rh if rh in ("ones", "all") else None
         rw = effects.get("reroll_wounds")
-        out["reroll_wounds"] = rw if rw in ("ones", "all") else None
+        out["reroll_wounds"] = rw if rw in ("ones", "all", "one") else None
         rs = effects.get("reroll_save")
         out["reroll_save"] = rs if rs in ("ones", "all") else None
         try:
@@ -522,8 +522,10 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
                     w = int(w)
                     if eff["reroll_wounds"] == "ones" and w == 1:
                         need.append(idx)
-                    elif eff["reroll_wounds"] == "all" and w < wt:
+                    elif eff["reroll_wounds"] in ("all", "one") and w < wt:
                         need.append(idx)
+                if eff["reroll_wounds"] == "one":
+                    need = need[:1]
                 if need:
                     new = _roll_with_stage(num=len(need), stage="wound")
                     new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
