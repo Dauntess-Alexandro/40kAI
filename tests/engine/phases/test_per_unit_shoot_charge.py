@@ -20,3 +20,24 @@ def test_masks_have_per_unit_shoot_charge():
     for i in range(n_model):
         assert masks[f"shoot_num_{i}"].shape[0] == n_enemy
         assert masks[f"charge_num_{i}"].shape[0] == n_enemy
+
+
+def test_flat_shoot_uses_per_unit_head(monkeypatch):
+    import core.envs.warhamEnv as warham_mod
+
+    hits = []
+
+    def fake_attack(ah, w, ad, dh, dd, *a, **k):
+        hits.append(1)
+        return [0.0], dh
+
+    monkeypatch.setattr(warham_mod, "attack", fake_attack)
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.unit_coords[0] = [0.0, 0.0]
+    env.unit_coords[1] = [0.0, 0.0]
+    env.enemy_coords[0] = [1.0, 1.0]
+    env.enemy_coords[1] = [1.0, 1.0]
+    action = {"shoot_num_0": 0, "shoot_num_1": 0}
+    env.shooting_phase("model", action=action)
+    assert len(hits) >= 1  # выстрелы по per-unit головам, без KeyError 'shoot'

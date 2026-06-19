@@ -5679,7 +5679,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = self.get_shoot_targets_for_unit("model", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
-                    raw = int(decide_shoot(i)) if decide_shoot is not None else action["shoot"]
+                    raw = int(decide_shoot(i)) if decide_shoot is not None else int(action.get(f"shoot_num_{i}", 0))
                     if 0 <= raw < len(valid_target_ids):
                         idOfE = valid_target_ids[raw]
                         target_hp_prev = self.enemy_health[idOfE]
@@ -5972,7 +5972,7 @@ class Warhammer40kEnv(gym.Env):
                 shootAbleUnits = self.get_shoot_targets_for_unit("enemy", i)
                 if len(shootAbleUnits) > 0:
                     valid_target_ids = shootAbleUnits
-                    raw = action.get("shoot", 0) if isinstance(action, dict) else 0
+                    raw = int(action.get(f"shoot_num_{i}", 0)) if isinstance(action, dict) else 0
                     heur_target, scored_targets = self._enemy_heur_pick_shoot_target(i, [int(v) for v in valid_target_ids])
                     if 0 <= raw < len(valid_target_ids):
                         idOfM = valid_target_ids[raw]
