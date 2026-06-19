@@ -1,8 +1,15 @@
 from core.engine.mission import apply_end_of_battle
-from core.engine.phases import phase_engine
+from core.engine.phases import default_action_dict, phase_engine
 from core.engine.phases.types import ActionKind, Phase
 from core.engine.unit import Unit
 from core.envs.warhamEnv import Warhammer40kEnv
+
+
+def flat_default_action(n: int, **overrides: int) -> dict[str, int]:
+    """Нейтральный flat action_dict для тестов (B2 per-unit shoot/charge)."""
+    action = default_action_dict(int(n))
+    action.update(overrides)
+    return action
 
 
 def make_unit(name: str, movement: int = 6, models: int = 3, wounds: int = 2, rng: int = 24) -> Unit:

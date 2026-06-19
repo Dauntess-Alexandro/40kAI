@@ -132,6 +132,48 @@ def normalize_state_dict(state_dict):
         normalized[new_key] = value
     return normalized
 
+def sample_action_list_from_space(
+    env,
+    len_model: int,
+    *,
+    masks_seq=None,
+    legal_by_head: dict | None = None,
+) -> list[int]:
+    """Случайный flat-action по ordered_action_keys с опциональными масками (B2 per-unit)."""
+    keys = ordered_action_keys(int(len_model))
+    sampled = env.action_space.sample()
+    action_list = [int(sampled[k]) for k in keys]
+    for idx, key in enumerate(keys):
+        raw_mask = None
+        if masks_seq is not None and idx < len(masks_seq):
+            raw_mask = masks_seq[idx]
+        elif legal_by_head is not None and key in legal_by_head:
+            raw_mask = legal_by_head[key]
+        if raw_mask is None:
+            continue
+        mask = torch.as_tensor(raw_mask, dtype=torch.bool)
+        valid_indices = torch.where(mask)[0].tolist()
+        if valid_indices:
+            action_list[idx] = int(random.choice(valid_indices))
+    return action_list
+
+
+def greedy_action_list_from_decision(decision, ordered_keys, legal_by_head: dict | None = None) -> list[int]:
+    action: list[int] = []
+    for head_idx, head in enumerate(decision):
+        head = head.squeeze(0)
+        key = ordered_keys[head_idx] if head_idx < len(ordered_keys) else None
+        if key is not None and legal_by_head is not None and key in legal_by_head:
+            mask = torch.as_tensor(legal_by_head[key], dtype=torch.bool, device=head.device)
+            if mask.numel() == head.numel() and mask.any():
+                masked_head = head.clone()
+                masked_head[~mask] = -1e9
+                action.append(int(masked_head.argmax().item()))
+                continue
+        action.append(int(head.argmax().item()))
+    return action
+
+
 def _per_unit_mask_keys(key: str) -> bool:
     """B2: головы, к которым применяем per-unit legal-маски (shoot/charge per юнит)."""
     return key.startswith("shoot_num_") or key.startswith("charge_num_")
@@ -220,17 +262,14 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
         return action
 
 def build_shoot_action_mask(env, log_fn=None, debug=False):
+    """Legacy helper для eval/play-логов: min-rank маска по shoot_num_* (B2)."""
     env_unwrapped = unwrap_env(env)
-    if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
-        try:
-            legal = env_unwrapped.get_legal_action_masks_by_head(side="model")
-            mask = legal.get("shoot")
-            if mask is not None:
-                tmask = torch.as_tensor(mask, dtype=torch.bool)
-                if bool(tmask.any()):
-                    return tmask
-        except Exception:
-            pass
+    n_model = len(getattr(env_unwrapped, "unit_health", []) or [])
+    if n_model <= 0:
+        return None
+    space_key = "shoot_num_0"
+    if space_key not in getattr(env_unwrapped.action_space, "spaces", {}):
+        return None
 
     def maybe_log_mask_state(state_key, message):
         if log_fn is None:
@@ -240,9 +279,30 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
             env._last_shoot_mask_log_state = state_key
             log_fn(message)
 
-    shoot_space = env_unwrapped.action_space.spaces["shoot"].n
+    if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
+        try:
+            legal = env_unwrapped.get_legal_action_masks_by_head(side="model")
+            valid_lengths: list[int] = []
+            for u_idx in range(n_model):
+                mask = legal.get(f"shoot_num_{u_idx}")
+                if mask is None:
+                    continue
+                k = int(sum(1 for x in np.asarray(mask, dtype=bool) if bool(x)))
+                if k > 0:
+                    valid_lengths.append(k)
+            if valid_lengths:
+                min_len = min(valid_lengths)
+                shoot_space = int(env_unwrapped.action_space.spaces[space_key].n)
+                tmask = torch.zeros(shoot_space, dtype=torch.bool)
+                tmask[: min(min_len, shoot_space)] = True
+                if bool(tmask.any()):
+                    return tmask
+        except Exception:
+            pass
+
+    shoot_space = int(env_unwrapped.action_space.spaces[space_key].n)
     valid_lengths = []
-    for i in range(len(env_unwrapped.unit_health)):
+    for i in range(n_model):
         if hasattr(env_unwrapped, "get_shoot_targets_for_unit"):
             valid_targets = env_unwrapped.get_shoot_targets_for_unit("model", i)
         else:
@@ -293,15 +353,11 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
 
 
 def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
-    """
-    Унифицированный контракт масок для всех голов действия.
-    Сейчас строгая маска есть только для shoot; остальные головы = all_true.
-    """
+    """Унифицированный контракт масок для всех голов действия (B2 per-unit)."""
     env_unwrapped = unwrap_env(env)
     ordered_keys = ordered_action_keys(int(len_model))
 
     masks = []
-    shoot_mask = build_shoot_action_mask(env_unwrapped, log_fn=log_fn, debug=debug)
     fallback_count = 0
     legal_by_head = None
     if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
@@ -315,7 +371,6 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
         if hasattr(sp, "n"):
             size = int(sp.n)
         elif hasattr(sp, "nvec"):
-            # В текущем проекте головы nvec не используются, но на всякий.
             size = int(sp.nvec[0])
         else:
             size = 1
@@ -323,8 +378,6 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
             mask = torch.as_tensor(legal_by_head[key], dtype=torch.bool).clone()
             if mask.numel() != size:
                 mask = torch.ones(size, dtype=torch.bool)
-        elif key == "shoot" and shoot_mask is not None and len(shoot_mask) == size:
-            mask = torch.as_tensor(shoot_mask, dtype=torch.bool).clone()
         else:
             mask = torch.ones(size, dtype=torch.bool)
         if not bool(mask.any()):
@@ -338,10 +391,11 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
         )
     return masks
 
-def convertToDict(action):
+def convertToDict(action, len_model: int | None = None):
     naction = action.numpy()[0]
-    len_model = max(0, int(len(naction) - 6))
-    return action_tensor_to_dict(action, len_model=len_model)
+    if len_model is None:
+        len_model = max(0, (len(naction) - 4) // 3)
+    return action_tensor_to_dict(action, len_model=int(len_model))
 
 def optimize_model(
     policy_net,

@@ -74,7 +74,7 @@ def _matplotlib_pyplot_agg():
     return plt
 
 
-ENV_RULESET_VERSION = os.getenv("ENV_RULESET_VERSION", "only_war_v1")
+ENV_RULESET_VERSION = os.getenv("ENV_RULESET_VERSION", "only_war_v2")
 
 _ACTION_KEYS_LOGGED = False
 
@@ -7597,7 +7597,10 @@ class Warhammer40kEnv(gym.Env):
         prev_vp_diff = self._prev_vp_diff
         legal_masks_before = self.get_legal_action_masks_by_head(side="model")
         move_options_before = int(np.sum(legal_masks_before.get("move", np.array([], dtype=bool))))
-        shoot_options_before = int(np.sum(legal_masks_before.get("shoot", np.array([], dtype=bool))))
+        shoot_options_before = sum(
+            int(np.sum(legal_masks_before.get(f"shoot_num_{u}", np.array([], dtype=bool))))
+            for u in range(len(self.unit_health))
+        )
         action_signature = self._action_signature(action)
         if self._last_action_signature is not None and action_signature == self._last_action_signature:
             self._action_repeat_streak = int(getattr(self, "_action_repeat_streak", 0)) + 1

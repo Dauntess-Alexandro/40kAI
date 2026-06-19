@@ -23,10 +23,10 @@ def test_shooting_options_match_env_targets():
 
     shoot_opts = [o for o in opts if o.kind is ActionKind.SHOOT]
     assert [o.target_idx for o in shoot_opts] == list(valid)
-    # local_rank — индекс в списке целей; legacy_patch кодирует shoot=rank
+    # local_rank — индекс в списке целей; legacy_patch кодирует shoot_num_{unit}=rank
     for rank, o in enumerate(shoot_opts):
         assert o.param["local_rank"] == rank
-        assert o.legacy_patch == {"shoot": rank}
+        assert o.legacy_patch == {"shoot_num_0": rank}
     assert any(o.kind is ActionKind.PASS for o in opts)
 
 
@@ -42,11 +42,11 @@ def test_charge_options_match_env_targets():
     charge_opts = [o for o in opts if o.kind is ActionKind.CHARGE]
     assert [o.target_idx for o in charge_opts] == list(valid)
     for o in charge_opts:
-        assert o.legacy_patch == {"charge": int(o.target_idx), "attack": 1}
+        assert o.legacy_patch == {"charge_num_0": int(o.target_idx), "attack": 1}
     assert any(o.kind is ActionKind.PASS for o in opts)
 
 
-def test_shoot_targets_union_matches_shoot_mask():
+def test_shoot_targets_union_matches_per_unit_shoot_masks():
     env = build_env()
     env.unit_coords[0] = [10, 10]
     env.unit_coords[1] = [10, 11]
@@ -54,38 +54,36 @@ def test_shoot_targets_union_matches_shoot_mask():
     env.enemy_coords[1] = [12, 10]
     env._invalidate_target_cache("test")
 
-    mask = env.get_legal_action_masks_by_head("model")["shoot"]
-    mask_ids = {int(i) for i, v in enumerate(np.asarray(mask, dtype=bool)) if v}
+    masks = env.get_legal_action_masks_by_head("model")
 
-    gen_ids: set[int] = set()
     for u in range(len(env.unit_health)):
+        mask = masks[f"shoot_num_{u}"]
+        mask_ranks = {int(i) for i, v in enumerate(np.asarray(mask, dtype=bool)) if v}
+        gen_ranks: set[int] = set()
         for o in shooting_options_for_unit(env, "model", u):
-            if o.target_idx is not None:
-                gen_ids.add(int(o.target_idx))
-
-    # Маска shoot строится в глобальном id-пространстве как объединение целей всех юнитов;
-    # при отсутствии целей маска вырождается в {0} (no-op), что генератор не порождает.
-    if gen_ids:
-        assert gen_ids == mask_ids
+            if o.kind is ActionKind.SHOOT:
+                gen_ranks.add(int(o.legacy_patch[f"shoot_num_{u}"]))
+        if gen_ranks:
+            assert gen_ranks == mask_ranks
 
 
-def test_charge_targets_union_matches_charge_mask():
+def test_charge_targets_union_matches_per_unit_charge_masks():
     env = build_env()
     env.unit_coords[0] = [10, 10]
     env.enemy_coords[0] = [12, 10]
     env._invalidate_target_cache("test")
 
-    mask = env.get_legal_action_masks_by_head("model")["charge"]
-    mask_ids = {int(i) for i, v in enumerate(np.asarray(mask, dtype=bool)) if v}
+    masks = env.get_legal_action_masks_by_head("model")
 
-    gen_ids: set[int] = set()
     for u in range(len(env.unit_health)):
+        mask = masks[f"charge_num_{u}"]
+        mask_ids = {int(i) for i, v in enumerate(np.asarray(mask, dtype=bool)) if v}
+        gen_ids: set[int] = set()
         for o in charge_options_for_unit(env, "model", u):
             if o.target_idx is not None:
                 gen_ids.add(int(o.target_idx))
-
-    if gen_ids:
-        assert gen_ids == mask_ids
+        if gen_ids:
+            assert gen_ids == mask_ids
 
 
 def test_movement_options_index_parity_with_executor():

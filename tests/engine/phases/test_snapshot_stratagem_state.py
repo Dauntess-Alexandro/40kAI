@@ -1,12 +1,9 @@
 from core.engine.phases import stratagem_engine
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
 def _action(use_cp: int, cp_on: int, n: int) -> dict:
-    a = {"move": 4, "attack": 1, "shoot": 0, "charge": 0, "use_cp": use_cp, "cp_on": cp_on}
-    for i in range(n):
-        a[f"move_num_{i}"] = 0
-    return a
+    return flat_default_action(n, use_cp=int(use_cp), cp_on=int(cp_on))
 
 
 def test_snapshot_restore_preserves_stratagem_journal_and_enemy_cp():

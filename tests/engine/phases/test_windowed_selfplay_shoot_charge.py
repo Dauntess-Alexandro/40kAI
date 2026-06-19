@@ -6,21 +6,18 @@ from core.engine.phases.windowed_selfplay import (
     run_model_charge_from_action,
     run_model_shooting_from_action,
 )
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
-def _action(n: int, *, shoot: int = 0, attack: int = 1, charge: int = 0) -> dict:
-    a = {
-        "move": 4,
-        "attack": int(attack),
-        "shoot": int(shoot),
-        "charge": int(charge),
-        "use_cp": 0,
-        "cp_on": 0,
-    }
-    for i in range(n):
-        a[f"move_num_{i}"] = 0
-    return a
+def _action(n: int, *, shoot: int = 0, attack: int = 1, charge: int = 0, unit_idx: int = 0) -> dict:
+    return flat_default_action(
+        n,
+        attack=int(attack),
+        **{
+            f"shoot_num_{int(unit_idx)}": int(shoot),
+            f"charge_num_{int(unit_idx)}": int(charge),
+        },
+    )
 
 
 def _setup_shoot(env):

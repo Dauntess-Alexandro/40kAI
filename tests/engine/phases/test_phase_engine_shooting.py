@@ -5,14 +5,11 @@ import numpy as np
 from core.engine.phases import phase_engine
 from core.engine.phases.option_generator import shooting_options_for_unit
 from core.engine.phases.types import ActionKind
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
-def _action(n: int, shoot: int = 0) -> dict:
-    a = {"move": 4, "attack": 1, "shoot": int(shoot), "charge": 0, "use_cp": 0, "cp_on": 0}
-    for i in range(n):
-        a[f"move_num_{i}"] = 0
-    return a
+def _action(n: int, shoot: int = 0, unit_idx: int = 0) -> dict:
+    return flat_default_action(n, **{f"shoot_num_{int(unit_idx)}": int(shoot)})
 
 
 def _setup_two_targets(env):

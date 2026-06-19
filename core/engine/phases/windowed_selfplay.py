@@ -81,10 +81,13 @@ def make_movement_decide_from_action_dict(
 def make_shooting_decide_from_action_dict(
     action_dict: dict | None,
 ) -> Callable[[DecisionWindow], ActionOption]:
-    """Маппинг shoot → local_rank (общая голова на ход)."""
-    shoot_rank = _action_int(action_dict, "shoot", 0)
+    """Маппинг shoot_num_{unit} → local_rank в окне стрельбы юнита."""
 
     def decide(window: DecisionWindow) -> ActionOption:
+        u = window.cursor_unit_idx
+        if u is None:
+            return _pick_pass(window)
+        shoot_rank = _action_int(action_dict, f"shoot_num_{int(u)}", 0)
         for opt in window.options:
             if opt.kind is ActionKind.SHOOT and int(opt.param.get("local_rank", -1)) == shoot_rank:
                 return opt
@@ -96,13 +99,16 @@ def make_shooting_decide_from_action_dict(
 def make_charge_decide_from_action_dict(
     action_dict: dict | None,
 ) -> Callable[[DecisionWindow], ActionOption]:
-    """Маппинг attack/charge → CHARGE-опция (глобальный индекс врага)."""
+    """Маппинг attack/charge_num_{unit} → CHARGE-опция (глобальный индекс врага)."""
     attack = _action_int(action_dict, "attack", 0)
-    charge_target = _action_int(action_dict, "charge", 0)
 
     def decide(window: DecisionWindow) -> ActionOption:
         if attack != 1:
             return _pick_pass(window)
+        u = window.cursor_unit_idx
+        if u is None:
+            return _pick_pass(window)
+        charge_target = _action_int(action_dict, f"charge_num_{int(u)}", 0)
         for opt in window.options:
             if opt.kind is ActionKind.CHARGE and opt.target_idx is not None:
                 if int(opt.target_idx) == charge_target:

@@ -14,7 +14,7 @@ from project_paths import ARTIFACTS_MODELS_DIR, PROJECT_ROOT, resolve_share_mode
 
 AGENTS_ROOT = str(ARTIFACTS_MODELS_DIR / "agents")
 AGENTS_REGISTRY_PATH = str(ARTIFACTS_MODELS_DIR / "agents_registry.json")
-DEFAULT_RULESET_VERSION = "only_war_v1"
+DEFAULT_RULESET_VERSION = "only_war_v2"
 
 
 @dataclass(frozen=True)

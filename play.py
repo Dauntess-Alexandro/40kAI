@@ -42,7 +42,6 @@ from core.models.sampled_muzero_model import (
 from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import (
     build_action_masks_by_head,
-    build_shoot_action_mask,
     convertToDict,
     normalize_state_dict,
     select_action,
@@ -200,7 +199,7 @@ if args.agent_id:
         n_observations=n_observations,
         n_actions=n_actions,
         mission_name=str(getattr(env.unwrapped, "mission_name", "only_war")),
-        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
     )
     ok, reason = compatible_contracts(runtime_contract, agent_payload.get("contract", {}))
     if not ok:
@@ -337,7 +336,7 @@ while isdone == False:
                     n_observations=n_observations,
                     n_actions=n_actions,
                     mission_name=mission_name,
-                    ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+                    ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
                 )
                 opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=play_contract)
                 opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy), opponent=opp, deterministic=True)
@@ -363,7 +362,6 @@ while isdone == False:
             _log("[VIEWER][OPPONENT] mode=human agent_id=- algo=manual_player")
         done, info = env.unwrapped.player()
     state = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-    shoot_mask = build_shoot_action_mask(env)
     if algo == "ppo":
         masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
         masks_b = [m.to(state.device).unsqueeze(0) for m in masks]
@@ -484,10 +482,9 @@ while isdone == False:
             policy_net,
             PLAY_EPS,
             len(model),
-            shoot_mask=shoot_mask,
         )
     else:
-        action = select_action(env, state, i, policy_net, len(model), shoot_mask=shoot_mask)
+        action = select_action(env, state, i, policy_net, len(model))
     action_dict = convertToDict(action)
     if done != True:
         next_observation, reward, done, _, info = env.step(action_dict)

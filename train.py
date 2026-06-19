@@ -535,7 +535,7 @@ LEARNER_SIDE = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
 LEARNER_FACTION = str(os.getenv("LEARNER_FACTION", "Necrons")).strip() or "Necrons"
 OPPONENT_POLICY = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
 OPPONENT_AGENT_ID = str(os.getenv("OPPONENT_AGENT_ID", "")).strip()
-RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v1")).strip() or "only_war_v1"
+RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v2")).strip() or "only_war_v2"
 HEURISTIC_MODE = str(os.getenv("HEURISTIC_MODE", "v2")).strip().lower() or "v2"
 IO_PROFILER = get_io_profiler()
 
@@ -577,41 +577,16 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, shoot
     if state.dim() == 1:
         state = state.unsqueeze(0)
 
+    ordered_keys = ordered_action_keys(int(len_model))
+    legal_by_head = _build_select_action_masks(env, int(len_model))
+
     if sample > epsilon:
         with torch.no_grad():
             decision = policy_net(state)
-            action = []
-            for head_idx, head in enumerate(decision):
-                head = head.squeeze(0)
-                if head_idx == 2 and shoot_mask is not None:
-                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head.device)
-                    if mask.numel() == head.numel() and mask.any():
-                        masked_head = head.clone()
-                        masked_head[~mask] = -1e9
-                        action.append(int(masked_head.argmax().item()))
-                        continue
-                action.append(int(head.argmax().item()))
+            action = greedy_action_list_from_decision(decision, ordered_keys, legal_by_head)
             return torch.tensor([action], device="cpu")
-    sampled_action = env.action_space.sample()
-    shoot_choice = sampled_action["shoot"]
-    if shoot_mask is not None:
-        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-        valid_indices = torch.where(mask)[0].tolist()
-        if valid_indices:
-            shoot_choice = random.choice(valid_indices)
-    action_list = [
-        sampled_action["move"],
-        sampled_action["attack"],
-        shoot_choice,
-        sampled_action["charge"],
-        sampled_action["use_cp"],
-        sampled_action["cp_on"],
-    ]
-    for i in range(len_model):
-        label = "move_num_"+str(i)
-        action_list.append(sampled_action[label])
-    action = torch.tensor([action_list], device="cpu")
-    return action
+    action_list = sample_action_list_from_space(env, int(len_model), legal_by_head=legal_by_head)
+    return torch.tensor([action_list], device="cpu")
 
 
 def moving_avg(values, window=50):
@@ -2461,13 +2436,19 @@ def _build_units_from_config(config, b_len, b_hei):
         )
     return enemy, model
 
-def _sample_random_action_from_sizes(action_sizes, shoot_mask=None):
+def _sample_random_action_from_sizes(action_sizes, shoot_mask=None, *, legal_by_head=None, ordered_keys=None):
     action_list = [random.randrange(int(size)) for size in action_sizes]
-    if shoot_mask is not None and len(action_list) > 2:
-        mask = torch.as_tensor(shoot_mask, dtype=torch.bool)
-        valid_indices = torch.where(mask)[0].tolist()
-        if valid_indices:
-            action_list[2] = random.choice(valid_indices)
+    if ordered_keys and legal_by_head:
+        for idx, key in enumerate(ordered_keys):
+            if idx >= len(action_list):
+                break
+            raw_mask = legal_by_head.get(key)
+            if raw_mask is None:
+                continue
+            mask = torch.as_tensor(raw_mask, dtype=torch.bool)
+            valid_indices = torch.where(mask)[0].tolist()
+            if valid_indices:
+                action_list[idx] = random.choice(valid_indices)
     return action_list
 
 
@@ -2492,39 +2473,32 @@ def _select_actions_batch(env_contexts, states, steps_done, policy_net, action_s
 
     for env_idx, ctx in enumerate(env_contexts):
         env = ctx.get("env")
+        len_model = int(ctx["len_model"])
+        ordered_keys = ordered_action_keys(len_model)
+        legal_by_head = _build_select_action_masks(env, len_model) if env is not None else {}
         use_random = random.random() <= eps_threshold
         if use_random:
             if env is None:
                 action_list = _sample_random_action_from_sizes(
                     action_sizes,
-                    shoot_mask=shoot_masks[env_idx] if shoot_masks else None,
+                    ordered_keys=ordered_keys,
+                    legal_by_head=legal_by_head,
                 )
             else:
-                sampled_action = env.action_space.sample()
-                shoot_choice = sampled_action["shoot"]
-                if shoot_masks and shoot_masks[env_idx] is not None:
-                    mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool)
-                    valid_indices = torch.where(mask)[0].tolist()
-                    if valid_indices:
-                        shoot_choice = random.choice(valid_indices)
-                action_list = [
-                    sampled_action["move"],
-                    sampled_action["attack"],
-                    shoot_choice,
-                    sampled_action["charge"],
-                    sampled_action["use_cp"],
-                    sampled_action["cp_on"],
-                ]
-                for i in range(ctx["len_model"]):
-                    label = "move_num_" + str(i)
-                    action_list.append(sampled_action[label])
+                action_list = sample_action_list_from_space(
+                    env,
+                    len_model,
+                    legal_by_head=legal_by_head,
+                )
             actions.append(torch.tensor([action_list], device="cpu"))
         else:
             action = []
             for head_idx, head in enumerate(decision):
                 head_row = head[env_idx]
-                if head_idx == 2 and shoot_masks and shoot_masks[env_idx] is not None:
-                    mask = torch.as_tensor(shoot_masks[env_idx], dtype=torch.bool, device=head_row.device)
+                key = ordered_keys[head_idx] if head_idx < len(ordered_keys) else None
+                raw_mask = legal_by_head.get(key) if key is not None else None
+                if raw_mask is not None:
+                    mask = torch.as_tensor(raw_mask, dtype=torch.bool, device=head_row.device)
                     if mask.numel() == head_row.numel() and mask.any():
                         masked_head = head_row.clone()
                         masked_head[~mask] = -1e9
@@ -4485,9 +4459,7 @@ def main():
     enemy = primary_ctx.get("enemy")
     env = primary_ctx.get("env")
     
-    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-    for i_u in range(primary_ctx["len_model"]):
-        ordered_keys.append(f"move_num_{i_u}")
+    ordered_keys = ordered_action_keys(primary_ctx["len_model"])
     
     if USE_SUBPROC_ENVS:
         primary_ctx["conn"].send(("get_action_space", ordered_keys))
@@ -5273,20 +5245,36 @@ def main():
                 ctx["action_head_skip"]["charge"] += 1
             if int(action_dict.get("use_cp", 0)) == 0:
                 ctx["action_head_skip"]["use_cp"] += 1
-            shoot_mask_now = shoot_masks[idx] if idx < len(shoot_masks) else None
-            valid_shoot_indices = []
-            if shoot_mask_now is not None:
+            shoot_mask_now = None
+            legal_heads = {}
+            env_now = ctx.get("env")
+            if env_now is not None:
                 try:
-                    valid_shoot_indices = [j for j, allowed in enumerate(shoot_mask_now) if bool(allowed)]
+                    legal_heads = _build_select_action_masks(env_now, int(ctx["len_model"]))
                 except Exception:
-                    valid_shoot_indices = []
-            if len(valid_shoot_indices) == 0:
+                    legal_heads = {}
+            any_shoot_targets = False
+            any_shoot_invalid = False
+            for i_u in range(int(ctx["len_model"])):
+                mask_u = legal_heads.get(f"shoot_num_{i_u}")
+                valid_shoot_indices = []
+                if mask_u is not None:
+                    try:
+                        valid_shoot_indices = [j for j, allowed in enumerate(mask_u) if bool(allowed)]
+                    except Exception:
+                        valid_shoot_indices = []
+                if len(valid_shoot_indices) == 0:
+                    continue
+                any_shoot_targets = True
+                shoot_raw = int(action_dict.get(f"shoot_num_{i_u}", -1))
+                if shoot_raw not in valid_shoot_indices:
+                    any_shoot_invalid = True
+            if not any_shoot_targets:
                 ctx["shoot_windows_without_targets"] += 1
                 ctx["action_head_skip"]["shoot"] += 1
             else:
                 ctx["shoot_windows_with_targets"] += 1
-                shoot_raw = int(action_dict.get("shoot", -1))
-                if shoot_raw not in valid_shoot_indices:
+                if any_shoot_invalid:
                     ctx["action_head_invalid"]["shoot"] += 1
 
         step_results = [None] * len(env_contexts)
@@ -6480,9 +6468,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     else:
         n_observations = int(np.array(state0).shape[0])
 
-    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-    for i_u in range(len(model0)):
-        ordered_keys.append(f"move_num_{i_u}")
+    ordered_keys = ordered_action_keys(len(model0))
     n_actions = []
     for k in ordered_keys:
         sp = env0.action_space.spaces[k]
@@ -7511,9 +7497,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     else:
         n_observations = int(np.array(state0).shape[0])
 
-    ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-    for i_u in range(len(model0)):
-        ordered_keys.append(f"move_num_{i_u}")
+    ordered_keys = ordered_action_keys(len(model0))
     n_actions = []
     for k in ordered_keys:
         sp = env0.action_space.spaces[k]
@@ -8515,9 +8499,7 @@ def _actor_learner_actor_entry_ppo(
         opponent_loaded = False
 
         # ordered_keys локально (для action_dict)
-        ordered_keys = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
-        for i_u in range(len(model)):
-            ordered_keys.append(f"move_num_{i_u}")
+        ordered_keys = ordered_action_keys(len(model))
 
         steps_buf: list[dict] = []
 

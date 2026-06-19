@@ -33,8 +33,11 @@ def _legal_move_num(env, u: int) -> int:
     return 1 if move_cells else 0
 
 
+from tests.engine.phases._helpers import build_env, flat_default_action
+
+
 def _action(env, n: int, *, move_num_override: int | None = None) -> dict:
-    a = {"move": 0, "attack": 1, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0}
+    a = flat_default_action(n, move=0, attack=1)
     for i in range(n):
         a[f"move_num_{i}"] = move_num_override if move_num_override is not None else _legal_move_num(env, i)
     return a

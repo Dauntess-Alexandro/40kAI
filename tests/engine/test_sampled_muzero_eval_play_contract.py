@@ -130,9 +130,11 @@ def test_select_action_greedy_format_and_legality(tmp_path, monkeypatch):
     class MockSpace:
         def sample(self):
             return {
-                "move": 0, "attack": 0, "shoot": 0,
-                "charge": 0, "use_cp": 0, "cp_on": 0,
+                "move": 0, "attack": 0,
+                "use_cp": 0, "cp_on": 0,
                 "move_num_0": 0,
+                "shoot_num_0": 0,
+                "charge_num_0": 0,
             }
 
     class MockEnv:

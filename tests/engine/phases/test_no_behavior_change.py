@@ -41,9 +41,7 @@ def test_compiled_default_equals_manual_default_step():
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     n = len(env.unit_health)
 
-    manual = {"move": 4, "attack": 1, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0}
-    for i in range(n):
-        manual[f"move_num_{i}"] = 0
+    manual = default_action_dict(n)
     compiled = compile_options_to_action_dict([], len_model=n)
     assert compiled == manual
 

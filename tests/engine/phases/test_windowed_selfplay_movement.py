@@ -4,11 +4,11 @@ from core.engine.phases.windowed_selfplay import (
     make_movement_decide_from_action_dict,
     run_model_movement_from_action,
 )
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
 def _move_action(n: int, overrides: dict) -> dict:
-    a = {"move": 4, "attack": 1, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0}
+    a = flat_default_action(n)
     for i in range(n):
         a[f"move_num_{i}"] = int(overrides.get(i, 0))
     return a

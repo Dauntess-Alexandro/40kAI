@@ -4,14 +4,11 @@ import numpy as np
 
 from core.engine.phases import phase_engine
 from core.engine.phases.types import ActionKind
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
-def _caction(n: int, attack: int = 1, charge: int = 0) -> dict:
-    a = {"move": 4, "attack": int(attack), "shoot": 0, "charge": int(charge), "use_cp": 0, "cp_on": 0}
-    for i in range(n):
-        a[f"move_num_{i}"] = 0
-    return a
+def _caction(n: int, attack: int = 1, charge: int = 0, unit_idx: int = 0) -> dict:
+    return flat_default_action(n, attack=int(attack), **{f"charge_num_{int(unit_idx)}": int(charge)})
 
 
 def _setup(env):

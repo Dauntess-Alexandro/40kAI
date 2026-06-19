@@ -10,7 +10,7 @@ from tests.engine.phases._helpers import build_env
 def test_default_action_dict_shape():
     d = default_action_dict(2)
     assert d["move"] == 4 and d["attack"] == 1
-    assert d["shoot"] == 0 and d["charge"] == 0
+    assert d["shoot_num_0"] == 0 and d["charge_num_0"] == 0
     assert d["use_cp"] == 0 and d["cp_on"] == 0
     assert d["move_num_0"] == 0 and d["move_num_1"] == 0
     assert "move_num_2" not in d
@@ -19,14 +19,14 @@ def test_default_action_dict_shape():
 def test_compile_applies_patches_in_order():
     opts = [
         ActionOption(kind=ActionKind.MOVE, unit_idx=0, legacy_patch={"move_num_0": 3}),
-        ActionOption(kind=ActionKind.SHOOT, unit_idx=0, target_idx=5, legacy_patch={"shoot": 1}),
-        ActionOption(kind=ActionKind.CHARGE, unit_idx=1, target_idx=0, legacy_patch={"charge": 0, "attack": 1}),
+        ActionOption(kind=ActionKind.SHOOT, unit_idx=0, target_idx=5, legacy_patch={"shoot_num_0": 1}),
+        ActionOption(kind=ActionKind.CHARGE, unit_idx=1, target_idx=0, legacy_patch={"charge_num_1": 0, "attack": 1}),
         ActionOption(kind=ActionKind.USE_STRATAGEM, unit_idx=1, legacy_patch={"use_cp": 1, "cp_on": 1}),
     ]
     d = compile_options_to_action_dict(opts, len_model=2)
     assert d["move_num_0"] == 3
-    assert d["shoot"] == 1
-    assert d["charge"] == 0 and d["attack"] == 1
+    assert d["shoot_num_0"] == 1
+    assert d["charge_num_1"] == 0 and d["attack"] == 1
     assert d["use_cp"] == 1 and d["cp_on"] == 1
 
 

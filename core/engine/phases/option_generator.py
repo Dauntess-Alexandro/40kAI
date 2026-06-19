@@ -32,7 +32,7 @@ def shooting_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOptio
                 unit_idx=int(unit_idx),
                 target_idx=int(target_global),
                 param={"local_rank": int(rank)},
-                legacy_patch={"shoot": int(rank)},
+                legacy_patch={f"shoot_num_{int(unit_idx)}": int(rank)},
             )
         )
     return options
@@ -99,7 +99,7 @@ def charge_options_for_unit(env, side: str, unit_idx: int) -> list[ActionOption]
                 kind=ActionKind.CHARGE,
                 unit_idx=int(unit_idx),
                 target_idx=int(target_global),
-                legacy_patch={"charge": int(target_global), "attack": 1},
+                legacy_patch={f"charge_num_{int(unit_idx)}": int(target_global), "attack": 1},
             )
         )
     return options

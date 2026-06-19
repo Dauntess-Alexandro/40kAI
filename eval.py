@@ -52,7 +52,14 @@ from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, EVAL_STOP_F
 
 AGENT_EVAL_LOG_FILE = str(AGENT_EVAL_LOG_PATH.relative_to(AGENT_EVAL_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_EVAL_LOG_FILE)
-from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, unwrap_env
+from core.models.utils import (
+    build_action_masks_by_head,
+    build_shoot_action_mask,
+    convertToDict,
+    sample_action_list_from_space,
+    unwrap_env,
+)
+from core.models.action_contract import ordered_action_keys
 
 
 def _append_eval_log(message: str) -> None:
@@ -228,47 +235,38 @@ def _build_env_from_train_roster():
 
 def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, action_masks=None, shoot_mask=None):
     masks_seq = action_masks
-    if masks_seq is None and shoot_mask is not None:
-        masks_seq = [None] * (6 + int(len_model))
-        masks_seq[2] = torch.as_tensor(shoot_mask, dtype=torch.bool)
+    # shoot_mask: legacy, игнорируется (B2 per-unit через action_masks / env masks)
     if epsilon <= 0:
         with torch.no_grad():
             decision = policy_net(state)
+            ordered_keys = ordered_action_keys(int(len_model))
+            legal_by_head = None
+            env_u = unwrap_env(env)
+            if hasattr(env_u, "get_legal_action_masks_by_head"):
+                try:
+                    legal_by_head = env_u.get_legal_action_masks_by_head(side="model")
+                except Exception:
+                    legal_by_head = None
             action = []
             for head_idx, head in enumerate(decision):
                 head = head.squeeze(0)
+                raw_mask = None
                 if masks_seq is not None and head_idx < len(masks_seq):
                     raw_mask = masks_seq[head_idx]
-                    if raw_mask is not None:
-                        mask = torch.as_tensor(raw_mask, dtype=torch.bool, device=head.device)
-                        if mask.numel() == head.numel() and mask.any():
-                            masked_head = head.clone()
-                            masked_head[~mask] = -1e9
-                            action.append(int(masked_head.argmax().item()))
-                            continue
+                key = ordered_keys[head_idx] if head_idx < len(ordered_keys) else None
+                if raw_mask is None and legal_by_head is not None and key is not None:
+                    raw_mask = legal_by_head.get(key)
+                if raw_mask is not None:
+                    mask = torch.as_tensor(raw_mask, dtype=torch.bool, device=head.device)
+                    if mask.numel() == head.numel() and mask.any():
+                        masked_head = head.clone()
+                        masked_head[~mask] = -1e9
+                        action.append(int(masked_head.argmax().item()))
+                        continue
                 action.append(int(head.argmax().item()))
             return torch.tensor([action], device="cpu")
 
-    sampled_action = env.action_space.sample()
-    action_list = [
-        sampled_action["move"],
-        sampled_action["attack"],
-        sampled_action["shoot"],
-        sampled_action["charge"],
-        sampled_action["use_cp"],
-        sampled_action["cp_on"],
-    ]
-    for i in range(len_model):
-        label = "move_num_" + str(i)
-        action_list.append(sampled_action[label])
-    if masks_seq is not None:
-        for idx, raw_mask in enumerate(masks_seq):
-            if raw_mask is None or idx >= len(action_list):
-                continue
-            mask = torch.as_tensor(raw_mask, dtype=torch.bool)
-            valid_indices = torch.where(mask)[0].tolist()
-            if valid_indices:
-                action_list[idx] = int(valid_indices[torch.randint(0, len(valid_indices), (1,)).item()])
+    action_list = sample_action_list_from_space(env, int(len_model), masks_seq=masks_seq)
     return torch.tensor([action_list], device="cpu")
 
 
@@ -354,13 +352,7 @@ def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_mo
     with torch.no_grad():
         probs, _value = policy_net.infer(state, masks_by_head=masks)
     if epsilon > 0 and random.random() < float(epsilon):
-        sampled = env.action_space.sample()
-        action_list = [
-            sampled["move"], sampled["attack"], sampled["shoot"],
-            sampled["charge"], sampled["use_cp"], sampled["cp_on"],
-        ]
-        for i in range(int(len_model)):
-            action_list.append(sampled[f"move_num_{i}"])
+        action_list = sample_action_list_from_space(env, int(len_model))
         return torch.tensor([action_list], device="cpu")
     action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
     return torch.tensor([action_list], device="cpu")
@@ -371,13 +363,7 @@ def select_action_with_epsilon_gumbel_muzero(env, state, policy_net, epsilon, le
     legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
     obs_np = state.squeeze(0).detach().cpu().numpy()
     if epsilon > 0 and random.random() < float(epsilon):
-        sampled = env.action_space.sample()
-        action_list = [
-            sampled["move"], sampled["attack"], sampled["shoot"],
-            sampled["charge"], sampled["use_cp"], sampled["cp_on"],
-        ]
-        for i in range(int(len_model)):
-            action_list.append(sampled[f"move_num_{i}"])
+        action_list = sample_action_list_from_space(env, int(len_model))
         return torch.tensor([action_list], device="cpu")
     gmz_eval_mode = str(os.getenv("GMZ_EVAL_MODE", os.getenv("GMZ_OPPONENT_MODE", "search"))).strip().lower() or "search"
     if gmz_eval_mode not in {"search", "greedy"}:
@@ -413,13 +399,7 @@ def select_action_with_epsilon_sampled_muzero(env, state, policy_net, epsilon, l
     legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
     obs_np = state.squeeze(0).detach().cpu().numpy()
     if epsilon > 0 and random.random() < float(epsilon):
-        sampled = env.action_space.sample()
-        action_list = [
-            sampled["move"], sampled["attack"], sampled["shoot"],
-            sampled["charge"], sampled["use_cp"], sampled["cp_on"],
-        ]
-        for i in range(int(len_model)):
-            action_list.append(sampled[f"move_num_{i}"])
+        action_list = sample_action_list_from_space(env, int(len_model))
         return torch.tensor([action_list], device="cpu")
     smz_eval_mode = str(os.getenv("SMZ_EVAL_MODE", os.getenv("SMZ_OPPONENT_MODE", "search"))).strip().lower() or "search"
     if smz_eval_mode not in {"search", "greedy"}:
@@ -520,33 +500,35 @@ def run_episode(
         except Exception:
             return float(default)
 
+    def _aggregate_per_unit_max(action_dict: dict, prefix: str, n_units: int, default: int = 0) -> int:
+        vals = [_safe_int(action_dict.get(f"{prefix}_{i}", default), default) for i in range(int(n_units))]
+        return max(vals) if vals else int(default)
+
     def _head_masks_summary() -> str:
         try:
-            masks = build_action_masks_by_head(env, len(model_units), log_fn=None, debug=False)
-            head_names = ["move", "attack", "shoot", "charge", "use_cp", "cp_on"]
+            n_units = int(len(model_units))
+            keys = ordered_action_keys(n_units)
+            masks = build_action_masks_by_head(env, n_units, log_fn=None, debug=False)
             parts = []
-            for i, m in enumerate(masks[:6]):
+            for i, key in enumerate(keys):
+                if i >= len(masks):
+                    break
+                m = masks[i]
                 m_np = m.detach().cpu().numpy() if hasattr(m, "detach") else m
                 total = int(len(m_np))
                 valid = int(sum(1 for x in m_np if bool(x)))
-                label = head_names[i] if i < len(head_names) else f"h{i}"
-                parts.append(f"{label}:{valid}/{total}")
+                parts.append(f"{key}:{valid}/{total}")
             return ", ".join(parts)
         except Exception:
             return "masks=unavailable"
 
     def _head_masks_counts() -> dict[str, tuple[int, int]]:
-        out = {
-            "move": (0, 0),
-            "attack": (0, 0),
-            "shoot": (0, 0),
-            "charge": (0, 0),
-            "use_cp": (0, 0),
-            "cp_on": (0, 0),
-        }
+        n_units = int(len(model_units))
+        keys = ordered_action_keys(n_units)
+        out: dict[str, tuple[int, int]] = {}
         try:
-            masks = build_action_masks_by_head(env, len(model_units), log_fn=None, debug=False)
-            for idx, key in enumerate(("move", "attack", "shoot", "charge", "use_cp", "cp_on")):
+            masks = build_action_masks_by_head(env, n_units, log_fn=None, debug=False)
+            for idx, key in enumerate(keys):
                 if idx >= len(masks):
                     continue
                 m = masks[idx]
@@ -554,27 +536,40 @@ def run_episode(
                 total = int(len(m_np))
                 valid = int(sum(1 for x in m_np if bool(x)))
                 out[key] = (valid, total)
+            shoot_v = max((out.get(f"shoot_num_{i}", (0, 0))[0] for i in range(n_units)), default=0)
+            shoot_t = max((out.get(f"shoot_num_{i}", (0, 0))[1] for i in range(n_units)), default=0)
+            charge_v = max((out.get(f"charge_num_{i}", (0, 0))[0] for i in range(n_units)), default=0)
+            charge_t = max((out.get(f"charge_num_{i}", (0, 0))[1] for i in range(n_units)), default=0)
+            out["shoot"] = (int(shoot_v), int(shoot_t))
+            out["charge"] = (int(charge_v), int(charge_t))
         except Exception:
-            pass
+            out.setdefault("shoot", (0, 0))
+            out.setdefault("charge", (0, 0))
         return out
 
     def _human_action(action_dict: dict) -> str:
+        n_units = int(len(model_units))
         move_val = _safe_int(action_dict.get("move", 4), 4)
         attack_val = _safe_int(action_dict.get("attack", 0), 0)
-        shoot_val = _safe_int(action_dict.get("shoot", -1), -1)
-        charge_val = _safe_int(action_dict.get("charge", 0), 0)
+        shoot_val = _aggregate_per_unit_max(action_dict, "shoot_num", n_units, default=-1)
+        charge_val = _aggregate_per_unit_max(action_dict, "charge_num", n_units, default=0)
         use_cp_val = _safe_int(action_dict.get("use_cp", 0), 0)
         cp_on_val = _safe_int(action_dict.get("cp_on", 0), 0)
         move_units = []
-        for i_u in range(int(len(model_units))):
-            k = f"move_num_{i_u}"
-            if k in action_dict:
-                move_units.append(str(_safe_int(action_dict.get(k, 0), 0)))
+        shoot_units = []
+        charge_units = []
+        for i_u in range(n_units):
+            k_move = f"move_num_{i_u}"
+            if k_move in action_dict:
+                move_units.append(str(_safe_int(action_dict.get(k_move, 0), 0)))
+            shoot_units.append(str(_safe_int(action_dict.get(f"shoot_num_{i_u}", 0), 0)))
+            charge_units.append(str(_safe_int(action_dict.get(f"charge_num_{i_u}", 0), 0)))
         move_units_text = ",".join(move_units) if move_units else "-"
         return (
             f"move={move_val}({move_dir_labels.get(move_val, 'unk')}) "
             f"attack={attack_val} shoot={shoot_val} charge={charge_val} "
-            f"use_cp={use_cp_val} cp_on={cp_on_val} move_num=[{move_units_text}]"
+            f"use_cp={use_cp_val} cp_on={cp_on_val} move_num=[{move_units_text}] "
+            f"shoot_num=[{','.join(shoot_units)}] charge_num=[{','.join(charge_units)}]"
         )
 
     def _human_action_with_units(action_dict: dict) -> str:
@@ -606,8 +601,8 @@ def run_episode(
 
         move = _safe_int(action_dict.get("move", 4), 4)
         attack = _safe_int(action_dict.get("attack", 0), 0)
-        shoot = _safe_int(action_dict.get("shoot", -1), -1)
-        charge = _safe_int(action_dict.get("charge", 0), 0)
+        shoot = _aggregate_per_unit_max(action_dict, "shoot_num", len(model_units), default=-1)
+        charge = _aggregate_per_unit_max(action_dict, "charge_num", len(model_units), default=0)
         use_cp = _safe_int(action_dict.get("use_cp", 0), 0)
 
         if shoot_targets <= 0 and shoot >= 0:
@@ -661,8 +656,8 @@ def run_episode(
     ) -> None:
         move = _safe_int(action_dict.get("move", 4), 4)
         attack = _safe_int(action_dict.get("attack", 0), 0)
-        shoot = _safe_int(action_dict.get("shoot", -1), -1)
-        charge = _safe_int(action_dict.get("charge", 0), 0)
+        shoot = _aggregate_per_unit_max(action_dict, "shoot_num", len(model_units), default=-1)
+        charge = _aggregate_per_unit_max(action_dict, "charge_num", len(model_units), default=0)
         use_cp = _safe_int(action_dict.get("use_cp", 0), 0)
         cp_on = _safe_int(action_dict.get("cp_on", 0), 0)
 
@@ -854,8 +849,14 @@ def run_episode(
             st["steps"] += 1
             st["reward_sum_x1000"] += int(round(float(reward) * 1000.0))
             st["attack_nonzero"] += 1 if _safe_int(action_dict.get("attack", 0), 0) > 0 else 0
-            st["shoot_nonzero"] += 1 if _safe_int(action_dict.get("shoot", -1), -1) > 0 else 0
-            st["charge_nonzero"] += 1 if _safe_int(action_dict.get("charge", 0), 0) > 0 else 0
+            st["shoot_nonzero"] += 1 if any(
+                _safe_int(action_dict.get(f"shoot_num_{i}", -1), -1) > 0
+                for i in range(int(len(model_units)))
+            ) else 0
+            st["charge_nonzero"] += 1 if any(
+                _safe_int(action_dict.get(f"charge_num_{i}", 0), 0) > 0
+                for i in range(int(len(model_units)))
+            ) else 0
             st["cp_used"] += 1 if _safe_int(action_dict.get("use_cp", 0), 0) > 0 else 0
         model_ctrl = info.get("model controlled objectives", []) if isinstance(info, dict) else []
         enemy_ctrl = info.get("player controlled objectives", []) if isinstance(info, dict) else []
@@ -1086,7 +1087,7 @@ def main():
         n_observations=n_observations,
         n_actions=n_actions,
         mission_name=mission_name,
-        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

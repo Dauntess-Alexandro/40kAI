@@ -4,14 +4,11 @@ import numpy as np
 import pytest
 
 from core.engine.phases.windowed_selfplay import run_model_turn_from_action
-from tests.engine.phases._helpers import build_env
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
 def _action(n: int) -> dict:
-    a = {"move": 4, "attack": 1, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0}
-    for i in range(n):
-        a[f"move_num_{i}"] = 0
-    return a
+    return flat_default_action(n)
 
 
 def _setup(env):

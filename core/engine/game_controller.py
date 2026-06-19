@@ -281,7 +281,7 @@ class GameController:
                     n_observations=len(model_info),
                     n_actions=n_actions,
                     mission_name=str(getattr(env.unwrapped, "mission_name", "only_war")),
-                    ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+                    ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
                 )
                 ok, reason = compatible_contracts(runtime_contract, payload.get("contract", {}))
                 if not ok:
@@ -404,7 +404,7 @@ class GameController:
                 n_observations=len(model_info),
                 n_actions=n_actions,
                 mission_name=str(getattr(env.unwrapped, "mission_name", "only_war")),
-                ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v1")),
+                ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
             )
             ok, reason = compatible_contracts(runtime_contract, payload.get("contract", {}))
             if not ok:

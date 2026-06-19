@@ -27,7 +27,7 @@ def test_resolve_candidate_mode_defaults_option(monkeypatch):
 def test_joint_tuple_roundtrip():
     n = 2
     d = default_action_dict(n)
-    d["shoot"] = 1
+    d["shoot_num_0"] = 1
     d["move_num_1"] = 3
     jt = joint_tuple_from_action_dict(d, n)
     d2 = action_dict_from_joint_tuple(jt, n)
