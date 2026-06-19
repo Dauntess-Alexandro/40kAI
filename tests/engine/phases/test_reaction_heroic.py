@@ -31,14 +31,9 @@ def _setup(env):
 
 
 def test_heroic_used_when_counter_charge_helps():
+    # Реальный call-site trigger (_rt_heroic) ставит model[0] в бой; net ценит engagement → used.
     env = build_env()
     _setup(env)
-
-    def trig(apply):
-        if apply:  # counter-charge: защитник входит в бой
-            env.unitInAttack[0] = [1, 0]
-
-    env._pending_reaction_trigger = trig
     cp_before = env.modelCP
     env._resolve_heroic_intervention("model", "enemy", 0, "charge")
 
@@ -46,10 +41,19 @@ def test_heroic_used_when_counter_charge_helps():
     assert env.modelCP == cp_before - 2
 
 
-def test_heroic_skipped_on_tie():
+class _ConstNet:
+    def infer(self, obs, masks_by_head=None):
+        import torch
+
+        return None, torch.tensor([0.0])
+
+
+def test_heroic_skipped_when_value_indifferent():
+    # net безразличен к engagement → apply == pass → тай → PASS.
     env = build_env()
     _setup(env)
-    env._pending_reaction_trigger = lambda apply: None
+    env._reaction_net_by_side = {"model": _ConstNet()}
+    env.reaction_policy = make_reaction_value_policy(env._reaction_net_by_side, device="cpu")
     cp_before = env.modelCP
     env._resolve_heroic_intervention("model", "enemy", 0, "charge")
 

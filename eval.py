@@ -1176,6 +1176,17 @@ def main():
         policy_net = make_alphazero_net(n_observations, n_actions, **arch).to(device)
         load_alphazero_state_dict(policy_net, normalize_state_dict(az_state))
         policy_net.eval()
+        # B3-full: установка reaction_value_policy для learner-стороны (model). Оппонент → legacy.
+        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from core.models.reaction_value_policy import make_reaction_value_policy
+
+                _eu = unwrap_env(env)
+                _eu._reaction_net_by_side = {"model": policy_net}
+                _eu.reaction_policy = make_reaction_value_policy(_eu._reaction_net_by_side, device=device)
+                log("[EVAL][AZ][CONFIG] reaction_value_policy установлена (model→net)")
+            except Exception as exc:
+                log(f"[EVAL][AZ][CONFIG][WARN] reaction_value_policy install failed: {exc}")
     elif algo == "gumbel_muzero":
         gmz_state = checkpoint.get("gumbel_muzero_net") if isinstance(checkpoint, dict) else None
         if not isinstance(gmz_state, dict):

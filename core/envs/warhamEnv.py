@@ -4080,6 +4080,40 @@ class Warhammer40kEnv(gym.Env):
             self.restore_state(inner)
         return v
 
+    def _set_shot_reaction_trigger(
+        self, shooter_side, shooter_idx, target_side, target_idx, *, hit_on_6=False, offensive=False
+    ):
+        """B3-full: задать _pending_reaction_trigger — досимуляция одиночного выстрела.
+
+        Строится только при активной reaction_policy (иначе нулевой оверхед/parity).
+        defensive (go_to_ground/smokescreen): выстрел происходит всегда, apply→benefit of cover.
+        offensive (overwatch): apply→выстрел защитника происходит, pass→ничего (реакция-выстрел).
+        """
+        if getattr(self, "reaction_policy", None) is None:
+            return
+
+        def _rt(apply, _ss=shooter_side, _si=int(shooter_idx), _ts=target_side, _ti=int(target_idx),
+                _h6=hit_on_6, _off=offensive):
+            if _off:
+                if not apply:
+                    return  # overwatch не активирован → выстрела нет
+                eff = None
+            else:
+                eff = "benefit of cover" if apply else None
+            eff = self._resolve_cover_effect_for_shot(_ss, _si, _ts, _ti, base_effect=eff, phase="shooting")
+            atk_h = self.unit_health if _ss == "model" else self.enemy_health
+            atk_w = self.unit_weapon if _ss == "model" else self.enemy_weapon
+            atk_d = self.unit_data if _ss == "model" else self.enemy_data
+            tgt_h = self.unit_health if _ts == "model" else self.enemy_health
+            tgt_d = self.unit_data if _ts == "model" else self.enemy_data
+            kwargs = {"effects": eff, "distance_to_target": self._shooting_distance_between_units(_ss, _si, _ts, _ti)}
+            if _h6:
+                kwargs["hit_on_6"] = True
+            _, mh = attack(atk_h[_si], atk_w[_si], atk_d[_si], tgt_h[_ti], tgt_d[_ti], **kwargs)
+            self._apply_health_update(_ts, _ti, mh, reason="shooting_sim")
+
+        self._pending_reaction_trigger = _rt
+
     def _maybe_use_go_to_ground(self, defender_side: str, defender_idx: int, phase: str, manual: bool = False):
         """10e Go to Ground: реакция INFANTRY-защитника при выборе целью стрельбы → benefit of cover.
 
@@ -4269,7 +4303,11 @@ class Warhammer40kEnv(gym.Env):
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
         else:
-            if not self._should_use_reaction(
+            # B3-full: триггер overwatch — выстрел chosen по двигавшемуся юниту (hit on 6, offensive).
+            self._set_shot_reaction_trigger(
+                defender_side, chosen, moving_unit_side, moving_idx, hit_on_6=True, offensive=True
+            )
+            _ow_use = self._should_use_reaction(
                 "overwatch",
                 defender_side,
                 chosen,
@@ -4278,7 +4316,9 @@ class Warhammer40kEnv(gym.Env):
                 cp,
                 resolve_trigger=getattr(self, "_pending_reaction_trigger", None),
                 net=getattr(self, "_reaction_net_by_side", {}).get(defender_side),
-            ):
+            )
+            self._pending_reaction_trigger = None
+            if not _ow_use:
                 self._log_phase_msg(side_label, phase, "Overwatch пропущен политикой реакций.")
                 return
 
@@ -4428,7 +4468,15 @@ class Warhammer40kEnv(gym.Env):
                 return
             chosen = int(choice) - (21 if defender_side == "model" else 11)
         else:
-            if not self._should_use_reaction(
+            # B3-full: триггер heroic — counter-charge (защитник входит в бой с зашедшим врагом).
+            if getattr(self, "reaction_policy", None) is not None:
+                def _rt_heroic(apply, _c=chosen, _ci=charging_idx, _side=defender_side):
+                    if apply:
+                        ia = self.unitInAttack if _side == "model" else self.enemyInAttack
+                        ia[_c][0] = 1
+                        ia[_c][1] = _ci
+                self._pending_reaction_trigger = _rt_heroic
+            _hi_use = self._should_use_reaction(
                 "heroic_intervention",
                 defender_side,
                 chosen,
@@ -4437,7 +4485,9 @@ class Warhammer40kEnv(gym.Env):
                 defender_cp,
                 resolve_trigger=getattr(self, "_pending_reaction_trigger", None),
                 net=getattr(self, "_reaction_net_by_side", {}).get(defender_side),
-            ):
+            )
+            self._pending_reaction_trigger = None
+            if not _hi_use:
                 self._log_phase_msg(side_label, phase, "Heroic Intervention пропущен политикой реакций.")
                 return
 
@@ -5643,19 +5693,8 @@ class Warhammer40kEnv(gym.Env):
                             i,
                             f"Цели в дальности: {target_list}, выбрана: {self._format_unit_label('enemy', idOfE)} (причина: {reason})",
                         )
-                        # B3-full: триггер-резолв этого выстрела для net-value lookahead реакции защитника
-                        # (строим только при активной reaction_policy — иначе нулевой оверхед/parity).
-                        if getattr(self, "reaction_policy", None) is not None:
-                            def _rt_shot(apply, _i=i, _e=idOfE):
-                                eff = "benefit of cover" if apply else None
-                                eff = self._resolve_cover_effect_for_shot("model", _i, "enemy", _e, base_effect=eff, phase="shooting")
-                                _, mh = attack(
-                                    self.unit_health[_i], self.unit_weapon[_i], self.unit_data[_i],
-                                    self.enemy_health[_e], self.enemy_data[_e], effects=eff,
-                                    distance_to_target=self._shooting_distance_between_units("model", _i, "enemy", _e),
-                                )
-                                self._apply_health_update("enemy", _e, mh, reason="shooting_sim")
-                            self._pending_reaction_trigger = _rt_shot
+                        # B3-full: триггер-резолв выстрела для net-value lookahead реакции защитника.
+                        self._set_shot_reaction_trigger("model", i, "enemy", idOfE)
                         effect = self._maybe_use_smokescreen(
                             defender_side="enemy",
                             defender_idx=idOfE,
@@ -5945,12 +5984,14 @@ class Warhammer40kEnv(gym.Env):
                                 for tid, score, _meta in top
                             )
                             self._heur_log(f"[ENEMY][HEUR][SHOOT] unit={unit_id} raw={raw} policy_target={idOfM + 21} top_targets: {rendered}")
+                        self._set_shot_reaction_trigger("enemy", i, "model", idOfM)
                         effect = self._maybe_use_smokescreen(
                             defender_side="model",
                             defender_idx=idOfM,
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        self._pending_reaction_trigger = None
                         effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
                         _logger = None
                         if _verbose_logs_enabled():
@@ -6020,12 +6061,14 @@ class Warhammer40kEnv(gym.Env):
                                 for tid, score, _meta in top
                             )
                             self._heur_log(f"[ENEMY][HEUR][SHOOT] unit={unit_id} raw={raw} fallback_target={idOfM + 21} top_targets: {rendered}")
+                        self._set_shot_reaction_trigger("enemy", i, "model", idOfM)
                         effect = self._maybe_use_smokescreen(
                             defender_side="model",
                             defender_idx=idOfM,
                             phase="shooting",
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
+                        self._pending_reaction_trigger = None
                         effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
                         dmg, modHealth = attack(
                             self.enemy_health[i],
@@ -6106,12 +6149,14 @@ class Warhammer40kEnv(gym.Env):
                                         self._log(
                                             f"{unit_label}: Fire popover -> цель={self._format_unit_label('model', idOfE)}, кубы(D6)={dice_count}."
                                         )
+                                    self._set_shot_reaction_trigger("enemy", i, "model", idOfE)
                                     effect = self._maybe_use_smokescreen(
                                         defender_side="model",
                                         defender_idx=idOfE,
                                         phase="shooting",
                                         manual=False,
                                     )
+                                    self._pending_reaction_trigger = None
                                     effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfE, base_effect=effect, phase="shooting")
                                     logger = RollLogger(player_dice, agent_log_fn=self._append_agent_log)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
@@ -6213,12 +6258,14 @@ class Warhammer40kEnv(gym.Env):
                                     for tid, score, _meta in top
                                 )
                                 self._heur_log(f"[ENEMY][HEUR][SHOOT] unit={i + 11} target={idOfM + 21} top_targets: {rendered}")
+                            self._set_shot_reaction_trigger("enemy", i, "model", idOfM)
                             effect = self._maybe_use_smokescreen(
                                 defender_side="model",
                                 defender_idx=idOfM,
                                 phase="shooting",
                                 manual=False,
                             )
+                            self._pending_reaction_trigger = None
                             effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
                             dmg, modHealth = attack(
                                 self.enemy_health[i],
