@@ -80,8 +80,8 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Smokescreen
     #   WHEN: Shooting phase оппонента, когда выбрана цель — ваш SMOKE-юнит. COST: 1 CP.
     #   EFFECT: до конца фазы юнит получает Benefit of Cover и Stealth.
-    # Реализация (песочница): моделируем только Benefit of Cover (effect_id=benefit_of_cover);
-    # Stealth НЕ моделируется. keyword_req=("smoke",); usage_limit UNLIMITED (как в правилах нет «1 раз»).
+    # Реализация (песочница): моделируем Benefit of Cover + Stealth (hit_penalty=1).
+    # keyword_req=("smoke",); usage_limit UNLIMITED (как в правилах нет «1 раз»).
     StratagemDef(
         id="smokescreen",
         name_ru="Smokescreen",

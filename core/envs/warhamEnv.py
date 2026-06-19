@@ -4236,10 +4236,10 @@ class Warhammer40kEnv(gym.Env):
             defender_side,
             defender_idx,
             "Smokescreen",
-            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: benefit of cover до конца атаки.",
+            "Триггер: выбран в качестве цели. Стоимость: -1 CP. Эффект: benefit of cover + Stealth до конца атаки.",
             phase=phase,
         )
-        return "benefit of cover"
+        return {"cover": True, "hit_penalty": 1}
 
     def _collect_overwatch_candidates(self, defender_side: str, moving_unit_side: str, moving_idx: int):
         if defender_side == "model":

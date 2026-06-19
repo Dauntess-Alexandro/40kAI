@@ -36,7 +36,9 @@ def test_smokescreen_applied_when_cover_saves_damage():
     cp_before = env.enemyCP
     effect = env._maybe_use_smokescreen("enemy", 0, "shooting")
 
-    assert effect == "benefit of cover"
+    assert isinstance(effect, dict)
+    assert effect.get("cover") is True
+    assert int(effect.get("hit_penalty", 0)) == 1
     assert "smokescreen" in [r[1] for r in env.stratagem_used]
     assert env.enemyCP == cp_before - 1
 
@@ -58,3 +60,15 @@ def test_smokescreen_skipped_on_tie():
     assert effect is None
     assert "smokescreen" not in [r[1] for r in env.stratagem_used]
     assert env.enemyCP == cp_before
+
+
+def test_smokescreen_returns_cover_and_stealth():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.modelCP = 3
+    env.stratagem_used = []
+    env.unit_data[0]["Keywords"] = ["Smoke"]
+    eff = env._maybe_use_smokescreen("model", 0, "shooting")
+    assert isinstance(eff, dict)
+    assert eff.get("cover") is True
+    assert int(eff.get("hit_penalty", 0)) == 1
