@@ -273,6 +273,7 @@ def build_eval_agent(
     len_model: int,
     cfg: EvalSearchCfg | None = None,
     device=torch.device("cpu"),
+    arch: dict | None = None,
 ) -> EvalAgent:
     """Фабрика EvalAgent: строит net + (опц.) search из контракта и cfg.search.
 
@@ -281,6 +282,11 @@ def build_eval_agent(
     make_sampled_muzero_net + MCTSConfig/build_gumbel_inference_search/
     GumbelMuZeroSearch/SampledMuZeroSearch), но числа симуляций/temp/mode
     берутся из cfg.search (Task 3), а не из *_OPPONENT_* env.
+
+    arch: архитектура сети из payload learner-чекпойнта (latent/hidden/...);
+    нужна чтобы недефолтные LEARNER-чекпойнты грузились 1:1 (PPO/AZ/GAZ/SMZ).
+    arch=None → opponent-путь: поведение ровно как раньше (env/дефолт-арка).
+    DQN арку выводит из state_dict сам — для него arch игнорируется.
     """
     algo = str(algo or "").strip().lower()
     if cfg is None:
@@ -313,7 +319,9 @@ def build_eval_agent(
     if algo == "ppo":
         from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_kwargs_from_env
 
-        net = make_actor_critic(n_obs, n_actions, **ppo_kwargs_from_env()).to(device)
+        # arch из payload (learner) → недефолтные чекпойнты грузятся 1:1; иначе env-дефолт (opponent).
+        ppo_kwargs = dict(arch) if arch else ppo_kwargs_from_env()
+        net = make_actor_critic(n_obs, n_actions, **ppo_kwargs).to(device)
         load_actor_critic_state_dict(net, normalize_state_dict(policy_state))
         net.eval()
         return EvalAgent(
@@ -331,8 +339,13 @@ def build_eval_agent(
         from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
         from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 
-        net = make_alphazero_net(n_obs, n_actions).to(device)
-        load_alphazero_state_dict(net, normalize_state_dict(policy_state))
+        # arch из payload (learner) → недефолтные чекпойнты грузятся 1:1; иначе env-дефолт (opponent).
+        if arch:
+            net = make_alphazero_net(n_obs, n_actions, **arch).to(device)
+        else:
+            net = make_alphazero_net(n_obs, n_actions).to(device)
+        # log_fn → расхождения ключей всплывают WARN'ом (нет тихой случайной сети).
+        load_alphazero_state_dict(net, normalize_state_dict(policy_state), log_fn=print if arch else None)
         net.eval()
         mode = str(search_cfg.get("mode", "mcts")).strip().lower()
         search = None
@@ -402,17 +415,26 @@ def build_eval_agent(
         )
 
     if algo == "sampled_muzero":
-        from core.models.sampled_muzero_model import make_sampled_muzero_net
+        from core.models.sampled_muzero_model import load_sampled_muzero_state_dict, make_sampled_muzero_net
         from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 
-        net = make_sampled_muzero_net(
-            obs_dim=int(n_obs),
-            action_sizes=[int(x) for x in n_actions],
-            latent_dim=int(os.getenv("SMZ_LATENT_DIM", "256")),
-            hidden_dim=int(os.getenv("SMZ_HIDDEN_DIM", "256")),
-            action_embed_dim=int(os.getenv("SMZ_ACTION_EMBED_DIM", "64")),
-        ).to(device)
-        net.load_state_dict(normalize_state_dict(policy_state))
+        # arch из payload (learner) → недефолтные чекпойнты грузятся 1:1; иначе env-дефолт (opponent).
+        if arch:
+            net = make_sampled_muzero_net(
+                obs_dim=int(n_obs),
+                action_sizes=[int(x) for x in n_actions],
+                **arch,
+            ).to(device)
+        else:
+            net = make_sampled_muzero_net(
+                obs_dim=int(n_obs),
+                action_sizes=[int(x) for x in n_actions],
+                latent_dim=int(os.getenv("SMZ_LATENT_DIM", "256")),
+                hidden_dim=int(os.getenv("SMZ_HIDDEN_DIM", "256")),
+                action_embed_dim=int(os.getenv("SMZ_ACTION_EMBED_DIM", "64")),
+            ).to(device)
+        # Лениентный загрузчик (strict=False) вместо net.load_state_dict — фикс краха на недефолтной арке.
+        load_sampled_muzero_state_dict(net, normalize_state_dict(policy_state))
         net.eval()
         mode = str(search_cfg.get("mode", "search")).strip().lower()
         search = None

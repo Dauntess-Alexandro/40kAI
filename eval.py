@@ -1114,6 +1114,22 @@ def main():
     cfg = resolve_eval_search_cfg(algo)
     if cfg.opponent_override_active:
         log("[EVAL][CONFIG][WARN] *_OPPONENT_* override активен → честный 1:1 нарушен.")
+    # Арку learner-сети резолвим ИЗ payload чекпойнта (как до Task5), чтобы недефолтные
+    # чекпойнты грузились 1:1. Registry-путь без payload → arch=None (env/дефолт-арка).
+    learner_arch = None
+    if isinstance(checkpoint, dict):
+        if algo == "ppo":
+            from core.models.PPO import ppo_arch_from_payload
+
+            learner_arch = ppo_arch_from_payload(checkpoint)
+        elif is_alphazero_net_algo(algo):
+            from core.models.alphazero_model import alphazero_arch_from_payload
+
+            learner_arch = alphazero_arch_from_payload(checkpoint)
+        elif algo == "sampled_muzero":
+            from core.models.sampled_muzero_model import sampled_muzero_arch_from_payload
+
+            learner_arch = sampled_muzero_arch_from_payload(checkpoint)
     learner_agent = build_eval_agent(
         algo=algo,
         policy_state=normalize_state_dict(learner_state),
@@ -1121,6 +1137,7 @@ def main():
         len_model=len(model_units),
         cfg=cfg,
         device=device,
+        arch=learner_arch,
     )
 
     # Симметричный reaction-словарь: обе стороны (model/enemy) одной фабрикой.
@@ -1230,6 +1247,9 @@ def main():
         assignment_label: str = "",
     ) -> dict:
         """Прогон N игр одного назначения (learner=model, opponent=enemy). Возвращает агрегированные метрики."""
+        # M1: len_model каждого агента берётся из своей стороны (model/enemy units) и предполагает
+        # зеркальные ростеры. При --swap-sides с асимметричными ростерами граница move-head цикла
+        # (range(len_model)) у сторон может отличаться — учесть при анализе таких прогонов.
         _opponent_side = "P2" if str(_learner_side).upper() == "P1" else "P1"
         wins = 0
         losses = 0
