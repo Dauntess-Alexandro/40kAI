@@ -1,24 +1,14 @@
 from __future__ import annotations
 
 import collections
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-import torch
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id, resolve_agent_algo
-from core.models.action_contract import action_tensor_to_dict
-from core.models.alphazero_ids import az_mcts_mode_from_payload, is_alphazero_net_algo, is_gumbel_az_algo
-from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
-from core.models.alphazero_model import load_alphazero_state_dict, make_alphazero_net
-from core.models.gumbel_alphazero_search import build_gumbel_inference_search
-from core.models.gumbel_muzero_model import GumbelMuZeroNet
-from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_kwargs_from_env
-from core.models.utils import build_action_masks_by_head, build_shoot_action_mask, convertToDict, normalize_state_dict
+from core.models.utils import normalize_state_dict
 
 
 @dataclass(frozen=True)
@@ -97,289 +87,20 @@ def build_policy_fn(
 ) -> Callable[[Any], dict]:
     """
     Возвращает policy_fn(obs)->action_dict для enemyTurn(..., policy_fn=...).
-    Делает кеширование сети в замыкании (CPU).
+
+    Тонкая обёртка над `build_eval_agent` (единый путь действия+реакции, Task 4):
+    конструкция net+search вынесена в фабрику EvalAgent, здесь — только адаптер
+    под legacy-сигнатуру. Числа симуляций/temp/mode берёт из `resolve_eval_search_cfg`.
     """
-    n_obs, n_actions = _parse_contract_sizes(opponent.contract)
-    if n_obs <= 0 or not n_actions:
-        raise ValueError(f"agent '{opponent.agent_id}' has invalid env_contract signatures.")
+    from core.models.eval_agent import build_eval_agent, resolve_eval_search_cfg
 
-    if opponent.algo == "dqn":
-        policy_state = normalize_state_dict(opponent.policy_state)
-        from core.models.DQN import infer_dqn_arch_from_state_dict, make_dqn
-
-        # Восстанавливаем арх (ensemble/dueling/слои/iqn/noisy) из самих весов —
-        # иначе ensemble>1 или dueling не совпадут и load_state_dict упадёт.
-        arch = infer_dqn_arch_from_state_dict(policy_state)
-        net = make_dqn(n_obs, n_actions, **arch).to(torch.device("cpu"))
-        net.load_state_dict(policy_state)
-        net.eval()
-
-        def _policy_fn(obs_any) -> dict:
-            obs_np = _to_np_state(obs_any)
-            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-            with torch.no_grad():
-                decision = net(obs_t)
-            shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
-            action = []
-            for head_idx, head in enumerate(decision):
-                head_row = head.squeeze(0)
-                if head_idx == 2 and shoot_mask is not None:
-                    mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head_row.device)
-                    if mask.numel() == head_row.numel() and bool(mask.any()):
-                        masked = head_row.clone()
-                        masked[~mask] = -1e9
-                        action.append(int(masked.argmax().item()))
-                        continue
-                action.append(int(head_row.argmax().item()))
-            action_dict = convertToDict(torch.tensor([action], device="cpu"))
-            for i_u in range(int(len_model)):
-                action_dict[f"move_num_{i_u}"] = int(action[6 + i_u])
-            return action_dict
-
-        return _policy_fn
-
-    if opponent.algo == "ppo":
-        net = make_actor_critic(n_obs, n_actions, **ppo_kwargs_from_env()).to(torch.device("cpu"))
-        load_actor_critic_state_dict(net, normalize_state_dict(opponent.policy_state))
-        net.eval()
-
-        def _policy_fn(obs_any) -> dict:
-            obs_np = _to_np_state(obs_any)
-            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
-            masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
-            with torch.no_grad():
-                action_t, _logp_t, _val_t = net.act(obs_t, masks_by_head=masks, deterministic=bool(deterministic))
-            action_np = action_t.squeeze(0).detach().cpu().numpy().tolist()
-            action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-            for i_u in range(int(len_model)):
-                action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
-            return action_dict
-
-        return _policy_fn
-
-    if is_alphazero_net_algo(opponent.algo):
-        net = make_alphazero_net(n_obs, n_actions).to(torch.device("cpu"))
-        load_alphazero_state_dict(net, normalize_state_dict(opponent.policy_state))
-        net.eval()
-        az_eval_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts")).strip().lower() or "mcts"
-        if az_eval_mode not in {"greedy", "mcts"}:
-            az_eval_mode = "mcts"
-        mcts = None
-        gaz_opponent_mode = str(os.getenv("GAZ_EVAL_OPPONENT_MODE", "gumbel")).strip().lower() or "gumbel"
-        if gaz_opponent_mode not in {"greedy", "gumbel"}:
-            gaz_opponent_mode = "gumbel"
-        if is_gumbel_az_algo(opponent.algo) and gaz_opponent_mode == "gumbel":
-            # Оппонент gumbel_az в Gumbel-режиме: тот же контракт run() → переиспользуем _policy_fn ниже.
-            mcts = build_gumbel_inference_search(
-                net,
-                num_simulations=max(1, int(os.getenv("GAZ_EVAL_SIMS", "32"))),
-                num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
-                joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
-                device=torch.device("cpu"),
-            )
-            az_eval_mode = "mcts"
-        elif is_gumbel_az_algo(opponent.algo):
-            az_eval_mode = "greedy"
-        elif az_eval_mode == "mcts":
-            mcts_mode = az_mcts_mode_from_payload(opponent.algo)
-            mcts_cfg = MCTSConfig(
-                simulations=max(
-                    1,
-                    int(
-                        os.getenv(
-                            "AZ_EVAL_OPPONENT_MCTS_SIMS",
-                            os.getenv("AZ_EVAL_MCTS_SIMS", "32"),
-                        )
-                    ),
-                ),
-                c_puct=float(os.getenv("AZ_EVAL_MCTS_C_PUCT", "1.5")),
-                dirichlet_alpha=float(os.getenv("AZ_EVAL_MCTS_DIR_ALPHA", "0.3")),
-                dirichlet_eps=float(os.getenv("AZ_EVAL_MCTS_DIR_EPS", "0.0")),
-                top_k_per_head=max(1, int(os.getenv("AZ_EVAL_MCTS_TOP_K_PER_HEAD", "8"))),
-                max_depth=max(1, int(os.getenv("AZ_EVAL_MCTS_MAX_DEPTH", "1"))),
-                mode=mcts_mode,
-                root_dirichlet_only=True,
-            )
-            mcts = AlphaZeroFactorizedMCTS(net, config=mcts_cfg, device=torch.device("cpu"))
-
-        def _policy_fn(obs_any) -> dict:
-            obs_np = _to_np_state(obs_any)
-            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
-            masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
-            if az_eval_mode == "mcts" and mcts is not None:
-                legal_masks = [m.squeeze(0).detach().cpu().numpy().astype(bool) for m in masks]
-                pi_targets, selected, _value = mcts.run(
-                    obs=obs_np,
-                    legal_masks_by_head=legal_masks,
-                    temperature=float(
-                        os.getenv(
-                            "AZ_EVAL_OPPONENT_MCTS_TEMPERATURE",
-                            os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.10"),
-                        )
-                    ),
-                    env=env,
-                    len_model=int(len_model),
-                    enemy_policy_fn=None,
-                )
-                if bool(deterministic):
-                    action = [int(np.argmax(pi)) for pi in pi_targets]
-                else:
-                    action = [int(x) for x in selected]
-            else:
-                with torch.no_grad():
-                    probs, _value = net.infer(obs_t, masks_by_head=masks)
-                action = []
-                stochastic_eps = float(os.getenv("AZ_OPPONENT_STOCHASTIC_EPS", "0.10"))
-                stochastic_eps = max(0.0, min(1.0, stochastic_eps))
-                for p in probs:
-                    row = p.squeeze(0).detach().cpu()
-                    arg = int(torch.argmax(row, dim=0).item())
-                    if bool(deterministic):
-                        action.append(arg)
-                        continue
-                    if np.random.rand() < stochastic_eps:
-                        try:
-                            sample = int(torch.multinomial(row, num_samples=1).item())
-                            action.append(sample)
-                            continue
-                        except Exception:
-                            pass
-                    action.append(arg)
-            action_dict = action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
-            return action_dict
-
-        return _policy_fn
-
-    if opponent.algo == "gumbel_muzero":
-        net = GumbelMuZeroNet(
-            obs_dim=int(n_obs),
-            action_sizes=[int(x) for x in n_actions],
-            latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
-            hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
-            action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
-        ).to(torch.device("cpu"))
-        net.load_state_dict(normalize_state_dict(opponent.policy_state))
-        net.eval()
-        gmz_mode = str(os.getenv("GMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
-        if gmz_mode not in {"search", "greedy"}:
-            gmz_mode = "search"
-        search = GumbelMuZeroSearch(
-            net=net,
-            config=GumbelMuZeroSearchConfig(
-                num_simulations=max(
-                    1,
-                    int(
-                        os.getenv(
-                            "GMZ_EVAL_OPPONENT_SIMS",
-                            os.getenv("GMZ_EVAL_SIMS", "32"),
-                        )
-                    ),
-                ),
-                root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
-                temperature=float(
-                    os.getenv(
-                        "GMZ_EVAL_OPPONENT_TEMPERATURE",
-                        os.getenv("GMZ_EVAL_TEMPERATURE", "0.10"),
-                    )
-                ),
-            ),
-            device=torch.device("cpu"),
-        )
-
-        def _policy_fn(obs_any) -> dict:
-            obs_np = _to_np_state(obs_any)
-            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
-            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
-            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-            if gmz_mode == "greedy":
-                with torch.no_grad():
-                    probs, _value = net.infer(obs_t, masks_by_head=[m.unsqueeze(0) for m in masks_cpu])
-                action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-            else:
-                pi_targets, _behavior_logits, selected, _value = search.run(
-                    obs=obs_np,
-                    legal_masks_by_head=legal_masks,
-                    deterministic=bool(deterministic),
-                )
-                if bool(deterministic):
-                    action = [int(np.argmax(pi)) for pi in pi_targets]
-                else:
-                    action = [int(x) for x in selected]
-            return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
-
-        return _policy_fn
-
-    if opponent.algo == "sampled_muzero":
-        from core.models.sampled_muzero_model import make_sampled_muzero_net
-        from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
-
-        net = make_sampled_muzero_net(
-            obs_dim=int(n_obs),
-            action_sizes=[int(x) for x in n_actions],
-            latent_dim=int(os.getenv("SMZ_LATENT_DIM", "256")),
-            hidden_dim=int(os.getenv("SMZ_HIDDEN_DIM", "256")),
-            action_embed_dim=int(os.getenv("SMZ_ACTION_EMBED_DIM", "64")),
-        ).to(torch.device("cpu"))
-        net.load_state_dict(normalize_state_dict(opponent.policy_state))
-        net.eval()
-        smz_mode = str(os.getenv("SMZ_OPPONENT_MODE", "search")).strip().lower() or "search"
-        if smz_mode not in {"search", "greedy"}:
-            smz_mode = "search"
-        search = SampledMuZeroSearch(
-            net=net,
-            config=SampledMuZeroSearchConfig(
-                num_samples=max(
-                    1,
-                    int(
-                        os.getenv(
-                            "SMZ_EVAL_OPPONENT_NUM_SAMPLES",
-                            os.getenv("SMZ_EVAL_NUM_SAMPLES", "24"),
-                        )
-                    ),
-                ),
-                temperature=float(
-                    os.getenv(
-                        "SMZ_EVAL_OPPONENT_TEMPERATURE",
-                        os.getenv("SMZ_EVAL_TEMPERATURE", "0.10"),
-                    )
-                ),
-                sample_temperature=float(
-                    os.getenv(
-                        "SMZ_EVAL_OPPONENT_SAMPLE_TEMPERATURE",
-                        os.getenv("SMZ_EVAL_SAMPLE_TEMPERATURE", "1.0"),
-                    )
-                ),
-                prior_weight=0.0,
-                dedup=True,
-                discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
-            ),
-            device=torch.device("cpu"),
-        )
-
-        def _policy_fn(obs_any) -> dict:
-            obs_np = _to_np_state(obs_any)
-            masks_cpu = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False)
-            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
-            obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-            if smz_mode == "greedy":
-                with torch.no_grad():
-                    probs, _value = net.infer(obs_t, masks_by_head=[m.unsqueeze(0) for m in masks_cpu])
-                action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-            else:
-                pi_targets, _behavior_logits, selected, _value = search.run(
-                    obs=obs_np,
-                    legal_masks_by_head=legal_masks,
-                    deterministic=bool(deterministic),
-                )
-                if bool(deterministic):
-                    action = [int(np.argmax(pi)) for pi in pi_targets]
-                else:
-                    action = [int(x) for x in selected]
-            return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=int(len_model))
-
-        return _policy_fn
-
-    raise ValueError(f"Unsupported opponent algo: {opponent.algo}")
-
+    cfg = resolve_eval_search_cfg(opponent.algo)
+    cfg.deterministic = bool(deterministic)
+    agent = build_eval_agent(
+        algo=opponent.algo,
+        policy_state=opponent.policy_state,
+        contract=opponent.contract,
+        len_model=int(len_model),
+        cfg=cfg,
+    )
+    return agent.as_policy_fn(env, "enemy")
