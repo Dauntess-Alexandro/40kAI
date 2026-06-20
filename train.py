@@ -3970,6 +3970,12 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     )
     print(f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1", flush=True)
 
+    if PPO_REACTION_VALUE_POLICY:
+        append_agent_log(
+            "[PPO][CONFIG] reaction_value_policy недоступна при USE_SUBPROC_ENVS=1 "
+            "(умные стратагемы работают только в inline-пути; subproc-воркеры не разделяют actor_critic)."
+        )
+
     # В subproc у нас нет доступа к env.action_space, поэтому делаем "быстрый" контракт масок:
     # - shoot_mask приходит по IPC (если включено TRAIN_IPC_INCLUDE_MASKS=1)
     # - остальные головы = all_true.
