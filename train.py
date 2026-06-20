@@ -2140,6 +2140,27 @@ def _flush_agent_log_buffer(force: bool = False) -> None:
 
 atexit.register(lambda: _flush_agent_log_buffer(force=True))
 
+
+def _ppo_worker_install_reaction_net(env, payload, device):
+    """Subproc-воркер: построить CPU-сеть PPO из payload и поставить reaction value-gate.
+
+    payload: {"arch": {...}, "n_obs": int, "n_actions": [...], "weights": state_dict}.
+    Возвращает net (или None при ошибке — воркер продолжит без умных стратагем, не падая).
+    """
+    try:
+        from core.models.PPO import make_actor_critic
+        from core.models.ppo_stratagem_bridge import install_ppo_stratagem_policy
+
+        arch = payload.get("arch") or {}
+        net = make_actor_critic(int(payload["n_obs"]), list(payload["n_actions"]), **arch).to(device)
+        net.load_state_dict(payload["weights"], strict=False)
+        net.eval()
+        install_ppo_stratagem_policy(env, device, {"model": net})
+        return net
+    except Exception:
+        return None
+
+
 def _env_worker(conn, roster_config, b_len, b_hei, trunc):
     try:
         lean_info_enabled = os.getenv("TRAIN_LEAN_INFO", "1") == "1"
@@ -2202,14 +2223,39 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
             }
         )
 
+        reaction_net = None  # subproc smart stratagems: ставится по команде init_reaction_net
+
         while True:
             cmd, payload = conn.recv()
             if cmd == "enemy_turn":
                 env_unwrapped = unwrap_env(env)
                 env_unwrapped.enemyTurn(trunc=trunc)
                 conn.send(True)
+            elif cmd == "init_reaction_net":
+                reaction_net = _ppo_worker_install_reaction_net(env, payload, torch.device("cpu"))
+                conn.send({"ok": reaction_net is not None})
+            elif cmd == "sync_weights":
+                if reaction_net is not None:
+                    try:
+                        reaction_net.load_state_dict(payload, strict=False)
+                    except Exception:
+                        pass
+                conn.send(True)
             elif cmd == "step":
-                next_observation, reward, done, res, info = env.step(payload)
+                if reaction_net is not None:
+                    from core.models.option_candidates import attach_fight_stratagem_plan
+                    from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
+
+                    attach_fight_stratagem_plan(
+                        env, ppo_build_fight_plan(env, reaction_net, torch.device("cpu"), side="model")
+                    )
+                try:
+                    next_observation, reward, done, res, info = env.step(payload)
+                finally:
+                    if reaction_net is not None:
+                        from core.models.option_candidates import attach_fight_stratagem_plan
+
+                        attach_fight_stratagem_plan(env, None)
                 next_observation = _to_np_state(next_observation)
                 if lean_info_enabled:
                     info = _lean_train_info(info)
