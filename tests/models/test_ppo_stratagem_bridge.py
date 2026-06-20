@@ -1,12 +1,15 @@
 """ppo_stratagem_bridge: install (side-generic) + critic-V."""
 
+from unittest.mock import MagicMock
+
 import torch
+
 from core.models.ppo_stratagem_bridge import (
     install_ppo_stratagem_policy,
+    ppo_build_fight_plan,
     ppo_reaction_value_policy_enabled,
     ppo_value,
 )
-
 from tests.engine.phases._helpers import build_env
 
 
@@ -52,3 +55,60 @@ def test_ppo_value_returns_critic():
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     v = ppo_value(env, _ConstNet(0.73), torch.device("cpu"), "model")
     assert abs(v - 0.73) < 1e-6
+
+
+class _ValueSeqNet:
+    """Возвращает заданную последовательность V при каждом infer_with_value."""
+
+    def __init__(self, values):
+        self._values = list(values)
+
+    def infer_with_value(self, obs, masks_by_head=None):
+        v = self._values.pop(0) if self._values else 0.0
+        return None, torch.tensor([float(v)])
+
+
+def test_fight_plan_snapshot_invariant():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.modelCP = 3
+    env.unitInAttack[0] = [1, 0]
+    cp_before = int(env.modelCP)
+    su_before = dict(getattr(env, "stratagem_used", {}) or {})
+    plan = ppo_build_fight_plan(
+        env, _ValueSeqNet([0.9, 0.1]), torch.device("cpu"), side="model"
+    )
+    assert isinstance(plan, dict)
+    assert env.modelCP == cp_before  # snapshot/restore не испортил состояние
+    assert dict(getattr(env, "stratagem_used", {}) or {}) == su_before
+
+
+def test_fight_plan_empty_when_pass_wins():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.modelCP = 3
+    env.unitInAttack[0] = [1, 0]
+    plan = ppo_build_fight_plan(
+        env, _ValueSeqNet([0.1, 0.9]), torch.device("cpu"), side="model"
+    )
+    assert plan == {}
+
+
+def test_fight_plan_skips_when_no_cp():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.modelCP = 0
+    env.unitInAttack[0] = [1, 0]
+    plan = ppo_build_fight_plan(
+        env, _ValueSeqNet([0.9, 0.1]), torch.device("cpu"), side="model"
+    )
+    assert plan == {}
+
+
+def test_fight_plan_recursion_guard():
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env._reaction_sim_active = True
+    net = MagicMock()
+    assert ppo_build_fight_plan(env, net, torch.device("cpu")) == {}
+    net.infer_with_value.assert_not_called()
