@@ -8633,6 +8633,17 @@ def _actor_learner_actor_entry_ppo(
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
 
+        if PPO_REACTION_VALUE_POLICY:
+            try:
+                from core.models.ppo_stratagem_bridge import install_ppo_stratagem_policy
+
+                install_ppo_stratagem_policy(env, torch.device("cpu"), {"model": cpu_net})
+                append_agent_log(f"[PPO][ACTOR] actor={int(actor_idx)} reaction_value_policy=ON")
+            except Exception as exc:
+                append_agent_log(
+                    f"[PPO][ACTOR][WARN] actor={int(actor_idx)} reaction_value_policy install failed: {exc}"
+                )
+
         sync_enabled = os.getenv("ACTOR_SYNC_ENABLED", "1") == "1"
         sync_path = os.path.join(MODELS_DIR, "actor_sync", "latest_ppo.pth")
         sync_check_every_ep = max(1, int(os.getenv("ACTOR_SYNC_CHECK_EVERY_EP", "5")))
@@ -8775,7 +8786,20 @@ def _actor_learner_actor_entry_ppo(
                 for i_u in range(len(model)):
                     action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
 
-                next_obs, reward, done, res, info2 = env.step(action_dict)
+                if PPO_REACTION_VALUE_POLICY:
+                    from core.models.option_candidates import attach_fight_stratagem_plan
+                    from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
+
+                    attach_fight_stratagem_plan(
+                        env, ppo_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
+                    )
+                try:
+                    next_obs, reward, done, res, info2 = env.step(action_dict)
+                finally:
+                    if PPO_REACTION_VALUE_POLICY:
+                        from core.models.option_candidates import attach_fight_stratagem_plan
+
+                        attach_fight_stratagem_plan(env, None)
                 last_info = info2 if isinstance(info2, dict) else last_info
                 last_res = res
 
