@@ -191,7 +191,8 @@ class EvalAgent:
     def _select_az(self, env, obs_np, masks_cpu, side):
         legal = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
         if self.search is None:
-            # greedy-режим: argmax по prior сети (без дерева MCTS).
+            # Greedy-режим: argmax (детерминированно). Opponent-only AZ_OPPONENT_STOCHASTIC_EPS
+            # намеренно убран — честный 1:1 eval; для стохастики использовать mcts/gumbel-режим.
             masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
             with torch.no_grad():
                 probs, _value = self.net.infer(
@@ -219,7 +220,7 @@ class EvalAgent:
     def _select_muzero(self, env, obs_np, masks_cpu, side):
         legal = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
         if self.search is None:
-            # greedy-режим: argmax по prior сети.
+            # Greedy-режим: argmax (детерминированно). Честный 1:1 eval без opponent-specific флагов.
             masks = [m.unsqueeze(0) for m in masks_cpu]
             with torch.no_grad():
                 probs, _value = self.net.infer(
