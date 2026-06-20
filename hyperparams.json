@@ -60,7 +60,8 @@
         "lr_scheduler": "none",
         "adaptive_entropy": 0,
         "entropy_target": 0.5,
-        "entropy_adapt_lr": 0.05
+        "entropy_adapt_lr": 0.05,
+        "reaction_value_policy": 1
     },
     "alphazero_tree": {
         "inference_server_enabled": 1,
