@@ -36,10 +36,11 @@ from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.DQN import DQN
 from core.models.dqn_stratagem_bridge import dqn_reaction_value_policy_enabled
+from core.models.eval_agent import build_eval_agent, resolve_eval_search_cfg
 from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
-from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
+from core.models.opponent_adapter import load_agent_opponent
 from core.models.option_candidates import attach_fight_stratagem_plan
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
 from core.models.ppo_stratagem_bridge import ppo_reaction_value_policy_enabled
@@ -449,14 +450,16 @@ def run_episode(
     env,
     model_units,
     enemy_units,
-    policy_net,
-    epsilon,
+    learner_agent,
+    opponent_agent,
     device,
-    algo: str,
-    opponent_policy_fn=None,
+    *,
     learner_side: str = "P1",
 ):
     env_unwrapped = unwrap_env(env)
+    # algo/epsilon уехали внутрь агентов; для логов читаем из learner_agent.
+    algo = str(getattr(learner_agent, "algo", "")).strip().lower()
+    epsilon = float(getattr(getattr(learner_agent, "cfg", None), "epsilon", 0.0) or 0.0)
     attacker_side, defender_side = roll_off_attacker_defender(
         manual_roll_allowed=False,
         log_fn=None,
@@ -722,7 +725,7 @@ def run_episode(
     )
     while not done:
         step_no = int(episode_len) + 1
-        enemy_mode = "policy_fn" if opponent_policy_fn is not None else "heuristic_auto"
+        enemy_mode = "policy_fn" if opponent_agent is not None else "heuristic_auto"
         _trace(
             f"[TRACE][STEP] idx={step_no} phase=enemy_turn mode={enemy_mode} "
             f"game_over_before={int(bool(getattr(env_unwrapped, 'game_over', False)))}"
@@ -731,10 +734,15 @@ def run_episode(
         cp_model_before_enemy = cp_for_env_side(env_unwrapped, "model")
         cp_enemy_before_enemy = cp_for_env_side(env_unwrapped, "enemy")
         enemy_attempt_specs: list[tuple[str, int | None, str]] = []
-        if opponent_policy_fn is not None:
+        base_enemy_fn = (
+            opponent_agent.as_policy_fn(env_unwrapped, "enemy")
+            if opponent_agent is not None
+            else None
+        )
+        if base_enemy_fn is not None:
             def _logged_opponent_policy(obs_any):
                 try:
-                    action = opponent_policy_fn(obs_any)
+                    action = base_enemy_fn(obs_any)
                     _trace(f"[TRACE][ENEMY_ACTION] step={step_no} action={action}")
                     if isinstance(action, dict):
                         enemy_attempt_specs.extend(
@@ -789,64 +797,10 @@ def run_episode(
             )
             break
 
-        state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+        # Действие фазы + план реакций (file-страт. бой) — единый путь через агента.
         attach_fight_stratagem_plan(env, None)
-        if algo == "ppo":
-            action = select_action_with_epsilon_ppo(
-                env,
-                state_tensor,
-                policy_net,
-                epsilon,
-                len(model_units),
-            )
-            if ppo_reaction_value_policy_enabled():
-                from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
-
-                attach_fight_stratagem_plan(
-                    env, ppo_build_fight_plan(env, policy_net, device, side="model")
-                )
-        elif is_alphazero_net_algo(algo):
-            action = select_action_with_epsilon_alphazero(
-                env,
-                state_tensor,
-                policy_net,
-                epsilon,
-                len(model_units),
-                algo=algo,
-            )
-        elif algo == "gumbel_muzero":
-            action = select_action_with_epsilon_gumbel_muzero(
-                env,
-                state_tensor,
-                policy_net,
-                epsilon,
-                len(model_units),
-            )
-        elif algo == "sampled_muzero":
-            action = select_action_with_epsilon_sampled_muzero(
-                env,
-                state_tensor,
-                policy_net,
-                epsilon,
-                len(model_units),
-            )
-        else:
-            action_masks = build_action_masks_by_head(env, len(model_units), log_fn=None, debug=False)
-            action = select_action_with_epsilon(
-                env,
-                state_tensor,
-                policy_net,
-                epsilon,
-                len(model_units),
-                action_masks=action_masks,
-            )
-            if dqn_reaction_value_policy_enabled():
-                from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
-
-                attach_fight_stratagem_plan(
-                    env, dqn_build_fight_plan(env, policy_net, device, side="model")
-                )
-        action_dict = convertToDict(action)
+        action_dict, _plan = learner_agent.select_action(env_unwrapped, "model")
+        attach_fight_stratagem_plan(env, _plan)
         masks_counts = _head_masks_counts()
         shoot_targets = 0
         try:
@@ -895,7 +849,7 @@ def run_episode(
         cp_model_before = cp_for_env_side(env_unwrapped, "model")
         cp_enemy_before = cp_for_env_side(env_unwrapped, "enemy")
         try:
-            next_observation, reward, done, _, info = env.step(action_dict)
+            _next_observation, reward, done, _, info = env.step(action_dict)
         finally:
             attach_fight_stratagem_plan(env, None)
         new_strat_records = log_stratagem_journal_diff(
@@ -1002,7 +956,6 @@ def run_episode(
         except (TypeError, ValueError):
             pass
         episode_len += 1
-        state = next_observation
 
     end_reason = info.get("end reason", "")
     winner = info.get("winner")
@@ -1202,7 +1155,6 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy_state = None
     learner_algo_override = ""
-    learner_registry_target_state = None
     selected_agent_id = (args.learner_agent_id or "").strip()
     if selected_agent_id:
         try:
@@ -1235,20 +1187,25 @@ def main():
                 "Где: eval.py (resolve_agent_algo). Что делать: переобучите/пересохраните агента."
             )
             return 1
-        target_guess = payload.get("target_state") if isinstance(payload, dict) else None
-        learner_registry_target_state = target_guess if isinstance(target_guess, dict) and target_guess else None
         log(f"Используется learner-agent-id={selected_agent_id} (policy из registry, algo={learner_algo_override}).")
     else:
         policy_state = _extract_policy_state_dict(checkpoint)
 
     opponent_agent_id = (args.opponent_agent_id or "").strip()
     opponent_algo_label = "heuristic"
-    opponent_policy_fn = None
+    opponent_agent = None
     if opponent_agent_id:
         try:
             opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=eval_contract)
             opponent_algo_label = str(getattr(opp, "algo", "") or "").strip().lower() or "unknown"
-            opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy_units), opponent=opp, deterministic=True)
+            opponent_agent = build_eval_agent(
+                algo=opp.algo,
+                policy_state=opp.policy_state,
+                contract=opp.contract,
+                len_model=len(enemy_units),
+                cfg=resolve_eval_search_cfg(opp.algo),
+                device=device,
+            )
             log(
                 f"Оппонент через registry: opponent-agent-id={opponent_agent_id}, algo={opp.algo} (deterministic)."
             )
@@ -1270,90 +1227,46 @@ def main():
     algo = learner_algo_override or (
         str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
     )
+    # Извлечение learner net-state под algo-специфичным ключом checkpoint'а
+    # (registry-путь уже даёт корректный policy_state). Конструкция сети/поиска —
+    # внутри build_eval_agent (единый путь обеих сторон, Task 5).
     if algo == "ppo":
-        ppo_state = checkpoint.get("actor_critic") if isinstance(checkpoint, dict) else None
-        if not isinstance(ppo_state, dict):
-            ppo_state = policy_state
-        arch = ppo_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
-        policy_net = make_actor_critic(n_observations, n_actions, **arch).to(device)
-        load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
-        policy_net.eval()
-        # PPO: установка reaction_value_policy для learner-стороны (model)
-        if ppo_reaction_value_policy_enabled():
-            try:
-                from core.models.ppo_stratagem_bridge import install_ppo_stratagem_policy
-
-                install_ppo_stratagem_policy(env, device, {"model": policy_net})
-                log("[EVAL][PPO][CONFIG] reaction_value_policy установлена (critic V, learner_only)")
-            except Exception as exc:
-                log(f"[EVAL][PPO][CONFIG][WARN] reaction_value_policy install failed: {exc}")
+        learner_state = checkpoint.get("actor_critic") if isinstance(checkpoint, dict) else None
     elif is_alphazero_net_algo(algo):
-        az_state = checkpoint.get("policy_value_net") if isinstance(checkpoint, dict) else None
-        if not isinstance(az_state, dict):
-            az_state = policy_state
-        arch = alphazero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
-        policy_net = make_alphazero_net(n_observations, n_actions, **arch).to(device)
-        load_alphazero_state_dict(policy_net, normalize_state_dict(az_state))
-        policy_net.eval()
-        # B3-full: установка reaction_value_policy для learner-стороны (model). Оппонент → legacy.
-        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "1")).strip().lower() in ("1", "true", "yes", "on"):
-            try:
-                from core.models.reaction_value_policy import make_reaction_value_policy
-
-                _eu = unwrap_env(env)
-                _eu._reaction_net_by_side = {"model": policy_net}
-                _eu.reaction_policy = make_reaction_value_policy(_eu._reaction_net_by_side, device=device)
-                log("[EVAL][AZ][CONFIG] reaction_value_policy установлена (model->net)")
-            except Exception as exc:
-                log(f"[EVAL][AZ][CONFIG][WARN] reaction_value_policy install failed: {exc}")
+        learner_state = checkpoint.get("policy_value_net") if isinstance(checkpoint, dict) else None
     elif algo == "gumbel_muzero":
-        gmz_state = checkpoint.get("gumbel_muzero_net") if isinstance(checkpoint, dict) else None
-        if not isinstance(gmz_state, dict):
-            gmz_state = policy_state
-        policy_net = GumbelMuZeroNet(
-            obs_dim=int(n_observations),
-            action_sizes=[int(x) for x in n_actions],
-            latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
-            hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
-            action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
-        ).to(device)
-        policy_net.load_state_dict(normalize_state_dict(gmz_state))
-        policy_net.eval()
+        learner_state = checkpoint.get("gumbel_muzero_net") if isinstance(checkpoint, dict) else None
     elif algo == "sampled_muzero":
-        smz_state = checkpoint.get("sampled_muzero_net") if isinstance(checkpoint, dict) else None
-        if not isinstance(smz_state, dict):
-            smz_state = policy_state
-        smz_arch = sampled_muzero_arch_from_payload(checkpoint if isinstance(checkpoint, dict) else None)
-        policy_net = make_sampled_muzero_net(
-            obs_dim=int(n_observations),
-            action_sizes=[int(x) for x in n_actions],
-            **smz_arch,
-        ).to(device)
-        load_sampled_muzero_state_dict(policy_net, normalize_state_dict(smz_state))
-        policy_net.eval()
-    else:
-        from core.models.DQN import infer_dqn_arch_from_state_dict, make_dqn
+        learner_state = checkpoint.get("sampled_muzero_net") if isinstance(checkpoint, dict) else None
+    else:  # dqn
+        learner_state = None
+    if not isinstance(learner_state, dict):
+        learner_state = policy_state
 
-        dqn_arch = infer_dqn_arch_from_state_dict(policy_state)
-        policy_net = make_dqn(n_observations, n_actions, **dqn_arch).to(device)
-        target_net = make_dqn(n_observations, n_actions, **dqn_arch).to(device)
-        policy_net.load_state_dict(normalize_state_dict(policy_state))
-        target_state = None
-        if isinstance(checkpoint, dict):
-            target_state = checkpoint.get("target_net") or checkpoint.get("target_model_state_dict")
-        if not isinstance(target_state, dict) and learner_registry_target_state is not None:
-            target_state = learner_registry_target_state
-        if isinstance(target_state, dict) and target_state:
-            target_net.load_state_dict(normalize_state_dict(target_state))
-        else:
-            target_net.load_state_dict(normalize_state_dict(policy_net.state_dict()))
-        policy_net.eval()
-        target_net.eval()
-        if dqn_reaction_value_policy_enabled():
-            from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
+    cfg = resolve_eval_search_cfg(algo)
+    if cfg.opponent_override_active:
+        log("[EVAL][CONFIG][WARN] *_OPPONENT_* override активен → честный 1:1 нарушен.")
+    learner_agent = build_eval_agent(
+        algo=algo,
+        policy_state=normalize_state_dict(learner_state),
+        contract=eval_contract,
+        len_model=len(model_units),
+        cfg=cfg,
+        device=device,
+    )
 
-            install_dqn_stratagem_policy(env, {"model": policy_net}, device)
-            log("[EVAL][DQN][CONFIG] reaction_value_policy установлена (max-Q proxy, learner_only)")
+    # Симметричный reaction-словарь: обе стороны (model/enemy) одной фабрикой.
+    _eu = unwrap_env(env)
+    _reaction_net_by_side = {
+        "model": learner_agent.reaction_net,
+        "enemy": getattr(opponent_agent, "reaction_net", None),
+    }
+    if any(v is not None for v in _reaction_net_by_side.values()):
+        from core.models.reaction_value_policy import make_reaction_value_policy
+
+        _eu._reaction_net_by_side = _reaction_net_by_side
+        _eu.reaction_policy = make_reaction_value_policy(_reaction_net_by_side, device=device)
+        log("[EVAL][CONFIG] reaction_value_policy установлена both-sides (model/enemy).")
 
     az_eval_mode = str(os.getenv("AZ_EVAL_MODE", "mcts")).strip().lower() or "mcts"
     az_opp_mode = str(os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts")).strip().lower() or "mcts"
@@ -1481,11 +1394,9 @@ def main():
             env,
             model_units,
             enemy_units,
-            policy_net,
-            epsilon,
+            learner_agent,
+            opponent_agent,
             device,
-            algo,
-            opponent_policy_fn=opponent_policy_fn,
             learner_side=learner_side,
         )
         for line in trace_lines:
