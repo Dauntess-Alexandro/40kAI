@@ -2158,6 +2158,13 @@ def _ppo_worker_install_reaction_net(env, payload, device):
         install_ppo_stratagem_policy(env, device, {"model": net})
         return net
     except Exception:
+        try:
+            from core.models.utils import unwrap_env
+            _e = unwrap_env(env)
+            _e.reaction_policy = None
+            _e._reaction_net_by_side = {}
+        except Exception:
+            pass
         return None
 
 
@@ -4017,6 +4024,7 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
     print(f"[PPO][CONFIG] vec_env_count={vec_env_count} use_subproc=1", flush=True)
 
     PPO_SUBPROC_WEIGHT_SYNC_EVERY = max(1, int(os.getenv("PPO_SUBPROC_WEIGHT_SYNC_EVERY", "1")))
+    _last_weight_sync_step = 0
     if PPO_REACTION_VALUE_POLICY:
         _arch = _ppo_arch_dict(actor_critic)
         _w_cpu = {k: v.detach().cpu() for k, v in actor_critic.state_dict().items()}
@@ -4223,7 +4231,8 @@ def run_ppo_training_subproc(env_contexts, totLifeT, n_actions, n_observations, 
                     f"clip_fraction={ppo_metrics['clip_fraction']:.6f} global_step={global_step} update_step={ppo_update_step}"
                 )
                 metrics_obj.updateLoss(ppo_metrics["policy_loss"] + PPO_VALUE_COEF * ppo_metrics["value_loss"])
-                if PPO_REACTION_VALUE_POLICY and (ppo_update_step % PPO_SUBPROC_WEIGHT_SYNC_EVERY == 0):
+                if PPO_REACTION_VALUE_POLICY and (ppo_update_step - _last_weight_sync_step >= PPO_SUBPROC_WEIGHT_SYNC_EVERY):
+                    _last_weight_sync_step = ppo_update_step
                     _w_sync = {k: v.detach().cpu() for k, v in actor_critic.state_dict().items()}
                     for ctx in env_contexts:
                         ctx["conn"].send(("sync_weights", _w_sync))
