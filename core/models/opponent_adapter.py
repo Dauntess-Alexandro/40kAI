@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import collections
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
-
-import numpy as np
 
 from core.engine.agent_registry import compatible_contracts, load_agent_by_id, resolve_agent_algo
 from core.models.utils import normalize_state_dict
@@ -17,12 +14,6 @@ class OpponentSpec:
     algo: str  # "dqn" | "ppo" | "alphazero_tree" | "alphazero_proxy" | "gumbel_muzero" | "sampled_muzero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
-
-
-def _to_np_state(state: Any) -> np.ndarray:
-    if isinstance(state, (dict, collections.OrderedDict)):
-        return np.array(list(state.values()), dtype=np.float32)
-    return np.asarray(state, dtype=np.float32)
 
 
 def _parse_contract_sizes(contract: dict[str, Any]) -> tuple[int, list[int]]:

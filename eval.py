@@ -9,8 +9,6 @@ import re
 import sys
 import types
 from collections import Counter
-from statistics import median
-from typing import Optional
 
 import gymnasium as gym
 import torch
@@ -32,23 +30,9 @@ from core.engine.mission import (
 from core.engine.phases.obs_features import phase_obs_features_enabled
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumbel_az_algo
-from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
-from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
-from core.models.DQN import DQN
-from core.models.dqn_stratagem_bridge import dqn_reaction_value_policy_enabled
 from core.models.eval_agent import build_eval_agent, resolve_eval_search_cfg
-from core.models.gumbel_alphazero_search import build_gumbel_inference_search
-from core.models.gumbel_muzero_model import GumbelMuZeroNet
-from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import load_agent_opponent
 from core.models.option_candidates import attach_fight_stratagem_plan
-from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
-from core.models.ppo_stratagem_bridge import ppo_reaction_value_policy_enabled
-from core.models.sampled_muzero_model import (
-    load_sampled_muzero_state_dict,
-    make_sampled_muzero_net,
-    sampled_muzero_arch_from_payload,
-)
 from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
 from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, EVAL_STOP_FLAG_PATH, ensure_runtime_dirs
@@ -59,18 +43,14 @@ from core.models.action_contract import ordered_action_keys
 from core.models.utils import (
     build_action_masks_by_head,
     build_shoot_action_mask,
-    convertToDict,
     sample_action_list_from_space,
     unwrap_env,
 )
 from core.telemetry.stratagem_trace import (
-    collect_stratagem_attempt_specs,
     cp_for_env_side,
     eval_side_label,
     log_stratagem_attempts,
     log_stratagem_journal_diff,
-    new_stratagem_records,
-    stratagem_attempt_from_action,
     stratagem_used_snapshot,
 )
 
@@ -283,130 +263,6 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, actio
     return torch.tensor([action_list], device="cpu")
 
 
-def select_action_with_epsilon_ppo(env, state, policy_net, epsilon, len_model):
-    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
-    masks = [m.to(state.device).unsqueeze(0) for m in masks_cpu]
-    deterministic = epsilon <= 0
-    with torch.no_grad():
-        actions, _, _ = policy_net.act(state, masks_by_head=masks, deterministic=deterministic)
-    return actions.to("cpu")
-
-
-def select_action_with_epsilon_alphazero(env, state, policy_net, epsilon, len_model, *, algo: str = ""):
-    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
-    algo_key = str(algo or "").strip().lower()
-    # Gumbel-поиск на инференсе применяем только для gumbel_az, хотя сеть общая с AlphaZero.
-    gaz_eval_mode = str(os.getenv("GAZ_EVAL_MODE", "gumbel")).strip().lower() or "gumbel"
-    if gaz_eval_mode not in {"greedy", "gumbel"}:
-        gaz_eval_mode = "gumbel"
-    if is_gumbel_az_algo(algo_key) and gaz_eval_mode == "gumbel":
-        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
-        search = build_gumbel_inference_search(
-            policy_net,
-            num_simulations=max(1, int(os.getenv("GAZ_EVAL_SIMS", "32"))),
-            num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
-            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
-            device=state.device,
-        )
-        _pi, selected, _value = search.run(
-            obs=state.squeeze(0).detach().cpu().numpy(),
-            legal_masks_by_head=legal_masks,
-            temperature=float(os.getenv("GAZ_EVAL_TEMPERATURE", "0.05")),
-            env=env,
-            len_model=len_model,
-            enemy_policy_fn=None,
-        )
-        return torch.tensor([[int(a) for a in selected]], device="cpu")
-    az_eval_mode = (
-        "greedy"
-        if is_gumbel_az_algo(algo_key)
-        else str(os.getenv("AZ_EVAL_MODE", os.getenv("AZ_EVAL_OPPONENT_MODE", "mcts"))).strip().lower() or "mcts"
-    )
-    if az_eval_mode not in {"greedy", "mcts"}:
-        az_eval_mode = "mcts"
-    if az_eval_mode == "mcts":
-        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
-        mcts = AlphaZeroFactorizedMCTS(
-            policy_net,
-            config=MCTSConfig(
-                simulations=max(1, int(os.getenv("AZ_EVAL_MCTS_SIMS", "32"))),
-                c_puct=float(os.getenv("AZ_EVAL_MCTS_C_PUCT", "1.5")),
-                dirichlet_alpha=float(os.getenv("AZ_EVAL_MCTS_DIR_ALPHA", "0.3")),
-                dirichlet_eps=float(os.getenv("AZ_EVAL_MCTS_DIR_EPS", "0.0")),
-                top_k_per_head=max(1, int(os.getenv("AZ_EVAL_MCTS_TOP_K_PER_HEAD", "8"))),
-                max_depth=max(1, int(os.getenv("AZ_EVAL_MCTS_MAX_DEPTH", "1"))),
-                mode=str(os.getenv("AZ_EVAL_MCTS_MODE", "tree")).strip().lower() or "tree",
-                candidate_mode=str(os.getenv("AZ_EVAL_MCTS_CANDIDATE_MODE", os.getenv("MCTS_CANDIDATE_MODE", "option"))).strip().lower() or "option",
-                window_nodes=_env_bool("AZ_EVAL_MCTS_WINDOW_NODES", os.getenv("MCTS_WINDOW_NODES", "0")),
-                joint_action_from_best_child=_env_bool(
-                    "AZ_EVAL_MCTS_JOINT_BEST_CHILD",
-                    os.getenv("AZ_MCTS_JOINT_BEST_CHILD", "0"),
-                ),
-            ),
-            device=state.device,
-        )
-        pi_targets, selected, _value = mcts.run(
-            obs=state.squeeze(0).detach().cpu().numpy(),
-            legal_masks_by_head=legal_masks,
-            temperature=float(os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.06")),
-            env=env,
-            len_model=len_model,
-            enemy_policy_fn=None,
-        )
-        if bool(getattr(mcts.cfg, "joint_action_from_best_child", False)):
-            action_list = [int(x) for x in selected]
-        else:
-            action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
-            if not action_list:
-                action_list = [int(x) for x in selected]
-        attach_fight_stratagem_plan(env, getattr(mcts, "last_selected_fight_plan", None))
-        return torch.tensor([action_list], device="cpu")
-    masks = [m.to(state.device).unsqueeze(0) for m in masks_cpu]
-    with torch.no_grad():
-        probs, _value = policy_net.infer(state, masks_by_head=masks)
-    if epsilon > 0 and random.random() < float(epsilon):
-        action_list = sample_action_list_from_space(env, int(len_model))
-        return torch.tensor([action_list], device="cpu")
-    action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-    return torch.tensor([action_list], device="cpu")
-
-
-def select_action_with_epsilon_gumbel_muzero(env, state, policy_net, epsilon, len_model):
-    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
-    legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
-    obs_np = state.squeeze(0).detach().cpu().numpy()
-    if epsilon > 0 and random.random() < float(epsilon):
-        action_list = sample_action_list_from_space(env, int(len_model))
-        return torch.tensor([action_list], device="cpu")
-    gmz_eval_mode = str(os.getenv("GMZ_EVAL_MODE", os.getenv("GMZ_OPPONENT_MODE", "search"))).strip().lower() or "search"
-    if gmz_eval_mode not in {"search", "greedy"}:
-        gmz_eval_mode = "search"
-    if gmz_eval_mode == "greedy":
-        with torch.no_grad():
-            probs, _value = policy_net.infer(
-                state,
-                masks_by_head=[m.to(state.device).unsqueeze(0) for m in masks_cpu],
-            )
-        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-        return torch.tensor([action_list], device="cpu")
-    search = GumbelMuZeroSearch(
-        net=policy_net,
-        config=GumbelMuZeroSearchConfig(
-            num_simulations=max(1, int(os.getenv("GMZ_EVAL_SIMS", "32"))),
-            root_top_k=max(1, int(os.getenv("GMZ_EVAL_ROOT_TOP_K", "8"))),
-            temperature=float(os.getenv("GMZ_EVAL_TEMPERATURE", "0.10")),
-        ),
-        device=state.device,
-    )
-    pi_targets, _behavior_logits, selected, _value = search.run(
-        obs=obs_np, legal_masks_by_head=legal_masks, deterministic=True
-    )
-    action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
-    if not action_list:
-        action_list = [int(x) for x in selected]
-    return torch.tensor([action_list], device="cpu")
-
-
 def select_action_with_epsilon_sampled_muzero(env, state, policy_net, epsilon, len_model):
     masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
     legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
@@ -480,7 +336,7 @@ def run_episode(
     env_unwrapped.attacker_side = attacker_side
     env_unwrapped.defender_side = defender_side
 
-    state, info = env.reset(
+    _, info = env.reset(
         options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
     )
 
