@@ -91,3 +91,24 @@ def test_insane_bravery_value_gate_used_when_policy(monkeypatch):
     env.modelCP = 3
     env.command_phase("model", action={"use_cp": 0, "cp_on": -1})
     assert calls.get("sid") == "insane_bravery"
+
+
+def test_insane_bravery_value_gate_used_when_policy_enemy(monkeypatch):
+    from tests.engine.phases._helpers import build_env
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    calls = {}
+    def fake_gate(sid, side, chosen, cand, phase, cp, **k):
+        calls["sid"] = sid
+        calls["side"] = side
+        return True
+    env.reaction_policy = object()  # не None
+    env._reaction_net_by_side = {"enemy": object()}
+    monkeypatch.setattr(env, "_should_use_stratagem", fake_gate)
+    monkeypatch.setattr("core.envs.warhamEnv.dice", lambda num=1: [1, 1])
+    env.enemy_health[0] = 1
+    env.enemy_data[0]["W"] = 4  # ниже половины
+    env.enemyCP = 3
+    env.command_phase("enemy", action={"use_cp": 0, "cp_on": -1})
+    assert calls.get("sid") == "insane_bravery"
+    assert calls.get("side") == "enemy"

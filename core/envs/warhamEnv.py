@@ -4800,7 +4800,14 @@ class Warhammer40kEnv(gym.Env):
                         self.enemyOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if use_cp == 1 and cp_on == i:
+                        if getattr(self, "reaction_policy", None) is not None:
+                            _use_bravery = self._should_use_stratagem(
+                                "insane_bravery", "enemy", i, [i], "command", int(self.enemyCP),
+                                net=getattr(self, "_reaction_net_by_side", {}).get("enemy"),
+                            )
+                        else:
+                            _use_bravery = (use_cp == 1 and cp_on == i)
+                        if _use_bravery:
                             _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
                             if _bravery["ok"]:
                                 battle_shock[i] = False
