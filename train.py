@@ -4800,7 +4800,7 @@ def main():
         from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
 
         for ctx in env_contexts:
-            install_dqn_stratagem_policy(ctx["env"], policy_net, device)
+            install_dqn_stratagem_policy(ctx["env"], {"model": policy_net}, device)
         append_agent_log(
             "[DQN][CONFIG] reaction_value_policy установлена (max-Q proxy, learner_only)"
         )
@@ -8319,7 +8319,7 @@ def _actor_learner_actor_entry(
             try:
                 from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
 
-                install_dqn_stratagem_policy(env, cpu_net, torch.device("cpu"))
+                install_dqn_stratagem_policy(env, {"model": cpu_net}, torch.device("cpu"))
                 append_agent_log(f"[DQN][ACTOR] actor={int(actor_idx)} reaction_value_policy=ON")
             except Exception as exc:
                 append_agent_log(

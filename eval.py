@@ -1352,7 +1352,7 @@ def main():
         if dqn_reaction_value_policy_enabled():
             from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
 
-            install_dqn_stratagem_policy(env, policy_net, device)
+            install_dqn_stratagem_policy(env, {"model": policy_net}, device)
             log("[EVAL][DQN][CONFIG] reaction_value_policy установлена (max-Q proxy, learner_only)")
 
     az_eval_mode = str(os.getenv("AZ_EVAL_MODE", "mcts")).strip().lower() or "mcts"

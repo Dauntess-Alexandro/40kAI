@@ -25,12 +25,16 @@ def dqn_reaction_value_policy_enabled(default: str = "1") -> bool:
     return raw in _TRUTHY
 
 
-def install_dqn_stratagem_policy(env, policy_net, device) -> None:
-    """Learner-only value-gate для стратагем (model side)."""
+def install_dqn_stratagem_policy(env, net_by_side: dict, device) -> None:
+    """Value-gate для стратагем. Side-generic: net_by_side = {side: net}.
+
+    v1 кладёт {"model": net} (learner-only). Both-sides (честный p1/p2) — тот же
+    вызов с {"model": p1, "enemy": p2}, без правок движка/bridge. Сторона без сети → legacy.
+    """
     from core.models.reaction_value_policy import make_stratagem_value_policy
 
     e = unwrap_env(env)
-    e._reaction_net_by_side = {"model": policy_net}
+    e._reaction_net_by_side = dict(net_by_side)
     e.reaction_policy = make_stratagem_value_policy(e._reaction_net_by_side, device=device)
 
 
