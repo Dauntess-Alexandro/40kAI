@@ -112,7 +112,13 @@ def log(message: str) -> None:
         rendered = f"[EVAL]{message}"
     else:
         rendered = f"[EVAL] {message}"
-    print(rendered, flush=True)
+    try:
+        print(rendered, flush=True)
+    except UnicodeEncodeError:
+        # Консоль (напр. cp1251 при запуске из GUI) не кодирует часть символов
+        # (стрелки/эмодзи). Не валим весь eval — печатаем с заменой непечатных.
+        enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+        print(rendered.encode(enc, errors="replace").decode(enc, errors="replace"), flush=True)
     _append_eval_log(message)
 
 
@@ -1112,8 +1118,12 @@ def main():
         learner_state = policy_state
 
     cfg = resolve_eval_search_cfg(algo)
-    if cfg.opponent_override_active:
-        log("[EVAL][CONFIG][WARN] *_OPPONENT_* override активен → честный 1:1 нарушен.")
+    # Примечание: после унификации на EvalAgent обе стороны строятся через один
+    # resolve_eval_search_cfg, который *_OPPONENT_* ключи в search НЕ читает (они
+    # кормят только диагностическую лог-строку modes_tail ниже). Поэтому наличие
+    # *_OPPONENT_* env (GUI выставляет их всегда) больше НЕ нарушает честный 1:1 —
+    # старый WARN был структурно ложным и удалён. Поле cfg.opponent_override_active
+    # оставлено для обратной совместимости.
     # Арку learner-сети резолвим ИЗ payload чекпойнта (как до Task5), чтобы недефолтные
     # чекпойнты грузились 1:1. Registry-путь без payload → arch=None (env/дефолт-арка).
     learner_arch = None
