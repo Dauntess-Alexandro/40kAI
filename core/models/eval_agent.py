@@ -120,10 +120,17 @@ class EvalAgent:
         self.search = search
         self.cfg = cfg
         self.len_model = int(len_model)
+        # Устройство берём от самой сети: build_eval_agent кладёт net на device
+        # (cuda при наличии), а obs/маски обязаны быть на том же устройстве —
+        # иначе RuntimeError "tensors on different devices" в net.forward.
+        try:
+            self.device = next(net.parameters()).device
+        except (StopIteration, AttributeError):
+            self.device = torch.device("cpu")
 
     def select_action(self, env, side: str) -> tuple[dict, dict | None]:
         obs_np = np.asarray(env.get_observation_for_side(side), dtype=np.float32)
-        obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+        obs_t = torch.tensor(obs_np, dtype=torch.float32, device=self.device).unsqueeze(0)
         # Честный eval: маски строятся для стороны side (model/enemy), а не всегда "model".
         masks_cpu = build_action_masks_by_head(env, self.len_model, log_fn=None, debug=False, side=side)
         if self.algo == "dqn":
@@ -151,11 +158,11 @@ class EvalAgent:
         if self.algo == "ppo":
             from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
 
-            return ppo_build_fight_plan(env, self.reaction_net, torch.device("cpu"), side=side)
+            return ppo_build_fight_plan(env, self.reaction_net, self.device, side=side)
         if self.algo == "dqn":
             from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
 
-            return dqn_build_fight_plan(env, self.reaction_net, torch.device("cpu"), side=side)
+            return dqn_build_fight_plan(env, self.reaction_net, self.device, side=side)
         return None
 
     # --- per-algo действия (тела 1:1 с opponent_adapter.build_policy_fn) ---
@@ -180,7 +187,7 @@ class EvalAgent:
         return action_dict, self._fight_plan(env, side)
 
     def _select_ppo(self, env, obs_t, masks_cpu, side):
-        masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
+        masks = [m.to(self.device).unsqueeze(0) for m in masks_cpu]
         with torch.no_grad():
             action_t, _lp, _v = self.net.act(obs_t, masks_by_head=masks, deterministic=self.cfg.deterministic)
         action_np = action_t.squeeze(0).detach().cpu().numpy().tolist()
@@ -194,10 +201,10 @@ class EvalAgent:
         if self.search is None:
             # Greedy-режим: argmax (детерминированно). Opponent-only AZ_OPPONENT_STOCHASTIC_EPS
             # намеренно убран — честный 1:1 eval; для стохастики использовать mcts/gumbel-режим.
-            masks = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
+            masks = [m.to(self.device).unsqueeze(0) for m in masks_cpu]
             with torch.no_grad():
                 probs, _value = self.net.infer(
-                    torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0),
+                    torch.tensor(obs_np, dtype=torch.float32, device=self.device).unsqueeze(0),
                     masks_by_head=masks,
                 )
             action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
@@ -222,10 +229,10 @@ class EvalAgent:
         legal = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
         if self.search is None:
             # Greedy-режим: argmax (детерминированно). Честный 1:1 eval без opponent-specific флагов.
-            masks = [m.unsqueeze(0) for m in masks_cpu]
+            masks = [m.to(self.device).unsqueeze(0) for m in masks_cpu]
             with torch.no_grad():
                 probs, _value = self.net.infer(
-                    torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0),
+                    torch.tensor(obs_np, dtype=torch.float32, device=self.device).unsqueeze(0),
                     masks_by_head=masks,
                 )
             action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
