@@ -35,13 +35,14 @@ from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumb
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.alphazero_model import alphazero_arch_from_payload, load_alphazero_state_dict, make_alphazero_net
 from core.models.DQN import DQN
+from core.models.dqn_stratagem_bridge import dqn_reaction_value_policy_enabled
 from core.models.gumbel_alphazero_search import build_gumbel_inference_search
 from core.models.gumbel_muzero_model import GumbelMuZeroNet
 from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 from core.models.opponent_adapter import build_policy_fn, load_agent_opponent
 from core.models.option_candidates import attach_fight_stratagem_plan
-from core.models.dqn_stratagem_bridge import dqn_reaction_value_policy_enabled
 from core.models.PPO import load_actor_critic_state_dict, make_actor_critic, ppo_arch_from_payload
+from core.models.ppo_stratagem_bridge import ppo_reaction_value_policy_enabled
 from core.models.sampled_muzero_model import (
     load_sampled_muzero_state_dict,
     make_sampled_muzero_net,
@@ -798,6 +799,12 @@ def run_episode(
                 epsilon,
                 len(model_units),
             )
+            if ppo_reaction_value_policy_enabled():
+                from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
+
+                attach_fight_stratagem_plan(
+                    env, ppo_build_fight_plan(env, policy_net, device, side="model")
+                )
         elif is_alphazero_net_algo(algo):
             action = select_action_with_epsilon_alphazero(
                 env,
@@ -1271,6 +1278,15 @@ def main():
         policy_net = make_actor_critic(n_observations, n_actions, **arch).to(device)
         load_actor_critic_state_dict(policy_net, normalize_state_dict(ppo_state))
         policy_net.eval()
+        # PPO: установка reaction_value_policy для learner-стороны (model)
+        if ppo_reaction_value_policy_enabled():
+            try:
+                from core.models.ppo_stratagem_bridge import install_ppo_stratagem_policy
+
+                install_ppo_stratagem_policy(env, device, {"model": policy_net})
+                log("[EVAL][PPO][CONFIG] reaction_value_policy установлена (critic V, learner_only)")
+            except Exception as exc:
+                log(f"[EVAL][PPO][CONFIG][WARN] reaction_value_policy install failed: {exc}")
     elif is_alphazero_net_algo(algo):
         az_state = checkpoint.get("policy_value_net") if isinstance(checkpoint, dict) else None
         if not isinstance(az_state, dict):
