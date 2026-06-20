@@ -185,3 +185,19 @@ class ActorCriticMultiHead(nn.Module):
             actions.append(head_actions)
         stacked_actions = torch.stack(actions, dim=1)
         return stacked_actions, total_logprob, values
+
+    @torch.no_grad()
+    def infer_with_value(self, obs, masks_by_head=None):
+        """Как act, но возвращает (probs, V). V — честный critic, mask-независим.
+
+        Нужно seam'у env._simulate_reaction_branch (duck-typing hasattr infer_with_value):
+        он зовёт net.infer_with_value(obs, masks_by_head=...) и ждёт (probs, value).
+        Маски влияют только на probs; critic V их игнорирует.
+        """
+        logits_list, value = self.forward(obs)
+        probs = []
+        for idx, logits in enumerate(logits_list):
+            mask = masks_by_head[idx] if (masks_by_head is not None and idx < len(masks_by_head)) else None
+            masked = _apply_action_mask(logits, mask)
+            probs.append(torch.softmax(masked, dim=1))
+        return probs, value
