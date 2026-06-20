@@ -124,7 +124,8 @@ class EvalAgent:
     def select_action(self, env, side: str) -> tuple[dict, dict | None]:
         obs_np = np.asarray(env.get_observation_for_side(side), dtype=np.float32)
         obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-        masks_cpu = build_action_masks_by_head(env, self.len_model, log_fn=None, debug=False)
+        # Честный eval: маски строятся для стороны side (model/enemy), а не всегда "model".
+        masks_cpu = build_action_masks_by_head(env, self.len_model, log_fn=None, debug=False, side=side)
         if self.algo == "dqn":
             return self._select_dqn(env, obs_t, masks_cpu, side)
         if self.algo == "ppo":
@@ -161,7 +162,7 @@ class EvalAgent:
     def _select_dqn(self, env, obs_t, masks_cpu, side):
         with torch.no_grad():
             decision = self.net(obs_t)
-        shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
+        shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False, side=side)
         action = []
         for head_idx, head in enumerate(decision):
             head_row = head.squeeze(0)

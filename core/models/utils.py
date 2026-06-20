@@ -261,11 +261,20 @@ def select_action(env, state, steps_done, policy_net, len_model, shoot_mask=None
         action = torch.tensor([action_list], device="cpu")
         return action
 
-def build_shoot_action_mask(env, log_fn=None, debug=False):
-    """Legacy helper для eval/play-логов: min-rank маска по shoot_num_* (B2)."""
+def build_shoot_action_mask(env, log_fn=None, debug=False, side: str = "model"):
+    """Legacy helper для eval/play-логов: min-rank маска по shoot_num_* (B2).
+
+    side: сторона, для которой строится маска ("model" или "enemy"). По умолчанию
+    "model" — обратная совместимость. В честном eval обе стороны должны вызывать
+    с корректным side, иначе противник получит маски не своей стороны (сегрегация).
+    """
+    side = str(side or "model").strip().lower()
+    if side not in {"model", "enemy"}:
+        side = "model"
     env_unwrapped = unwrap_env(env)
-    n_model = len(getattr(env_unwrapped, "unit_health", []) or [])
-    if n_model <= 0:
+    own_health = getattr(env_unwrapped, "unit_health", []) if side == "model" else getattr(env_unwrapped, "enemy_health", [])
+    n_units = len(own_health or [])
+    if n_units <= 0:
         return None
     space_key = "shoot_num_0"
     if space_key not in getattr(env_unwrapped.action_space, "spaces", {}):
@@ -279,11 +288,31 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
             env._last_shoot_mask_log_state = state_key
             log_fn(message)
 
+    # own_* = атрибуты стороны side; other_* = атрибуты противоположной стороны.
+    if side == "model":
+        own_health_arr = env_unwrapped.unit_health
+        own_fell_back = env_unwrapped.unitFellBack
+        own_in_attack = env_unwrapped.unitInAttack
+        own_weapon = env_unwrapped.unit_weapon
+        own_coords = env_unwrapped.unit_coords
+        other_health_arr = env_unwrapped.enemy_health
+        other_coords = env_unwrapped.enemy_coords
+        other_in_attack = env_unwrapped.enemyInAttack
+    else:
+        own_health_arr = env_unwrapped.enemy_health
+        own_fell_back = env_unwrapped.enemyFellBack
+        own_in_attack = env_unwrapped.enemyInAttack
+        own_weapon = env_unwrapped.enemy_weapon
+        own_coords = env_unwrapped.enemy_coords
+        other_health_arr = env_unwrapped.unit_health
+        other_coords = env_unwrapped.unit_coords
+        other_in_attack = env_unwrapped.unitInAttack
+
     if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
         try:
-            legal = env_unwrapped.get_legal_action_masks_by_head(side="model")
+            legal = env_unwrapped.get_legal_action_masks_by_head(side=side)
             valid_lengths: list[int] = []
-            for u_idx in range(n_model):
+            for u_idx in range(n_units):
                 mask = legal.get(f"shoot_num_{u_idx}")
                 if mask is None:
                     continue
@@ -302,25 +331,25 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
 
     shoot_space = int(env_unwrapped.action_space.spaces[space_key].n)
     valid_lengths = []
-    for i in range(n_model):
+    for i in range(n_units):
         if hasattr(env_unwrapped, "get_shoot_targets_for_unit"):
-            valid_targets = env_unwrapped.get_shoot_targets_for_unit("model", i)
+            valid_targets = env_unwrapped.get_shoot_targets_for_unit(side, i)
         else:
-            if env_unwrapped.unit_health[i] <= 0:
+            if own_health_arr[i] <= 0:
                 continue
-            if env_unwrapped.unitFellBack[i]:
+            if own_fell_back[i]:
                 continue
-            if env_unwrapped.unitInAttack[i][0] == 1:
+            if own_in_attack[i][0] == 1:
                 continue
-            if env_unwrapped.unit_weapon[i] == "None":
+            if own_weapon[i] == "None":
                 continue
             valid_targets = []
-            for j in range(len(env_unwrapped.enemy_health)):
+            for j in range(len(other_health_arr)):
                 if (
-                    distance(env_unwrapped.unit_coords[i], env_unwrapped.enemy_coords[j])
-                    <= env_unwrapped.unit_weapon[i]["Range"]
-                    and env_unwrapped.enemy_health[j] > 0
-                    and env_unwrapped.enemyInAttack[j][0] == 0
+                    distance(own_coords[i], other_coords[j])
+                    <= own_weapon[i]["Range"]
+                    and other_health_arr[j] > 0
+                    and other_in_attack[j][0] == 0
                 ):
                     valid_targets.append(j)
         if valid_targets:
@@ -352,8 +381,17 @@ def build_shoot_action_mask(env, log_fn=None, debug=False):
     return mask
 
 
-def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
-    """Унифицированный контракт масок для всех голов действия (B2 per-unit)."""
+def build_action_masks_by_head(env, len_model, log_fn=None, debug=False, side: str = "model"):
+    """Унифицированный контракт масок для всех голов действия (B2 per-unit).
+
+    side: сторона, для которой строятся маски ("model" или "enemy"). По умолчанию
+    "model" — обратная совместимость (train/play всегда ходят за model). В честном
+    eval обе стороны обязаны вызывать с корректным side: иначе противник (enemy)
+    получит маски model-стороны (сегрегация → нечестный eval).
+    """
+    side = str(side or "model").strip().lower()
+    if side not in {"model", "enemy"}:
+        side = "model"
     env_unwrapped = unwrap_env(env)
     ordered_keys = ordered_action_keys(int(len_model))
 
@@ -362,7 +400,7 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False):
     legal_by_head = None
     if hasattr(env_unwrapped, "get_legal_action_masks_by_head"):
         try:
-            legal_by_head = env_unwrapped.get_legal_action_masks_by_head(side="model")
+            legal_by_head = env_unwrapped.get_legal_action_masks_by_head(side=side)
         except Exception:
             legal_by_head = None
 
