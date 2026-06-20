@@ -82,6 +82,7 @@ plt.rcParams.update(
 AGENT_TRAIN_LOG_FILE = str(AGENT_TRAIN_LOG_PATH.relative_to(AGENT_TRAIN_LOG_PATH.parent.parent))
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 
+from core.engine.matchmaker import record_matchup
 from core.models.action_contract import action_sizes_from_env, ordered_action_keys
 from core.models.alphazero_ids import (
     VALID_TRAIN_ALGOS,
@@ -171,7 +172,6 @@ from core.models.smz_inference_server import smz_inference_server_entry
 from core.models.smz_remote_search_cfg_builder import publish_smz_remote_search_cfg
 from core.models.utils import *
 from core.models.utils import _build_select_action_masks
-from core.engine.matchmaker import record_matchup
 
 MODELS_DIR = str(ARTIFACTS_MODELS_DIR)
 METRICS_DIR = str(ARTIFACTS_METRICS_DIR)
@@ -300,6 +300,11 @@ if DQN_ENSEMBLE_SIZE < 1:
 DQN_REACTION_VALUE_POLICY = _cfg_bool("DQN_REACTION_VALUE_POLICY", "reaction_value_policy", "1")
 if "DQN_REACTION_VALUE_POLICY" not in os.environ:
     os.environ["DQN_REACTION_VALUE_POLICY"] = "1" if DQN_REACTION_VALUE_POLICY else "0"
+_PPO_CFG = data.get("ppo", {}) if isinstance(data, dict) else {}
+_ppo_rvp_raw = os.getenv("PPO_REACTION_VALUE_POLICY", str(_PPO_CFG.get("reaction_value_policy", 1)))
+PPO_REACTION_VALUE_POLICY = str(_ppo_rvp_raw).strip().lower() in ("1", "true", "yes", "on")
+if "PPO_REACTION_VALUE_POLICY" not in os.environ:
+    os.environ["PPO_REACTION_VALUE_POLICY"] = "1" if PPO_REACTION_VALUE_POLICY else "0"
 REWARD_DEBUG = os.getenv("REWARD_DEBUG", "0") == "1"
 REWARD_DEBUG_EVERY = int(os.getenv("REWARD_DEBUG_EVERY", "200"))
 TRAIN_ALGO = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
@@ -3648,6 +3653,13 @@ def run_ppo_training(
         f"adaptive_entropy={int(PPO_ADAPTIVE_ENTROPY)} vectorized_gae={os.getenv('PPO_VECTORIZED_GAE', '0')}"
     )
 
+    if PPO_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+        from core.models.ppo_stratagem_bridge import install_ppo_stratagem_policy
+
+        for ctx in env_contexts:
+            install_ppo_stratagem_policy(ctx["env"], device, {"model": actor_critic})
+        append_agent_log("[PPO][CONFIG] reaction_value_policy установлена (critic V, learner_only)")
+
     strat_tracer = _make_train_stratagem_tracer()
     if strat_tracer is not None:
         append_agent_log(
@@ -3682,12 +3694,23 @@ def run_ppo_training(
             action_t, logprob_t, value_t = actor_critic.act(obs_t, masks_by_head=masks_batch, deterministic=False)
             action_np = action_t.squeeze(0).detach().cpu().numpy()
             action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-            if strat_tracer is not None:
-                next_obs, reward, done, _, info = strat_tracer.run_model_step(
-                    env, env_unwrapped, step_no, action_dict
-                )
-            else:
-                next_obs, reward, done, _, info = env.step(action_dict)
+            if PPO_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+                from core.models.option_candidates import attach_fight_stratagem_plan
+                from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
+
+                attach_fight_stratagem_plan(env, ppo_build_fight_plan(env, actor_critic, device, side="model"))
+            try:
+                if strat_tracer is not None:
+                    next_obs, reward, done, _, info = strat_tracer.run_model_step(
+                        env, env_unwrapped, step_no, action_dict
+                    )
+                else:
+                    next_obs, reward, done, _, info = env.step(action_dict)
+            finally:
+                if PPO_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+                    from core.models.option_candidates import attach_fight_stratagem_plan
+
+                    attach_fight_stratagem_plan(env, None)
             final_info = info or {}
             buffer.add(
                 obs=obs,
