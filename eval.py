@@ -1064,6 +1064,16 @@ def run_episode(
     )
 
 
+def _aggregate_swap(res_a: dict, res_b: dict) -> dict:
+    """res_a: A=model/B=enemy; res_b: B=model/A=enemy. Winrate агента = его победы в обоих назначениях / 2N."""
+    n = int(res_a["games"]) + int(res_b["games"])
+    a_wins = int(res_a["model_wins"]) + int(res_b["enemy_wins"])
+    b_wins = int(res_a["enemy_wins"]) + int(res_b["model_wins"])
+    return {"agentA_winrate": a_wins / n if n else 0.0,
+            "agentB_winrate": b_wins / n if n else 0.0,
+            "total_games": n, "draws": int(res_a["draws"]) + int(res_b["draws"])}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=50)
@@ -1071,6 +1081,8 @@ def main():
     parser.add_argument("--learner-agent-id", type=str, default="")
     parser.add_argument("--opponent-agent-id", type=str, default="")
     parser.add_argument("--opponent-policy", type=str, default="mirror")
+    parser.add_argument("--swap-sides", action="store_true",
+                        help="Сыграть оба назначения сторон и усреднить (честный P1≡P2).")
     args = parser.parse_args()
 
     games = args.games
@@ -1346,176 +1358,312 @@ def main():
     learner_side = str(os.getenv("LEARNER_SIDE", "P1")).strip().upper() or "P1"
     if learner_side not in {"P1", "P2"}:
         learner_side = "P1"
-    opponent_side = "P2" if learner_side == "P1" else "P1"
-
-    wins = 0
-    losses = 0
-    draws = 0
-    p1_wins = 0
-    p2_wins = 0
-    vp_diffs = []
-    p1_vps = []
-    p2_vps = []
-    ep_lens = []
-    hp_diffs_p1_minus_p2 = []
-    kill_diffs_p1_minus_p2 = []
-    rewards_learner = []
-    end_reasons_v2 = Counter()
-    step_metrics = Counter()
-    action_tuple_counter = Counter()
-    model_action_re = re.compile(
-        r"move=(?P<move>-?\d+).*?attack=(?P<attack>-?\d+).*?shoot=(?P<shoot>-?\d+).*?"
-        r"charge=(?P<charge>-?\d+).*?use_cp=(?P<use_cp>-?\d+).*?cp_on=(?P<cp_on>-?\d+).*?"
-        r"masks=\(move:(?P<move_v>\d+)/(?P<move_t>\d+), attack:(?P<attack_v>\d+)/(?P<attack_t>\d+), "
-        r"shoot:(?P<shoot_v>\d+)/(?P<shoot_t>\d+), charge:(?P<charge_v>\d+)/(?P<charge_t>\d+),"
-    )
-    step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
-    strat_attempt_re = re.compile(r"stratagem=(?P<sid>\S+)")
-    strat_applied_re = re.compile(r"applied=(?P<sid>\S+)")
 
     clear_eval_stop_flag()
 
-    for idx in range(1, games + 1):
-        if eval_stop_requested():
-            log(f"Остановка по запросу пользователя после {idx - 1}/{games} игр.")
-            break
-        (
-            winner,
-            end_reason,
-            vp_diff,
-            model_vp,
-            enemy_vp,
-            episode_len,
-            total_reward,
-            hp_diff_model_minus_enemy,
-            kill_diff_model_minus_enemy,
-            trace_lines,
-        ) = run_episode(
-            env,
-            model_units,
-            enemy_units,
-            learner_agent,
-            opponent_agent,
-            device,
-            learner_side=learner_side,
+    def _run_assignment(
+        _env,
+        _model_units,
+        _enemy_units,
+        _learner_agent,
+        _opponent_agent,
+        _device,
+        _games: int,
+        _learner_side: str,
+        *,
+        assignment_label: str = "",
+    ) -> dict:
+        """Прогон N игр одного назначения (learner=model, opponent=enemy). Возвращает агрегированные метрики."""
+        _opponent_side = "P2" if str(_learner_side).upper() == "P1" else "P1"
+        wins = 0
+        losses = 0
+        _draws = 0
+        p1_wins = 0
+        p2_wins = 0
+        vp_diffs: list[int] = []
+        p1_vps: list[int] = []
+        p2_vps: list[int] = []
+        ep_lens: list[int] = []
+        hp_diffs_p1_minus_p2: list[float] = []
+        kill_diffs_p1_minus_p2: list[float] = []
+        rewards_learner: list[float] = []
+        end_reasons_v2: Counter[str] = Counter()
+        step_metrics: Counter[str] = Counter()
+        action_tuple_counter: Counter[tuple] = Counter()
+        model_action_re = re.compile(
+            r"move=(?P<move>-?\d+).*?attack=(?P<attack>-?\d+).*?shoot=(?P<shoot>-?\d+).*?"
+            r"charge=(?P<charge>-?\d+).*?use_cp=(?P<use_cp>-?\d+).*?cp_on=(?P<cp_on>-?\d+).*?"
+            r"masks=\(move:(?P<move_v>\d+)/(?P<move_t>\d+), attack:(?P<attack_v>\d+)/(?P<attack_t>\d+), "
+            r"shoot:(?P<shoot_v>\d+)/(?P<shoot_t>\d+), charge:(?P<charge_v>\d+)/(?P<charge_t>\d+),"
         )
-        for line in trace_lines:
-            _append_eval_log(f"[TRACE][GAME {idx}] {line}")
-            if line.startswith("[TRACE][MODEL_ACTION_HUMAN]"):
-                m = model_action_re.search(line)
-                if m:
-                    move = int(m.group("move"))
-                    attack = int(m.group("attack"))
-                    shoot = int(m.group("shoot"))
-                    charge = int(m.group("charge"))
-                    use_cp = int(m.group("use_cp"))
-                    cp_on = int(m.group("cp_on"))
-                    move_v = int(m.group("move_v"))
-                    shoot_v = int(m.group("shoot_v"))
-                    charge_v = int(m.group("charge_v"))
-                    step_metrics["total_model_steps"] += 1
-                    action_tuple_counter[(move, attack, shoot, charge, use_cp, cp_on)] += 1
-                    if move_v > 1:
-                        step_metrics["move_opt_steps"] += 1
-                        if move == 4:
-                            step_metrics["stay_opt_steps"] += 1
-                    if shoot_v > 1:
-                        step_metrics["shoot_opt_steps"] += 1
-                        if shoot == 0:
-                            step_metrics["shoot_zero_opt_steps"] += 1
-                    if charge_v > 1:
-                        step_metrics["charge_opt_steps"] += 1
-                        if charge == 0:
-                            step_metrics["charge_zero_opt_steps"] += 1
-            elif line.startswith("[WH40K][STRATAGEM][ATTEMPT]"):
-                step_metrics["stratagem_attempt_total"] += 1
-                m = strat_attempt_re.search(line)
-                if m:
-                    step_metrics[f"strat_attempt_{m.group('sid')}"] += 1
-            elif line.startswith("[WH40K][STRATAGEM] applied="):
-                step_metrics["stratagem_applied_total"] += 1
-                m = strat_applied_re.search(line)
-                if m:
-                    step_metrics[f"strat_applied_{m.group('sid')}"] += 1
-            elif line.startswith("[WH40K][STRATAGEM][MISS]"):
-                step_metrics["stratagem_miss_total"] += 1
-            elif line.startswith("[TRACE][STEP_VERDICT]"):
-                verdict_raw = line.split("verdict=", 1)[-1].strip()
-                for token in verdict_raw.split(","):
-                    token = token.strip()
-                    if not token or token == "ok":
-                        continue
-                    if token == "stay_while_move_options_exist":
-                        step_metrics["verdict_stay"] += 1
-                    elif token == "skip_charge_while_options_exist":
-                        step_metrics["verdict_skip_charge"] += 1
-                    elif token == "default_shoot_choice_with_options":
-                        step_metrics["verdict_default_shoot"] += 1
-            elif line.startswith("[TRACE][STEP_RESULT]"):
-                m = step_result_re.search(line)
-                if m:
-                    step_metrics["step_result_total"] += 1
-                    if int(m.group("model_ctrl")) == 0:
-                        step_metrics["step_result_model_ctrl_zero"] += 1
-        if learner_side == "P1":
-            p1_vp = model_vp
-            p2_vp = enemy_vp
-            vp_diff_p1_minus_p2 = vp_diff
-            hp_diff_p1_minus_p2 = hp_diff_model_minus_enemy
-            kill_diff_p1_minus_p2 = kill_diff_model_minus_enemy
-        else:
-            p1_vp = enemy_vp
-            p2_vp = model_vp
-            vp_diff_p1_minus_p2 = -vp_diff
-            hp_diff_p1_minus_p2 = -hp_diff_model_minus_enemy
-            kill_diff_p1_minus_p2 = -kill_diff_model_minus_enemy
+        step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
+        strat_attempt_re = re.compile(r"stratagem=(?P<sid>\S+)")
+        strat_applied_re = re.compile(r"applied=(?P<sid>\S+)")
+        _label = f" [{assignment_label}]" if assignment_label else ""
 
-        vp_diffs.append(vp_diff)
-        p1_vps.append(p1_vp)
-        p2_vps.append(p2_vp)
-        ep_lens.append(int(episode_len))
-        hp_diffs_p1_minus_p2.append(float(hp_diff_p1_minus_p2))
-        kill_diffs_p1_minus_p2.append(float(kill_diff_p1_minus_p2))
-        rewards_learner.append(float(total_reward))
-        if winner == "model":
-            wins += 1
-            winner_side = learner_side
-        elif winner == "enemy":
-            losses += 1
-            winner_side = opponent_side
-        else:
-            draws += 1
-            winner_side = "draw"
+        for idx in range(1, _games + 1):
+            if eval_stop_requested():
+                log(f"Остановка по запросу пользователя после {idx - 1}/{_games} игр{_label}.")
+                break
+            (
+                winner,
+                end_reason,
+                vp_diff,
+                model_vp,
+                enemy_vp,
+                episode_len,
+                total_reward,
+                hp_diff_model_minus_enemy,
+                kill_diff_model_minus_enemy,
+                trace_lines,
+            ) = run_episode(
+                _env,
+                _model_units,
+                _enemy_units,
+                _learner_agent,
+                _opponent_agent,
+                _device,
+                learner_side=_learner_side,
+            )
+            for line in trace_lines:
+                _append_eval_log(f"[TRACE][GAME {idx}]{_label} {line}")
+                if line.startswith("[TRACE][MODEL_ACTION_HUMAN]"):
+                    m = model_action_re.search(line)
+                    if m:
+                        move = int(m.group("move"))
+                        attack = int(m.group("attack"))
+                        shoot = int(m.group("shoot"))
+                        charge = int(m.group("charge"))
+                        use_cp = int(m.group("use_cp"))
+                        cp_on = int(m.group("cp_on"))
+                        move_v = int(m.group("move_v"))
+                        shoot_v = int(m.group("shoot_v"))
+                        charge_v = int(m.group("charge_v"))
+                        step_metrics["total_model_steps"] += 1
+                        action_tuple_counter[(move, attack, shoot, charge, use_cp, cp_on)] += 1
+                        if move_v > 1:
+                            step_metrics["move_opt_steps"] += 1
+                            if move == 4:
+                                step_metrics["stay_opt_steps"] += 1
+                        if shoot_v > 1:
+                            step_metrics["shoot_opt_steps"] += 1
+                            if shoot == 0:
+                                step_metrics["shoot_zero_opt_steps"] += 1
+                        if charge_v > 1:
+                            step_metrics["charge_opt_steps"] += 1
+                            if charge == 0:
+                                step_metrics["charge_zero_opt_steps"] += 1
+                elif line.startswith("[WH40K][STRATAGEM][ATTEMPT]"):
+                    step_metrics["stratagem_attempt_total"] += 1
+                    m = strat_attempt_re.search(line)
+                    if m:
+                        step_metrics[f"strat_attempt_{m.group('sid')}"] += 1
+                elif line.startswith("[WH40K][STRATAGEM] applied="):
+                    step_metrics["stratagem_applied_total"] += 1
+                    m = strat_applied_re.search(line)
+                    if m:
+                        step_metrics[f"strat_applied_{m.group('sid')}"] += 1
+                elif line.startswith("[WH40K][STRATAGEM][MISS]"):
+                    step_metrics["stratagem_miss_total"] += 1
+                elif line.startswith("[TRACE][STEP_VERDICT]"):
+                    verdict_raw = line.split("verdict=", 1)[-1].strip()
+                    for token in verdict_raw.split(","):
+                        token = token.strip()
+                        if not token or token == "ok":
+                            continue
+                        if token == "stay_while_move_options_exist":
+                            step_metrics["verdict_stay"] += 1
+                        elif token == "skip_charge_while_options_exist":
+                            step_metrics["verdict_skip_charge"] += 1
+                        elif token == "default_shoot_choice_with_options":
+                            step_metrics["verdict_default_shoot"] += 1
+                elif line.startswith("[TRACE][STEP_RESULT]"):
+                    m = step_result_re.search(line)
+                    if m:
+                        step_metrics["step_result_total"] += 1
+                        if int(m.group("model_ctrl")) == 0:
+                            step_metrics["step_result_model_ctrl_zero"] += 1
+            if _learner_side == "P1":
+                p1_vp = model_vp
+                p2_vp = enemy_vp
+                vp_diff_p1_minus_p2 = vp_diff
+                hp_diff_p1_minus_p2 = hp_diff_model_minus_enemy
+                kill_diff_p1_minus_p2 = kill_diff_model_minus_enemy
+            else:
+                p1_vp = enemy_vp
+                p2_vp = model_vp
+                vp_diff_p1_minus_p2 = -vp_diff
+                hp_diff_p1_minus_p2 = -hp_diff_model_minus_enemy
+                kill_diff_p1_minus_p2 = -kill_diff_model_minus_enemy
 
-        if winner_side == "P1":
-            p1_wins += 1
-        elif winner_side == "P2":
-            p2_wins += 1
+            vp_diffs.append(vp_diff)
+            p1_vps.append(p1_vp)
+            p2_vps.append(p2_vp)
+            ep_lens.append(int(episode_len))
+            hp_diffs_p1_minus_p2.append(float(hp_diff_p1_minus_p2))
+            kill_diffs_p1_minus_p2.append(float(kill_diff_p1_minus_p2))
+            rewards_learner.append(float(total_reward))
+            if winner == "model":
+                wins += 1
+                winner_side = _learner_side
+            elif winner == "enemy":
+                losses += 1
+                winner_side = _opponent_side
+            else:
+                _draws += 1
+                winner_side = "draw"
 
-        end_reasons_v2[str(end_reason or "unknown")] += 1
+            if winner_side == "P1":
+                p1_wins += 1
+            elif winner_side == "P2":
+                p2_wins += 1
+
+            end_reasons_v2[str(end_reason or "unknown")] += 1
+            log(
+                "Игра "
+                f"{idx}/{_games}{_label}: "
+                f"winner={winner} "
+                f"winner_side={winner_side} "
+                f"model_vp={model_vp} "
+                f"enemy_vp={enemy_vp} "
+                f"vp_diff_model_minus_enemy={vp_diff} "
+                f"p1_vp={p1_vp} "
+                f"p2_vp={p2_vp} "
+                f"vp_diff_p1_minus_p2={vp_diff_p1_minus_p2} "
+                f"episode_len={episode_len} "
+                f"reward_learner={total_reward:.3f} "
+                f"hp_diff_p1_minus_p2={hp_diff_p1_minus_p2:.3f} "
+                f"kill_diff_p1_minus_p2={kill_diff_p1_minus_p2:.3f} "
+                f"end_reason={end_reason}"
+            )
+
+        played_games = len(vp_diffs)
+        return {
+            "model_wins": wins,
+            "enemy_wins": losses,
+            "draws": _draws,
+            "games": played_games,
+            "p1_wins": p1_wins,
+            "p2_wins": p2_wins,
+            "vp_diffs": vp_diffs,
+            "p1_vps": p1_vps,
+            "p2_vps": p2_vps,
+            "ep_lens": ep_lens,
+            "hp_diffs_p1_minus_p2": hp_diffs_p1_minus_p2,
+            "kill_diffs_p1_minus_p2": kill_diffs_p1_minus_p2,
+            "rewards_learner": rewards_learner,
+            "end_reasons_v2": end_reasons_v2,
+            "step_metrics": step_metrics,
+            "action_tuple_counter": action_tuple_counter,
+            "learner_side": _learner_side,
+        }
+
+    # --- Запуск назначений ---
+    do_swap = bool(getattr(args, "swap_sides", False)) and opponent_agent is not None
+    if do_swap:
+        log("[EVAL][SWAP] --swap-sides: назначение A (learner=model, opponent=enemy)")
+    res_a = _run_assignment(
+        env, model_units, enemy_units, learner_agent, opponent_agent,
+        device, games, learner_side,
+        assignment_label="A" if do_swap else "",
+    )
+
+    res_b: dict | None = None
+    if do_swap:
+        log("[EVAL][SWAP] --swap-sides: назначение B (learner<->opponent swap)")
+        # Переставляем reaction_net_by_side для симметрии (model<->enemy).
+        _eu = unwrap_env(env)
+        _swapped_reaction_net = {
+            "model": getattr(opponent_agent, "reaction_net", None),
+            "enemy": learner_agent.reaction_net,
+        }
+        if any(v is not None for v in _swapped_reaction_net.values()):
+            from core.models.reaction_value_policy import make_reaction_value_policy
+
+            _eu._reaction_net_by_side = _swapped_reaction_net
+            _eu.reaction_policy = make_reaction_value_policy(_swapped_reaction_net, device=device)
+            log("[EVAL][SWAP] reaction_value_policy переустановлена (model<->enemy swap).")
+        res_b = _run_assignment(
+            env, model_units, enemy_units, opponent_agent, learner_agent,
+            device, games, learner_side,
+            assignment_label="B",
+        )
+        # Восстановить оригинальный reaction_net_by_side после swap.
+        _orig_reaction_net = {
+            "model": learner_agent.reaction_net,
+            "enemy": getattr(opponent_agent, "reaction_net", None),
+        }
+        if any(v is not None for v in _orig_reaction_net.values()):
+            from core.models.reaction_value_policy import make_reaction_value_policy
+
+            _eu._reaction_net_by_side = _orig_reaction_net
+            _eu.reaction_policy = make_reaction_value_policy(_orig_reaction_net, device=device)
+
+    # --- Агрегация ---
+    if do_swap and res_b is not None:
+        agg = _aggregate_swap(res_a, res_b)
         log(
-            "Игра "
-            f"{idx}/{games}: "
-            f"winner={winner} "
-            f"winner_side={winner_side} "
-            f"model_vp={model_vp} "
-            f"enemy_vp={enemy_vp} "
-            f"vp_diff_model_minus_enemy={vp_diff} "
-            f"p1_vp={p1_vp} "
-            f"p2_vp={p2_vp} "
-            f"vp_diff_p1_minus_p2={vp_diff_p1_minus_p2} "
-            f"episode_len={episode_len} "
-            f"reward_learner={total_reward:.3f} "
-            f"hp_diff_p1_minus_p2={hp_diff_p1_minus_p2:.3f} "
-            f"kill_diff_p1_minus_p2={kill_diff_p1_minus_p2:.3f} "
-            f"end_reason={end_reason}"
+            "[EVAL][SWAP][RESULT] Per-color агрегация: "
+            f"agentA_winrate={agg['agentA_winrate']:.3f}, "
+            f"agentB_winrate={agg['agentB_winrate']:.3f}, "
+            f"total_games={agg['total_games']}, draws={agg['draws']}"
+        )
+        log(
+            "[EVAL][SWAP][DETAIL] Назначение A: "
+            f"model_wins={res_a['model_wins']}, enemy_wins={res_a['enemy_wins']}, "
+            f"draws={res_a['draws']}, games={res_a['games']}"
+        )
+        log(
+            "[EVAL][SWAP][DETAIL] Назначение B: "
+            f"model_wins={res_b['model_wins']}, enemy_wins={res_b['enemy_wins']}, "
+            f"draws={res_b['draws']}, games={res_b['games']}"
         )
 
-    played_games = len(vp_diffs)
+    # Для итогового репорта используем res_a (или объединённые метрики при swap).
+    _report = res_a
+    if do_swap and res_b is not None:
+        # Объединяем списочные метрики из обоих назначений для общего summary.
+        _report = dict(res_a)
+        _report["p1_wins"] = int(res_a.get("p1_wins", 0)) + int(res_b.get("p1_wins", 0))
+        _report["p2_wins"] = int(res_a.get("p2_wins", 0)) + int(res_b.get("p2_wins", 0))
+        _report["draws"] = int(res_a.get("draws", 0)) + int(res_b.get("draws", 0))
+        _report["games"] = int(res_a.get("games", 0)) + int(res_b.get("games", 0))
+        _report["vp_diffs"] = list(res_a.get("vp_diffs", [])) + list(res_b.get("vp_diffs", []))
+        _report["p1_vps"] = list(res_a.get("p1_vps", [])) + list(res_b.get("p1_vps", []))
+        _report["p2_vps"] = list(res_a.get("p2_vps", [])) + list(res_b.get("p2_vps", []))
+        _report["ep_lens"] = list(res_a.get("ep_lens", [])) + list(res_b.get("ep_lens", []))
+        _report["hp_diffs_p1_minus_p2"] = list(res_a.get("hp_diffs_p1_minus_p2", [])) + list(res_b.get("hp_diffs_p1_minus_p2", []))
+        _report["kill_diffs_p1_minus_p2"] = list(res_a.get("kill_diffs_p1_minus_p2", [])) + list(res_b.get("kill_diffs_p1_minus_p2", []))
+        _report["rewards_learner"] = list(res_a.get("rewards_learner", [])) + list(res_b.get("rewards_learner", []))
+        _merged_end_reasons: Counter[str] = Counter(res_a.get("end_reasons_v2", {}))
+        _merged_end_reasons.update(res_b.get("end_reasons_v2", {}))
+        _report["end_reasons_v2"] = _merged_end_reasons
+        _merged_step_metrics: Counter[str] = Counter(res_a.get("step_metrics", {}))
+        _merged_step_metrics.update(res_b.get("step_metrics", {}))
+        _report["step_metrics"] = _merged_step_metrics
+        _merged_actions: Counter[tuple] = Counter(res_a.get("action_tuple_counter", {}))
+        _merged_actions.update(res_b.get("action_tuple_counter", {}))
+        _report["action_tuple_counter"] = _merged_actions
+
+    played_games = int(_report.get("games", 0))
     if played_games == 0:
         log("Оценка прервана до первой завершённой игры.")
         clear_eval_stop_flag()
         return 0
+
+    p1_wins = int(_report["p1_wins"])
+    p2_wins = int(_report["p2_wins"])
+    draws = int(_report["draws"])
+    vp_diffs = _report["vp_diffs"]
+    p1_vps = _report["p1_vps"]
+    p2_vps = _report["p2_vps"]
+    ep_lens = _report["ep_lens"]
+    hp_diffs_p1_minus_p2 = _report["hp_diffs_p1_minus_p2"]
+    kill_diffs_p1_minus_p2 = _report["kill_diffs_p1_minus_p2"]
+    rewards_learner = _report["rewards_learner"]
+    end_reasons_v2 = _report["end_reasons_v2"]
+    step_metrics = _report["step_metrics"]
+    action_tuple_counter = _report["action_tuple_counter"]
 
     winrate_p1_all = p1_wins / played_games if played_games else 0.0
     winrate_p2_all = p2_wins / played_games if played_games else 0.0
