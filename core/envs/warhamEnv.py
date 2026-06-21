@@ -337,6 +337,26 @@ def roll_off_first_turn(manual_roll_allowed: bool = False, log_fn=None) -> str:
         return first
 
 
+def resolve_first_turn_side(*, manual_roll_allowed: bool = False, log_fn=None) -> str:
+    """Сторона первого хода: env FIRST_TURN (model_first|enemy_first) или roll-off.
+
+    Невалидное значение → лог-предупреждение и фолбэк на честный бросок.
+    """
+    mode = (os.getenv("FIRST_TURN", "roll") or "roll").strip().lower()
+    if mode == "model_first":
+        return "model"
+    if mode == "enemy_first":
+        return "enemy"
+    if mode not in ("roll", ""):
+        if log_fn is not None:
+            log_fn(
+                f"[FIRST_TURN] неизвестное значение FIRST_TURN={mode!r}; где: "
+                "warhamEnv.resolve_first_turn_side; что делать: используйте roll|model_first|enemy_first. "
+                "Фолбэк на roll."
+            )
+    return roll_off_first_turn(manual_roll_allowed=manual_roll_allowed, log_fn=log_fn)
+
+
 def _get_abilities(weapon: dict) -> dict:
     if isinstance(weapon, dict):
         ab = weapon.get("Abilities")

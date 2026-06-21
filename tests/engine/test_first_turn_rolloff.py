@@ -23,3 +23,26 @@ def test_first_turn_reroll_on_tie(monkeypatch):
     monkeypatch.setattr(we, "auto_dice", lambda: next(rolls))
     monkeypatch.delenv("MANUAL_DICE", raising=False)
     assert we.roll_off_first_turn(manual_roll_allowed=False) == "model"
+
+
+def test_resolve_force_model_first(monkeypatch):
+    monkeypatch.setenv("FIRST_TURN", "model_first")
+    monkeypatch.setattr(we, "roll_off_first_turn", lambda **k: "enemy")  # не должен вызваться
+    assert we.resolve_first_turn_side() == "model"
+
+
+def test_resolve_force_enemy_first(monkeypatch):
+    monkeypatch.setenv("FIRST_TURN", "enemy_first")
+    assert we.resolve_first_turn_side() == "enemy"
+
+
+def test_resolve_roll_default(monkeypatch):
+    monkeypatch.delenv("FIRST_TURN", raising=False)
+    monkeypatch.setattr(we, "roll_off_first_turn", lambda **k: "model")
+    assert we.resolve_first_turn_side() == "model"
+
+
+def test_resolve_garbage_falls_back_to_roll(monkeypatch):
+    monkeypatch.setenv("FIRST_TURN", "bogus")
+    monkeypatch.setattr(we, "roll_off_first_turn", lambda **k: "enemy")
+    assert we.resolve_first_turn_side() == "enemy"
