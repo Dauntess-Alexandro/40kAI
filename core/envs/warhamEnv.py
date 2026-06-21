@@ -327,8 +327,8 @@ def roll_off_first_turn(manual_roll_allowed: bool = False, log_fn=None) -> str:
     manual = os.getenv("MANUAL_DICE", "0") == "1" and manual_roll_allowed
     verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
     while True:
-        model_roll = auto_dice()
         enemy_roll = player_dice() if manual else auto_dice()
+        model_roll = auto_dice()
         if enemy_roll == model_roll:
             continue
         first = "enemy" if enemy_roll > model_roll else "model"
