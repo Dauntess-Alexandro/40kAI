@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-06-21T13:34:25Z",
+  "categories": {
+    "log append": {
+      "count": 1,
+      "total_ms": 0.197,
+      "avg_ms": 0.197,
+      "max_ms": 0.197
+    },
+    "metrics save": {
+      "count": 2,
+      "total_ms": 1.041,
+      "avg_ms": 0.521,
+      "max_ms": 0.796
+    },
+    "checkpoint save": {
+      "count": 1,
+      "total_ms": 74.158,
+      "avg_ms": 74.158,
+      "max_ms": 74.158
+    }
+  }
+}

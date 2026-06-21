@@ -3,12 +3,14 @@
   "action_sizes": [
     5,
     2,
-    2,
-    2,
     5,
     2,
     24,
-    24
+    24,
+    2,
+    2,
+    2,
+    2
   ],
   "latent_dim": 256,
   "hidden_dim": 256,
@@ -22,10 +24,9 @@
   "prior_weight": 0.25,
   "batch_recurrent": 1,
   "tree_reuse": 1,
-  "_generated_utc": "2026-06-16T16:28:06Z",
+  "_generated_utc": "2026-06-21T13:48:16Z",
   "_sources": [
-    "test",
-    "algo=gmz"
+    "train.py:auto"
   ],
   "_mission": "only_war"
 }
