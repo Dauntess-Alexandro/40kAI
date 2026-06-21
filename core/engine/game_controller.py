@@ -576,6 +576,11 @@ class GameController:
             env.deployment_mode = deployment_mode
             env.deployment_rl_stats = deploy_stats if isinstance(deploy_stats, dict) else None
 
+            from core.envs.warhamEnv import resolve_first_turn_side
+
+            env.unwrapped.first_turn_side = resolve_first_turn_side(manual_roll_allowed=True, log_fn=self._io.log)
+            self._io.log(f"[FIRST_TURN] mode={os.getenv('FIRST_TURN','roll')} first={env.unwrapped.first_turn_side}")
+
             state, info = env.reset(
                 options={"m": model, "e": enemy, "playType": True, "Type": "big", "trunc": True}
             )
@@ -709,139 +714,152 @@ class GameController:
                 if hasattr(board_env, "updateBoard"):
                     board_env.updateBoard()
 
-            while not is_done:
-                done, info = env.unwrapped.player()
-                update_board(env)
-                state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
-                shoot_mask = build_shoot_action_mask(env)
-                if algo == "ppo":
-                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
-                    with torch.no_grad():
-                        action, _, _ = policy_net.act(state_tensor, masks_by_head=masks_b, deterministic=True)
-                    action = action.to("cpu")
-                elif is_alphazero_net_algo(algo):
-                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    if is_gumbel_az_algo(algo) and gaz_play_mode == "gumbel":
-                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
-                        search = build_gumbel_inference_search(
-                            policy_net,
-                            num_simulations=max(1, int(os.getenv("GAZ_PLAY_SIMS", "32"))),
-                            num_considered_actions=max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8"))),
-                            joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
-                            device=state_tensor.device,
-                        )
-                        _pi, selected, _value = search.run(
-                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
-                            legal_masks_by_head=legal_masks,
-                            temperature=float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.05")),
-                            env=env,
-                            len_model=len(model),
-                            enemy_policy_fn=None,
-                        )
-                        action_list = [int(a) for a in selected]
-                    elif az_play_mode == "mcts" and not is_gumbel_az_algo(algo):
-                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
-                        az_mcts_mode = az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)
-                        mcts = AlphaZeroFactorizedMCTS(
-                            policy_net,
-                            config=MCTSConfig(
-                                simulations=max(1, int(os.getenv("AZ_PLAY_MCTS_SIMS", "32"))),
-                                c_puct=float(os.getenv("AZ_PLAY_MCTS_C_PUCT", "1.5")),
-                                dirichlet_alpha=float(os.getenv("AZ_PLAY_MCTS_DIR_ALPHA", "0.3")),
-                                dirichlet_eps=float(os.getenv("AZ_PLAY_MCTS_DIR_EPS", "0.0")),
-                                top_k_per_head=max(1, int(os.getenv("AZ_PLAY_MCTS_TOP_K_PER_HEAD", "8"))),
-                                max_depth=max(1, int(os.getenv("AZ_PLAY_MCTS_MAX_DEPTH", "1"))),
-                                mode=az_mcts_mode,
-                            ),
-                            device=state_tensor.device,
-                        )
-                        pi_targets, _selected, _value = mcts.run(
-                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
-                            legal_masks_by_head=legal_masks,
-                            temperature=float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06")),
-                            env=env,
-                            len_model=len(model),
-                            enemy_policy_fn=None,
-                        )
-                        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
-                    else:
-                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
-                        with torch.no_grad():
-                            probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
-                        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-                    action = torch.tensor([action_list], device="cpu")
-                elif algo == "gumbel_muzero":
-                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    if gmz_play_mode == "search":
-                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
-                        search = GumbelMuZeroSearch(
-                            net=policy_net,
-                            config=GumbelMuZeroSearchConfig(
-                                num_simulations=max(1, int(os.getenv("GMZ_PLAY_SIMS", "96"))),
-                                root_top_k=max(1, int(os.getenv("GMZ_PLAY_ROOT_TOP_K", "16"))),
-                                temperature=float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10")),
-                            ),
-                            device=state_tensor.device,
-                        )
-                        pi_targets, _behavior_logits, _selected, _value = search.run(
-                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
-                            legal_masks_by_head=legal_masks,
-                            deterministic=True,
-                        )
-                        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
-                    else:
-                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
-                        with torch.no_grad():
-                            probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
-                        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-                    action = torch.tensor([action_list], device="cpu")
-                elif algo == "sampled_muzero":
-                    masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
-                    if smz_play_mode == "search":
-                        legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
-                        search = SampledMuZeroSearch(
-                            net=policy_net,
-                            config=SampledMuZeroSearchConfig(
-                                num_samples=max(1, int(os.getenv("SMZ_PLAY_NUM_SAMPLES", "24"))),
-                                temperature=float(os.getenv("SMZ_PLAY_TEMPERATURE", "0.10")),
-                                sample_temperature=float(os.getenv("SMZ_PLAY_SAMPLE_TEMPERATURE", "1.0")),
-                                prior_weight=0.0,
-                                dedup=True,
-                                discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
-                            ),
-                            device=state_tensor.device,
-                        )
-                        pi_targets, _behavior_logits, selected, _value = search.run(
-                            obs=state_tensor.squeeze(0).detach().cpu().numpy(),
-                            legal_masks_by_head=legal_masks,
-                            deterministic=True,
-                        )
-                        action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
-                        if not action_list:
-                            action_list = [int(x) for x in selected]
-                    else:
-                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
-                        with torch.no_grad():
-                            probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
-                        action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
-                    action = torch.tensor([action_list], device="cpu")
-                else:
-                    action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
-                action_dict = convertToDict(action)
-                if done is not True:
-                    next_observation, reward, done, _, info = env.step(action_dict)
-                    reward_tensor = torch.tensor([reward], device=device)
-                    unit_health = info["model health"]
-                    enemy_health = info["player health"]
+            from core.engine.turn_sequencing import run_battle_round
 
-                    message = (
-                        f"Итерация {i} завершена с наградой {reward_tensor}, "
-                        f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
-                    )
-                    self._io.log(message)
-                    state = next_observation
+            while not is_done:
+                done = False
+                next_observation = None
+
+                def _enemy_half():
+                    nonlocal done, info
+                    done, info = env.unwrapped.player()
                     update_board(env)
+
+                def _model_half():
+                    nonlocal done, info, state, reward, next_observation
+                    state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+                    shoot_mask = build_shoot_action_mask(env)
+                    if algo == "ppo":
+                        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                        masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                        with torch.no_grad():
+                            action, _, _ = policy_net.act(state_tensor, masks_by_head=masks_b, deterministic=True)
+                        action = action.to("cpu")
+                    elif is_alphazero_net_algo(algo):
+                        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                        if is_gumbel_az_algo(algo) and gaz_play_mode == "gumbel":
+                            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                            search = build_gumbel_inference_search(
+                                policy_net,
+                                num_simulations=max(1, int(os.getenv("GAZ_PLAY_SIMS", "32"))),
+                                num_considered_actions=max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8"))),
+                                joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
+                                device=state_tensor.device,
+                            )
+                            _pi, selected, _value = search.run(
+                                obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                                legal_masks_by_head=legal_masks,
+                                temperature=float(os.getenv("GAZ_PLAY_TEMPERATURE", "0.05")),
+                                env=env,
+                                len_model=len(model),
+                                enemy_policy_fn=None,
+                            )
+                            action_list = [int(a) for a in selected]
+                        elif az_play_mode == "mcts" and not is_gumbel_az_algo(algo):
+                            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                            az_mcts_mode = az_mcts_mode_from_payload(algo, checkpoint if isinstance(checkpoint, dict) else None)
+                            mcts = AlphaZeroFactorizedMCTS(
+                                policy_net,
+                                config=MCTSConfig(
+                                    simulations=max(1, int(os.getenv("AZ_PLAY_MCTS_SIMS", "32"))),
+                                    c_puct=float(os.getenv("AZ_PLAY_MCTS_C_PUCT", "1.5")),
+                                    dirichlet_alpha=float(os.getenv("AZ_PLAY_MCTS_DIR_ALPHA", "0.3")),
+                                    dirichlet_eps=float(os.getenv("AZ_PLAY_MCTS_DIR_EPS", "0.0")),
+                                    top_k_per_head=max(1, int(os.getenv("AZ_PLAY_MCTS_TOP_K_PER_HEAD", "8"))),
+                                    max_depth=max(1, int(os.getenv("AZ_PLAY_MCTS_MAX_DEPTH", "1"))),
+                                    mode=az_mcts_mode,
+                                ),
+                                device=state_tensor.device,
+                            )
+                            pi_targets, _selected, _value = mcts.run(
+                                obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                                legal_masks_by_head=legal_masks,
+                                temperature=float(os.getenv("AZ_PLAY_MCTS_TEMPERATURE", "0.06")),
+                                env=env,
+                                len_model=len(model),
+                                enemy_policy_fn=None,
+                            )
+                            action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                        else:
+                            masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                            with torch.no_grad():
+                                probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                            action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                        action = torch.tensor([action_list], device="cpu")
+                    elif algo == "gumbel_muzero":
+                        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                        if gmz_play_mode == "search":
+                            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                            search = GumbelMuZeroSearch(
+                                net=policy_net,
+                                config=GumbelMuZeroSearchConfig(
+                                    num_simulations=max(1, int(os.getenv("GMZ_PLAY_SIMS", "96"))),
+                                    root_top_k=max(1, int(os.getenv("GMZ_PLAY_ROOT_TOP_K", "16"))),
+                                    temperature=float(os.getenv("GMZ_PLAY_TEMPERATURE", "0.10")),
+                                ),
+                                device=state_tensor.device,
+                            )
+                            pi_targets, _behavior_logits, _selected, _value = search.run(
+                                obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                                legal_masks_by_head=legal_masks,
+                                deterministic=True,
+                            )
+                            action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                        else:
+                            masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                            with torch.no_grad():
+                                probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                            action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                        action = torch.tensor([action_list], device="cpu")
+                    elif algo == "sampled_muzero":
+                        masks = build_action_masks_by_head(env, len(model), log_fn=None, debug=False)
+                        if smz_play_mode == "search":
+                            legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks]
+                            search = SampledMuZeroSearch(
+                                net=policy_net,
+                                config=SampledMuZeroSearchConfig(
+                                    num_samples=max(1, int(os.getenv("SMZ_PLAY_NUM_SAMPLES", "24"))),
+                                    temperature=float(os.getenv("SMZ_PLAY_TEMPERATURE", "0.10")),
+                                    sample_temperature=float(os.getenv("SMZ_PLAY_SAMPLE_TEMPERATURE", "1.0")),
+                                    prior_weight=0.0,
+                                    dedup=True,
+                                    discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
+                                ),
+                                device=state_tensor.device,
+                            )
+                            pi_targets, _behavior_logits, selected, _value = search.run(
+                                obs=state_tensor.squeeze(0).detach().cpu().numpy(),
+                                legal_masks_by_head=legal_masks,
+                                deterministic=True,
+                            )
+                            action_list = [int(torch.argmax(torch.tensor(pi)).item()) for pi in pi_targets]
+                            if not action_list:
+                                action_list = [int(x) for x in selected]
+                        else:
+                            masks_b = [m.to(state_tensor.device).unsqueeze(0) for m in masks]
+                            with torch.no_grad():
+                                probs, _value = policy_net.infer(state_tensor, masks_by_head=masks_b)
+                            action_list = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
+                        action = torch.tensor([action_list], device="cpu")
+                    else:
+                        action = select_action(env, state_tensor, i, policy_net, len(model), shoot_mask=shoot_mask)
+                    action_dict = convertToDict(action)
+                    if done is not True:
+                        next_observation, reward, done, _, info = env.step(action_dict)
+                        reward_tensor = torch.tensor([reward], device=device)
+                        unit_health = info["model health"]
+                        enemy_health = info["player health"]
+
+                        message = (
+                            f"Итерация {i} завершена с наградой {reward_tensor}, "
+                            f"здоровье игрока {enemy_health}, здоровье модели {unit_health}"
+                        )
+                        self._io.log(message)
+                        state = next_observation
+                        update_board(env)
+
+
+                run_battle_round(env.unwrapped, run_model_half=_model_half, run_enemy_half=_enemy_half)
 
                 if done is True:
                     if reward > 0:
