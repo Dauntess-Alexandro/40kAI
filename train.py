@@ -3720,6 +3720,15 @@ def run_ppo_training(
         )
 
     for episode in range(1, int(totLifeT) + 1):
+        # --- first-turn roll-off (до reset) ---
+        from core.envs.warhamEnv import resolve_first_turn_side
+
+        env_unwrapped = unwrap_env(env)
+        env_unwrapped.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
+        append_agent_log(
+            f"[PPO][SINGLE][FIRST_TURN] mode={os.getenv('FIRST_TURN', 'roll')} first={env_unwrapped.first_turn_side}"
+        )
+
         state, info0 = env.reset(options={"m": model, "e": enemy, "trunc": True})
         obs = to_np_state(state)
         done = False
@@ -3732,52 +3741,64 @@ def run_ppo_training(
         final_info = {}
         while not done:
             env_unwrapped = unwrap_env(env)
-            step_no = int(ep_len) + 1
-            if strat_tracer is not None:
-                strat_tracer.run_enemy_turn(env_unwrapped, step_no, trunc=True)
-            else:
-                env_unwrapped.enemyTurn(trunc=True)
-            if bool(getattr(env_unwrapped, "game_over", False)):
-                done = True
-                final_info = env_unwrapped.get_info() if hasattr(env_unwrapped, "get_info") else {}
-                break
-            obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
-            masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
-            masks_batch = [m.to(device).unsqueeze(0) for m in masks_cpu]
-            action_t, logprob_t, value_t = actor_critic.act(obs_t, masks_by_head=masks_batch, deterministic=False)
-            action_np = action_t.squeeze(0).detach().cpu().numpy()
-            action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-            if PPO_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
-                from core.models.option_candidates import attach_fight_stratagem_plan
-                from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
+            from core.engine.turn_sequencing import run_battle_round
 
-                attach_fight_stratagem_plan(env, ppo_build_fight_plan(env, actor_critic, device, side="model"))
-            try:
+            step_no = int(ep_len) + 1
+
+            def _enemy_half() -> None:
                 if strat_tracer is not None:
-                    next_obs, reward, done, _, info = strat_tracer.run_model_step(
-                        env, env_unwrapped, step_no, action_dict
-                    )
+                    strat_tracer.run_enemy_turn(env_unwrapped, step_no, trunc=True)
                 else:
-                    next_obs, reward, done, _, info = env.step(action_dict)
-            finally:
+                    env_unwrapped.enemyTurn(trunc=True)
+
+            def _model_half() -> None:
+                nonlocal done, final_info, obs, ep_reward, ep_len, global_step
+
+                obs_t = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+                masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+                masks_batch = [m.to(device).unsqueeze(0) for m in masks_cpu]
+                action_t, logprob_t, value_t = actor_critic.act(obs_t, masks_by_head=masks_batch, deterministic=False)
+                action_np = action_t.squeeze(0).detach().cpu().numpy()
+                action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
                 if PPO_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
                     from core.models.option_candidates import attach_fight_stratagem_plan
+                    from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
 
-                    attach_fight_stratagem_plan(env, None)
-            final_info = info or {}
-            buffer.add(
-                obs=obs,
-                action=action_np,
-                logprob=float(logprob_t.item()),
-                reward=float(reward),
-                done=bool(done),
-                value=float(value_t.item()),
-                masks_by_head=[m.detach().cpu().numpy() for m in masks_cpu],
-            )
-            obs = to_np_state(next_obs) if not done else obs
-            ep_reward += float(reward)
-            ep_len += 1
-            global_step += 1
+                    attach_fight_stratagem_plan(env, ppo_build_fight_plan(env, actor_critic, device, side="model"))
+                try:
+                    if strat_tracer is not None:
+                        next_obs, reward, _done, _, info = strat_tracer.run_model_step(
+                            env, env_unwrapped, step_no, action_dict
+                        )
+                    else:
+                        next_obs, reward, _done, _, info = env.step(action_dict)
+                finally:
+                    if PPO_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+                        from core.models.option_candidates import attach_fight_stratagem_plan
+
+                        attach_fight_stratagem_plan(env, None)
+                done = _done
+                final_info = info or {}
+                buffer.add(
+                    obs=obs,
+                    action=action_np,
+                    logprob=float(logprob_t.item()),
+                    reward=float(reward),
+                    done=bool(done),
+                    value=float(value_t.item()),
+                    masks_by_head=[m.detach().cpu().numpy() for m in masks_cpu],
+                )
+                obs = to_np_state(next_obs) if not done else obs
+                ep_reward += float(reward)
+                ep_len += 1
+                global_step += 1
+
+            run_battle_round(env_unwrapped, run_model_half=_model_half, run_enemy_half=_enemy_half)
+
+            # Если game_over после enemy_half (модель не ходила) — корректно завершаем эпизод
+            if bool(getattr(env_unwrapped, "game_over", False)) and not done:
+                done = True
+                final_info = env_unwrapped.get_info() if hasattr(env_unwrapped, "get_info") else {}
 
         batch = buffer.to_tensors(device=device, gamma=PPO_GAMMA, gae_lambda=PPO_GAE_LAMBDA, normalize_adv=True)
         if int(batch.obs.shape[0]) == 0:
