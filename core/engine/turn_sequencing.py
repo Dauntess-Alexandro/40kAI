@@ -21,3 +21,12 @@ def run_battle_round(env, *, run_model_half: Callable[[], None], run_enemy_half:
         half()
         if bool(getattr(env_u, "game_over", False)):
             return
+
+
+def apply_first_turn_prepend(env, *, run_enemy_half) -> None:
+    """Self-play: если враг ходит первым (turn_order[0]=='enemy'), прогнать его половину
+    до per-move цикла, чтобы корень планировщика = реальное состояние после первого хода врага."""
+    env_u = getattr(env, "unwrapped", env)
+    order = list(getattr(env_u, "turn_order", ["enemy", "model"]))
+    if order and order[0] == "enemy" and not bool(getattr(env_u, "game_over", False)):
+        run_enemy_half()

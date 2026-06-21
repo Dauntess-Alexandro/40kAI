@@ -8,16 +8,16 @@ from typing import Any
 import numpy as np
 import torch
 
-from core.models.action_contract import ordered_action_keys
-from core.models.alphazero_replay import AZTransition
-from core.models.utils import convertToDict, unwrap_env
 from core.engine.phases.replay_meta import (
     capture_replay_phase_meta,
     replay_phase_meta_enabled,
     snapshot_cp_before,
 )
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
+from core.models.action_contract import ordered_action_keys
+from core.models.alphazero_replay import AZTransition
 from core.models.option_candidates import attach_fight_stratagem_plan
+from core.models.utils import convertToDict, unwrap_env
 from core.telemetry.stratagem_trace import (
     make_stratagem_tracer_for_train,
     stratagem_trace_actor_ok,
@@ -76,12 +76,23 @@ def play_episode_with_mcts(
         if stratagem_trace_actor_ok(int(actor_idx))
         else None
     )
+    from core.engine.turn_sequencing import apply_first_turn_prepend
+    from core.envs.warhamEnv import resolve_first_turn_side
+
+    env_u.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
     state, _ = env.reset(options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode})
     done = False
     steps = 0
     records: list[tuple[np.ndarray, list[np.ndarray], Any]] = []
     final_value = 0.0
     last_info: dict = {}
+
+    apply_first_turn_prepend(
+        env_u,
+        run_enemy_half=lambda: env_u.enemyTurn(trunc=trunc_mode, policy_fn=enemy_policy_fn),
+    )
+    if bool(getattr(env_u, "game_over", False)):
+        done = True
 
     while not done:
         obs_np = _state_to_np(state)
