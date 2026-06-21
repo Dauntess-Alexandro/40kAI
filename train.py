@@ -8498,7 +8498,7 @@ def _actor_learner_actor_entry(
                         env_unwrapped.enemyTurn(trunc=trunc)
 
                 def _model_half() -> None:
-                    nonlocal next_obs, reward, done, res, info2, last_info, last_res, ep_reward, ep_len, obs, steps_done
+                    nonlocal next_obs, reward, done, res, info2, last_info, last_res, ep_reward, ep_len, obs, steps_done, buf
                     if DQN_REACTION_VALUE_POLICY:
                         from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
                         from core.models.option_candidates import attach_fight_stratagem_plan
@@ -8878,7 +8878,7 @@ def _actor_learner_actor_entry_ppo(
                         env_unwrapped.enemyTurn(trunc=trunc)
 
                 def _model_half() -> None:
-                    nonlocal done, last_info, last_res, ep_reward, ep_len, obs
+                    nonlocal done, last_info, last_res, ep_reward, ep_len, obs, steps_buf
 
                     obs_np = to_np_state(obs)
                     obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
