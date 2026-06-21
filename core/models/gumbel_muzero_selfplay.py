@@ -87,6 +87,10 @@ def play_episode_with_gumbel_muzero(
     apply_first_turn_prepend(env_u, run_enemy_half=lambda: env_u.enemyTurn(trunc=trunc_mode, policy_fn=enemy_policy_fn))
     if bool(getattr(env_u, "game_over", False)):
         done = True
+    elif list(getattr(env_u, "turn_order", ["enemy", "model"]))[:1] == ["enemy"]:
+        # Враг сходил первым (prepend сдвинул доску) → обновить root-obs, иначе
+        # первый search/запись пошёл бы на устаревшем (post-reset) наблюдении.
+        state = env_u._get_observation()
 
     while not done:
         obs_np = _state_to_np(state)
