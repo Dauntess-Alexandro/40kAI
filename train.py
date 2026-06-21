@@ -8403,6 +8403,14 @@ def _actor_learner_actor_entry(
             env.attacker_side = attacker_side
             env.defender_side = defender_side
 
+            from core.envs.warhamEnv import resolve_first_turn_side
+
+            env_u_for_ft = unwrap_env(env)
+            env_u_for_ft.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
+            append_agent_log(
+                f"[DQN][ACTOR][FIRST_TURN] mode={os.getenv('FIRST_TURN', 'roll')} first={env_u_for_ft.first_turn_side}"
+            )
+
             obs, _info = env.reset(options={"m": model, "e": enemy, "Type": "small", "trunc": trunc})
             done = False
             ep_reward = 0.0
@@ -8479,111 +8487,130 @@ def _actor_learner_actor_entry(
                 except Exception:
                     pass
 
-                # ВАЖНО: как в основном train-loop — сначала ход противника, потом env.step (ход модели).
+                # --- run_battle_round: порядок половин из env.turn_order (first-turn roll-off) ---
                 env_unwrapped = unwrap_env(env)
-                if opponent_policy_fn is not None:
-                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
-                else:
-                    env_unwrapped.enemyTurn(trunc=trunc)
-                if DQN_REACTION_VALUE_POLICY:
-                    from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
-                    from core.models.option_candidates import attach_fight_stratagem_plan
+                from core.engine.turn_sequencing import run_battle_round
 
-                    attach_fight_stratagem_plan(
-                        env, dqn_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
-                    )
-                try:
-                    next_obs, reward, done, res, info2 = env.step(action_dict)
-                finally:
+                def _enemy_half() -> None:
+                    if opponent_policy_fn is not None:
+                        env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
+                    else:
+                        env_unwrapped.enemyTurn(trunc=trunc)
+
+                def _model_half() -> None:
+                    nonlocal next_obs, reward, done, res, info2, last_info, last_res, ep_reward, ep_len, obs, steps_done
                     if DQN_REACTION_VALUE_POLICY:
+                        from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
                         from core.models.option_candidates import attach_fight_stratagem_plan
 
-                        attach_fight_stratagem_plan(env, None)
-                last_info = info2 if isinstance(info2, dict) else {}
-                last_res = res
-                ep_reward += float(reward)
-                ep_len += 1
+                        attach_fight_stratagem_plan(
+                            env, dqn_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
+                        )
+                    try:
+                        next_obs, reward, done, res, info2 = env.step(action_dict)
+                    finally:
+                        if DQN_REACTION_VALUE_POLICY:
+                            from core.models.option_candidates import attach_fight_stratagem_plan
 
-                # Таймлайн по battle round (1 снапшот на BR).
-                try:
-                    if os.getenv("METRICS_SAVE_ROUND_TIMELINE", "1") == "1" and isinstance(last_info, dict):
-                        br = int(last_info.get("battle round", 0) or 0)
-                        if br > 0:
-                            mh_now = last_info.get("model health", [])
-                            ph_now = last_info.get("player health", [])
-                            mh_sum = float(sum(mh_now)) if isinstance(mh_now, (list, tuple, np.ndarray)) else float(mh_now or 0.0)
-                            ph_sum = float(sum(ph_now)) if isinstance(ph_now, (list, tuple, np.ndarray)) else float(ph_now or 0.0)
-                            snap = {
-                                "battle_round": br,
-                                "turn": int(last_info.get("turn", 0) or 0),
-                                "model_vp": int(last_info.get("model VP", 0) or 0),
-                                "enemy_vp": int(last_info.get("player VP", 0) or 0),
-                                "model_hp": mh_sum,
-                                "enemy_hp": ph_sum,
-                                "model_ctrl_n": int(len(last_info.get("model controlled objectives", []) or [])),
-                                "enemy_ctrl_n": int(len(last_info.get("player controlled objectives", []) or [])),
-                            }
-                            replaced = False
-                            for i in range(len(round_timeline)):
-                                if int(round_timeline[i].get("battle_round", -1)) == br:
-                                    round_timeline[i] = snap
-                                    replaced = True
-                                    break
-                            if not replaced:
-                                round_timeline.append(snap)
-                except Exception:
-                    pass
+                            attach_fight_stratagem_plan(env, None)
+                    last_info = info2 if isinstance(info2, dict) else {}
+                    last_res = res
+                    ep_reward += float(reward)
+                    ep_len += 1
 
-                r_clipped, _clipped = maybe_clip_reward(
-                    float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
-                )
+                    # Таймлайн по battle round (1 снапшот на BR).
+                    try:
+                        if os.getenv("METRICS_SAVE_ROUND_TIMELINE", "1") == "1" and isinstance(last_info, dict):
+                            br = int(last_info.get("battle round", 0) or 0)
+                            if br > 0:
+                                mh_now = last_info.get("model health", [])
+                                ph_now = last_info.get("player health", [])
+                                mh_sum = float(sum(mh_now)) if isinstance(mh_now, (list, tuple, np.ndarray)) else float(mh_now or 0.0)
+                                ph_sum = float(sum(ph_now)) if isinstance(ph_now, (list, tuple, np.ndarray)) else float(ph_now or 0.0)
+                                snap = {
+                                    "battle_round": br,
+                                    "turn": int(last_info.get("turn", 0) or 0),
+                                    "model_vp": int(last_info.get("model VP", 0) or 0),
+                                    "enemy_vp": int(last_info.get("player VP", 0) or 0),
+                                    "model_hp": mh_sum,
+                                    "enemy_hp": ph_sum,
+                                    "model_ctrl_n": int(len(last_info.get("model controlled objectives", []) or [])),
+                                    "enemy_ctrl_n": int(len(last_info.get("player controlled objectives", []) or [])),
+                                }
+                                replaced = False
+                                for i in range(len(round_timeline)):
+                                    if int(round_timeline[i].get("battle_round", -1)) == br:
+                                        round_timeline[i] = snap
+                                        replaced = True
+                                        break
+                                if not replaced:
+                                    round_timeline.append(snap)
+                    except Exception:
+                        pass
 
-                n_step_buf.append(
-                    (
-                        to_np_state(obs),
-                        action_t.detach().cpu().numpy()[0].tolist(),
-                        float(r_clipped),
-                        to_np_state(next_obs),
-                        bool(done),
+                    r_clipped, _clipped = maybe_clip_reward(
+                        float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
                     )
-                )
 
-                if len(n_step_buf) >= N_STEP:
-                    reward_sum = 0.0
-                    n_count = 0
-                    last_next = None
-                    last_done = False
-                    for idx, (_s, _a, rr, ns, dd) in enumerate(n_step_buf):
-                        reward_sum += (GAMMA ** idx) * float(rr)
-                        n_count += 1
-                        last_next = ns
-                        last_done = bool(dd)
-                        if dd:
-                            last_next = None
-                            break
-                    head_s, head_a, _, _, _ = n_step_buf[0]
-                    buf.append((head_s, head_a, reward_sum, last_next, last_done, n_count))
-                    n_step_buf.popleft()
+                    n_step_buf.append(
+                        (
+                            to_np_state(obs),
+                            action_t.detach().cpu().numpy()[0].tolist(),
+                            float(r_clipped),
+                            to_np_state(next_obs),
+                            bool(done),
+                        )
+                    )
 
-                if done:
-                    while n_step_buf:
+                    if len(n_step_buf) >= N_STEP:
                         reward_sum = 0.0
                         n_count = 0
-                        for idx, (_s, _a, rr, _ns, dd) in enumerate(n_step_buf):
+                        last_next = None
+                        last_done = False
+                        for idx, (_s, _a, rr, ns, dd) in enumerate(n_step_buf):
                             reward_sum += (GAMMA ** idx) * float(rr)
                             n_count += 1
+                            last_next = ns
+                            last_done = bool(dd)
                             if dd:
+                                last_next = None
                                 break
                         head_s, head_a, _, _, _ = n_step_buf[0]
-                        buf.append((head_s, head_a, reward_sum, None, True, n_count))
+                        buf.append((head_s, head_a, reward_sum, last_next, last_done, n_count))
                         n_step_buf.popleft()
 
-                obs = next_obs
-                steps_done += 1
+                    if done:
+                        while n_step_buf:
+                            reward_sum = 0.0
+                            n_count = 0
+                            for idx, (_s, _a, rr, _ns, dd) in enumerate(n_step_buf):
+                                reward_sum += (GAMMA ** idx) * float(rr)
+                                n_count += 1
+                                if dd:
+                                    break
+                            head_s, head_a, _, _, _ = n_step_buf[0]
+                            buf.append((head_s, head_a, reward_sum, None, True, n_count))
+                            n_step_buf.popleft()
 
-                if len(buf) >= int(batch_send):
-                    data_q.put(("batch", buf))
-                    buf = []
+                    obs = next_obs
+                    steps_done += 1
+
+                    if len(buf) >= int(batch_send):
+                        data_q.put(("batch", buf))
+                        buf = []
+
+                # Переменные, которые _model_half может установить при game_over short-circuit
+                next_obs = obs
+                reward = 0.0
+                res = 0
+                info2 = {}
+                run_battle_round(env_unwrapped, run_model_half=_model_half, run_enemy_half=_enemy_half)
+
+                # Если game_over после enemy_half (модель не ходила) — корректно завершаем эпизод
+                if bool(getattr(env_unwrapped, "game_over", False)) and not done:
+                    done = True
+                    if hasattr(env_unwrapped, "get_info"):
+                        last_info = env_unwrapped.get_info() or last_info
 
             # Эпизод завершён: отправляем компактную строку метрик (как в обычном режиме)
             try:
@@ -8801,6 +8828,14 @@ def _actor_learner_actor_entry_ppo(
             env.attacker_side = attacker_side
             env.defender_side = defender_side
 
+            from core.envs.warhamEnv import resolve_first_turn_side
+
+            env_u_for_ft = unwrap_env(env)
+            env_u_for_ft.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
+            append_agent_log(
+                f"[PPO][ACTOR][FIRST_TURN] mode={os.getenv('FIRST_TURN', 'roll')} first={env_u_for_ft.first_turn_side}"
+            )
+
             obs, info0 = env.reset(options={"m": model, "e": enemy, "Type": "small", "trunc": trunc})
             done = False
             ep_reward = 0.0
@@ -8810,103 +8845,112 @@ def _actor_learner_actor_entry_ppo(
 
             while not done:
                 env_unwrapped = unwrap_env(env)
-                if opponent_policy_fn is not None:
-                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
-                elif int(SELF_PLAY_ENABLED) == 1 and opponent_loaded:
-                    # PPO-vs-PPO fallback (sync-file), deterministic
-                    def _ppo_opp_policy_fn(obs_opp, env=env, net=opponent_net, lm=len(model), n_actions=n_actions):
-                        obs_np_local = to_np_state(obs_opp)
-                        obs_t_local = torch.tensor(obs_np_local, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-                        shoot_mask_local = build_shoot_action_mask(env, log_fn=None, debug=False)
-                        masks_local = []
-                        for head_idx, head_size in enumerate(n_actions):
-                            if head_idx == 2 and shoot_mask_local is not None:
-                                mask_arr = np.asarray(shoot_mask_local, dtype=np.bool_).reshape(-1)
-                                if mask_arr.size == int(head_size) and bool(mask_arr.any()):
-                                    masks_local.append(mask_arr)
-                                    continue
-                            masks_local.append(np.ones(int(head_size), dtype=np.bool_))
-                        masks_batch_local = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_local]
-                        with torch.no_grad():
-                            act_t, _logp_t, _val_t = net.act(obs_t_local, masks_by_head=masks_batch_local, deterministic=True)
-                        act_np = act_t.squeeze(0).detach().cpu().numpy()
-                        act_dict = convertToDict(torch.tensor([act_np], device="cpu"))
-                        for i_u in range(int(lm)):
-                            act_dict[f"move_num_{i_u}"] = int(act_np[6 + i_u])
-                        return act_dict
+                from core.engine.turn_sequencing import run_battle_round
 
-                    env_unwrapped.enemyTurn(trunc=trunc, policy_fn=_ppo_opp_policy_fn)
-                else:
-                    env_unwrapped.enemyTurn(trunc=trunc)
+                def _enemy_half() -> None:
+                    if opponent_policy_fn is not None:
+                        env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
+                    elif int(SELF_PLAY_ENABLED) == 1 and opponent_loaded:
+                        # PPO-vs-PPO fallback (sync-file), deterministic
+                        def _ppo_opp_policy_fn(obs_opp, env=env, net=opponent_net, lm=len(model), n_actions=n_actions):
+                            obs_np_local = to_np_state(obs_opp)
+                            obs_t_local = torch.tensor(obs_np_local, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+                            shoot_mask_local = build_shoot_action_mask(env, log_fn=None, debug=False)
+                            masks_local = []
+                            for head_idx, head_size in enumerate(n_actions):
+                                if head_idx == 2 and shoot_mask_local is not None:
+                                    mask_arr = np.asarray(shoot_mask_local, dtype=np.bool_).reshape(-1)
+                                    if mask_arr.size == int(head_size) and bool(mask_arr.any()):
+                                        masks_local.append(mask_arr)
+                                        continue
+                                masks_local.append(np.ones(int(head_size), dtype=np.bool_))
+                            masks_batch_local = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_local]
+                            with torch.no_grad():
+                                act_t, _logp_t, _val_t = net.act(obs_t_local, masks_by_head=masks_batch_local, deterministic=True)
+                            act_np = act_t.squeeze(0).detach().cpu().numpy()
+                            act_dict = convertToDict(torch.tensor([act_np], device="cpu"))
+                            for i_u in range(int(lm)):
+                                act_dict[f"move_num_{i_u}"] = int(act_np[6 + i_u])
+                            return act_dict
 
-                if bool(getattr(env_unwrapped, "game_over", False)):
+                        env_unwrapped.enemyTurn(trunc=trunc, policy_fn=_ppo_opp_policy_fn)
+                    else:
+                        env_unwrapped.enemyTurn(trunc=trunc)
+
+                def _model_half() -> None:
+                    nonlocal done, last_info, last_res, ep_reward, ep_len, obs
+
+                    obs_np = to_np_state(obs)
+                    obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
+
+                    # маски: strict для shoot, остальные all_true
+                    shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
+                    masks_cpu = []
+                    for head_idx, head_size in enumerate(n_actions):
+                        if head_idx == 2 and shoot_mask is not None:
+                            mask_arr = np.asarray(shoot_mask, dtype=np.bool_).reshape(-1)
+                            if mask_arr.size == int(head_size) and bool(mask_arr.any()):
+                                masks_cpu.append(mask_arr)
+                                continue
+                        masks_cpu.append(np.ones(int(head_size), dtype=np.bool_))
+                    masks_batch = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
+
+                    with torch.no_grad():
+                        action_t, logprob_t, value_t = cpu_net.act(obs_t, masks_by_head=masks_batch, deterministic=False)
+                    action_np = action_t.squeeze(0).detach().cpu().numpy()
+
+                    action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
+                    for i_u in range(len(model)):
+                        action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
+
+                    if PPO_REACTION_VALUE_POLICY:
+                        from core.models.option_candidates import attach_fight_stratagem_plan
+                        from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
+
+                        attach_fight_stratagem_plan(
+                            env, ppo_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
+                        )
+                    try:
+                        next_obs, reward, _done, res, info2 = env.step(action_dict)
+                    finally:
+                        if PPO_REACTION_VALUE_POLICY:
+                            from core.models.option_candidates import attach_fight_stratagem_plan
+
+                            attach_fight_stratagem_plan(env, None)
+                    done = _done
+                    last_info = info2 if isinstance(info2, dict) else last_info
+                    last_res = res
+
+                    r_clipped, _clipped = maybe_clip_reward(
+                        float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
+                    )
+                    steps_buf.append(
+                        {
+                            "obs": obs_np,
+                            "action": action_np.tolist(),
+                            "logprob": float(logprob_t.squeeze(0).item()),
+                            "value": float(value_t.squeeze(0).item()),
+                            "reward": float(r_clipped),
+                            "done": bool(done),
+                            "masks_by_head": masks_cpu,
+                        }
+                    )
+
+                    ep_reward += float(reward)
+                    ep_len += 1
+                    obs = next_obs
+
+                    if len(steps_buf) >= int(batch_send):
+                        data_q.put(("rollout", {"actor_idx": int(actor_idx), "steps": steps_buf}))
+                        steps_buf = []
+
+                run_battle_round(env_unwrapped, run_model_half=_model_half, run_enemy_half=_enemy_half)
+
+                # Если game_over после enemy_half (модель не ходила) — корректно завершаем эпизод
+                if bool(getattr(env_unwrapped, "game_over", False)) and not done:
                     done = True
                     if hasattr(env_unwrapped, "get_info"):
                         last_info = env_unwrapped.get_info() or last_info
-                    break
-
-                obs_np = to_np_state(obs)
-                obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-
-                # маски: strict для shoot, остальные all_true
-                shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
-                masks_cpu = []
-                for head_idx, head_size in enumerate(n_actions):
-                    if head_idx == 2 and shoot_mask is not None:
-                        mask_arr = np.asarray(shoot_mask, dtype=np.bool_).reshape(-1)
-                        if mask_arr.size == int(head_size) and bool(mask_arr.any()):
-                            masks_cpu.append(mask_arr)
-                            continue
-                    masks_cpu.append(np.ones(int(head_size), dtype=np.bool_))
-                masks_batch = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
-
-                with torch.no_grad():
-                    action_t, logprob_t, value_t = cpu_net.act(obs_t, masks_by_head=masks_batch, deterministic=False)
-                action_np = action_t.squeeze(0).detach().cpu().numpy()
-
-                action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-                for i_u in range(len(model)):
-                    action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
-
-                if PPO_REACTION_VALUE_POLICY:
-                    from core.models.option_candidates import attach_fight_stratagem_plan
-                    from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
-
-                    attach_fight_stratagem_plan(
-                        env, ppo_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
-                    )
-                try:
-                    next_obs, reward, done, res, info2 = env.step(action_dict)
-                finally:
-                    if PPO_REACTION_VALUE_POLICY:
-                        from core.models.option_candidates import attach_fight_stratagem_plan
-
-                        attach_fight_stratagem_plan(env, None)
-                last_info = info2 if isinstance(info2, dict) else last_info
-                last_res = res
-
-                r_clipped, _clipped = maybe_clip_reward(
-                    float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
-                )
-                steps_buf.append(
-                    {
-                        "obs": obs_np,
-                        "action": action_np.tolist(),
-                        "logprob": float(logprob_t.squeeze(0).item()),
-                        "value": float(value_t.squeeze(0).item()),
-                        "reward": float(r_clipped),
-                        "done": bool(done),
-                        "masks_by_head": masks_cpu,
-                    }
-                )
-
-                ep_reward += float(reward)
-                ep_len += 1
-                obs = next_obs
-
-                if len(steps_buf) >= int(batch_send):
-                    data_q.put(("rollout", {"actor_idx": int(actor_idx), "steps": steps_buf}))
-                    steps_buf = []
 
             # flush remaining steps at episode end
             if steps_buf:
