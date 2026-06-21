@@ -2217,7 +2217,6 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
         env.attacker_side = attacker_side
         env.defender_side = defender_side
-        unwrap_env(env).first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)  # [Task 7C] reads forced FIRST_TURN
 
         state, info = env.reset(options={"m": model, "e": enemy, "Type": "big", "trunc": True})
         state = _to_np_state(state)
@@ -2303,7 +2302,6 @@ def _env_worker(conn, roster_config, b_len, b_hei, trunc):
                 env.defender_side = defender_side
                 env.deployment_mode = deployment_mode
                 env.deployment_rl_stats = deploy_stats if isinstance(deploy_stats, dict) else None
-                unwrap_env(env).first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)  # [Task 7C] reads forced FIRST_TURN
                 state, info = env.reset(
                     options={"m": model, "e": enemy, "Type": "small", "trunc": True}
                 )
@@ -4464,16 +4462,6 @@ def main():
         print(warn_msg)
         append_agent_log(warn_msg)
         USE_SUBPROC_ENVS = False
-
-    # --- [Task 7C] first-turn roll-off для batched DQN (run-uniform) ---
-    # Резолвим один раз и экспортируем в env ДО создания envs/workers,
-    # чтобы все процессы/окружения стартовали с одним и тем же первым ходом.
-    from core.envs.warhamEnv import resolve_first_turn_side as _resolve_ft
-    _ft_first = _resolve_ft(manual_roll_allowed=False, log_fn=None)
-    os.environ["FIRST_TURN"] = "model_first" if _ft_first == "model" else "enemy_first"
-    append_agent_log(
-        f"[DQN][BATCH][FIRST_TURN] mode={os.getenv('FIRST_TURN', 'roll')} first={_ft_first}"
-    )
     
     if TRAIN_LOG_ENABLED:
         if clip_reward_enabled:
@@ -4618,8 +4606,7 @@ def main():
             env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
             env.attacker_side = attacker_side
             env.defender_side = defender_side
-            unwrap_env(env).first_turn_side = _ft_first  # [Task 7C] run-uniform first-turn
-
+    
             state, info = env.reset(options={"m": model, "e": enemy, "trunc": True})
             env_contexts.append(
                 {
@@ -5407,14 +5394,45 @@ def main():
                 )
         perf_stats["action_select_s"] += time.perf_counter() - action_start
     
-        # [Task 7C] Prep block: всегда перед model-step фазой (строит action_dicts)
+        enemy_turn_start = time.perf_counter()
+        if USE_SUBPROC_ENVS:
+            for ctx in env_contexts:
+                ctx["conn"].send(("enemy_turn", None))
+            for ctx in env_contexts:
+                ctx["conn"].recv()
+        else:
+            for idx, ctx in enumerate(env_contexts):
+                env_unwrapped = unwrap_env(ctx["env"])
+                tracer = ctx.get("stratagem_tracer")
+                step_no = int(ctx.get("ep_len", 0)) + 1
+                if tracer is not None:
+                    if SELF_PLAY_ENABLED and opponent_policy_net is not None:
+                        tracer.run_enemy_turn(
+                            env_unwrapped,
+                            step_no,
+                            trunc=trunc,
+                            policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(
+                                obs, env, lm
+                            ),
+                        )
+                    else:
+                        tracer.run_enemy_turn(env_unwrapped, step_no, trunc=trunc)
+                elif SELF_PLAY_ENABLED and opponent_policy_net is not None:
+                    env_unwrapped.enemyTurn(
+                        trunc=trunc,
+                        policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
+                    )
+                else:
+                    env_unwrapped.enemyTurn(trunc=trunc)
+        perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
+    
         losses = []
         last_td_stats = None
         last_per_beta = PER_BETA_START
         last_loss_value = None
-
+    
         dev = next(policy_net.parameters()).device
-
+    
         action_dicts = []
         for idx, ctx in enumerate(env_contexts):
             ctx["ep_len"] += 1
@@ -5462,159 +5480,47 @@ def main():
                 if any_shoot_invalid:
                     ctx["action_head_invalid"]["shoot"] += 1
 
-        # [Task 7C] Phase order: model_first → model-step first, then enemy; else enemy first (byte-equivalent)
-        if _ft_first == "model":
-            # --- MODEL-STEP PHASE (first) ---
-            step_results = [None] * len(env_contexts)
-            if USE_SUBPROC_ENVS:
-                # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
-                step_start = time.perf_counter()
-                for idx, ctx in enumerate(env_contexts):
-                    ctx["conn"].send(("step", action_dicts[idx]))
-                for idx, ctx in enumerate(env_contexts):
-                    step_results[idx] = ctx["conn"].recv()
-                perf_stats["env_step_s"] += time.perf_counter() - step_start
-                perf_counts["env_steps"] += len(env_contexts)
-
+        step_results = [None] * len(env_contexts)
+        if USE_SUBPROC_ENVS:
+            # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
+            step_start = time.perf_counter()
             for idx, ctx in enumerate(env_contexts):
-                step_start = time.perf_counter()
-                if USE_SUBPROC_ENVS:
-                    next_observation, reward, done, res, info, next_shoot_mask = step_results[idx]
-                    ctx["shoot_mask"] = next_shoot_mask
-                else:
-                    if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
-                        from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
-                        from core.models.option_candidates import attach_fight_stratagem_plan
+                ctx["conn"].send(("step", action_dicts[idx]))
+            for idx, ctx in enumerate(env_contexts):
+                step_results[idx] = ctx["conn"].recv()
+            perf_stats["env_step_s"] += time.perf_counter() - step_start
+            perf_counts["env_steps"] += len(env_contexts)
 
-                        fight_plan = dqn_build_fight_plan(ctx["env"], policy_net, device, side="model")
-                        attach_fight_stratagem_plan(ctx["env"], fight_plan)
-                    try:
-                        tracer = ctx.get("stratagem_tracer")
-                        if tracer is not None:
-                            next_observation, reward, done, res, info = tracer.run_model_step(
-                                ctx["env"],
-                                unwrap_env(ctx["env"]),
-                                int(ctx["ep_len"]),
-                                action_dicts[idx],
-                            )
-                        else:
-                            next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
-                    finally:
-                        if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
-                            from core.models.option_candidates import attach_fight_stratagem_plan
-
-                            attach_fight_stratagem_plan(ctx["env"], None)
-                    perf_stats["env_step_s"] += time.perf_counter() - step_start
-                    perf_counts["env_steps"] += 1
-
-            # --- ENEMY PHASE (second) ---
-            enemy_turn_start = time.perf_counter()
+        for idx, ctx in enumerate(env_contexts):
+            step_start = time.perf_counter()
             if USE_SUBPROC_ENVS:
-                for ctx in env_contexts:
-                    ctx["conn"].send(("enemy_turn", None))
-                for ctx in env_contexts:
-                    ctx["conn"].recv()
+                next_observation, reward, done, res, info, next_shoot_mask = step_results[idx]
+                ctx["shoot_mask"] = next_shoot_mask
             else:
-                for idx, ctx in enumerate(env_contexts):
-                    env_unwrapped = unwrap_env(ctx["env"])
+                if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
+                    from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
+                    from core.models.option_candidates import attach_fight_stratagem_plan
+
+                    fight_plan = dqn_build_fight_plan(ctx["env"], policy_net, device, side="model")
+                    attach_fight_stratagem_plan(ctx["env"], fight_plan)
+                try:
                     tracer = ctx.get("stratagem_tracer")
-                    step_no = int(ctx.get("ep_len", 0)) + 1
                     if tracer is not None:
-                        if SELF_PLAY_ENABLED and opponent_policy_net is not None:
-                            tracer.run_enemy_turn(
-                                env_unwrapped,
-                                step_no,
-                                trunc=trunc,
-                                policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(
-                                    obs, env, lm
-                                ),
-                            )
-                        else:
-                            tracer.run_enemy_turn(env_unwrapped, step_no, trunc=trunc)
-                    elif SELF_PLAY_ENABLED and opponent_policy_net is not None:
-                        env_unwrapped.enemyTurn(
-                            trunc=trunc,
-                            policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
+                        next_observation, reward, done, res, info = tracer.run_model_step(
+                            ctx["env"],
+                            unwrap_env(ctx["env"]),
+                            int(ctx["ep_len"]),
+                            action_dicts[idx],
                         )
                     else:
-                        env_unwrapped.enemyTurn(trunc=trunc)
-            perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
-        else:
-            # --- ENEMY PHASE (first, enemy_first — byte-equivalent to original) ---
-            enemy_turn_start = time.perf_counter()
-            if USE_SUBPROC_ENVS:
-                for ctx in env_contexts:
-                    ctx["conn"].send(("enemy_turn", None))
-                for ctx in env_contexts:
-                    ctx["conn"].recv()
-            else:
-                for idx, ctx in enumerate(env_contexts):
-                    env_unwrapped = unwrap_env(ctx["env"])
-                    tracer = ctx.get("stratagem_tracer")
-                    step_no = int(ctx.get("ep_len", 0)) + 1
-                    if tracer is not None:
-                        if SELF_PLAY_ENABLED and opponent_policy_net is not None:
-                            tracer.run_enemy_turn(
-                                env_unwrapped,
-                                step_no,
-                                trunc=trunc,
-                                policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(
-                                    obs, env, lm
-                                ),
-                            )
-                        else:
-                            tracer.run_enemy_turn(env_unwrapped, step_no, trunc=trunc)
-                    elif SELF_PLAY_ENABLED and opponent_policy_net is not None:
-                        env_unwrapped.enemyTurn(
-                            trunc=trunc,
-                            policy_fn=lambda obs, env=ctx["env"], lm=ctx["len_model"]: opponent_policy(obs, env, lm),
-                        )
-                    else:
-                        env_unwrapped.enemyTurn(trunc=trunc)
-            perf_stats["enemy_turn_s"] += time.perf_counter() - enemy_turn_start
-
-            # --- MODEL-STEP PHASE (second) ---
-            step_results = [None] * len(env_contexts)
-            if USE_SUBPROC_ENVS:
-                # Batched IPC: сначала отправляем step всем env, затем собираем ответы.
-                step_start = time.perf_counter()
-                for idx, ctx in enumerate(env_contexts):
-                    ctx["conn"].send(("step", action_dicts[idx]))
-                for idx, ctx in enumerate(env_contexts):
-                    step_results[idx] = ctx["conn"].recv()
-                perf_stats["env_step_s"] += time.perf_counter() - step_start
-                perf_counts["env_steps"] += len(env_contexts)
-
-            for idx, ctx in enumerate(env_contexts):
-                step_start = time.perf_counter()
-                if USE_SUBPROC_ENVS:
-                    next_observation, reward, done, res, info, next_shoot_mask = step_results[idx]
-                    ctx["shoot_mask"] = next_shoot_mask
-                else:
+                        next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
+                finally:
                     if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
-                        from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
                         from core.models.option_candidates import attach_fight_stratagem_plan
 
-                        fight_plan = dqn_build_fight_plan(ctx["env"], policy_net, device, side="model")
-                        attach_fight_stratagem_plan(ctx["env"], fight_plan)
-                    try:
-                        tracer = ctx.get("stratagem_tracer")
-                        if tracer is not None:
-                            next_observation, reward, done, res, info = tracer.run_model_step(
-                                ctx["env"],
-                                unwrap_env(ctx["env"]),
-                                int(ctx["ep_len"]),
-                                action_dicts[idx],
-                            )
-                        else:
-                            next_observation, reward, done, res, info = ctx["env"].step(action_dicts[idx])
-                    finally:
-                        if DQN_REACTION_VALUE_POLICY and not USE_SUBPROC_ENVS:
-                            from core.models.option_candidates import attach_fight_stratagem_plan
-
-                            attach_fight_stratagem_plan(ctx["env"], None)
-                    perf_stats["env_step_s"] += time.perf_counter() - step_start
-                    perf_counts["env_steps"] += 1
+                        attach_fight_stratagem_plan(ctx["env"], None)
+                perf_stats["env_step_s"] += time.perf_counter() - step_start
+                perf_counts["env_steps"] += 1
             raw_reward = float(reward)
             ctx["rew_arr"].append(raw_reward)
             reward_for_buffer, reward_was_clipped = maybe_clip_reward(
@@ -6248,8 +6154,7 @@ def main():
                     post_deploy_setup(log_fn=log_fn if idx == 0 else None)
                     ctx["env"].attacker_side = attacker_side
                     ctx["env"].defender_side = defender_side
-                    unwrap_env(ctx["env"]).first_turn_side = _ft_first  # [Task 7C] run-uniform first-turn
-
+    
                     ctx["state"], ctx["info"] = ctx["env"].reset(
                         options={"m": ctx["model"], "e": ctx["enemy"], "Type": "small", "trunc": True}
                     )
