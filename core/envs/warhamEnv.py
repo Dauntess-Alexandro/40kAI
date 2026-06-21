@@ -317,6 +317,26 @@ def roll_off_attacker_defender(manual_roll_allowed: bool = False, log_fn=None):
         return attacker, defender
 
 
+def roll_off_first_turn(manual_roll_allowed: bool = False, log_fn=None) -> str:
+    """Determine First Turn (10e): D6 vs D6 после деплоя. Победитель ходит первым.
+
+    Зеркало roll_off_attacker_defender: enemy бросает player_dice только при
+    MANUAL_DICE=1 and manual_roll_allowed, model всегда auto_dice. Ничья → переброс.
+    Возвращает "model"|"enemy" — сторона, которая ходит первой.
+    """
+    manual = os.getenv("MANUAL_DICE", "0") == "1" and manual_roll_allowed
+    verbose = os.getenv("VERBOSE_LOGS", "0") == "1"
+    while True:
+        model_roll = auto_dice()
+        enemy_roll = player_dice() if manual else auto_dice()
+        if enemy_roll == model_roll:
+            continue
+        first = "enemy" if enemy_roll > model_roll else "model"
+        if verbose and log_fn is not None:
+            log_fn(f"Determine First Turn: enemy={enemy_roll} model={model_roll} -> first={first}")
+        return first
+
+
 def _get_abilities(weapon: dict) -> dict:
     if isinstance(weapon, dict):
         ab = weapon.get("Abilities")
