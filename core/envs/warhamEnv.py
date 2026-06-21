@@ -7203,6 +7203,11 @@ class Warhammer40kEnv(gym.Env):
         self.stratagem_used = []
         self.active_stratagem_effects = []
         self.battle_round = 1
+        _first = getattr(self, "first_turn_side", None)
+        if _first not in ("model", "enemy"):
+            _first = "enemy"  # фолбэк: env создан без драйвера
+        self.first_turn_side = _first
+        self.turn_order = [_first, "model" if _first == "enemy" else "enemy"]
         self.active_side = self.turn_order[0]
         self.phase = "command"
         self.numTurns = self.battle_round
