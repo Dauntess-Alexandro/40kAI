@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-from typing import Any, Callable, Optional, Protocol
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 import numpy as np
 import torch
@@ -54,10 +55,10 @@ def play_episode_with_gumbel_muzero(
     *,
     env,
     search=None,
-    inference_fn: Optional[GMZInferenceFn] = None,
+    inference_fn: GMZInferenceFn | None = None,
     len_model: int,
-    config: Optional[GumbelSelfPlayConfig] = None,
-    enemy_policy_fn: Optional[Callable[[Any], dict]] = None,
+    config: GumbelSelfPlayConfig | None = None,
+    enemy_policy_fn: Callable[[Any], dict] | None = None,
     policy_version: int = 0,
     episode_id: int = 0,
     deterministic: bool = False,
@@ -70,6 +71,8 @@ def play_episode_with_gumbel_muzero(
     )
     trunc_mode = not full_trace_enabled
 
+    from core.envs.warhamEnv import resolve_first_turn_side
+    env_u.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
     state, _ = env.reset(options={"m": env_u.model, "e": env_u.enemy, "trunc": trunc_mode})
     done = False
     last_info: dict = {}
@@ -79,6 +82,11 @@ def play_episode_with_gumbel_muzero(
 
     if inference_fn is None and search is None:
         raise ValueError("play_episode_with_gumbel_muzero: нужен search или inference_fn")
+
+    from core.engine.turn_sequencing import apply_first_turn_prepend
+    apply_first_turn_prepend(env_u, run_enemy_half=lambda: env_u.enemyTurn(trunc=trunc_mode, policy_fn=enemy_policy_fn))
+    if bool(getattr(env_u, "game_over", False)):
+        done = True
 
     while not done:
         obs_np = _state_to_np(state)
@@ -165,7 +173,7 @@ def play_episode_with_gumbel_muzero(
             final_value = outcome_value_draw
     else:
         # When outcome_only=False, still clip via atom range so value_target stays in distribution support
-        from core.models.gumbel_muzero_model import VALUE_ATOM_MIN, VALUE_ATOM_MAX
+        from core.models.gumbel_muzero_model import VALUE_ATOM_MAX, VALUE_ATOM_MIN
         final_value = float(np.clip(final_value, VALUE_ATOM_MIN, VALUE_ATOM_MAX))
 
     out: list[GMZTransition] = []
