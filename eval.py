@@ -837,10 +837,13 @@ def run_episode(
         if bool(getattr(env_unwrapped, "game_over", False)):
             done = True
             info = env_unwrapped.get_info()
-            _trace(
-                f"[TRACE][STEP] idx={step_no} phase=enemy_turn_end game_over=1 "
-                f"winner={info.get('winner', None)} end_reason={info.get('end reason', '')}"
-            )
+            # Старое поведение: трейс enemy_turn_end эмитился только при game_over от хода врага.
+            # При game_over от хода модели старый цикл выходил без этого трейса (round_io["done"]=True).
+            if not round_io["done"]:
+                _trace(
+                    f"[TRACE][STEP] idx={step_no} phase=enemy_turn_end game_over=1 "
+                    f"winner={info.get('winner', None)} end_reason={info.get('end reason', '')}"
+                )
             break
         done = bool(round_io["done"])
         if round_io["info"] is not None:
