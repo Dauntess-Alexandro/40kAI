@@ -4900,6 +4900,7 @@ class GUIController(QtCore.QObject):
         env.insert("DQN_NUM_LAYERS", str(max(1, int(hp.get("num_layers", 2)))))
         env.insert("DQN_ENSEMBLE_SIZE", str(max(1, int(hp.get("ensemble_size", 1)))))
         env.insert("DQN_LR_SCHEDULER", str(hp.get("lr_scheduler", "none")))
+        env.insert("UPDATES_PER_BATCH", str(max(1, int(hp.get("updates_per_step", 6)))))
         env.insert("PER_ENSEMBLE_PRIORITY_LAMBDA", str(float(hp.get("per_ensemble_priority_lambda", 0.1))))
         env.insert("EPS_SCHEDULE", str(hp.get("eps_schedule", "exp")))
 
@@ -5062,7 +5063,6 @@ class GUIController(QtCore.QObject):
         batch_size = int(payload["batch_size"])
         gamma = float(payload["gamma"])
         updates_per_step = int(payload["updates_per_step"])
-        warmup_steps = int(payload["warmup_steps"])
 
         if not (0.0 < lr <= 1.0):
             return "lr должен быть в диапазоне (0, 1]"
@@ -5078,8 +5078,6 @@ class GUIController(QtCore.QObject):
             return "gamma должен быть в диапазоне (0, 1]"
         if updates_per_step < 1:
             return "updates_per_step должен быть целым числом >= 1"
-        if warmup_steps < 0:
-            return "warmup_steps должен быть целым числом >= 0"
         return None
 
     def _validate_ppo_hyperparams(self, payload: dict[str, int | float]) -> str | None:
@@ -6391,12 +6389,11 @@ class GUIController(QtCore.QObject):
         if mode == "train8":
             train_label = "TRAIN8"
             status_prefix = "Обучение"
-            env_overrides["NUM_ENVS"] = "12"
-            env_overrides["USE_SUBPROC_ENVS"] = "1"
+            env_overrides["NUM_ACTORS"] = "12"
         elif mode == "selfplay":
             train_label = "SELFPLAY"
             status_prefix = "Самообучение"
-            env_overrides["VEC_ENV_COUNT"] = "12"
+            env_overrides["NUM_ACTORS"] = "12"
             env_overrides["SELF_PLAY_ENABLED"] = "1"
 
         if mode == "selfplay" and self._self_play_from_checkpoint and selected_opponent_source == "latest_snapshot":
@@ -6440,8 +6437,7 @@ class GUIController(QtCore.QObject):
             env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
             env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
 
-        # PRO actor-learner теперь режим по умолчанию (без галочки).
-        # Для отката на старый pipeline: PRO_ACTOR_LEARNER=0 (ручной запуск/advanced).
+        # PRO actor-learner теперь единственный поддерживаемый training pipeline.
         env_overrides.setdefault("PRO_ACTOR_LEARNER", "1")
         env_overrides.setdefault("NUM_ACTORS", "8")
         env_overrides.setdefault("ACTOR_BATCH_SEND", "32")
@@ -6541,9 +6537,8 @@ class GUIController(QtCore.QObject):
             level="INFO",
         )
         if self._training_algo == "ppo":
-            vec_count = env_overrides.get("NUM_ENVS", env_overrides.get("VEC_ENV_COUNT", "1"))
-            use_subproc = env_overrides.get("USE_SUBPROC_ENVS", "0")
-            self._emit_log(f"[GUI] [PPO][CONFIG] vec_env_count={vec_count} use_subproc={use_subproc}", level="INFO")
+            actors = env_overrides.get("NUM_ACTORS", "8")
+            self._emit_log(f"[GUI] [PPO][CONFIG] actor_learner=1 actors={actors}", level="INFO")
             sp_enabled = env_overrides.get("SELF_PLAY_ENABLED", "0")
             opp_mode = env_overrides.get("SELF_PLAY_OPPONENT_MODE", "-")
             opp_id = env_overrides.get("OPPONENT_AGENT_ID", "-")

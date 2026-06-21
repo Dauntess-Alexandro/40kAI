@@ -25,8 +25,8 @@ def test_det_game_runners_deleted():
 def test_train_window_payload_used_everywhere():
     src = _src()
     assert "def _train_window_payload_from_rows(" in src
-    # DQN AL + PPO AL + PPO sync + sync DQN (_run_deterministic_eval) + финальная сводка.
-    assert src.count("_train_window_payload_from_rows(") >= 5
+    # Helper def + DQN/PPO actor-learner DET-like windows + финальная сводка.
+    assert src.count("_train_window_payload_from_rows(") >= 4
     # AZ и GMZ — через свои агрегаторы с явным тегом train_window
     # (DQN/PPO получают тег внутри _train_window_payload_from_rows).
     assert src.count('eval_tag="train_window"') >= 3

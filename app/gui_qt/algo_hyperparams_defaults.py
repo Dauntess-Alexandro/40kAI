@@ -12,7 +12,6 @@ DQN_ROOT_SYNC_KEYS: tuple[str, ...] = (
     "batch_size",
     "gamma",
     "updates_per_step",
-    "warmup_steps",
 )
 
 DQN_HYPERPARAM_KEYS: tuple[str, ...] = DQN_ROOT_SYNC_KEYS + (
@@ -161,7 +160,7 @@ DQN_GROUPS: tuple[dict[str, object], ...] = (
     {
         "id": "training",
         "title": "Обучение",
-        "keys": ("lr", "gamma", "batch_size", "updates_per_step", "warmup_steps", "lr_scheduler", "tau"),
+        "keys": ("lr", "gamma", "batch_size", "updates_per_step", "lr_scheduler", "tau"),
         "default_collapsed": False,
     },
     {
