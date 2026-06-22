@@ -149,6 +149,30 @@ def test_reroll_wounds_all_rerolls_failures():
     assert float(sum(rer)) == 1.0
 
 
+def test_worst_failed_index_picks_lowest_failure():
+    import numpy as np
+
+    from core.engine.utils import _worst_failed_index
+
+    assert _worst_failed_index(np.array([3, 5, 2, 6]), 4) == 2
+    assert _worst_failed_index(np.array([4, 5, 6]), 4) is None
+
+
+def test_reroll_wounds_one_rerolls_worst_failure():
+    weapon = _ranged_weapon(S=4, Attacks=2)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    one, _ = attack(
+        1,
+        weapon,
+        _ATT_DATA,
+        10,
+        defender,
+        effects={"reroll_wounds": "one"},
+        roller=StubRoller(hit=[5, 5], wound=[2, 3, 6]),
+    )
+    assert float(sum(one)) == 1.0
+
+
 def test_reroll_save_all_saves_failed_save():
     # Sv4. hit [5], wound [6] (ранит), save [3] (провал, нужно 4+) → урон 1;
     # reroll_save="all" [3]→ре-ролл [5] (сейв) → урон 0.

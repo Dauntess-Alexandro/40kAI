@@ -363,6 +363,21 @@ def _normalize_effects(effects):
     return out
 
 
+def _worst_failed_index(dice, threshold):
+    """Индекс наименьшей кости среди проваленных (< threshold); None, если провалов нет.
+
+    Для Command Re-roll реролим всегда худшую проваленную кость.
+    """
+    worst_idx = None
+    worst_val = None
+    for idx, d in enumerate(dice):
+        d = int(d)
+        if d < int(threshold) and (worst_val is None or d < worst_val):
+            worst_val = d
+            worst_idx = idx
+    return worst_idx
+
+
 def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
            rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None, hit_on_6: bool = False):
     """Attack resolution (приведено к "10e-стилю" бросков).
@@ -532,15 +547,17 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
                 wound_rolls = np.array(list(wound_rolls), dtype=int)
 
             if eff["reroll_wounds"]:
-                need = []
-                for idx, w in enumerate(wound_rolls):
-                    w = int(w)
-                    if eff["reroll_wounds"] == "ones" and w == 1:
-                        need.append(idx)
-                    elif eff["reroll_wounds"] in ("all", "one") and w < wt:
-                        need.append(idx)
                 if eff["reroll_wounds"] == "one":
-                    need = need[:1]
+                    wi = _worst_failed_index(wound_rolls, wt)
+                    need = [wi] if wi is not None else []
+                else:
+                    need = []
+                    for idx, w in enumerate(wound_rolls):
+                        w = int(w)
+                        if eff["reroll_wounds"] == "ones" and w == 1:
+                            need.append(idx)
+                        elif eff["reroll_wounds"] == "all" and w < wt:
+                            need.append(idx)
                 if need:
                     new = _roll_with_stage(num=len(need), stage="wound")
                     new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
