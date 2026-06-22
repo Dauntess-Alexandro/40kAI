@@ -2515,6 +2515,43 @@ class Warhammer40kEnv(gym.Env):
         )
         self._apply_health_update(d_side, di, mod_health, reason="fight_sim")
 
+    def _expected_shoot_damage(self, side: str, shooter_idx: int, target_idx: int) -> float:
+        """Аналитический EV урона выстрела (без сети/RNG): attacks·P(hit)·P(wound)·P(fail_save)·avg_dmg.
+
+        Для выбора репрезентативной цели MC (ранжирование), не для точного урона.
+        """
+        from core.engine.utils import _to_int, _wound_target
+
+        if side == "model":
+            weapon, defender = self.unit_weapon[shooter_idx], self.enemy_data[target_idx]
+        else:
+            weapon, defender = self.enemy_weapon[shooter_idx], self.unit_data[target_idx]
+        if not isinstance(weapon, dict):
+            return 0.0
+        attacks = max(0, _to_int(weapon.get("A", weapon.get("Attacks", 1)), default=1))
+        bs = _to_int(weapon.get("BS", 4), default=4)
+        s = _to_int(weapon.get("S", 4), default=4)
+        ap = _to_int(weapon.get("AP", 0), default=0)
+        t = _to_int(defender.get("T", 4), default=4)
+        sv = _to_int(defender.get("Sv", 7), default=7)
+        inv = _to_int(defender.get("IVSave", 0), default=0)
+        p_hit = max(0.0, min(1.0, (7 - max(2, min(6, bs))) / 6.0))
+        wt = _wound_target(s, t) if (s and t) else 7
+        p_wound = max(0.0, min(1.0, (7 - max(2, min(6, wt))) / 6.0)) if wt <= 6 else 0.0
+        save_t = sv + ap  # хуже = больше; AP ухудшает
+        if inv and (save_t > inv or save_t > 6):
+            save_t = inv
+        p_fail_save = 1.0 if save_t > 6 else max(0.0, min(1.0, (max(2, save_t) - 1) / 6.0))
+        dmg_raw = weapon.get("Damage", weapon.get("D", 1))
+        avg_dmg = {"D3": 2.0, "D6": 3.5}.get(str(dmg_raw).strip().upper(), float(_to_int(dmg_raw, default=1)))
+        return float(attacks) * p_hit * p_wound * p_fail_save * avg_dmg
+
+    def _best_shoot_target(self, side: str, shooter_idx: int) -> int | None:
+        targets = list(self.get_shoot_targets_for_unit(side, int(shooter_idx)) or [])
+        if not targets:
+            return None
+        return max(targets, key=lambda t: self._expected_shoot_damage(side, int(shooter_idx), int(t)))
+
     def _mc_value_command_reroll_fight(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
         """MC-оценка реролла (subtype) для атаки engaged-юнита: (mean_apply, mean_pass).
 
