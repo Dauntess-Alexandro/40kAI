@@ -5365,6 +5365,13 @@ class Warhammer40kEnv(gym.Env):
                             _use_bravery = bool(decide_bravery(i))
                         else:
                             _use_bravery = bool(action and action.get("use_cp") == 1 and action.get("cp_on") == i)
+                            if not _use_bravery and isinstance(action, dict):
+                                from core.engine.phases.stratagems import stratagem_choice_str
+                                from core.engine.phases.types import Phase as _Ph
+
+                                _cmd_choice = stratagem_choice_str(_Ph.COMMAND, int(action.get("strat_command", 0) or 0))
+                                if _cmd_choice == "insane_bravery" and int(action.get("strat_command_unit", 0) or 0) == i:
+                                    _use_bravery = True
                         if _use_bravery:
                             _bravery = _apply_stratagem(self, "model", "insane_bravery", i, phase="command")
                             if _bravery["ok"]:
@@ -5443,6 +5450,16 @@ class Warhammer40kEnv(gym.Env):
                             )
                         else:
                             _use_bravery = (use_cp == 1 and cp_on == i)
+                            if not _use_bravery and isinstance(action, dict):
+                                from core.engine.phases.stratagems import stratagem_choice_str
+                                from core.engine.phases.types import Phase as _Ph
+
+                                if (
+                                    stratagem_choice_str(_Ph.COMMAND, int(action.get("strat_command", 0) or 0))
+                                    == "insane_bravery"
+                                    and int(action.get("strat_command_unit", 0) or 0) == i
+                                ):
+                                    _use_bravery = True
                         if _use_bravery:
                             _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
                             if _bravery["ok"]:

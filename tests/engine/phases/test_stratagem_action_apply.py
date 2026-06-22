@@ -131,13 +131,17 @@ def test_fight_phase_no_action_is_parity():
 # ---------------------------------------------------------------------------
 
 
-def test_command_strat_head_triggers_bravery(monkeypatch):
+def test_command_strat_head_triggers_bravery():
     env = build_env()
     _setup(env)
     env.phase = "command"
-    # форсим провал battle-shock у юнита 0
-    monkeypatch.setattr(env, "_unit_passes_battle_shock", lambda side, i: False, raising=False)
-    action = flat_default_action(len(env.unit_health))
+    # Детерминируем провал battle-shock у юнита 0: health ниже половины состава +
+    # Ld=13 (2D6<=12 < 13 → всегда провал). Отдельного метода-проверки нет —
+    # провал определяется инлайн-броском в command_phase (как в test_command_bravery_via_engine).
+    env.unit_health[0] = 1.0
+    env.unit_data[0]["Ld"] = 13
+    # use_cp=0/cp_on=-1 → старый путь точно не сработает; проверяем только strat_command.
+    action = flat_default_action(len(env.unit_health), use_cp=0, cp_on=-1)
     action["strat_command"] = _idx(Phase.COMMAND, "insane_bravery")
     action["strat_command_unit"] = 0
     with env.simulation_mode():
