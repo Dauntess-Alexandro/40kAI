@@ -2397,6 +2397,81 @@ class Warhammer40kEnv(gym.Env):
 
         return decider
 
+    def _command_reroll_record_exists(self, side: str, unit_idx: int, phase: str) -> bool:
+        """Есть ли уже запись Command Re-roll для (side, unit, phase) в текущем раунде (любой под-тип)."""
+        rnd = int(getattr(self, "battle_round", 1) or 1)
+        for rec in list(getattr(self, "active_stratagem_effects", []) or []):
+            if (
+                rec.get("effect_id") == "command_reroll"
+                and str(rec.get("side", "")) == str(side)
+                and int(rec.get("unit_idx", -1)) == int(unit_idx)
+                and str(rec.get("phase", "")) == str(phase)
+                and int(rec.get("round", rnd)) == rnd
+            ):
+                return True
+        return False
+
+    def _value_pick_command_reroll(self, side: str, unit_idx: int, phase: str, rolls):
+        """Stage 4: value-выбор под-типа Command Re-roll через установленный reaction_policy.
+
+        Возвращает первый под-тип (из rolls), для которого apply-ветка ценнее pass; иначе None.
+        Параметры value-сети subtype-агностичны (реролл = −1 CP + флаг used), поэтому выбор
+        вырождается в «первый под-тип, проходящий гейт». Guards: нет policy/нет сети стороны/
+        рекурсия reaction-сима/мало CP/запись уже есть → None (parity, без побочек).
+        """
+        policy = getattr(self, "reaction_policy", None)
+        if policy is None:
+            return None
+        if bool(getattr(self, "_reaction_sim_active", False)):
+            return None
+        net = getattr(self, "_reaction_net_by_side", {}).get(side)
+        if net is None:
+            return None
+        cp = int(self.modelCP if side == "model" else self.enemyCP)
+        if cp < 1:  # command_reroll.cp_cost = 1 (core stratagem)
+            return None
+        if self._command_reroll_record_exists(side, int(unit_idx), str(phase)):
+            return None
+        for roll in rolls:
+            ctx = {
+                "side": side,
+                "stratagem_id": "command_reroll",
+                "phase": str(phase),
+                "chosen": int(unit_idx),
+                "candidates": [int(unit_idx)],
+                "cp": cp,
+                "env": self,
+                "resolve_trigger": None,
+                "net": net,
+                "reroll_roll": roll,
+            }
+            try:
+                if bool(policy(ctx)):
+                    return str(roll)
+            except Exception:
+                continue
+        return None
+
+    def _apply_phase_command_reroll(self, side: str, phase: str, candidate_units, rolls) -> None:
+        """Stage 4: применить value-выбранный Command Re-roll по кандидатам в начале фазы.
+
+        No-op без reaction_policy (parity). Применяется ДО резолва фазы — резолв читает запись
+        (advance/charge через consume, shooting через decider). CP списывается в _apply_stratagem.
+        """
+        if getattr(self, "reaction_policy", None) is None:
+            return
+        for u in list(candidate_units):
+            ui = int(u)
+            roll = self._value_pick_command_reroll(side, ui, str(phase), rolls)
+            if roll is None:
+                continue
+            try:
+                _apply_stratagem(self, side, "command_reroll", ui, phase=str(phase), reroll_roll=roll)
+            except Exception as exc:
+                self._log(
+                    f"[STRATAGEM] value Command Re-roll не применён ({phase}, side={side}, unit={ui}): {exc}"
+                )
+
     def _consume_command_reroll_record(self, side: str, unit_idx: int, phase: str, reroll_roll: str):
         for rec in list(getattr(self, "active_stratagem_effects", []) or []):
             if (
@@ -2499,6 +2574,10 @@ class Warhammer40kEnv(gym.Env):
                         phase="fight",
                         reroll_roll=sid_raw.split(":", 1)[1],
                     )
+                elif sid_raw == "command_reroll":
+                    # Stage 4: под-тип hit/wound выбирает value-policy (вырождается в "hit"); fallback wound.
+                    roll = self._value_pick_command_reroll(side, ui, "fight", ("hit", "wound")) or "wound"
+                    _apply_stratagem(self, side, "command_reroll", ui, phase="fight", reroll_roll=roll)
                 else:
                     _apply_stratagem(self, side, sid_raw, ui, phase="fight")
             except Exception as exc:
@@ -5077,6 +5156,10 @@ class Warhammer40kEnv(gym.Env):
 
     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None, decide_move=None):
         self.begin_phase(side, "movement")
+        _mv_health = self.unit_health if side == "model" else self.enemy_health
+        self._apply_phase_command_reroll(
+            side, "movement", [i for i in range(len(_mv_health)) if _mv_health[i] > 0], ("advance",)
+        )
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] movement phase active ({action_mode})")
@@ -5918,6 +6001,13 @@ class Warhammer40kEnv(gym.Env):
 
     def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_shoot=None):
         self.begin_phase(side, "shooting")
+        _sh_health = self.unit_health if side == "model" else self.enemy_health
+        self._apply_phase_command_reroll(
+            side,
+            "shooting",
+            [i for i in range(len(_sh_health)) if self._unit_can_shoot_now(side, i)],
+            ("hit", "wound"),
+        )
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] shooting phase active ({action_mode})")
@@ -6603,6 +6693,10 @@ class Warhammer40kEnv(gym.Env):
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_charge=None):
         self.begin_phase(side, "charge")
+        _ch_health = self.unit_health if side == "model" else self.enemy_health
+        self._apply_phase_command_reroll(
+            side, "charge", [i for i in range(len(_ch_health)) if _ch_health[i] > 0], ("charge",)
+        )
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] charge phase active ({action_mode})")
