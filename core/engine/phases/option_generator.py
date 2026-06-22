@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.engine.phases.stratagems import Trigger, legal_stratagem_options
+from core.engine.phases.stratagems import Trigger, by_id, legal_stratagem_options
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -118,6 +118,48 @@ def fight_stratagem_options_for_unit(env, side: str, unit_idx: int) -> list[Acti
             candidate_unit_idxs=[int(unit_idx)],
         )
     )
+    return options
+
+
+def command_reroll_options_for_unit(
+    env, side: str, unit_idx: int, *, phase: Phase, rolls: tuple[str, ...]
+) -> list[ActionOption]:
+    """Опции Command Re-roll для живого юнита в данной фазе (по одной на под-тип roll).
+
+    Phase-агностично: вызывается из окон movement/shooting/charge (fight идёт через
+    legal_stratagem_options). Не зависит от trigger — Command Re-roll многофазный.
+    Гейт «один бросок = один реролл» — на стороне исполнения (consumed); лимит UNLIMITED,
+    естественный лимит — CP. Возвращает [] если стратагемы нет в фазе, мало CP или юнит мёртв.
+    """
+    e = _unwrap(env)
+    d = by_id("command_reroll")
+    if phase not in d.phases:
+        return []
+    is_model = side == "model"
+    cp = int(e.modelCP if is_model else e.enemyCP)
+    if cp < d.cp_cost:
+        return []
+    health = e.unit_health if is_model else e.enemy_health
+    i = int(unit_idx)
+    if not (0 <= i < len(health)) or health[i] <= 0:
+        return []
+    options: list[ActionOption] = []
+    for roll in rolls:
+        options.append(
+            ActionOption(
+                kind=ActionKind.USE_STRATAGEM,
+                unit_idx=i,
+                param={"stratagem_id": d.id, "reroll_roll": roll},
+                legacy_patch={},
+                meta={
+                    "stratagem_id": d.id,
+                    "cp_cost": d.cp_cost,
+                    "timing": d.timing,
+                    "scope": d.scope,
+                    "reroll_roll": roll,
+                },
+            )
+        )
     return options
 
 

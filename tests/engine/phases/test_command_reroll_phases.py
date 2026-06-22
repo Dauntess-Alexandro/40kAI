@@ -1,11 +1,28 @@
 import numpy as np
 
 import core.envs.warhamEnv as warham_mod
+from core.engine.phases import phase_engine, stratagem_engine
 from core.engine.phases.option_generator import movement_options_for_unit
-from core.engine.phases import stratagem_engine
 from core.engine.phases.stratagems import by_id
 from core.engine.phases.types import ActionKind, Phase
 from tests.engine.phases._helpers import build_env, flat_default_action
+
+
+def _pick_reroll_window(unit_idx, roll):
+    """decide: выбрать опцию Command Re-roll нужного под-типа в стратагем-окне; иначе options[0]."""
+
+    def decide(window):
+        for o in window.options:
+            if (
+                o.kind is ActionKind.USE_STRATAGEM
+                and o.meta.get("stratagem_id") == "command_reroll"
+                and o.param.get("reroll_roll") == roll
+                and o.unit_idx == unit_idx
+            ):
+                return o
+        return window.options[0]
+
+    return decide
 
 
 def _shooting_setup(env):
@@ -190,3 +207,47 @@ def test_shooting_command_reroll_save_belongs_to_defender(monkeypatch):
         env.shooting_phase("model", advanced_flags=[False] * len(env.unit_health), action=_shoot_action(env))
 
     assert calls == [{"hit": False, "save": True}]
+
+
+def test_run_movement_window_offers_and_applies_command_reroll():
+    """Windowed-путь movement: окно предлагает Command Re-roll/advance, выбор → запись+CP."""
+    env = build_env()
+    _movement_setup(env)
+    start_cp = env.modelCP
+    with env.simulation_mode():
+        phase_engine.run_movement(env, "model", _pick_reroll_window(0, "advance"))
+    assert ("model", "command_reroll", env.battle_round, "movement", 0) in env.stratagem_used
+    assert env.modelCP == start_cp - 1
+
+
+def test_run_shooting_window_offers_and_applies_command_reroll():
+    """Windowed-путь shooting: окно предлагает Command Re-roll/wound, выбор → запись+CP."""
+    env = build_env()
+    _shooting_setup(env)
+    start_cp = env.modelCP
+    with env.simulation_mode():
+        phase_engine.run_shooting(env, "model", _pick_reroll_window(0, "wound"))
+    assert ("model", "command_reroll", env.battle_round, "shooting", 0) in env.stratagem_used
+    assert env.modelCP == start_cp - 1
+
+
+def test_run_charge_window_offers_and_applies_command_reroll():
+    """Windowed-путь charge: окно предлагает Command Re-roll/charge, выбор → запись+CP."""
+    env = build_env()
+    _charge_setup(env)
+    start_cp = env.modelCP
+    with env.simulation_mode():
+        phase_engine.run_charge(env, "model", _pick_reroll_window(0, "charge"))
+    assert ("model", "command_reroll", env.battle_round, "charge", 0) in env.stratagem_used
+    assert env.modelCP == start_cp - 1
+
+
+def test_run_movement_window_default_decide_does_not_use_cp():
+    """Регрессия: дефолтный decide (options[0]=PASS) не тратит CP в movement-стратагем-окне."""
+    env = build_env()
+    _movement_setup(env)
+    start_cp = env.modelCP
+    with env.simulation_mode():
+        phase_engine.run_movement(env, "model", lambda w: w.options[0])
+    assert env.modelCP == start_cp
+    assert not any(rec[1] == "command_reroll" for rec in env.stratagem_used)

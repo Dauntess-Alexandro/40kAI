@@ -4,12 +4,13 @@ from core.engine.phases import stratagem_engine
 from core.engine.phases.legacy_compiler import default_action_dict
 from core.engine.phases.option_generator import (
     charge_options_for_unit,
+    command_reroll_options_for_unit,
     command_window,
     fight_stratagem_options_for_unit,
     movement_options_for_unit,
     shooting_options_for_unit,
 )
-from core.engine.phases.types import ActionKind, DecisionWindow, Phase, PhaseTurnState, SubStep, Timing
+from core.engine.phases.types import ActionKind, ActionOption, DecisionWindow, Phase, PhaseTurnState, SubStep, Timing
 
 
 def _unwrap(env):
@@ -44,6 +45,45 @@ def _sync_positions(env) -> None:
     fn = getattr(e, "_sync_model_positions_to_anchors", None)
     if callable(fn):
         fn()
+
+
+def _apply_command_reroll_windows(env, side, decide, *, phase, sub_step, rolls) -> None:
+    """Pre-phase стратагем-окна Command Re-roll (по живому юниту) для не-fight фаз.
+
+    Зеркало run_fight: выбор стратагемы применяется ДО исполнения фазы — резолв фазы
+    читает запись из active_stratagem_effects (advance/charge через consume, shooting через decider).
+    PASS-опция идёт первой: дефолтные action-dict decide на неизвестном окне берут options[0]=PASS.
+    """
+    e = _unwrap(env)
+    health = e.unit_health if side == "model" else e.enemy_health
+    alive = [i for i, hp in enumerate(health) if hp > 0]
+    for u in alive:
+        reroll_opts = command_reroll_options_for_unit(e, side, u, phase=phase, rolls=rolls)
+        if not reroll_opts:
+            continue
+        win = DecisionWindow(
+            window_id=f"{phase.value}_stratagem:{side}:{u}",
+            owner_side=side,
+            phase=phase,
+            sub_step=sub_step,
+            timing=Timing.MAIN,
+            cursor_unit_idx=int(u),
+            options=[ActionOption(kind=ActionKind.PASS, unit_idx=int(u)), *reroll_opts],
+        )
+        opt = decide(win)
+        if (
+            opt is not None
+            and opt.kind is ActionKind.USE_STRATAGEM
+            and str(opt.meta.get("stratagem_id", "")) == "command_reroll"
+        ):
+            stratagem_engine.apply(
+                e,
+                side,
+                "command_reroll",
+                int(u),
+                phase=phase.value,
+                reroll_roll=str(opt.param.get("reroll_roll") or "wound"),
+            )
 
 
 def run_command(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTurnState:
@@ -90,6 +130,9 @@ def run_movement(
     state = _ensure_state(e, side, state)
     health = e.unit_health if side == "model" else e.enemy_health
     alive = [i for i, hp in enumerate(health) if hp > 0]
+    _apply_command_reroll_windows(
+        e, side, decide, phase=Phase.MOVEMENT, sub_step=SubStep.MOVE_UNIT, rolls=("advance",)
+    )
     chosen_idx: dict[int, int] = {}
     for u in alive:
         opts = movement_options_for_unit(e, side, u)
@@ -149,6 +192,9 @@ def run_shooting(
     state = _ensure_state(e, side, state)
     health = e.unit_health if side == "model" else e.enemy_health
     alive = [i for i, hp in enumerate(health) if hp > 0]
+    _apply_command_reroll_windows(
+        e, side, decide, phase=Phase.SHOOTING, sub_step=SubStep.PICK_SHOOT_TARGET, rolls=("hit", "wound")
+    )
     chosen_rank: dict[int, int] = {}
     for u in alive:
         opts = shooting_options_for_unit(e, side, u)
@@ -195,6 +241,9 @@ def run_charge(
     state = _ensure_state(e, side, state)
     health = e.unit_health if side == "model" else e.enemy_health
     alive = [i for i, hp in enumerate(health) if hp > 0]
+    _apply_command_reroll_windows(
+        e, side, decide, phase=Phase.CHARGE, sub_step=SubStep.PICK_CHARGE_TARGET, rolls=("charge",)
+    )
     chosen_target: dict[int, int] = {}
     for u in alive:
         opts = charge_options_for_unit(e, side, u)
