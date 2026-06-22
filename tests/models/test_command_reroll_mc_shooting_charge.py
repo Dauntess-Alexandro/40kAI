@@ -1,6 +1,8 @@
 import torch
 
-from tests.engine.phases._helpers import build_env
+from core.engine.phases import stratagem_engine  # noqa: F401
+from core.models.dqn_stratagem_bridge import install_dqn_stratagem_policy
+from tests.engine.phases._helpers import build_env, flat_default_action
 
 
 class _HpAwareNet:
@@ -141,3 +143,41 @@ def test_value_pick_shooting_none_below_eps(monkeypatch):
     env.reaction_policy = lambda ctx: True
     monkeypatch.setattr(env, "_mc_value_command_reroll_shooting", lambda *a, **k: (1.0, 1.0))
     assert env._value_pick_command_reroll("model", 0, "shooting", ("hit", "wound")) is None
+
+
+# ---------------------------------------------------------------------------
+# e2e: shooting_phase с DQN reaction policy + parity без policy
+# ---------------------------------------------------------------------------
+
+
+def _engage_shoot(env):
+    """Сетап для стрельбы: unit 0 → enemy 0 в range, остальные мертвы."""
+    env.unit_coords[0] = [10, 10]
+    env.enemy_coords[0] = [11, 10]
+    env.unit_health[1] = 0.0
+    env.enemy_health[1] = 0.0
+    env._invalidate_target_cache("engage_shoot")
+
+
+def test_shooting_phase_value_applies_command_reroll(monkeypatch):
+    """shooting_phase с DQN policy + MC monkeypatch → command_reroll записан."""
+    env = build_env()
+    _setup(env)
+    _engage_shoot(env)
+    install_dqn_stratagem_policy(env, {"model": _HpAwareNet(env, "model")}, torch.device("cpu"))
+    # MC: реролл выгоден.
+    monkeypatch.setattr(env, "_mc_value_command_reroll_shooting", lambda side, u, sub, n: (5.0, 1.0) if sub == "wound" else (1.0, 1.0))
+    with env.simulation_mode():
+        env.shooting_phase("model", advanced_flags=[False] * len(env.unit_health), action=flat_default_action(len(env.unit_health), shoot_num_0=0))
+    assert any(r[1] == "command_reroll" and r[3] == "shooting" for r in env.stratagem_used)
+
+
+def test_shooting_phase_parity_without_policy():
+    """shooting_phase без policy → command_reroll НЕ записан, CP не тратится."""
+    env = build_env()
+    _setup(env)
+    _engage_shoot(env)
+    with env.simulation_mode():
+        env.shooting_phase("model", advanced_flags=[False] * len(env.unit_health), action=flat_default_action(len(env.unit_health), shoot_num_0=0))
+    assert not any(r[1] == "command_reroll" for r in env.stratagem_used)
+    assert env.modelCP == 3
