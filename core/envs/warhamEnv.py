@@ -2456,6 +2456,17 @@ class Warhammer40kEnv(gym.Env):
             return None
         if self._command_reroll_record_exists(side, int(unit_idx), str(phase)):
             return None
+        if str(phase) == "fight":
+            samples = _cmdreroll_mc_samples()
+            eps = _cmdreroll_mc_eps()
+            best_roll = None
+            best_apply = None
+            for roll in rolls:
+                mean_apply, mean_pass = self._mc_value_command_reroll_fight(side, int(unit_idx), str(roll), samples)
+                if mean_apply > mean_pass + eps and (best_apply is None or mean_apply > best_apply):
+                    best_apply = mean_apply
+                    best_roll = roll
+            return str(best_roll) if best_roll is not None else None
         for roll in rolls:
             ctx = {
                 "side": side,

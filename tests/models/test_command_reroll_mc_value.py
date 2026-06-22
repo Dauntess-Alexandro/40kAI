@@ -67,3 +67,27 @@ def test_cmdreroll_mc_config_defaults(monkeypatch):
     monkeypatch.setenv("CMDREROLL_MC_EPS", "0.05")
     assert w._cmdreroll_mc_samples() == 3
     assert abs(w._cmdreroll_mc_eps() - 0.05) < 1e-9
+
+
+def test_value_pick_fight_uses_mc_and_picks_best_subtype(monkeypatch):
+    env = build_env()
+    _engage(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: False  # generic policy НЕ должен использоваться для fight
+
+    # wound даёт больше урона, hit — нет.
+    def fake_mc(side, unit_idx, subtype, samples):
+        return (5.0, 1.0) if subtype == "wound" else (1.0, 1.0)
+
+    monkeypatch.setattr(env, "_mc_value_command_reroll_fight", fake_mc)
+    assert env._value_pick_command_reroll("model", 0, "fight", ("hit", "wound")) == "wound"
+
+
+def test_value_pick_fight_none_when_mc_below_eps(monkeypatch):
+    env = build_env()
+    _engage(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: True
+
+    monkeypatch.setattr(env, "_mc_value_command_reroll_fight", lambda *a, **k: (1.0, 1.0))
+    assert env._value_pick_command_reroll("model", 0, "fight", ("hit", "wound")) is None
