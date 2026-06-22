@@ -2397,6 +2397,44 @@ class Warhammer40kEnv(gym.Env):
 
         return decider
 
+    def _consume_command_reroll_record(self, side: str, unit_idx: int, phase: str, reroll_roll: str):
+        for rec in list(getattr(self, "active_stratagem_effects", []) or []):
+            if (
+                rec.get("effect_id") == "command_reroll"
+                and not rec.get("consumed", False)
+                and str(rec.get("phase", "")) == str(phase)
+                and str(rec.get("side", "")) == str(side)
+                and int(rec.get("unit_idx", -1)) == int(unit_idx)
+                and str(rec.get("reroll_roll", "")) == str(reroll_roll)
+                and int(rec.get("round", getattr(self, "battle_round", 1)))
+                == int(getattr(self, "battle_round", 1))
+            ):
+                rec["consumed"] = True
+                return rec
+        return None
+
+    def _advance_roll_with_reroll(self, side: str, unit_idx: int, advance_roll):
+        if advance_roll is None:
+            return None
+        current_roll = max(1, min(6, int(advance_roll)))
+        rec = self._consume_command_reroll_record(side, int(unit_idx), "movement", "advance")
+        if rec is None:
+            return current_roll
+        try:
+            rerolled = dice()
+            if isinstance(rerolled, (list, tuple, np.ndarray)):
+                if len(rerolled) <= 0:
+                    return current_roll
+                rerolled = rerolled[0]
+            return max(1, min(6, int(rerolled)))
+        except Exception as exc:
+            self._log(
+                "Command Re-roll advance не применён: ошибка броска. "
+                "Где: warhamEnv._advance_roll_with_reroll. "
+                f"Что делать дальше: проверьте dice-roller; используется исходный бросок ({exc})."
+            )
+            return current_roll
+
     def _clear_phase_stratagem_effects(self, phase: str) -> None:
         phase = str(phase)
         self.active_stratagem_effects = [
@@ -5087,6 +5125,7 @@ class Warhammer40kEnv(gym.Env):
                     if advanced:
                         adv_used = max(0, int(movement) - int(base_m))
                         advance_roll = max(1, min(6, int(adv_used)))
+                        advance_roll = self._advance_roll_with_reroll("model", i, advance_roll)
                     self.unit_coords[i] = [int(dest[1]), int(dest[0])]
                     pos_after = tuple(self.unit_coords[i])
                     if pos_after != tuple(pos_before):
@@ -5365,6 +5404,7 @@ class Warhammer40kEnv(gym.Env):
                     if advanced:
                         adv_used = max(0, int(movement) - int(base_m))
                         advance_roll = max(1, min(6, int(adv_used)))
+                        advance_roll = self._advance_roll_with_reroll("enemy", i, advance_roll)
                     self.enemy_coords[i] = [int(dest[1]), int(dest[0])]
 
                     advanced_flags[i] = advanced
@@ -5590,6 +5630,8 @@ class Warhammer40kEnv(gym.Env):
                     advanced = move_mode == "advance"
                     adv_used = max(0, int(distance_cells) - int(base_move))
                     advance_roll = max(1, min(6, int(adv_used))) if advanced else 0
+                    if advanced:
+                        advance_roll = self._advance_roll_with_reroll("enemy", i, advance_roll)
                     self.enemy_used_advance[i] = bool(advanced)
                     self.enemy_advance_roll[i] = int(advance_roll)
                     advanced_flags[i] = bool(advanced)
@@ -5828,6 +5870,8 @@ class Warhammer40kEnv(gym.Env):
                         self._heur_log(f"[ENEMY][HEUR][MOVE] unit={i + 11} chosen_mode=stay distance=0")
                     adv_used = max(0, int(movement) - int(base_m))
                     advance_roll = max(1, min(6, int(adv_used))) if advanced else None
+                    if advanced:
+                        advance_roll = self._advance_roll_with_reroll("enemy", i, advance_roll)
                     self.enemy_coords[i] = [int(best_y), int(best_x)]
 
                     self.enemy_coords[i] = bounds(self.enemy_coords[i], self.b_len, self.b_hei)
