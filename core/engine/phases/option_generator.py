@@ -242,6 +242,21 @@ def generate_windows(env, side: str = "model") -> list[DecisionWindow]:
                 options=shooting_options_for_unit(e, side, u),
             )
         )
+    # Окна стратагем shooting (per-unit command reroll: hit/wound)
+    for u in alive:
+        _sopts = command_reroll_options_for_unit(e, side, u, phase=Phase.SHOOTING, rolls=("hit", "wound"))
+        if _sopts:
+            windows.append(
+                DecisionWindow(
+                    window_id=f"shooting_stratagem:{side}:{u}",
+                    owner_side=side,
+                    phase=Phase.SHOOTING,
+                    sub_step=SubStep.PICK_SHOOT_TARGET,
+                    timing=Timing.MAIN,
+                    cursor_unit_idx=int(u),
+                    options=[ActionOption(kind=ActionKind.PASS, unit_idx=int(u)), *_sopts],
+                )
+            )
     for u in alive:
         windows.append(
             DecisionWindow(
@@ -254,6 +269,21 @@ def generate_windows(env, side: str = "model") -> list[DecisionWindow]:
                 options=charge_options_for_unit(e, side, u),
             )
         )
+    # Окна стратагем charge (per-unit command reroll: charge)
+    for u in alive:
+        _sopts = command_reroll_options_for_unit(e, side, u, phase=Phase.CHARGE, rolls=("charge",))
+        if _sopts:
+            windows.append(
+                DecisionWindow(
+                    window_id=f"charge_stratagem:{side}:{u}",
+                    owner_side=side,
+                    phase=Phase.CHARGE,
+                    sub_step=SubStep.PICK_CHARGE_TARGET,
+                    timing=Timing.MAIN,
+                    cursor_unit_idx=int(u),
+                    options=[ActionOption(kind=ActionKind.PASS, unit_idx=int(u)), *_sopts],
+                )
+            )
     for u in alive:
         windows.append(
             DecisionWindow(

@@ -2,9 +2,10 @@ from core.engine.phases.legacy_compiler import compile_options_to_action_dict, d
 from core.engine.phases.option_generator import (
     command_reroll_options_for_unit,
     fight_stratagem_options_for_unit,
+    generate_windows,
 )
 from core.engine.phases.stratagems import stratagem_choice_index
-from core.engine.phases.types import Phase
+from core.engine.phases.types import ActionKind, Phase
 from core.models.option_candidates import joint_tuple_from_action_dict
 from tests.engine.phases._helpers import build_env
 
@@ -57,3 +58,22 @@ def test_compile_and_joint_differs_with_strat():
     jt_with = joint_tuple_from_action_dict(ad, n)
     jt_none = joint_tuple_from_action_dict(default_action_dict(n), n)
     assert jt_with != jt_none  # кандидаты с/без реролла НЕ схлопываются
+
+
+def _strat_opts_for_phase(windows, phase):
+    out = []
+    for w in windows:
+        if w.phase is phase:
+            out += [o for o in w.options if o.kind is ActionKind.USE_STRATAGEM and o.meta.get("stratagem_id") == "command_reroll"]
+    return out
+
+
+def test_generate_windows_has_shooting_charge_stratagem_options():
+    env = build_env()
+    _setup(env)
+    windows = generate_windows(env, "model")
+    assert _strat_opts_for_phase(windows, Phase.SHOOTING), "нет command_reroll-опций в shooting-окнах"
+    assert _strat_opts_for_phase(windows, Phase.CHARGE), "нет command_reroll-опций в charge-окнах"
+    # и они несут strat legacy_patch
+    sh = _strat_opts_for_phase(windows, Phase.SHOOTING)[0]
+    assert "strat_shooting" in sh.legacy_patch
