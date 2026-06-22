@@ -2438,12 +2438,12 @@ class Warhammer40kEnv(gym.Env):
     def _value_pick_command_reroll(self, side: str, unit_idx: int, phase: str, rolls):
         """value-выбор под-типа Command Re-roll через установленный reaction_policy.
 
-        FIGHT (Stage MC): для каждого под-типа считает (mean_apply, mean_pass) через
-        _mc_value_command_reroll_fight (симуляция самой атаки) и берёт под-тип с макс.
-        mean_apply среди проходящих mean_apply > mean_pass + eps — выбор НЕ вырожден
-        (различает hit/wound по исходу атаки).
-        Не-fight фазы (Stage 4): generic-policy loop, value subtype-агностичен (реролл =
-        −1 CP + флаг used) → выбор вырождается в «первый под-тип, проходящий гейт».
+        FIGHT/SHOOTING/CHARGE (MC): для каждого под-типа считает (mean_apply, mean_pass)
+        через _mc_value_command_reroll_{fight,shooting,charge} (симуляция самого
+        броска/атаки) и берёт под-тип с макс. mean_apply среди проходящих
+        mean_apply > mean_pass + eps — выбор НЕ вырожден (различает hit/wound по исходу).
+        Прочие фазы (movement, Stage 4): generic-policy loop, value subtype-агностичен
+        (реролл = −1 CP + флаг used) → выбор вырождается в «первый под-тип, проходящий гейт».
         Guards: нет policy/нет сети стороны/рекурсия reaction-сима/мало CP/запись уже есть
         → None (parity, без побочек).
         """
