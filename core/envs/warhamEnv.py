@@ -2436,12 +2436,16 @@ class Warhammer40kEnv(gym.Env):
         return False
 
     def _value_pick_command_reroll(self, side: str, unit_idx: int, phase: str, rolls):
-        """Stage 4: value-выбор под-типа Command Re-roll через установленный reaction_policy.
+        """value-выбор под-типа Command Re-roll через установленный reaction_policy.
 
-        Возвращает первый под-тип (из rolls), для которого apply-ветка ценнее pass; иначе None.
-        Параметры value-сети subtype-агностичны (реролл = −1 CP + флаг used), поэтому выбор
-        вырождается в «первый под-тип, проходящий гейт». Guards: нет policy/нет сети стороны/
-        рекурсия reaction-сима/мало CP/запись уже есть → None (parity, без побочек).
+        FIGHT (Stage MC): для каждого под-типа считает (mean_apply, mean_pass) через
+        _mc_value_command_reroll_fight (симуляция самой атаки) и берёт под-тип с макс.
+        mean_apply среди проходящих mean_apply > mean_pass + eps — выбор НЕ вырожден
+        (различает hit/wound по исходу атаки).
+        Не-fight фазы (Stage 4): generic-policy loop, value subtype-агностичен (реролл =
+        −1 CP + флаг used) → выбор вырождается в «первый под-тип, проходящий гейт».
+        Guards: нет policy/нет сети стороны/рекурсия reaction-сима/мало CP/запись уже есть
+        → None (parity, без побочек).
         """
         policy = getattr(self, "reaction_policy", None)
         if policy is None:
@@ -2631,8 +2635,10 @@ class Warhammer40kEnv(gym.Env):
     def _apply_pending_fight_stratagem_plan(self, side: str) -> None:
         """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan).
 
-        B3: ранний return под windowed_selfplay удалён — каждый юнит проходит
-        value-гейт _should_use_stratagem (без политики → всегда True, т.е. legacy-поведение).
+        Маршрутизация по записи: command_reroll:<roll> — применить под-тип напрямую
+        (выбор дерева MCTS); plain command_reroll — через MC-гейт _value_pick_command_reroll
+        (без политики → None → пропуск, parity); прочие стратагемы (hungry_void и т.д.) —
+        прежний value-гейт _should_use_stratagem (без политики → всегда True, legacy).
         """
         plan = getattr(self, "_pending_fight_stratagem_plan", None)
         self._pending_fight_stratagem_plan = None
