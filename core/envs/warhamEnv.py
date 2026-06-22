@@ -2538,7 +2538,7 @@ class Warhammer40kEnv(gym.Env):
         p_hit = max(0.0, min(1.0, (7 - max(2, min(6, bs))) / 6.0))
         wt = _wound_target(s, t) if (s and t) else 7
         p_wound = max(0.0, min(1.0, (7 - max(2, min(6, wt))) / 6.0)) if wt <= 6 else 0.0
-        save_t = sv + ap  # хуже = больше; AP ухудшает
+        save_t = sv - ap  # как в движке (utils.attack): AP хранится отрицательным, -ap ухудшает сейв
         if inv and (save_t > inv or save_t > 6):
             save_t = inv
         p_fail_save = 1.0 if save_t > 6 else max(0.0, min(1.0, (max(2, save_t) - 1) / 6.0))
