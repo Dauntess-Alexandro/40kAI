@@ -178,6 +178,51 @@ REGISTRY: tuple[StratagemDef, ...] = (
 
 _BY_ID: dict[str, StratagemDef] = {d.id: d for d in REGISTRY}
 
+STRATAGEM_PHASES: tuple[Phase, ...] = (
+    Phase.COMMAND, Phase.MOVEMENT, Phase.SHOOTING, Phase.CHARGE, Phase.FIGHT,
+)
+
+# Подтипы Command Re-roll по фазе (как принимает движок в reroll_roll; реакции-сейвы не в активной голове).
+_COMMAND_REROLL_SUBTYPES_BY_PHASE: dict[Phase, tuple[str, ...]] = {
+    Phase.FIGHT: ("hit", "wound"),
+    Phase.SHOOTING: ("hit", "wound"),
+    Phase.CHARGE: ("charge",),
+    Phase.MOVEMENT: ("advance",),
+}
+
+
+def stratagem_action_choices(phase: Phase) -> list[str]:
+    """Категории головы strat_<phase> (индекс 0 = none). Только MAIN-timing стратагемы фазы;
+    command_reroll развёрнут в подтипы. Реакции (REACTION-timing) исключены (гонятся в ход оппонента).
+    Детерминированный порядок (по REGISTRY + фикс. порядок подтипов) — стабильный индекс.
+    """
+    choices: list[str] = ["none"]
+    for d in REGISTRY:
+        if phase not in d.phases or d.timing is not Timing.MAIN:
+            continue
+        if d.id == "command_reroll":
+            for sub in _COMMAND_REROLL_SUBTYPES_BY_PHASE.get(phase, ()):
+                choices.append(f"command_reroll:{sub}")
+        else:
+            choices.append(d.id)
+    return choices
+
+
+def stratagem_choice_index(phase: Phase, choice: str) -> int:
+    """Индекс категории; неизвестная строка → 0 (none)."""
+    ch = stratagem_action_choices(phase)
+    try:
+        return ch.index(str(choice))
+    except ValueError:
+        return 0
+
+
+def stratagem_choice_str(phase: Phase, idx: int) -> str:
+    """Строка категории по индексу; вне диапазона → 'none'."""
+    ch = stratagem_action_choices(phase)
+    i = int(idx)
+    return ch[i] if 0 <= i < len(ch) else "none"
+
 
 def by_id(stratagem_id: str) -> StratagemDef:
     try:
