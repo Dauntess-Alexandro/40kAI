@@ -2471,6 +2471,22 @@ class Warhammer40kEnv(gym.Env):
                     best_apply = mean_apply
                     best_roll = roll
             return str(best_roll) if best_roll is not None else None
+        _mc_by_phase = {
+            "shooting": self._mc_value_command_reroll_shooting,
+            "charge": self._mc_value_command_reroll_charge,
+        }
+        if str(phase) in _mc_by_phase:
+            samples = _cmdreroll_mc_samples()
+            eps = _cmdreroll_mc_eps()
+            mc_fn = _mc_by_phase[str(phase)]
+            best_roll = None
+            best_apply = None
+            for roll in rolls:
+                mean_apply, mean_pass = mc_fn(side, int(unit_idx), str(roll), samples)
+                if mean_apply > mean_pass + eps and (best_apply is None or mean_apply > best_apply):
+                    best_apply = mean_apply
+                    best_roll = roll
+            return str(best_roll) if best_roll is not None else None
         for roll in rolls:
             ctx = {
                 "side": side,

@@ -111,3 +111,33 @@ def test_mc_charge_apply_beats_pass_when_reroll_makes_charge(monkeypatch):
     monkeypatch.setattr(env, "_simulate_charge_attempt", fake_charge)
     ma, mp = env._mc_value_command_reroll_charge("model", 0, "charge", samples=4)
     assert ma > mp
+
+
+def test_value_pick_shooting_uses_mc(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: False
+    monkeypatch.setattr(
+        env, "_mc_value_command_reroll_shooting",
+        lambda side, u, sub, n: (5.0, 1.0) if sub == "wound" else (1.0, 1.0),
+    )
+    assert env._value_pick_command_reroll("model", 0, "shooting", ("hit", "wound")) == "wound"
+
+
+def test_value_pick_charge_uses_mc(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: False
+    monkeypatch.setattr(env, "_mc_value_command_reroll_charge", lambda side, u, sub, n: (5.0, 1.0))
+    assert env._value_pick_command_reroll("model", 0, "charge", ("charge",)) == "charge"
+
+
+def test_value_pick_shooting_none_below_eps(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: True
+    monkeypatch.setattr(env, "_mc_value_command_reroll_shooting", lambda *a, **k: (1.0, 1.0))
+    assert env._value_pick_command_reroll("model", 0, "shooting", ("hit", "wound")) is None
