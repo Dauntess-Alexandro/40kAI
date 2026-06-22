@@ -12,7 +12,7 @@ from tests.engine.phases._helpers import build_env
 def test_registry_has_command_reroll():
     d = by_id("command_reroll")
     assert d.cp_cost == 1
-    assert d.effect_id == "command_reroll_wounds"
+    assert d.effect_id == "command_reroll"
 
 
 def test_fight_window_offers_command_reroll():
@@ -34,7 +34,9 @@ def test_apply_command_reroll_writes_reroll_effect():
     assert env.modelCP == 1
     assert ("model", "command_reroll", 3, "fight", 0) in env.stratagem_used
     assert any(
-        rec.get("effect_id") == "command_reroll_wounds" and rec.get("reroll_wounds") == "one"
+        rec.get("effect_id") == "command_reroll"
+        and rec.get("reroll_roll") == "wound"
+        and rec.get("consumed") is False
         for rec in env.active_stratagem_effects
     )
 
@@ -47,12 +49,33 @@ def test_fight_effects_for_attacker_returns_reroll_wounds():
             "unit_idx": 0,
             "round": int(env.battle_round),
             "phase": "fight",
-            "effect_id": "command_reroll_wounds",
-            "reroll_wounds": "all",
+            "effect_id": "command_reroll",
+            "reroll_roll": "wound",
+            "consumed": False,
         }
     ]
     eff = env._fight_effects_for_attacker("model", 0)
-    assert eff == {"reroll_wounds": "all"}
+    assert eff == {"reroll_wounds": "one"}
+
+
+def test_fight_effect_consumed_after_first_read():
+    env = build_env()
+    env.battle_round = 1
+    env.active_stratagem_effects = [
+        {
+            "side": "model",
+            "unit_idx": 0,
+            "round": 1,
+            "phase": "fight",
+            "effect_id": "command_reroll",
+            "reroll_roll": "wound",
+            "consumed": False,
+        }
+    ]
+    first = env._fight_effects_for_attacker("model", 0)
+    assert first == {"reroll_wounds": "one"}
+    second = env._fight_effects_for_attacker("model", 0)
+    assert second is None
 
 
 def _engaged(env):

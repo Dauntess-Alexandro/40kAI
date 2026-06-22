@@ -2338,8 +2338,13 @@ class Warhammer40kEnv(gym.Env):
                 unit_data_list = self.unit_data if str(side) == "model" else self.enemy_data
                 if 0 <= int(unit_idx) < len(unit_data_list) and self._unit_has_keyword(unit_data_list[int(unit_idx)], "character"):
                     effects["ap_improve"] = int(effects.get("ap_improve", 0)) + 1
-            elif rec.get("effect_id") == "command_reroll_wounds":
-                effects["reroll_wounds"] = str(rec.get("reroll_wounds", "all"))
+            elif rec.get("effect_id") == "command_reroll" and not rec.get("consumed", False):
+                roll = str(rec.get("reroll_roll", "wound"))
+                key = {"hit": "reroll_hits", "wound": "reroll_wounds"}.get(roll)
+                if key is None:
+                    continue
+                effects[key] = "one"
+                rec["consumed"] = True
         return effects or None
 
     def _clear_phase_stratagem_effects(self, phase: str) -> None:

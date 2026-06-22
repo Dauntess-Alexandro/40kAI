@@ -7,7 +7,15 @@ def _unwrap(env):
     return getattr(env, "unwrapped", env)
 
 
-def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase: str | None = None) -> dict:
+def apply(
+    env,
+    side: str,
+    stratagem_id: str,
+    unit_idx: int | None = None,
+    phase: str | None = None,
+    *,
+    reroll_roll: str = "wound",
+) -> dict:
     """Списать CP за стратагему и записать использование в журнал env.
 
     Единая точка CP-расхода. Решение «можно ли» — по наличию CP (cp >= cost).
@@ -42,7 +50,6 @@ def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase:
     )
     _FIGHT_EFFECT_PAYLOAD = {
         "hungry_void_strength_mod": {"strength_mod": 1},
-        "command_reroll_wounds": {"reroll_wounds": "one"},
     }
     if d.effect_id in _FIGHT_EFFECT_PAYLOAD and unit_idx is not None:
         active = getattr(e, "active_stratagem_effects", None)
@@ -58,4 +65,21 @@ def apply(env, side: str, stratagem_id: str, unit_idx: int | None = None, phase:
         }
         rec.update(_FIGHT_EFFECT_PAYLOAD[d.effect_id])
         active.append(rec)
+    if d.effect_id == "command_reroll" and unit_idx is not None:
+        active = getattr(e, "active_stratagem_effects", None)
+        if active is None:
+            active = []
+            e.active_stratagem_effects = active
+        roll = reroll_roll if reroll_roll in ("hit", "wound") else "wound"
+        active.append(
+            {
+                "side": str(side),
+                "unit_idx": int(unit_idx),
+                "round": int(getattr(e, "battle_round", 1)),
+                "phase": str(phase or getattr(e, "phase", "fight") or "fight"),
+                "effect_id": "command_reroll",
+                "reroll_roll": roll,
+                "consumed": False,
+            }
+        )
     return {"ok": True, "cp_spent": d.cp_cost, "reason": None}

@@ -43,12 +43,13 @@ def test_apply_unknown_id_raises():
         stratagem_engine.apply(env, "model", "does_not_exist", 0)
 
 
-def test_command_reroll_payload_is_single():
+def test_command_reroll_payload_records_roll_subtype():
     env = build_env()
     env.modelCP = 3
     env.battle_round = 1
     env.stratagem_used = []
     env.active_stratagem_effects = []
-    stratagem_engine.apply(env, "model", "command_reroll", 0, phase="fight")
-    rec = [r for r in env.active_stratagem_effects if r["effect_id"] == "command_reroll_wounds"][0]
-    assert rec["reroll_wounds"] == "one"
+    stratagem_engine.apply(env, "model", "command_reroll", 0, phase="fight", reroll_roll="hit")
+    rec = [r for r in env.active_stratagem_effects if r["effect_id"] == "command_reroll"][0]
+    assert rec["reroll_roll"] == "hit"
+    assert rec["consumed"] is False

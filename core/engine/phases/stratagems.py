@@ -137,8 +137,8 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Command-Re-roll
     #   WHEN: любой момент игры, перед/после броска. COST: 1 CP. EFFECT: ре-ролл ОДНОГО броска
     #   (hit/wound/save/charge/D6 и т.п.). RESTRICTION: 1 раз на бросок.
-    # Реализация (песочница): упрощено до fight-phase — ре-ролл ОДНОГО проваленного wound-броска
-    # атаки юнита (fight-only упрощение реального per-roll правила).
+    # Реализация (песочница, Этап 1 fidelity): fight-phase — ре-ролл ОДНОГО проваленного
+    # hit/wound-броска атаки юнита; конкретный подтип хранится в active_stratagem_effects.
     StratagemDef(
         id="command_reroll",
         name_ru="Command Re-roll (упрощённо)",
@@ -149,7 +149,7 @@ REGISTRY: tuple[StratagemDef, ...] = (
         scope="self_unit",
         keyword_req=(),
         usage_limit=UsageLimit.PER_PHASE,
-        effect_id="command_reroll_wounds",
+        effect_id="command_reroll",
     ),
     # Go to Ground — Core Stratagem 10ed (Wahapedia):
     #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Go-to-Ground
