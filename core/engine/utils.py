@@ -378,8 +378,19 @@ def _worst_failed_index(dice, threshold):
     return worst_idx
 
 
-def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attackeeData,
-           rangeOfComb="Ranged", effects=None, roller=None, distance_to_target=None, hit_on_6: bool = False):
+def attack(
+    attackerHealth,
+    attackerWeapon,
+    attackerData,
+    attackeeHealth,
+    attackeeData,
+    rangeOfComb="Ranged",
+    effects=None,
+    roller=None,
+    distance_to_target=None,
+    hit_on_6: bool = False,
+    reroll_decider=None,
+):
     """Attack resolution (приведено к "10e-стилю" бросков).
 
     Поддержано (упрощённо):
@@ -420,6 +431,32 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         return roller(num=num, max=max)
 
     eff = _normalize_effects(effects)
+
+    def _maybe_decider_reroll(stage, dice, threshold, rerolled):
+        # Реактивный hook: после броска стадии реролим худшую проваленную кость, если decider разрешил.
+        if reroll_decider is None:
+            return dice
+        try:
+            want = bool(reroll_decider(stage, dice, int(threshold)))
+        except Exception:
+            want = False
+        if not want:
+            return dice
+        wi = None
+        worst = None
+        for idx, d in enumerate(dice):
+            if idx in rerolled:
+                continue
+            d = int(d)
+            if d < int(threshold) and (worst is None or d < worst):
+                worst = d
+                wi = idx
+        if wi is None:
+            return dice
+        new = _roll_with_stage(num=1, stage=stage)
+        dice[wi] = int(new if isinstance(new, int) else list(new)[0])
+        rerolled.add(wi)
+        return dice
 
     # --- Targets / profile parsing ---
     sv_base = _to_int(attackeeData.get("Sv"), default=7)
@@ -495,6 +532,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
     else:
         rolls = np.array(list(rolls), dtype=int)
 
+    hit_rerolled = set()
     if eff["reroll_hits"]:
         if eff["reroll_hits"] == "one":
             wi = _worst_failed_index(rolls, bs)
@@ -512,6 +550,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
             for j, idx in enumerate(need):
                 rolls[idx] = int(new[j])
+    rolls = _maybe_decider_reroll("hit", rolls, bs, hit_rerolled)
 
     lethal = _weapon_has_lethal_hits(attackerWeapon)
 
@@ -550,6 +589,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
             else:
                 wound_rolls = np.array(list(wound_rolls), dtype=int)
 
+            wound_rerolled = set()
             if eff["reroll_wounds"]:
                 if eff["reroll_wounds"] == "one":
                     wi = _worst_failed_index(wound_rolls, wt)
@@ -567,6 +607,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
                     new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
                     for j, idx in enumerate(need):
                         wound_rolls[idx] = int(new[j])
+            wound_rolls = _maybe_decider_reroll("wound", wound_rolls, wt, wound_rerolled)
 
             for w in wound_rolls:
                 w = int(w)
@@ -583,6 +624,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         else:
             save_rolls = np.array(list(save_rolls), dtype=int)
 
+        save_rerolled = set()
         if eff["reroll_save"]:
             need = []
             for idx, r in enumerate(save_rolls):
@@ -596,6 +638,7 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
                 new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
                 for j, idx in enumerate(need):
                     save_rolls[idx] = int(new[j])
+        save_rolls = _maybe_decider_reroll("save", save_rolls, save_target, save_rerolled)
 
         for k in range(len(dmg_instances)):
             r = int(save_rolls[k])
