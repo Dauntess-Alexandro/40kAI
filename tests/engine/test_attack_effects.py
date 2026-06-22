@@ -123,6 +123,25 @@ def test_reroll_hits_all_rerolls_misses():
     assert float(sum(rer)) == 1.0
 
 
+def test_reroll_hits_one_rerolls_worst_failure():
+    weapon = _ranged_weapon(S=4, Attacks=2)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+    one, _ = attack(
+        1,
+        weapon,
+        _ATT_DATA,
+        10,
+        defender,
+        effects={"reroll_hits": "one"},
+        roller=StubRoller(hit=[2, 3, 6], wound=[6]),
+    )
+    assert float(sum(one)) == 1.0
+
+
+def test_normalize_effects_reroll_hits_one_allowed():
+    assert _normalize_effects({"reroll_hits": "one"})["reroll_hits"] == "one"
+
+
 def test_reroll_wounds_ones():
     # S4 vs T4 → wound 4+. hit [5] (хит), wound [1] (провал-единица) → урон 0;
     # reroll_wounds="ones" [1]→ре-ролл [6] (ранит) → урон 1.

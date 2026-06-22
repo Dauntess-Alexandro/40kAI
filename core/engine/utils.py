@@ -339,7 +339,7 @@ def _normalize_effects(effects):
     if isinstance(effects, dict):
         out["cover"] = bool(effects.get("cover") or effects.get("benefit_of_cover"))
         rh = effects.get("reroll_hits")
-        out["reroll_hits"] = rh if rh in ("ones", "all") else None
+        out["reroll_hits"] = rh if rh in ("ones", "all", "one") else None
         rw = effects.get("reroll_wounds")
         out["reroll_wounds"] = rw if rw in ("ones", "all", "one") else None
         rs = effects.get("reroll_save")
@@ -496,13 +496,17 @@ def attack(attackerHealth, attackerWeapon, attackerData, attackeeHealth, attacke
         rolls = np.array(list(rolls), dtype=int)
 
     if eff["reroll_hits"]:
-        need = []
-        for idx, r in enumerate(rolls):
-            r = int(r)
-            if eff["reroll_hits"] == "ones" and r == 1:
-                need.append(idx)
-            elif eff["reroll_hits"] == "all" and r != 6 and r < bs:
-                need.append(idx)
+        if eff["reroll_hits"] == "one":
+            wi = _worst_failed_index(rolls, bs)
+            need = [wi] if wi is not None else []
+        else:
+            need = []
+            for idx, r in enumerate(rolls):
+                r = int(r)
+                if eff["reroll_hits"] == "ones" and r == 1:
+                    need.append(idx)
+                elif eff["reroll_hits"] == "all" and r != 6 and r < bs:
+                    need.append(idx)
         if need:
             new = _roll_with_stage(num=len(need), stage="hit")
             new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
