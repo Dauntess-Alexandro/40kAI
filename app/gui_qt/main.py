@@ -132,6 +132,7 @@ def _default_inference_mode_for_algo(algo: str) -> str:
         return "search"
     if is_gumbel_az_algo(key):
         return "gumbel"
+    # dqn/ppo: дефолт greedy (как раньше); стохастика включается осознанно.
     return "greedy"
 
 
@@ -143,6 +144,10 @@ def _valid_inference_modes_for_algo(algo: str) -> set[str]:
         return {"greedy", "search"}
     if is_gumbel_az_algo(key):
         return {"greedy", "gumbel"}
+    if key == "dqn":
+        return {"greedy", "epsilon"}
+    if key == "ppo":
+        return {"greedy", "stochastic"}
     return {"greedy"}
 
 
@@ -402,6 +407,11 @@ class GUIController(QtCore.QObject):
         self._eval_p2_gaz_temperature = 0.05
         self._eval_p1_gaz_sims = 32
         self._eval_p2_gaz_sims = 32
+        # DQN→epsilon, PPO→temperature (вариант 1): per-side числовые параметры.
+        self._eval_p1_dqn_epsilon = 0.10
+        self._eval_p2_dqn_epsilon = 0.10
+        self._eval_p1_ppo_temperature = 1.0
+        self._eval_p2_ppo_temperature = 1.0
         self._eval_p1_icon_text = "AI"
         self._eval_p2_icon_text = "HR"
         self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
@@ -1418,6 +1428,16 @@ class GUIController(QtCore.QObject):
                 {"value": "gumbel", "label": "Search"},
                 {"value": "greedy", "label": "Greedy"},
             ]
+        if algo_key == "dqn":
+            return [
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "epsilon", "label": "Epsilon"},
+            ]
+        if algo_key == "ppo":
+            return [
+                {"value": "greedy", "label": "Greedy"},
+                {"value": "stochastic", "label": "Stochastic"},
+            ]
         return []
 
     @QtCore.Property(bool, notify=evalSetupChanged)
@@ -1462,7 +1482,27 @@ class GUIController(QtCore.QObject):
             return mode == "search"
         if is_gumbel_az_algo(algo):
             return mode == "gumbel"
+        if algo == "dqn":
+            return mode == "epsilon"
+        if algo == "ppo":
+            return mode == "stochastic"
         return False
+
+    def _eval_side_temp_label(self, side: str) -> str:
+        # Поле числового параметра общее: для DQN это Epsilon, для PPO/прочих — Темп.
+        algo = self._eval_side_algo_key(side)
+        if algo == "dqn":
+            return "Epsilon:"
+        return "Темп.:"
+
+    def _sanitize_epsilon(self, raw: str, default: float) -> float:
+        try:
+            value = float(str(raw).strip().replace(",", "."))
+        except Exception:
+            return float(default)
+        if not math.isfinite(value):
+            return float(default)
+        return float(max(0.0, min(1.0, value)))
 
     def _sanitize_temperature(self, raw: str, default: float) -> float:
         try:
@@ -1513,6 +1553,7 @@ class GUIController(QtCore.QObject):
         return "Sims:"
 
     def _eval_side_temperature(self, side: str) -> float:
+        # Общий числовой параметр стороны: для DQN это epsilon, для PPO/прочих — температура.
         side_key = str(side).upper()
         algo = self._eval_side_algo_key(side_key)
         if side_key == "P1":
@@ -1522,6 +1563,10 @@ class GUIController(QtCore.QObject):
                 return float(self._eval_p1_gmz_temperature)
             if is_gumbel_az_algo(algo):
                 return float(self._eval_p1_gaz_temperature)
+            if algo == "dqn":
+                return float(self._eval_p1_dqn_epsilon)
+            if algo == "ppo":
+                return float(self._eval_p1_ppo_temperature)
             return 0.10
         if is_az_algo(algo):
             return float(self._eval_p2_az_temperature)
@@ -1529,6 +1574,10 @@ class GUIController(QtCore.QObject):
             return float(self._eval_p2_gmz_temperature)
         if is_gumbel_az_algo(algo):
             return float(self._eval_p2_gaz_temperature)
+        if algo == "dqn":
+            return float(self._eval_p2_dqn_epsilon)
+        if algo == "ppo":
+            return float(self._eval_p2_ppo_temperature)
         return 0.10
 
     @QtCore.Property(bool, notify=evalSetupChanged)
@@ -1538,6 +1587,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(bool, notify=evalSetupChanged)
     def evalP2InferenceTemperatureVisible(self) -> bool:
         return self._eval_side_temp_visible("P2")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP1InferenceTemperatureLabel(self) -> str:
+        return self._eval_side_temp_label("P1")
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalP2InferenceTemperatureLabel(self) -> str:
+        return self._eval_side_temp_label("P2")
 
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalP1InferenceTemperature(self) -> str:
@@ -3102,17 +3159,27 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot(str)
     def set_eval_p1_inference_temperature(self, value: str) -> None:
         algo = self._eval_side_algo_key("P1")
-        parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
         changed = False
         if is_az_algo(algo):
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
             changed = abs(parsed - float(self._eval_p1_az_temperature)) > 1e-9
             self._eval_p1_az_temperature = parsed
         elif algo in {"gumbel_muzero", "sampled_muzero"}:
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
             changed = abs(parsed - float(self._eval_p1_gmz_temperature)) > 1e-9
             self._eval_p1_gmz_temperature = parsed
         elif is_gumbel_az_algo(algo):
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
             changed = abs(parsed - float(self._eval_p1_gaz_temperature)) > 1e-9
             self._eval_p1_gaz_temperature = parsed
+        elif algo == "dqn":
+            parsed = self._sanitize_epsilon(value, self._eval_side_temperature("P1"))
+            changed = abs(parsed - float(self._eval_p1_dqn_epsilon)) > 1e-9
+            self._eval_p1_dqn_epsilon = parsed
+        elif algo == "ppo":
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P1"))
+            changed = abs(parsed - float(self._eval_p1_ppo_temperature)) > 1e-9
+            self._eval_p1_ppo_temperature = parsed
         if changed:
             self.evalSetupChanged.emit()
 
@@ -3136,17 +3203,27 @@ class GUIController(QtCore.QObject):
     @QtCore.Slot(str)
     def set_eval_p2_inference_temperature(self, value: str) -> None:
         algo = self._eval_side_algo_key("P2")
-        parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
         changed = False
         if is_az_algo(algo):
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
             changed = abs(parsed - float(self._eval_p2_az_temperature)) > 1e-9
             self._eval_p2_az_temperature = parsed
         elif algo in {"gumbel_muzero", "sampled_muzero"}:
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
             changed = abs(parsed - float(self._eval_p2_gmz_temperature)) > 1e-9
             self._eval_p2_gmz_temperature = parsed
         elif is_gumbel_az_algo(algo):
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
             changed = abs(parsed - float(self._eval_p2_gaz_temperature)) > 1e-9
             self._eval_p2_gaz_temperature = parsed
+        elif algo == "dqn":
+            parsed = self._sanitize_epsilon(value, self._eval_side_temperature("P2"))
+            changed = abs(parsed - float(self._eval_p2_dqn_epsilon)) > 1e-9
+            self._eval_p2_dqn_epsilon = parsed
+        elif algo == "ppo":
+            parsed = self._sanitize_temperature(value, self._eval_side_temperature("P2"))
+            changed = abs(parsed - float(self._eval_p2_ppo_temperature)) > 1e-9
+            self._eval_p2_ppo_temperature = parsed
         if changed:
             self.evalSetupChanged.emit()
 
@@ -5644,6 +5721,23 @@ class GUIController(QtCore.QObject):
             env.insert("SMZ_EVAL_TEMPERATURE", f"{self._eval_side_temperature(learner_side):.3f}")
         if opponent_algo == "sampled_muzero" and smz_opponent_mode == "search":
             env.insert("SMZ_EVAL_OPPONENT_TEMPERATURE", f"{self._eval_side_temperature(opponent_side):.3f}")
+        # DQN→epsilon / PPO→temperature (вариант 1). Резолвер eval читает не-opponent
+        # ключи (обе стороны через один resolve_eval_search_cfg), поэтому режим берём
+        # со стороны, которая реально использует dqn/ppo (приоритет — learner).
+        dqn_side = learner_side if learner_algo == "dqn" else (opponent_side if opponent_algo == "dqn" else "")
+        ppo_side = learner_side if learner_algo == "ppo" else (opponent_side if opponent_algo == "ppo" else "")
+        if dqn_side:
+            _dqn_mode = self._eval_side_effective_inference_mode(dqn_side)
+            dqn_eval_mode = _dqn_mode if _dqn_mode in {"greedy", "epsilon"} else "greedy"
+            env.insert("DQN_EVAL_MODE", dqn_eval_mode)
+            if dqn_eval_mode == "epsilon":
+                env.insert("DQN_EVAL_EPSILON", f"{self._eval_side_temperature(dqn_side):.3f}")
+        if ppo_side:
+            _ppo_mode = self._eval_side_effective_inference_mode(ppo_side)
+            ppo_eval_mode = _ppo_mode if _ppo_mode in {"greedy", "stochastic"} else "greedy"
+            env.insert("PPO_EVAL_MODE", ppo_eval_mode)
+            if ppo_eval_mode == "stochastic":
+                env.insert("PPO_EVAL_TEMPERATURE", f"{self._eval_side_temperature(ppo_side):.3f}")
         env.insert("AGENT_LOG_FILE", str(AGENT_TRAIN_LOG_PATH.relative_to(PROJECT_ROOT)))
         self._process.setProcessEnvironment(env)
 

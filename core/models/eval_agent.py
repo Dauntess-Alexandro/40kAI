@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,7 @@ from core.models.utils import (
     build_shoot_action_mask,
     convertToDict,
     normalize_state_dict,
+    sample_action_list_from_space,
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
@@ -94,6 +96,27 @@ def resolve_eval_search_cfg(algo: str) -> EvalSearchCfg:
             sample_temperature=float(os.getenv("SMZ_EVAL_SAMPLE_TEMPERATURE", "1.0")),
             discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
         )
+    elif algo == "dqn":
+        # DQN→epsilon: режимы greedy/epsilon (по аналогии с mode у старших алго).
+        # greedy — argmax (как раньше); epsilon — epsilon-greedy по легальным маскам.
+        mode = str(os.getenv("DQN_EVAL_MODE", "greedy")).strip().lower()
+        if mode not in {"greedy", "epsilon"}:
+            mode = "greedy"
+        # В epsilon-режиме значение из DQN_EVAL_EPSILON (CLI-fallback на EVAL_EPSILON).
+        eps = float(os.getenv("DQN_EVAL_EPSILON", str(epsilon))) if mode == "epsilon" else 0.0
+        eps = max(0.0, min(1.0, eps))
+        epsilon = eps
+        deterministic = mode == "greedy"
+        search.update(mode=mode, epsilon=eps)
+    elif algo == "ppo":
+        # PPO→temperature: режимы greedy/stochastic. greedy — argmax (как раньше);
+        # stochastic — сэмпл из политики с температурой.
+        mode = str(os.getenv("PPO_EVAL_MODE", "greedy")).strip().lower()
+        if mode not in {"greedy", "stochastic"}:
+            mode = "greedy"
+        temp = max(0.001, min(2.0, float(os.getenv("PPO_EVAL_TEMPERATURE", "1.0"))))
+        deterministic = mode == "greedy"
+        search.update(mode=mode, temperature=temp)
     return EvalSearchCfg(algo=algo, deterministic=deterministic, epsilon=epsilon, search=search, opponent_override_active=override)
 
 
@@ -167,6 +190,15 @@ class EvalAgent:
 
     # --- per-algo действия (тела 1:1 с opponent_adapter.build_policy_fn) ---
     def _select_dqn(self, env, obs_t, masks_cpu, side):
+        # epsilon-greedy (DQN→epsilon): с вероятностью cfg.epsilon — случайное легальное
+        # действие (по per-head маскам стороны side), иначе argmax (как раньше).
+        epsilon = float(getattr(self.cfg, "epsilon", 0.0) or 0.0)
+        if epsilon > 0.0 and random.random() < epsilon:
+            action_list = sample_action_list_from_space(env, self.len_model, masks_seq=masks_cpu)
+            action_dict = convertToDict(torch.tensor([action_list], device="cpu"))
+            for i_u in range(self.len_model):
+                action_dict[f"move_num_{i_u}"] = int(action_list[6 + i_u])
+            return action_dict, self._fight_plan(env, side)
         with torch.no_grad():
             decision = self.net(obs_t)
         shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False, side=side)
@@ -187,9 +219,17 @@ class EvalAgent:
         return action_dict, self._fight_plan(env, side)
 
     def _select_ppo(self, env, obs_t, masks_cpu, side):
+        # PPO→temperature: в stochastic-режиме сэмпл из политики с температурой;
+        # в greedy (deterministic) — argmax, температура игнорируется в net.act.
+        temperature = float(self.cfg.search.get("temperature", 1.0)) if self.cfg.search else 1.0
         masks = [m.to(self.device).unsqueeze(0) for m in masks_cpu]
         with torch.no_grad():
-            action_t, _lp, _v = self.net.act(obs_t, masks_by_head=masks, deterministic=self.cfg.deterministic)
+            action_t, _lp, _v = self.net.act(
+                obs_t,
+                masks_by_head=masks,
+                deterministic=self.cfg.deterministic,
+                temperature=temperature,
+            )
         action_np = action_t.squeeze(0).detach().cpu().numpy().tolist()
         action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
         for i_u in range(self.len_model):

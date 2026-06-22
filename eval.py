@@ -1148,6 +1148,9 @@ def main():
         learner_state = policy_state
 
     cfg = resolve_eval_search_cfg(algo)
+    # Стартовый лог epsilon берём из cfg (DQN→epsilon): FORCE_GREEDY больше не маскирует
+    # реальный epsilon, который применяет EvalAgent (run_episode читает learner_agent.cfg.epsilon).
+    epsilon = float(getattr(cfg, "epsilon", epsilon))
     # Примечание: после унификации на EvalAgent обе стороны строятся через один
     # resolve_eval_search_cfg, который *_OPPONENT_* ключи в search НЕ читает (они
     # кормят только диагностическую лог-строку modes_tail ниже). Поэтому наличие
@@ -1260,6 +1263,20 @@ def main():
             gaz_opp_tail += f"(temp={float(os.getenv('GAZ_EVAL_TEMPERATURE', '0.05')):.3f})"
         mode_parts.append(gaz_eval_tail)
         mode_parts.append(gaz_opp_tail)
+    if algo == "dqn" or opponent_algo_label == "dqn":
+        # DQN→epsilon: режим/epsilon из learner-cfg (резолвер унифицирован для обеих сторон).
+        dqn_mode = str(os.getenv("DQN_EVAL_MODE", "greedy")).strip().lower() or "greedy"
+        dqn_tail = f"dqn_eval_mode={dqn_mode}"
+        if dqn_mode == "epsilon":
+            dqn_tail += f"(eps={float(cfg.epsilon):.3f})"
+        mode_parts.append(dqn_tail)
+    if algo == "ppo" or opponent_algo_label == "ppo":
+        # PPO→temperature: режим/temp из learner-cfg.
+        ppo_mode = str(os.getenv("PPO_EVAL_MODE", "greedy")).strip().lower() or "greedy"
+        ppo_tail = f"ppo_eval_mode={ppo_mode}"
+        if ppo_mode == "stochastic":
+            ppo_tail += f"(temp={float(cfg.search.get('temperature', 1.0)):.3f})"
+        mode_parts.append(ppo_tail)
     modes_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
     log(
         f"Старт оценки: игр={games}, epsilon={epsilon:.3f}, "

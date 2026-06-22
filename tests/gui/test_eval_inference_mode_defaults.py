@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.gui_qt.main import _coerce_eval_inference_mode, _default_inference_mode_for_algo
+from app.gui_qt.main import (
+    _coerce_eval_inference_mode,
+    _default_inference_mode_for_algo,
+    _valid_inference_modes_for_algo,
+)
 
 
 @pytest.mark.parametrize(
@@ -15,10 +19,26 @@ from app.gui_qt.main import _coerce_eval_inference_mode, _default_inference_mode
         ("gumbel_muzero", "search"),
         ("sampled_muzero", "search"),
         ("gumbel_az", "gumbel"),
+        # DQN/PPO: дефолт greedy (поведение как раньше).
+        ("dqn", "greedy"),
+        ("ppo", "greedy"),
     ],
 )
 def test_default_inference_mode_for_algo(algo: str, expected: str) -> None:
     assert _default_inference_mode_for_algo(algo) == expected
+
+
+def test_valid_modes_dqn_ppo() -> None:
+    assert _valid_inference_modes_for_algo("dqn") == {"greedy", "epsilon"}
+    assert _valid_inference_modes_for_algo("ppo") == {"greedy", "stochastic"}
+
+
+def test_coerce_dqn_ppo_modes() -> None:
+    assert _coerce_eval_inference_mode("epsilon", "dqn") == "epsilon"
+    assert _coerce_eval_inference_mode("stochastic", "ppo") == "stochastic"
+    # Чужой режим коэрсится в дефолт (greedy).
+    assert _coerce_eval_inference_mode("mcts", "dqn") == "greedy"
+    assert _coerce_eval_inference_mode("epsilon", "ppo") == "greedy"
 
 
 def test_coerce_preserves_search_when_side_is_heuristic() -> None:

@@ -167,7 +167,12 @@ class ActorCriticMultiHead(nn.Module):
         obs: torch.Tensor,
         masks_by_head: list[torch.Tensor | None] | None = None,
         deterministic: bool = False,
+        temperature: float = 1.0,
     ):
+        # temperature: масштаб логитов перед сэмплом (eval PPO→stochastic). 1.0 — без изменений
+        # (тренировка вызывает act() с дефолтом). <1 заостряет распределение, >1 сглаживает.
+        # На deterministic-путь (argmax) температура не влияет.
+        temp = float(temperature) if temperature else 1.0
         logits_list, values = self.forward(obs)
         actions = []
         total_logprob = torch.zeros(obs.shape[0], device=obs.device, dtype=torch.float32)
@@ -176,6 +181,8 @@ class ActorCriticMultiHead(nn.Module):
             if masks_by_head is not None and idx < len(masks_by_head):
                 mask = masks_by_head[idx]
             logits = _apply_action_mask(logits, mask)
+            if not deterministic and temp > 0.0 and temp != 1.0:
+                logits = logits / temp
             dist = Categorical(logits=logits)
             if deterministic:
                 head_actions = logits.argmax(dim=1)

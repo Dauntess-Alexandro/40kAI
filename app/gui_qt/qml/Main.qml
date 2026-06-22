@@ -5084,7 +5084,7 @@ ApplicationWindow {
                                                     }
                                                 }
                                                 Label {
-                                                    text: "Темп.:"
+                                                    text: controller.evalP1InferenceTemperatureLabel
                                                     font.capitalization: Font.AllUppercase
                                                     font.letterSpacing: 0.8
                                                     color: root.uiTextMuted
@@ -5293,7 +5293,7 @@ ApplicationWindow {
                                                     }
                                                 }
                                                 Label {
-                                                    text: "Темп.:"
+                                                    text: controller.evalP2InferenceTemperatureLabel
                                                     font.capitalization: Font.AllUppercase
                                                     font.letterSpacing: 0.8
                                                     color: root.uiTextMuted
