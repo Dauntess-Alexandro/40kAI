@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import numpy as np
 import torch
 
 from core.models.dqn_stratagem_bridge import dqn_build_fight_plan, install_dqn_stratagem_policy
@@ -35,13 +34,15 @@ def test_fight_plan_apply_wins():
 
 
 def test_fight_plan_empty_when_pass_wins():
+    # command_reroll пре-фильтрован (кладётся без value-гейта); прочие стратагемы (hungry_void)
+    # должны быть отвергнуты, когда pass-ветка ценнее apply-ветки.
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     env.modelCP = 3
     env.unitInAttack[0] = [1, 0]
     net = _ValueSeqNet([0.1, 0.9])
     plan = dqn_build_fight_plan(env, net, torch.device("cpu"), side="model")
-    assert plan == {}
+    assert all(v == "command_reroll" for v in plan.values())
 
 
 def test_recursion_guard_returns_empty():

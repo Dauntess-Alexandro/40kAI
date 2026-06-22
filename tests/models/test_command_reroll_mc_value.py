@@ -91,3 +91,18 @@ def test_value_pick_fight_none_when_mc_below_eps(monkeypatch):
 
     monkeypatch.setattr(env, "_mc_value_command_reroll_fight", lambda *a, **k: (1.0, 1.0))
     assert env._value_pick_command_reroll("model", 0, "fight", ("hit", "wound")) is None
+
+
+def test_dqn_build_fight_plan_prefilters_command_reroll():
+    import torch
+
+    from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
+
+    class _PassWinsNet:  # apply всегда хуже pass → weak-гейт отверг бы стратагему
+        def infer_with_value(self, obs, masks_by_head=None):
+            return None, torch.tensor([0.0])
+
+    env = build_env()
+    _engage(env)
+    plan = dqn_build_fight_plan(env, _PassWinsNet(), torch.device("cpu"), side="model")
+    assert plan.get(0) == "command_reroll"  # пре-фильтр кладёт несмотря на weak value

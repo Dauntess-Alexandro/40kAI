@@ -83,6 +83,9 @@ def dqn_build_fight_plan(env, policy_net, device, side: str = "model") -> dict[i
                 continue
             if u in plan:
                 continue
+            if d.id == "command_reroll":
+                plan[u] = d.id  # пре-фильтр: финальное «да/нет» и подтип — MC в _apply_pending_fight_stratagem_plan
+                continue
             snap = e.snapshot_state()
             try:
                 with e.simulation_mode():

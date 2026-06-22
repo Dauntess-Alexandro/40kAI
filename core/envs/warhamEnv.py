@@ -2649,13 +2649,8 @@ class Warhammer40kEnv(gym.Env):
             # B3 follow-up: читаем CP заново на каждой итерации — соседний юнит мог уже списать CP,
             # иначе value-гейт оценивал бы по устаревшему запасу.
             cp = self.modelCP if side == "model" else self.enemyCP
-            if not self._should_use_stratagem(
-                str(sid), side, ui, [ui], "fight", cp,
-                net=getattr(self, "_reaction_net_by_side", {}).get(side),
-            ):
-                continue
+            sid_raw = str(sid)
             try:
-                sid_raw = str(sid)
                 if sid_raw.startswith("command_reroll:"):
                     _apply_stratagem(
                         self,
@@ -2666,10 +2661,16 @@ class Warhammer40kEnv(gym.Env):
                         reroll_roll=sid_raw.split(":", 1)[1],
                     )
                 elif sid_raw == "command_reroll":
-                    # Stage 4: под-тип hit/wound выбирает value-policy (вырождается в "hit"); fallback wound.
-                    roll = self._value_pick_command_reroll(side, ui, "fight", ("hit", "wound")) or "wound"
+                    roll = self._value_pick_command_reroll(side, ui, "fight", ("hit", "wound"))  # MC-гейт
+                    if roll is None:
+                        continue
                     _apply_stratagem(self, side, "command_reroll", ui, phase="fight", reroll_roll=roll)
                 else:
+                    if not self._should_use_stratagem(
+                        sid_raw, side, ui, [ui], "fight", cp,
+                        net=getattr(self, "_reaction_net_by_side", {}).get(side),
+                    ):
+                        continue
                     _apply_stratagem(self, side, sid_raw, ui, phase="fight")
             except Exception as exc:
                 self._log(f"[STRATAGEM] pending fight plan: не применили {sid!r} на юните {ui}: {exc}")
