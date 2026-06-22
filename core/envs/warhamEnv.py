@@ -2943,6 +2943,10 @@ class Warhammer40kEnv(gym.Env):
             sid_raw = str(sid)
             try:
                 if sid_raw.startswith("command_reroll:"):
+                    # anti-double: action-голова strat_fight могла уже применить реролл на юните
+                    # (под-проект 4) → не дублируем colon-формой fight-плана.
+                    if self._command_reroll_record_exists(side, ui, "fight"):
+                        continue
                     _apply_stratagem(
                         self,
                         side,

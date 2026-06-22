@@ -181,3 +181,25 @@ def test_final_policy_from_visits_nondegenerate_for_strat_head():
         f"policy target для strat_fight[1] == 0, визиты child_b не учтены. "
         f"pi={pi_strat_fight}"
     )
+
+
+def test_head_and_colon_fight_plan_no_double_apply():
+    """anti-double: голова strat_fight + colon-form fight-план (как у AZ) на одном юните →
+    ровно одно списание CP (colon-ветка _apply_pending_fight_stratagem_plan видит record и пропускает)."""
+    env = build_env()
+    _setup(env)
+    env.unit_health[0] = 6.0
+    env.enemy_health[0] = 6.0
+    env.unitInAttack[0] = [1, 0]
+    env.enemyInAttack[0] = [1, 0]
+    env.unitCharged = [0] * len(env.unit_health)
+    env.enemyCharged = [0] * len(env.enemy_health)
+    action = {
+        "strat_fight": stratagem_choice_index(Phase.FIGHT, "command_reroll:hit"),
+        "strat_fight_unit": 0,
+    }
+    env._pending_fight_stratagem_plan = {0: "command_reroll:hit"}  # AZ colon-форма
+    cp_before = env.modelCP
+    with env.simulation_mode():
+        env.fight_phase("model", action=action)
+    assert cp_before - env.modelCP <= 1  # без двойного списания
