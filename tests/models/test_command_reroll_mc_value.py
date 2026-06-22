@@ -106,3 +106,38 @@ def test_dqn_build_fight_plan_prefilters_command_reroll():
     _engage(env)
     plan = dqn_build_fight_plan(env, _PassWinsNet(), torch.device("cpu"), side="model")
     assert plan.get(0) == "command_reroll"  # пре-фильтр кладёт несмотря на weak value
+
+
+def test_fight_applies_command_reroll_under_mc(monkeypatch):
+    env = build_env()
+    _engage(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: False
+    env._pending_fight_stratagem_plan = {0: "command_reroll"}
+    # MC: реролл выгоден → применяем wound.
+    monkeypatch.setattr(
+        env, "_mc_value_command_reroll_fight",
+        lambda side, u, sub, n: (5.0, 1.0) if sub == "wound" else (1.0, 1.0),
+    )
+    env._apply_pending_fight_stratagem_plan("model")
+    assert any(r[1] == "command_reroll" and r[3] == "fight" for r in env.stratagem_used)
+
+
+def test_fight_skips_command_reroll_when_mc_negative(monkeypatch):
+    env = build_env()
+    _engage(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    env.reaction_policy = lambda ctx: True
+    env._pending_fight_stratagem_plan = {0: "command_reroll"}
+    monkeypatch.setattr(env, "_mc_value_command_reroll_fight", lambda *a, **k: (1.0, 1.0))
+    env._apply_pending_fight_stratagem_plan("model")
+    assert not any(r[1] == "command_reroll" for r in env.stratagem_used)
+
+
+def test_fight_parity_without_policy():
+    env = build_env()
+    _engage(env)
+    # нет reaction_policy / нет _reaction_net_by_side
+    env._pending_fight_stratagem_plan = {0: "command_reroll"}
+    env._apply_pending_fight_stratagem_plan("model")
+    assert not any(r[1] == "command_reroll" for r in env.stratagem_used)
