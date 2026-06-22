@@ -17,6 +17,7 @@ from core.models.option_candidates import (
 )
 from tests.engine.phases._helpers import build_env
 
+
 def test_resolve_candidate_mode_defaults_option(monkeypatch):
     monkeypatch.delenv("MCTS_CANDIDATE_MODE", raising=False)
     assert resolve_candidate_mode(None) == "option"
@@ -182,3 +183,61 @@ def test_root_option_plus_contains_legacy_greedy():
         max_candidates=32,
     )
     assert joint[0] in list(tuples)
+
+
+def test_fight_stratagem_plan_command_reroll_colon_form():
+    """command_reroll должен кодироваться в colon-форме (command_reroll:hit),
+    чтобы AZ/MCTS-путь без reaction_policy мог применить реролл напрямую."""
+    from core.engine.phases.types import (
+        ActionKind,
+        ActionOption,
+        DecisionWindow,
+        Phase,
+        SubStep,
+        Timing,
+    )
+    from core.models.option_candidates import _fight_stratagem_plan_from_choices
+
+    # Окно с command_reroll:hit (выбор дерева)
+    opt_cr = ActionOption(
+        kind=ActionKind.USE_STRATAGEM,
+        unit_idx=0,
+        meta={"stratagem_id": "command_reroll", "reroll_roll": "hit"},
+        param={"stratagem_id": "command_reroll", "reroll_roll": "hit"},
+    )
+    win_cr = DecisionWindow(
+        window_id="fight:model:cr",
+        owner_side="model",
+        phase=Phase.FIGHT,
+        sub_step=SubStep.FIGHT_UNIT,
+        timing=Timing.MAIN,
+        cursor_unit_idx=0,
+        options=[opt_cr],
+    )
+
+    # Окно с обычной стратагемой (не command_reroll) — должна оставаться без двоеточия
+    opt_hv = ActionOption(
+        kind=ActionKind.USE_STRATAGEM,
+        unit_idx=1,
+        meta={"stratagem_id": "hungry_void"},
+        param={"stratagem_id": "hungry_void"},
+    )
+    win_hv = DecisionWindow(
+        window_id="fight:model:hv",
+        owner_side="model",
+        phase=Phase.FIGHT,
+        sub_step=SubStep.FIGHT_UNIT,
+        timing=Timing.MAIN,
+        cursor_unit_idx=1,
+        options=[opt_hv],
+    )
+
+    plan = _fight_stratagem_plan_from_choices(
+        [win_cr, win_hv],
+        {win_cr.window_id: 0, win_hv.window_id: 0},
+    )
+
+    # command_reroll должен быть в colon-форме с подтипом
+    assert (0, "command_reroll:hit") in plan, f"ожидали command_reroll:hit, получили: {plan}"
+    # hungry_void — без двоеточия
+    assert (1, "hungry_void") in plan, f"ожидали hungry_void, получили: {plan}"

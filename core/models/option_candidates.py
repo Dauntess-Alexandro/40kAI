@@ -184,6 +184,12 @@ def _fight_stratagem_plan_from_choices(
         opt = w.options[oi]
         if opt.kind is ActionKind.USE_STRATAGEM and opt.unit_idx is not None:
             sid = str(opt.meta.get("stratagem_id", "") or "")
+            if sid == "command_reroll":
+                # Сохраняем выбранный деревом под-тип (hit/wound) в colon-форме,
+                # чтобы apply-путь применил реролл напрямую (AZ/MCTS не ставит reaction_policy).
+                roll = str(opt.meta.get("reroll_roll", "") or opt.param.get("reroll_roll", "") or "")
+                if roll:
+                    sid = f"command_reroll:{roll}"
             if sid:
                 plan.append((int(opt.unit_idx), sid))
     return tuple(plan)
