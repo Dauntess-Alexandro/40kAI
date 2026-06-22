@@ -138,7 +138,10 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   WHEN: любой момент игры, перед/после броска. COST: 1 CP. EFFECT: ре-ролл ОДНОГО броска
     #   (hit/wound/save/charge/D6 и т.п.). RESTRICTION: 1 раз на бросок.
     # Реализация (песочница, fidelity): fight/shooting — ре-ролл ОДНОГО проваленного
-    # hit/wound/save-броска; конкретный подтип хранится в active_stratagem_effects.
+    # hit/wound/save-броска; Movement/Charge — Advance D6 и Charge 2D6; конкретный подтип хранится
+    # в active_stratagem_effects.
+    # Desperate Escape/Hazardous сейчас не моделируются в движке как механики: Command Re-roll к ним
+    # не применяется; реализация самих механик вне области этого плана.
     StratagemDef(
         id="command_reroll",
         name_ru="Command Re-roll (упрощённо)",
