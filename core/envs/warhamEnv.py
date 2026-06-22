@@ -1862,6 +1862,40 @@ class Warhammer40kEnv(gym.Env):
 
         return masks
 
+    def _stratagem_choice_legal(self, side: str, phase, choice: str) -> bool:
+        """Легальна ли категория головы strat_<phase> сейчас (CP/usage_limit/keyword/alive).
+
+        choice "none" → всегда True. Иначе base_id = часть до ':' (подтип не влияет на легальность).
+        Лоялен (как use_cp): keyword-связку с конкретным юнитом не проверяем (это unit-голова +
+        валидация применения), здесь — есть ли ХОТЯ БЫ один живой юнит с нужным keyword.
+        """
+        from core.engine.phases.stratagems import by_id, usage_limit_reached
+
+        if str(choice) == "none":
+            return True
+        base_id = str(choice).split(":", 1)[0]
+        try:
+            d = by_id(base_id)
+        except KeyError:
+            return False
+        is_model = side == "model"
+        cp = int(self.modelCP if is_model else self.enemyCP)
+        if cp < int(d.cp_cost):
+            return False
+        phase_str = phase.value if hasattr(phase, "value") else str(phase)
+        if usage_limit_reached(self, side, d, phase=phase_str):
+            return False
+        health = self.unit_health if is_model else self.enemy_health
+        unit_data = self.unit_data if is_model else self.enemy_data
+        alive = [i for i in range(len(health)) if health[i] > 0]
+        if not alive:
+            return False
+        if d.keyword_req:
+            return any(
+                all(self._unit_has_keyword(unit_data[i], kw) for kw in d.keyword_req) for i in alive
+            )
+        return True
+
     def _use_windowed_selfplay_for_step(self, _action) -> bool:
         from core.engine.phases.windowed_selfplay import windowed_selfplay_enabled
 
