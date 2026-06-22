@@ -148,7 +148,7 @@ REGISTRY: tuple[StratagemDef, ...] = (
         trigger=Trigger.FIGHT_PHASE,
         scope="self_unit",
         keyword_req=(),
-        usage_limit=UsageLimit.PER_PHASE,
+        usage_limit=UsageLimit.UNLIMITED,
         effect_id="command_reroll",
     ),
     # Go to Ground — Core Stratagem 10ed (Wahapedia):

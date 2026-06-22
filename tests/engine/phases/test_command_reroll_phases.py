@@ -127,6 +127,25 @@ def test_charge_command_reroll_rerolls_both_dice_and_can_succeed(monkeypatch):
     assert env.unitCharged[0] == 1
 
 
+def test_command_reroll_unlimited_allows_two_rolls_same_phase():
+    env = build_env()
+    _shooting_setup(env)
+    env.modelCP = 2
+
+    first = stratagem_engine.apply(env, "model", "command_reroll", 0, phase="shooting", reroll_roll="hit")
+    second = stratagem_engine.apply(env, "model", "command_reroll", 0, phase="shooting", reroll_roll="wound")
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert env.modelCP == 0
+    rolls = [
+        rec.get("reroll_roll")
+        for rec in env.active_stratagem_effects
+        if rec.get("effect_id") == "command_reroll"
+    ]
+    assert rolls == ["hit", "wound"]
+
+
 def test_shooting_command_reroll_wound_reaches_attack_effect(monkeypatch):
     calls = []
 
