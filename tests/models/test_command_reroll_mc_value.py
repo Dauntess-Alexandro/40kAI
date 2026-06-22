@@ -55,3 +55,15 @@ def test_mc_value_equal_when_reroll_no_benefit(monkeypatch):
     monkeypatch.setattr(env, "_simulate_fight_attack", fake_attack)
     mean_apply, mean_pass = env._mc_value_command_reroll_fight("model", 0, "wound", samples=4)
     assert mean_apply == mean_pass
+
+
+def test_cmdreroll_mc_config_defaults(monkeypatch):
+    import core.envs.warhamEnv as w
+    monkeypatch.delenv("CMDREROLL_MC_SAMPLES", raising=False)
+    monkeypatch.delenv("CMDREROLL_MC_EPS", raising=False)
+    assert w._cmdreroll_mc_samples() == 8
+    assert abs(w._cmdreroll_mc_eps() - 1e-3) < 1e-9
+    monkeypatch.setenv("CMDREROLL_MC_SAMPLES", "3")
+    monkeypatch.setenv("CMDREROLL_MC_EPS", "0.05")
+    assert w._cmdreroll_mc_samples() == 3
+    assert abs(w._cmdreroll_mc_eps() - 0.05) < 1e-9

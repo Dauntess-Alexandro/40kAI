@@ -288,6 +288,30 @@ def _fight_report_enabled() -> bool:
 def _heuristic_debug_enabled() -> bool:
     return os.getenv("HEURISTIC_DEBUG", "0") == "1" or os.getenv("REWARD_DEBUG", "0") == "1"
 
+
+def _cmdreroll_mc_samples() -> int:
+    """
+    Количество семплов для Monte-Carlo оценки значения Command Re-roll.
+    По умолчанию 8, минимум 1.
+    Переменная окружения: CMDREROLL_MC_SAMPLES.
+    """
+    try:
+        return max(1, int(os.getenv("CMDREROLL_MC_SAMPLES", "8")))
+    except (TypeError, ValueError):
+        return 8
+
+
+def _cmdreroll_mc_eps() -> float:
+    """
+    Epsilon для Monte-Carlo оценки Command Re-roll (для числовой стабильности).
+    По умолчанию 1e-3.
+    Переменная окружения: CMDREROLL_MC_EPS.
+    """
+    try:
+        return float(os.getenv("CMDREROLL_MC_EPS", "1e-3"))
+    except (TypeError, ValueError):
+        return 1e-3
+
 def auto_dice(num=1, max=6):
     """RNG-роллер с такой же сигнатурой, как player_dice (для логов бота)."""
     if num == 1:
