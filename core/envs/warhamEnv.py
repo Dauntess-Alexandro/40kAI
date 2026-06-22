@@ -2384,7 +2384,7 @@ class Warhammer40kEnv(gym.Env):
             return None
 
         def decider(stage, dice, threshold):
-            if stage in ("hit", "wound"):
+            if stage in ("hit", "wound", "damage", "attacks"):
                 rec = _find(attacker_side, attacker_idx, stage)
             elif stage == "save":
                 rec = _find(defender_side, defender_idx, "save")

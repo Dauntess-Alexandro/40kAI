@@ -87,6 +87,30 @@ def test_defender_command_reroll_applies_to_save():
     assert decider("hit", np.array([2]), 4) is False
 
 
+def test_attacker_command_reroll_applies_to_damage_and_attacks():
+    import numpy as np
+
+    from tests.engine.phases._helpers import build_env
+
+    for roll in ("damage", "attacks"):
+        env = build_env()
+        env.battle_round = 1
+        env.active_stratagem_effects = [
+            {
+                "side": "model",
+                "unit_idx": 0,
+                "round": 1,
+                "phase": "shooting",
+                "effect_id": "command_reroll",
+                "reroll_roll": roll,
+                "consumed": False,
+            }
+        ]
+        decider = env._build_reroll_decider("model", 0, "enemy", 0, phase="shooting")
+        assert decider(roll, np.array([1]), 7) is True
+        assert decider(roll, np.array([1]), 7) is False
+
+
 def test_reroll_decider_rerolls_low_damage_roll():
     weapon = _ranged_weapon(S=4, Attacks=1, Damage="D6")
     defender = {"Sv": 7, "T": 4, "IVSave": 0}
