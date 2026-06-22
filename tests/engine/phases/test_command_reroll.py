@@ -23,6 +23,18 @@ def test_fight_window_offers_command_reroll():
     assert "command_reroll" in ids
 
 
+def test_fight_window_offers_command_reroll_hit_and_wound():
+    env = build_env()
+    env.modelCP = 1
+    opts = fight_stratagem_options_for_unit(env, "model", 0)
+    rolls = {
+        o.param.get("reroll_roll")
+        for o in opts
+        if o.kind is ActionKind.USE_STRATAGEM and o.meta.get("stratagem_id") == "command_reroll"
+    }
+    assert rolls == {"hit", "wound"}
+
+
 def test_apply_command_reroll_writes_reroll_effect():
     env = build_env()
     env.modelCP = 2

@@ -2382,7 +2382,18 @@ class Warhammer40kEnv(gym.Env):
             ):
                 continue
             try:
-                _apply_stratagem(self, side, str(sid), ui, phase="fight")
+                sid_raw = str(sid)
+                if sid_raw.startswith("command_reroll:"):
+                    _apply_stratagem(
+                        self,
+                        side,
+                        "command_reroll",
+                        ui,
+                        phase="fight",
+                        reroll_roll=sid_raw.split(":", 1)[1],
+                    )
+                else:
+                    _apply_stratagem(self, side, sid_raw, ui, phase="fight")
             except Exception as exc:
                 self._log(f"[STRATAGEM] pending fight plan: не применили {sid!r} на юните {ui}: {exc}")
 

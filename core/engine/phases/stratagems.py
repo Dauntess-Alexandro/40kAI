@@ -268,6 +268,24 @@ def legal_stratagem_options(
                 e._unit_has_keyword(unit_data_list[i], kw) for kw in d.keyword_req
             ):
                 continue
+            if d.id == "command_reroll":
+                for roll in ("hit", "wound"):
+                    options.append(
+                        ActionOption(
+                            kind=ActionKind.USE_STRATAGEM,
+                            unit_idx=i,
+                            param={"stratagem_id": d.id, "reroll_roll": roll},
+                            legacy_patch={},
+                            meta={
+                                "stratagem_id": d.id,
+                                "cp_cost": d.cp_cost,
+                                "timing": d.timing,
+                                "scope": d.scope,
+                                "reroll_roll": roll,
+                            },
+                        )
+                    )
+                continue
             legacy_patch = {"use_cp": 1, "cp_on": i} if d.id == "insane_bravery" else {}
             options.append(
                 ActionOption(

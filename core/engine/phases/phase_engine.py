@@ -236,7 +236,7 @@ def run_fight(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTu
     health = e.unit_health if side == "model" else e.enemy_health
     in_attack = e.unitInAttack if side == "model" else e.enemyInAttack
     eligible = [i for i in range(len(health)) if health[i] > 0 and in_attack[i][0] == 1]
-    chosen: dict[int, str] = {}
+    chosen: dict[int, tuple[str, str | None]] = {}
     for u in eligible:
         opts = fight_stratagem_options_for_unit(e, side, u)
         win = DecisionWindow(
@@ -250,9 +250,12 @@ def run_fight(env, side, decide, state: PhaseTurnState | None = None) -> PhaseTu
         )
         opt = decide(win)
         if opt is not None and opt.kind is ActionKind.USE_STRATAGEM and opt.meta.get("stratagem_id"):
-            chosen[int(u)] = str(opt.meta["stratagem_id"])
-    for u, sid in chosen.items():
-        stratagem_engine.apply(e, side, sid, u, phase="fight")
+            chosen[int(u)] = (str(opt.meta["stratagem_id"]), opt.param.get("reroll_roll"))
+    for u, (sid, reroll_roll) in chosen.items():
+        if sid == "command_reroll":
+            stratagem_engine.apply(e, side, sid, u, phase="fight", reroll_roll=str(reroll_roll or "wound"))
+        else:
+            stratagem_engine.apply(e, side, sid, u, phase="fight")
     result = e.fight_phase(side)
     reward_delta = float(result or 0.0) if result is not None else 0.0
     state.reward_delta += reward_delta
