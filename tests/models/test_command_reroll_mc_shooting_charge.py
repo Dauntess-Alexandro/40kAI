@@ -181,3 +181,20 @@ def test_shooting_phase_parity_without_policy():
         env.shooting_phase("model", advanced_flags=[False] * len(env.unit_health), action=flat_default_action(len(env.unit_health), shoot_num_0=0))
     assert not any(r[1] == "command_reroll" for r in env.stratagem_used)
     assert env.modelCP == 3
+
+
+def test_movement_phase_does_not_apply_command_reroll_even_with_policy():
+    """Регрессия: movement НЕ предлагает Command Re-roll (advance вне области MC);
+    даже с установленной reaction_policy юнит не тратит CP на реролл в движении."""
+    env = build_env()
+    _setup(env)
+    install_dqn_stratagem_policy(env, {"model": _HpAwareNet(env, "model")}, torch.device("cpu"))
+    cp_before = env.modelCP
+    with env.simulation_mode():
+        env.movement_phase(
+            "model",
+            action=flat_default_action(len(env.unit_health)),
+            battle_shock=[False] * len(env.unit_health),
+        )
+    assert not any(r[1] == "command_reroll" for r in env.stratagem_used)
+    assert env.modelCP == cp_before

@@ -5439,10 +5439,9 @@ class Warhammer40kEnv(gym.Env):
 
     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None, decide_move=None):
         self.begin_phase(side, "movement")
-        _mv_health = self.unit_health if side == "model" else self.enemy_health
-        self._apply_phase_command_reroll(
-            side, "movement", [i for i in range(len(_mv_health)) if _mv_health[i] > 0], ("advance",)
-        )
+        # Command Re-roll в movement (advance) НЕ предлагаем: MC для advance вне области
+        # (move-then-derive модель advance_roll), а вырожденный generic value-путь стрелял
+        # промискуитетно и выжигал CP до shooting/charge. Реролл — только fight/shooting/charge (MC).
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] movement phase active ({action_mode})")
