@@ -11,6 +11,10 @@ def _setup(env, cp=2):
     env.active_stratagem_effects = []
     env.battle_round = 1
     env.phase = "fight"
+    # unitCharged/enemyCharged сайзятся в step()/enemyTurn(); при прямом вызове фаз — инициализируем сами
+    # (как во всех fight/charge-тестах), иначе resolve_fight_phase падает на IndexError.
+    env.unitCharged = [0] * len(env.unit_health)
+    env.enemyCharged = [0] * len(env.enemy_health)
 
 
 def _idx(phase, choice):

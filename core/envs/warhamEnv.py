@@ -5550,6 +5550,10 @@ class Warhammer40kEnv(gym.Env):
 
     def movement_phase(self, side: str, action=None, manual: bool = False, battle_shock=None, decide_move=None):
         self.begin_phase(side, "movement")
+        if action is not None:
+            from core.engine.phases.types import Phase
+
+            self._apply_action_stratagem(side, Phase.MOVEMENT, action)
         # Command Re-roll в movement (advance) НЕ предлагаем: MC для advance вне области
         # (move-then-derive модель advance_roll), а вырожденный generic value-путь стрелял
         # промискуитетно и выжигал CP до shooting/charge. Реролл — только fight/shooting/charge (MC).
@@ -6394,6 +6398,10 @@ class Warhammer40kEnv(gym.Env):
 
     def shooting_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_shoot=None):
         self.begin_phase(side, "shooting")
+        if action is not None:
+            from core.engine.phases.types import Phase
+
+            self._apply_action_stratagem(side, Phase.SHOOTING, action)
         _sh_health = self.unit_health if side == "model" else self.enemy_health
         self._apply_phase_command_reroll(
             side,
@@ -7086,6 +7094,10 @@ class Warhammer40kEnv(gym.Env):
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_charge=None):
         self.begin_phase(side, "charge")
+        if action is not None:
+            from core.engine.phases.types import Phase
+
+            self._apply_action_stratagem(side, Phase.CHARGE, action)
         _ch_health = self.unit_health if side == "model" else self.enemy_health
         self._apply_phase_command_reroll(
             side, "charge", [i for i in range(len(_ch_health)) if _ch_health[i] > 0], ("charge",)
@@ -7588,8 +7600,12 @@ class Warhammer40kEnv(gym.Env):
         self._clear_phase_stratagem_effects("charge")
         return None
 
-    def fight_phase(self, side: str):
+    def fight_phase(self, side: str, action=None):
         self.begin_phase(side, "fight")
+        if action is not None:
+            from core.engine.phases.types import Phase
+
+            self._apply_action_stratagem(side, Phase.FIGHT, action)
         self._apply_pending_fight_stratagem_plan(side)
         reward_delta = 0.0
         engaged_pairs = []
@@ -7953,7 +7969,7 @@ class Warhammer40kEnv(gym.Env):
         self._invalidate_target_cache("enemy_after_movement")
         self.shooting_phase("enemy", advanced_flags=advanced_flags, action=action)
         self.charge_phase("enemy", advanced_flags=advanced_flags, action=action)
-        self.fight_phase("enemy")
+        self.fight_phase("enemy", action=action)
         self._invalidate_target_cache("enemy_after_fight")
         game_over, reason, winner = apply_end_of_battle(self, log_fn=self._log)
         if game_over:
@@ -8446,7 +8462,7 @@ class Warhammer40kEnv(gym.Env):
             )
             shoot_delta = self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
             charge_delta = self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
-            fight_delta = self.fight_phase("model") or 0
+            fight_delta = self.fight_phase("model", action=action) or 0
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
