@@ -2322,10 +2322,25 @@ class Warhammer40kEnv(gym.Env):
             return "benefit of cover"
         return base_effect
 
-    def _fight_effects_for_attacker(self, side: str, unit_idx: int):
+    def _merge_attack_effects(self, base_effect, extra_effects):
+        if not extra_effects:
+            return base_effect
+        merged: dict = {}
+        if isinstance(base_effect, dict):
+            merged.update(base_effect)
+        elif isinstance(base_effect, str):
+            if base_effect.strip().lower() == "benefit of cover":
+                merged["cover"] = True
+        elif base_effect is not None:
+            return base_effect
+        merged.update(dict(extra_effects))
+        return merged or None
+
+    def _stratagem_effects_for_attacker(self, side: str, unit_idx: int, phase: str):
         effects: dict = {}
+        phase = str(phase)
         for rec in list(getattr(self, "active_stratagem_effects", []) or []):
-            if str(rec.get("phase", "")) != "fight":
+            if str(rec.get("phase", "")) != phase:
                 continue
             if str(rec.get("side", "")) != str(side):
                 continue
@@ -2347,13 +2362,18 @@ class Warhammer40kEnv(gym.Env):
                 rec["consumed"] = True
         return effects or None
 
-    def _build_reroll_decider(self, attacker_side, attacker_idx, defender_side, defender_idx):
+    def _fight_effects_for_attacker(self, side: str, unit_idx: int):
+        return self._stratagem_effects_for_attacker(side, unit_idx, "fight")
+
+    def _build_reroll_decider(self, attacker_side, attacker_idx, defender_side, defender_idx, phase: str = "fight"):
+        phase = str(phase)
+
         def _find(side, unit_idx, roll):
             for rec in list(getattr(self, "active_stratagem_effects", []) or []):
                 if (
                     rec.get("effect_id") == "command_reroll"
                     and not rec.get("consumed", False)
-                    and str(rec.get("phase", "")) == "fight"
+                    and str(rec.get("phase", "")) == phase
                     and str(rec.get("side", "")) == str(side)
                     and int(rec.get("unit_idx", -1)) == int(unit_idx)
                     and str(rec.get("reroll_roll", "")) == str(roll)
@@ -5894,6 +5914,13 @@ class Warhammer40kEnv(gym.Env):
                         )
                         self._pending_reaction_trigger = None
                         effect = self._resolve_cover_effect_for_shot("model", i, "enemy", idOfE, base_effect=effect, phase="shooting")
+                        effect = self._merge_attack_effects(
+                            effect,
+                            self._stratagem_effects_for_attacker("model", i, "shooting"),
+                        )
+                        reroll_decider = self._build_reroll_decider(
+                            "model", i, "enemy", idOfE, phase="shooting"
+                        )
                         threat_count_before_shot, _, _ = self._count_real_threats_to_model_unit(i)
                         _logger = None
                         if _verbose_logs_enabled():
@@ -5908,6 +5935,7 @@ class Warhammer40kEnv(gym.Env):
                                 effects=effect,
                                 distance_to_target=self._shooting_distance_between_units("model", i, "enemy", idOfE),
                                 roller=_logger.roll,
+                                reroll_decider=reroll_decider,
                             )
                         else:
                             dmg, modHealth = attack(
@@ -5918,6 +5946,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.enemy_data[idOfE],
                                 effects=effect,
                                 distance_to_target=self._shooting_distance_between_units("model", i, "enemy", idOfE),
+                                reroll_decider=reroll_decider,
                             )
                         self._apply_health_update("enemy", idOfE, modHealth, reason="shooting")
                         damage_dealt = max(0.0, float(target_hp_prev - modHealth))
@@ -6129,6 +6158,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._clear_phase_stratagem_effects("shooting")
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             for i in range(len(self.enemy_health)):
@@ -6184,6 +6214,13 @@ class Warhammer40kEnv(gym.Env):
                         )
                         self._pending_reaction_trigger = None
                         effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
+                        effect = self._merge_attack_effects(
+                            effect,
+                            self._stratagem_effects_for_attacker("enemy", i, "shooting"),
+                        )
+                        reroll_decider = self._build_reroll_decider(
+                            "enemy", i, "model", idOfM, phase="shooting"
+                        )
                         _logger = None
                         if _verbose_logs_enabled():
                             _logger = RollLogger(auto_dice, agent_log_fn=self._append_agent_log)
@@ -6197,6 +6234,7 @@ class Warhammer40kEnv(gym.Env):
                                 effects=effect,
                                 distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
                                 roller=_logger.roll,
+                                reroll_decider=reroll_decider,
                             )
                         else:
                             dmg, modHealth = attack(
@@ -6207,6 +6245,7 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_data[idOfM],
                                 effects=effect,
                                 distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
+                                reroll_decider=reroll_decider,
                             )
                         self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                         self._log_unit(
@@ -6261,6 +6300,13 @@ class Warhammer40kEnv(gym.Env):
                         )
                         self._pending_reaction_trigger = None
                         effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
+                        effect = self._merge_attack_effects(
+                            effect,
+                            self._stratagem_effects_for_attacker("enemy", i, "shooting"),
+                        )
+                        reroll_decider = self._build_reroll_decider(
+                            "enemy", i, "model", idOfM, phase="shooting"
+                        )
                         dmg, modHealth = attack(
                             self.enemy_health[i],
                             self.enemy_weapon[i],
@@ -6269,6 +6315,7 @@ class Warhammer40kEnv(gym.Env):
                             self.unit_data[idOfM],
                             effects=effect,
                             distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
+                            reroll_decider=reroll_decider,
                         )
                         self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                 else:
@@ -6349,6 +6396,13 @@ class Warhammer40kEnv(gym.Env):
                                     )
                                     self._pending_reaction_trigger = None
                                     effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfE, base_effect=effect, phase="shooting")
+                                    effect = self._merge_attack_effects(
+                                        effect,
+                                        self._stratagem_effects_for_attacker("enemy", i, "shooting"),
+                                    )
+                                    reroll_decider = self._build_reroll_decider(
+                                        "enemy", i, "model", idOfE, phase="shooting"
+                                    )
                                     logger = RollLogger(player_dice, agent_log_fn=self._append_agent_log)
                                     logger.configure_for_weapon(self.enemy_weapon[i])
                                     try:
@@ -6361,6 +6415,7 @@ class Warhammer40kEnv(gym.Env):
                                             effects=effect,
                                             distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfE),
                                             roller=logger.roll,
+                                            reroll_decider=reroll_decider,
                                         )
                                     except ShootDiceCancelledError as exc:
                                         self._log(str(exc))
@@ -6458,6 +6513,13 @@ class Warhammer40kEnv(gym.Env):
                             )
                             self._pending_reaction_trigger = None
                             effect = self._resolve_cover_effect_for_shot("enemy", i, "model", idOfM, base_effect=effect, phase="shooting")
+                            effect = self._merge_attack_effects(
+                                effect,
+                                self._stratagem_effects_for_attacker("enemy", i, "shooting"),
+                            )
+                            reroll_decider = self._build_reroll_decider(
+                                "enemy", i, "model", idOfM, phase="shooting"
+                            )
                             dmg, modHealth = attack(
                                 self.enemy_health[i],
                                 self.enemy_weapon[i],
@@ -6466,12 +6528,14 @@ class Warhammer40kEnv(gym.Env):
                                 self.unit_data[idOfM],
                                 effects=effect,
                                 distance_to_target=self._shooting_distance_between_units("enemy", i, "model", idOfM),
+                                reroll_decider=reroll_decider,
                             )
                             self._apply_health_update("model", idOfM, modHealth, reason="shooting")
                             if self.trunc is False:
                                 self._log(
                                     f"{self._format_unit_label('enemy', i)} стреляет по {self._format_unit_label('model', idOfM)}: урон {float(np.sum(dmg))}."
                                 )
+        self._clear_phase_stratagem_effects("shooting")
         return None
 
     def charge_phase(self, side: str, advanced_flags=None, action=None, manual: bool = False, decide_charge=None):

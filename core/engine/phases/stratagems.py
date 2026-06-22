@@ -137,13 +137,13 @@ REGISTRY: tuple[StratagemDef, ...] = (
     #   https://wahapedia.ru/wh40k10ed/the-rules/core-stratagems/#Command-Re-roll
     #   WHEN: любой момент игры, перед/после броска. COST: 1 CP. EFFECT: ре-ролл ОДНОГО броска
     #   (hit/wound/save/charge/D6 и т.п.). RESTRICTION: 1 раз на бросок.
-    # Реализация (песочница, Этап 1 fidelity): fight-phase — ре-ролл ОДНОГО проваленного
-    # hit/wound-броска атаки юнита; конкретный подтип хранится в active_stratagem_effects.
+    # Реализация (песочница, fidelity): fight/shooting — ре-ролл ОДНОГО проваленного
+    # hit/wound/save-броска; конкретный подтип хранится в active_stratagem_effects.
     StratagemDef(
         id="command_reroll",
         name_ru="Command Re-roll (упрощённо)",
         cp_cost=1,
-        phases=(Phase.FIGHT,),
+        phases=(Phase.FIGHT, Phase.SHOOTING),
         timing=Timing.MAIN,
         trigger=Trigger.FIGHT_PHASE,
         scope="self_unit",
