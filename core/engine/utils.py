@@ -550,6 +550,7 @@ def attack(
             new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
             for j, idx in enumerate(need):
                 rolls[idx] = int(new[j])
+                hit_rerolled.add(idx)
     rolls = _maybe_decider_reroll("hit", rolls, bs, hit_rerolled)
 
     lethal = _weapon_has_lethal_hits(attackerWeapon)
@@ -607,6 +608,7 @@ def attack(
                     new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
                     for j, idx in enumerate(need):
                         wound_rolls[idx] = int(new[j])
+                        wound_rerolled.add(idx)
             wound_rolls = _maybe_decider_reroll("wound", wound_rolls, wt, wound_rerolled)
 
             for w in wound_rolls:
@@ -638,6 +640,7 @@ def attack(
                 new = np.array([new] if isinstance(new, int) else list(new), dtype=int)
                 for j, idx in enumerate(need):
                     save_rolls[idx] = int(new[j])
+                    save_rerolled.add(idx)
         save_rolls = _maybe_decider_reroll("save", save_rolls, save_target, save_rerolled)
 
         for k in range(len(dmg_instances)):
