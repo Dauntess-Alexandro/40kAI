@@ -413,12 +413,6 @@ def attack(
         except (TypeError, ValueError):
             roller_accepts_stage = False
 
-    def _roll(min=1, max=6, num=1):
-        if roller is None:
-            return dice(min=min, max=max, num=num)
-
-        return _roll_with_stage(min=min, max=max, num=num)
-
     def _roll_with_stage(min=1, max=6, num=1, stage=None):
         if roller is None:
             return dice(min=min, max=max, num=num)
@@ -457,6 +451,25 @@ def attack(
         dice[wi] = int(new if isinstance(new, int) else list(new)[0])
         rerolled.add(wi)
         return dice
+
+    def _roll_variable_expr(expr, stage, default=1):
+        if isinstance(expr, (int, np.integer)):
+            return int(expr), False
+
+        if isinstance(expr, str):
+            e = expr.strip().upper()
+            max_roll = 3 if e == "D3" else 6 if e == "D6" else None
+            if max_roll is not None:
+                raw = _roll_with_stage(min=1, max=max_roll, num=1, stage=stage)
+                dice_arr = np.array([raw] if isinstance(raw, int) else list(raw), dtype=int)
+                dice_arr = _maybe_decider_reroll(stage, dice_arr, max_roll + 1, set())
+                return int(dice_arr[0]), True
+
+            v = _to_int(e, default=None)
+            if v is not None:
+                return int(v), False
+
+        return int(default), False
 
     # --- Targets / profile parsing ---
     sv_base = _to_int(attackeeData.get("Sv"), default=7)
@@ -508,7 +521,7 @@ def attack(
         n_models = max(1, min(n_models, remaining_models))
 
     attacks_expr = _weapon_attacks_expr(attackerWeapon, default=1)
-    attacks_per_model, attacks_was_rolled = _roll_attacks_expr(attacks_expr, _roll)
+    attacks_per_model, attacks_was_rolled = _roll_variable_expr(attacks_expr, "attacks", default=1)
 
     # Rapid Fire X
     if rangeOfComb == "Ranged":
@@ -579,7 +592,7 @@ def attack(
         auto_wounds = crit_hits if lethal else 0
         # авто-раны сразу добавляем как успешные ранения
         for _ in range(auto_wounds):
-            dmg_instances.append(_roll_damage_expr(attackerWeapon.get("Damage"), _roll))
+            dmg_instances.append(_roll_variable_expr(attackerWeapon.get("Damage"), "damage", default=1)[0])
 
         wound_roll_count = hits - crit_hits if lethal else hits
 
@@ -616,7 +629,7 @@ def attack(
                 if w == 1:
                     continue
                 if w >= wt:
-                    dmg_instances.append(_roll_damage_expr(attackerWeapon.get("Damage"), _roll))
+                    dmg_instances.append(_roll_variable_expr(attackerWeapon.get("Damage"), "damage", default=1)[0])
 
     # --- SAVES ---
     if dmg_instances:

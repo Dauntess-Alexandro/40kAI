@@ -4,12 +4,15 @@ from core.engine.utils import _normalize_effects, attack
 class StubRoller:
     """Детерминированный roller: очереди по стадиям hit/wound/save (+damage=None)."""
 
-    def __init__(self, hit=None, wound=None, save=None, damage=None, default=6):
+    def __init__(self, hit=None, wound=None, save=None, damage=None, attacks=None, default=6):
+        damage_q = list(damage or [])
         self.q = {
             "hit": list(hit or []),
             "wound": list(wound or []),
             "save": list(save or []),
-            None: list(damage or []),
+            "damage": damage_q,
+            "attacks": list(attacks or []),
+            None: damage_q,
         }
         self.default = default
 

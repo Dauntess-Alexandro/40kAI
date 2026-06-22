@@ -85,3 +85,41 @@ def test_defender_command_reroll_applies_to_save():
     decider = env._build_reroll_decider("model", 0, "enemy", 0)
     assert decider("save", np.array([2]), 4) is True
     assert decider("hit", np.array([2]), 4) is False
+
+
+def test_reroll_decider_rerolls_low_damage_roll():
+    weapon = _ranged_weapon(S=4, Attacks=1, Damage="D6")
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+
+    def decider(stage, dice, threshold):
+        return stage == "damage"
+
+    dmg, _ = attack(
+        1,
+        weapon,
+        _ATT_DATA,
+        10,
+        defender,
+        roller=StubRoller(hit=[5], wound=[6], damage=[1, 6]),
+        reroll_decider=decider,
+    )
+    assert float(sum(dmg)) == 6.0
+
+
+def test_reroll_decider_rerolls_low_attacks_roll():
+    weapon = _ranged_weapon(S=4, Attacks="D6", Damage=1)
+    defender = {"Sv": 7, "T": 4, "IVSave": 0}
+
+    def decider(stage, dice, threshold):
+        return stage == "attacks"
+
+    dmg, _ = attack(
+        1,
+        weapon,
+        _ATT_DATA,
+        10,
+        defender,
+        roller=StubRoller(attacks=[1, 2], hit=[5, 5], wound=[6, 6]),
+        reroll_decider=decider,
+    )
+    assert float(sum(dmg)) == 2.0
