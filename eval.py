@@ -1264,18 +1264,19 @@ def main():
         mode_parts.append(gaz_eval_tail)
         mode_parts.append(gaz_opp_tail)
     if algo == "dqn" or opponent_algo_label == "dqn":
-        # DQN→epsilon: режим/epsilon из learner-cfg (резолвер унифицирован для обеих сторон).
+        # DQN→epsilon. Значение читаем из env (DQN_EVAL_EPSILON): резолвер унифицирован,
+        # и для dqn-оппонента learner-cfg.epsilon относится к другому algo — врал бы 0.
         dqn_mode = str(os.getenv("DQN_EVAL_MODE", "greedy")).strip().lower() or "greedy"
         dqn_tail = f"dqn_eval_mode={dqn_mode}"
         if dqn_mode == "epsilon":
-            dqn_tail += f"(eps={float(cfg.epsilon):.3f})"
+            dqn_tail += f"(eps={float(os.getenv('DQN_EVAL_EPSILON', '0')):.3f})"
         mode_parts.append(dqn_tail)
     if algo == "ppo" or opponent_algo_label == "ppo":
-        # PPO→temperature: режим/temp из learner-cfg.
+        # PPO→temperature. Температуру читаем из env (PPO_EVAL_TEMPERATURE) по той же причине.
         ppo_mode = str(os.getenv("PPO_EVAL_MODE", "greedy")).strip().lower() or "greedy"
         ppo_tail = f"ppo_eval_mode={ppo_mode}"
         if ppo_mode == "stochastic":
-            ppo_tail += f"(temp={float(cfg.search.get('temperature', 1.0)):.3f})"
+            ppo_tail += f"(temp={float(os.getenv('PPO_EVAL_TEMPERATURE', '1.0')):.3f})"
         mode_parts.append(ppo_tail)
     modes_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
     log(

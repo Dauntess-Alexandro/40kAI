@@ -1521,7 +1521,17 @@ class GUIController(QtCore.QObject):
         return int(max(1, min(512, value)))
 
     def _eval_side_search_sims_visible(self, side: str) -> bool:
-        return self._eval_side_temp_visible(side)
+        # SIMS — только для алго с поиском дерева (AZ/GMZ/SMZ/GAZ). У DQN/PPO поиска нет,
+        # поэтому поле sims не активируется, хотя числовое поле (epsilon/temp) видимо.
+        algo = self._eval_side_algo_key(side)
+        mode = self._eval_side_effective_inference_mode(side)
+        if is_az_algo(algo):
+            return mode == "mcts"
+        if algo in {"gumbel_muzero", "sampled_muzero"}:
+            return mode == "search"
+        if is_gumbel_az_algo(algo):
+            return mode == "gumbel"
+        return False
 
     def _eval_side_search_sims(self, side: str) -> int:
         side_key = str(side).upper()
