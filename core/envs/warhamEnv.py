@@ -2552,6 +2552,59 @@ class Warhammer40kEnv(gym.Env):
             return None
         return max(targets, key=lambda t: self._expected_shoot_damage(side, int(shooter_idx), int(t)))
 
+    def _simulate_shoot_attack(self, side: str, shooter_idx: int, target_idx: int) -> None:
+        """Симулировать выстрел shooter_idx по target_idx (читает reroll-эффект shooting), применить урон.
+
+        Только в MC-симуляции (внутри snapshot/restore). reason='shooting_sim'.
+        """
+        if side == "model":
+            a_side, atk_h, atk_w, atk_d = "model", self.unit_health, self.unit_weapon, self.unit_data
+            d_side, def_h, def_d = "enemy", self.enemy_health, self.enemy_data
+        else:
+            a_side, atk_h, atk_w, atk_d = "enemy", self.enemy_health, self.enemy_weapon, self.enemy_data
+            d_side, def_h, def_d = "model", self.unit_health, self.unit_data
+        ai, di = int(shooter_idx), int(target_idx)
+        if not (0 <= ai < len(atk_h)) or atk_h[ai] <= 0:
+            return
+        if not (0 <= di < len(def_h)) or def_h[di] <= 0:
+            return
+        if not isinstance(atk_w[ai], dict):
+            return
+        fight_effect = self._fight_effects_for_attacker(a_side, ai)
+        reroll_decider = self._build_reroll_decider(a_side, ai, d_side, di, phase="shooting")
+        _dmg, mod_health = attack(
+            atk_h[ai], atk_w[ai], atk_d[ai], def_h[di], def_d[di],
+            rangeOfComb="Ranged", effects=fight_effect, reroll_decider=reroll_decider,
+            distance_to_target=self._shooting_distance_between_units(a_side, ai, d_side, di),
+        )
+        self._apply_health_update(d_side, di, mod_health, reason="shooting_sim")
+
+    def _mc_value_command_reroll_shooting(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
+        """MC-оценка реролла (subtype) для выстрела юнита по argmax-EV цели: (mean_apply, mean_pass)."""
+        net = getattr(self, "_reaction_net_by_side", {}).get(side)
+        if net is None:
+            return 0.0, 0.0
+        target = self._best_shoot_target(side, int(unit_idx))
+        if target is None:
+            return 0.0, 0.0
+        means: dict[str, float] = {}
+        for branch in ("pass", "apply"):
+            vals: list[float] = []
+            for _ in range(max(1, int(samples))):
+                inner = self.snapshot_state()
+                self._reaction_sim_active = True
+                try:
+                    with self.simulation_mode():
+                        if branch == "apply":
+                            _apply_stratagem(self, side, "command_reroll", int(unit_idx), phase="shooting", reroll_roll=str(subtype))
+                        self._simulate_shoot_attack(side, int(unit_idx), int(target))
+                        vals.append(self._reaction_net_value(side, net))
+                finally:
+                    self._reaction_sim_active = False
+                    self.restore_state(inner)
+            means[branch] = sum(vals) / max(1, len(vals))
+        return means["apply"], means["pass"]
+
     def _mc_value_command_reroll_fight(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
         """MC-оценка реролла (subtype) для атаки engaged-юнита: (mean_apply, mean_pass).
 

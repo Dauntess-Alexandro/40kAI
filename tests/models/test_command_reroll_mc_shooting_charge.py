@@ -52,3 +52,31 @@ def test_best_shoot_target_none_without_targets(monkeypatch):
     _setup(env)
     monkeypatch.setattr(env, "get_shoot_targets_for_unit", lambda side, i: [])
     assert env._best_shoot_target("model", 0) is None
+
+
+def test_mc_shooting_apply_beats_pass_when_reroll_adds_damage(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env.unit_coords[0] = [10, 10]
+    env.enemy_coords[0] = [11, 10]
+    env.unit_health[1] = 0.0
+    env.enemy_health[1] = 0.0
+    env._invalidate_target_cache("mc_sh")
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+
+    def fake_shoot(side, shooter, target):
+        dmg = 4.0 if env._command_reroll_record_exists(side, shooter, "shooting") else 1.0
+        env._apply_health_update("enemy", target, max(0.0, float(env.enemy_health[target]) - dmg), reason="shooting_sim")
+
+    monkeypatch.setattr(env, "_simulate_shoot_attack", fake_shoot)
+    monkeypatch.setattr(env, "_best_shoot_target", lambda side, u: 0)
+    ma, mp = env._mc_value_command_reroll_shooting("model", 0, "wound", samples=4)
+    assert ma > mp
+
+
+def test_mc_shooting_zero_when_no_target(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    monkeypatch.setattr(env, "_best_shoot_target", lambda side, u: None)
+    assert env._mc_value_command_reroll_shooting("model", 0, "wound", samples=4) == (0.0, 0.0)
