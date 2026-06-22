@@ -2805,6 +2805,53 @@ class Warhammer40kEnv(gym.Env):
                     f"[STRATAGEM] value Command Re-roll не применён ({phase}, side={side}, unit={ui}): {exc}"
                 )
 
+    def _apply_action_stratagem(self, side: str, phase, action) -> None:
+        """Применить стратагему из головы strat_<phase> (action-driven, детерминированно).
+
+        Валидация: легальна (_stratagem_choice_legal) + конкретный юнит жив + имеет keyword +
+        не применена уже (_stratagem_already_active, anti-double с MC-хуком/fight-планом).
+        Вызывается в начале фазы ДО старых хуков. Голова idx=0 (none) → no-op.
+        """
+        if not isinstance(action, dict):
+            return
+        from core.engine.phases.stratagems import by_id, stratagem_choice_str
+
+        phase_str = phase.value if hasattr(phase, "value") else str(phase)
+        idx = int(action.get(f"strat_{phase_str}", 0) or 0)
+        if idx <= 0:
+            return
+        choice = stratagem_choice_str(phase, idx)
+        if choice == "none":
+            return
+        base_id = choice.split(":", 1)[0]
+        sub = choice.split(":", 1)[1] if ":" in choice else None
+        unit = int(action.get(f"strat_{phase_str}_unit", 0) or 0)
+        is_model = side == "model"
+        health = self.unit_health if is_model else self.enemy_health
+        unit_data = self.unit_data if is_model else self.enemy_data
+        if not (0 <= unit < len(health)) or health[unit] <= 0:
+            return
+        if not self._stratagem_choice_legal(side, phase, choice):
+            return
+        try:
+            d = by_id(base_id)
+        except KeyError:
+            return
+        if d.keyword_req and not all(self._unit_has_keyword(unit_data[unit], kw) for kw in d.keyword_req):
+            return
+        if self._stratagem_already_active(side, base_id, unit, phase_str):
+            return
+        try:
+            if sub is not None:
+                _apply_stratagem(self, side, base_id, unit, phase=phase_str, reroll_roll=sub)
+            else:
+                _apply_stratagem(self, side, base_id, unit, phase=phase_str)
+        except Exception as exc:
+            self._log(
+                f"[STRATAGEM] action-head не применил {choice!r} side={side} unit={unit} "
+                f"phase={phase_str}: {exc}"
+            )
+
     def _consume_command_reroll_record(self, side: str, unit_idx: int, phase: str, reroll_roll: str):
         for rec in list(getattr(self, "active_stratagem_effects", []) or []):
             if (
