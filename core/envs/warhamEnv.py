@@ -4612,20 +4612,28 @@ class Warhammer40kEnv(gym.Env):
         return self._should_use_stratagem(*args, **kwargs)
 
     def _reaction_net_value(self, side: str, net) -> float:
-        """Value стороны от reaction-сети (DQN: masked max-Q; PPO: critic V). Без снапшота/мутаций."""
+        """Value стороны от reaction-сети (DQN: masked max-Q; PPO: critic V). Без снапшота/мутаций.
+
+        obs/маски строятся на устройстве сети (next(net.parameters()).device), иначе CUDA-сеть
+        падает на CPU-входе (mat1/mat2 device mismatch). Стаб без .parameters() → CPU.
+        """
         import torch
 
         from core.models.action_contract import ordered_action_keys
 
+        try:
+            device = next(net.parameters()).device
+        except (StopIteration, AttributeError):
+            device = torch.device("cpu")
         obs = torch.tensor(
-            np.asarray([self.get_observation_for_side(side)], dtype=np.float32), dtype=torch.float32
+            np.asarray([self.get_observation_for_side(side)], dtype=np.float32), dtype=torch.float32, device=device
         )
         if hasattr(net, "infer_with_value"):
             legal = self.get_legal_action_masks_by_head(side=side)
             n_units = len(self.unit_data) if side == "model" else len(self.enemy_data)
             keys = ordered_action_keys(int(n_units))
             masks_by_head = [
-                torch.tensor(legal[k], dtype=torch.bool, device=obs.device).unsqueeze(0) for k in keys
+                torch.tensor(legal[k], dtype=torch.bool, device=device).unsqueeze(0) for k in keys
             ]
             _, value = net.infer_with_value(obs, masks_by_head=masks_by_head)
         else:
