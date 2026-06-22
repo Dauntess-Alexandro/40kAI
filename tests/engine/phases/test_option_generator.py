@@ -7,6 +7,7 @@ from core.engine.phases.option_generator import (
     movement_options_for_unit,
     shooting_options_for_unit,
 )
+from core.engine.phases.stratagems import stratagem_choice_index
 from core.engine.phases.types import ActionKind, Phase
 from tests.engine.phases._helpers import build_env
 
@@ -153,7 +154,12 @@ def test_command_window_offers_bravery_only_with_cp():
     assert [o.unit_idx for o in bravery] == alive
     for o in bravery:
         assert o.meta["stratagem_id"] == "insane_bravery"
-        assert o.legacy_patch == {"use_cp": 1, "cp_on": int(o.unit_idx)}
+        assert o.legacy_patch == {
+            "use_cp": 1,
+            "cp_on": int(o.unit_idx),
+            "strat_command": stratagem_choice_index(Phase.COMMAND, "insane_bravery"),
+            "strat_command_unit": int(o.unit_idx),
+        }
 
 
 def test_generate_windows_orders_phases():

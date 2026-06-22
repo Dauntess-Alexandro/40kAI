@@ -289,8 +289,8 @@ def legal_stratagem_options(
     """Какие стратагемы доступны сейчас (read-only).
 
     Фильтры: фаза, триггер, хватает ли CP, юнит жив, есть ли нужный keyword.
-    legacy_patch есть только у insane_bravery (выразима в плоском action_dict);
-    реакции пока несут пустой patch (исполняются движком авто до Stage 6/7).
+    legacy_patch несёт strat_{phase} и strat_{phase}_unit для различения в AZ MCTS;
+    insane_bravery дополнительно несёт use_cp и cp_on (специальный Case).
     """
     e = _unwrap(env)
     is_model = side == "model"
@@ -318,12 +318,16 @@ def legal_stratagem_options(
                 continue
             if d.id == "command_reroll":
                 for roll in ("hit", "wound"):
+                    _choice = f"command_reroll:{roll}"
                     options.append(
                         ActionOption(
                             kind=ActionKind.USE_STRATAGEM,
                             unit_idx=i,
                             param={"stratagem_id": d.id, "reroll_roll": roll},
-                            legacy_patch={},
+                            legacy_patch={
+                                f"strat_{phase.value}": stratagem_choice_index(phase, _choice),
+                                f"strat_{phase.value}_unit": i,
+                            },
                             meta={
                                 "stratagem_id": d.id,
                                 "cp_cost": d.cp_cost,
@@ -334,7 +338,18 @@ def legal_stratagem_options(
                         )
                     )
                 continue
-            legacy_patch = {"use_cp": 1, "cp_on": i} if d.id == "insane_bravery" else {}
+            if d.id == "insane_bravery":
+                legacy_patch = {
+                    "use_cp": 1,
+                    "cp_on": i,
+                    f"strat_{phase.value}": stratagem_choice_index(phase, d.id),
+                    f"strat_{phase.value}_unit": i,
+                }
+            else:
+                legacy_patch = {
+                    f"strat_{phase.value}": stratagem_choice_index(phase, d.id),
+                    f"strat_{phase.value}_unit": i,
+                }
             options.append(
                 ActionOption(
                     kind=ActionKind.USE_STRATAGEM,

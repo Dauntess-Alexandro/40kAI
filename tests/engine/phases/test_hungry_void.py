@@ -3,8 +3,8 @@
 import core.envs.warhamEnv as warham_mod
 from core.engine.phases import stratagem_engine
 from core.engine.phases.option_generator import fight_stratagem_options_for_unit
-from core.engine.phases.stratagems import by_id
-from core.engine.phases.types import ActionKind
+from core.engine.phases.stratagems import by_id, stratagem_choice_index
+from core.engine.phases.types import ActionKind, Phase
 from tests.engine.phases._helpers import build_env
 
 
@@ -51,7 +51,10 @@ def test_hungry_void_fight_option_apply_effect_and_snapshot_restore():
     opts = fight_stratagem_options_for_unit(env, "model", 0)
     hungry = [o for o in opts if o.kind is ActionKind.USE_STRATAGEM and o.meta["stratagem_id"] == "hungry_void"]
     assert len(hungry) == 1
-    assert hungry[0].legacy_patch == {}
+    assert hungry[0].legacy_patch == {
+        "strat_fight": stratagem_choice_index(Phase.FIGHT, "hungry_void"),
+        "strat_fight_unit": 0,
+    }
     assert hungry[0].unit_idx == 0
 
     res = stratagem_engine.apply(env, "model", "hungry_void", 0, phase="fight")

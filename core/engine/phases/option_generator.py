@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from core.engine.phases.stratagems import Trigger, by_id, legal_stratagem_options
+from core.engine.phases.stratagems import (
+    Trigger,
+    by_id,
+    legal_stratagem_options,
+    stratagem_choice_index,
+)
 from core.engine.phases.types import (
     ActionKind,
     ActionOption,
@@ -150,7 +155,10 @@ def command_reroll_options_for_unit(
                 kind=ActionKind.USE_STRATAGEM,
                 unit_idx=i,
                 param={"stratagem_id": d.id, "reroll_roll": roll},
-                legacy_patch={},
+                legacy_patch={
+                    f"strat_{phase.value}": stratagem_choice_index(phase, f"command_reroll:{roll}"),
+                    f"strat_{phase.value}_unit": i,
+                },
                 meta={
                     "stratagem_id": d.id,
                     "cp_cost": d.cp_cost,

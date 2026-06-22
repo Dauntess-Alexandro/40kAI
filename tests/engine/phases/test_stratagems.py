@@ -8,6 +8,7 @@ from core.engine.phases.stratagems import (
     for_phase,
     for_trigger,
     legal_stratagem_options,
+    stratagem_choice_index,
 )
 from core.engine.phases.types import ActionKind, Phase
 from tests.engine.phases._helpers import build_env
@@ -76,7 +77,12 @@ def test_command_bravery_cp_gate_and_patch():
     for o in opts:
         assert o.kind is ActionKind.USE_STRATAGEM
         assert o.meta["stratagem_id"] == "insane_bravery"
-        assert o.legacy_patch == {"use_cp": 1, "cp_on": int(o.unit_idx)}
+        assert o.legacy_patch == {
+            "use_cp": 1,
+            "cp_on": int(o.unit_idx),
+            "strat_command": stratagem_choice_index(Phase.COMMAND, "insane_bravery"),
+            "strat_command_unit": int(o.unit_idx),
+        }
 
 
 def test_smokescreen_legality_follows_env_keyword():
@@ -94,7 +100,8 @@ def test_smokescreen_legality_follows_env_keyword():
     assert env._unit_has_smoke(env.unit_data[1]) is False
 
 
-def test_reaction_options_have_empty_legacy_patch():
+def test_reaction_options_carry_strat_patch():
+    """Реакции (REACTION-timing) теперь несут strat_phase в legacy_patch для AZ MCTS."""
     env = build_env()
     env.modelCP = 2
     env.unit_data[0]["Keywords"] = ["INFANTRY", "SMOKE"]
@@ -107,7 +114,10 @@ def test_reaction_options_have_empty_legacy_patch():
         opts = legal_stratagem_options(env, "model", phase=phase, trigger=trig, candidate_unit_idxs=[0])
         assert opts, f"ожидались опции для {trig}"
         for o in opts:
-            assert o.legacy_patch == {}
+            # Реакции теперь несут strat_{phase} и strat_{phase}_unit для AZ различения
+            assert f"strat_{phase.value}" in o.legacy_patch
+            assert f"strat_{phase.value}_unit" in o.legacy_patch
+            assert o.legacy_patch[f"strat_{phase.value}_unit"] == 0
 
 
 def test_reaction_cp_gate_blocks_all():
