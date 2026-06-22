@@ -37,11 +37,13 @@ def test_value_pick_none_without_policy():
 
 
 def test_value_pick_picks_first_subtype_when_apply_wins():
+    # generic-policy loop (вырожденный путь) теперь обслуживает только movement;
+    # shooting/charge идут через MC-оценщики (см. test_command_reroll_mc_shooting_charge).
     env = build_env()
     _setup(env)
     net = _ValueSeqNet([0.1, 0.9])  # pass=0.1, apply=0.9 → apply > pass на первом под-типе
     install_dqn_stratagem_policy(env, {"model": net}, torch.device("cpu"))
-    assert env._value_pick_command_reroll("model", 0, "shooting", ("hit", "wound")) == "hit"
+    assert env._value_pick_command_reroll("model", 0, "movement", ("hit", "wound")) == "hit"
 
 
 def test_value_pick_none_when_pass_wins_all_subtypes():
@@ -80,12 +82,18 @@ def _engage_shoot(env):
     env._invalidate_target_cache("engage_shoot")
 
 
-def test_shooting_phase_value_applies_command_reroll():
+def test_shooting_phase_value_applies_command_reroll(monkeypatch):
+    # shooting теперь идёт через MC-оценщик, а не через generic-policy loop;
+    # подменяем MC чтобы «apply всегда выигрывает».
     env = build_env()
     _setup(env)
     _engage_shoot(env)
-    net = _ValueSeqNet([0.1, 0.9] * 64)  # apply всегда выигрывает
+    net = _ValueSeqNet([0.1, 0.9] * 64)
     install_dqn_stratagem_policy(env, {"model": net}, torch.device("cpu"))
+    monkeypatch.setattr(
+        env, "_mc_value_command_reroll_shooting",
+        lambda side, u, sub, n: (5.0, 1.0) if sub == "wound" else (1.0, 1.0),
+    )
     with env.simulation_mode():
         env.shooting_phase(
             "model",
@@ -109,7 +117,8 @@ def test_shooting_phase_no_policy_is_parity():
     assert env.modelCP == 2
 
 
-def test_charge_phase_value_applies_command_reroll():
+def test_charge_phase_value_applies_command_reroll(monkeypatch):
+    # charge теперь идёт через MC-оценщик; подменяем MC чтобы «apply выигрывает».
     env = build_env()
     _setup(env)
     env.unit_coords[0] = [10, 10]
@@ -121,6 +130,10 @@ def test_charge_phase_value_applies_command_reroll():
     env._invalidate_target_cache("engage_charge")
     net = _ValueSeqNet([0.1, 0.9] * 64)
     install_dqn_stratagem_policy(env, {"model": net}, torch.device("cpu"))
+    monkeypatch.setattr(
+        env, "_mc_value_command_reroll_charge",
+        lambda side, u, sub, n: (5.0, 1.0),
+    )
     with env.simulation_mode():
         env.charge_phase(
             "model",
