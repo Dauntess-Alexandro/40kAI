@@ -2605,6 +2605,74 @@ class Warhammer40kEnv(gym.Env):
             means[branch] = sum(vals) / max(1, len(vals))
         return means["apply"], means["pass"]
 
+    def _best_charge_target(self, side: str, unit_idx: int) -> int | None:
+        """Выбрать цель заряда с макс. melee-преимуществом (my_ms - opp_ms), тай-брейк ближайшая.
+
+        Из get_charge_targets_for_unit: ищем макс. преимущество, затем минимальное расстояние.
+        """
+        targets = list(self.get_charge_targets_for_unit(side, int(unit_idx)) or [])
+        if not targets:
+            return None
+        opp = "enemy" if side == "model" else "model"
+        my = self._melee_strength_score(side, int(unit_idx))
+        my_coords = self.unit_coords if side == "model" else self.enemy_coords
+        opp_coords = self.enemy_coords if side == "model" else self.unit_coords
+
+        def _key(t):
+            adv = my - self._melee_strength_score(opp, int(t))
+            dist = distance(my_coords[int(unit_idx)], opp_coords[int(t)])
+            return (adv, -dist)  # макс. преимущество, тай-брейк ближайшая
+
+        return int(max(targets, key=_key))
+
+    def _simulate_charge_attempt(self, side: str, unit_idx: int, target_idx: int) -> None:
+        """Симулировать charge unit_idx→target_idx: 2D6 (реролл обеих при записи), при успехе — engaged.
+
+        Только в MC-симуляции. Без реального перемещения — выставляет inAttack для value-головы.
+        """
+        ui, ti = int(unit_idx), int(target_idx)
+        if side == "model":
+            my_coords, opp_coords = self.unit_coords, self.enemy_coords
+            my_in, opp_in = self.unitInAttack, self.enemyInAttack
+            opp_h = self.enemy_health
+        else:
+            my_coords, opp_coords = self.enemy_coords, self.unit_coords
+            my_in, opp_in = self.enemyInAttack, self.unitInAttack
+            opp_h = self.unit_health
+        if not (0 <= ti < len(opp_h)) or opp_h[ti] <= 0:
+            return
+        _dice, total = self._charge_roll_with_reroll(side, ui)
+        dist = distance(my_coords[ui], opp_coords[ti])
+        if dist - float(total) <= 5:  # порог успеха как в charge_phase (model-путь)
+            my_in[ui] = [1, ti]
+            opp_in[ti] = [1, ui]
+
+    def _mc_value_command_reroll_charge(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
+        """MC-оценка charge-реролла для юнита по best-trade цели: (mean_apply, mean_pass)."""
+        net = getattr(self, "_reaction_net_by_side", {}).get(side)
+        if net is None:
+            return 0.0, 0.0
+        target = self._best_charge_target(side, int(unit_idx))
+        if target is None:
+            return 0.0, 0.0
+        means: dict[str, float] = {}
+        for branch in ("pass", "apply"):
+            vals: list[float] = []
+            for _ in range(max(1, int(samples))):
+                inner = self.snapshot_state()
+                self._reaction_sim_active = True
+                try:
+                    with self.simulation_mode():
+                        if branch == "apply":
+                            _apply_stratagem(self, side, "command_reroll", int(unit_idx), phase="charge", reroll_roll=str(subtype))
+                        self._simulate_charge_attempt(side, int(unit_idx), int(target))
+                        vals.append(self._reaction_net_value(side, net))
+                finally:
+                    self._reaction_sim_active = False
+                    self.restore_state(inner)
+            means[branch] = sum(vals) / max(1, len(vals))
+        return means["apply"], means["pass"]
+
     def _mc_value_command_reroll_fight(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
         """MC-оценка реролла (subtype) для атаки engaged-юнита: (mean_apply, mean_pass).
 

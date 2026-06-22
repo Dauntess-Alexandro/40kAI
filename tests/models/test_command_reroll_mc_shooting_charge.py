@@ -80,3 +80,34 @@ def test_mc_shooting_zero_when_no_target(monkeypatch):
     env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
     monkeypatch.setattr(env, "_best_shoot_target", lambda side, u: None)
     assert env._mc_value_command_reroll_shooting("model", 0, "wound", samples=4) == (0.0, 0.0)
+
+
+def test_best_charge_target_picks_max_advantage(monkeypatch):
+    env = build_env()
+    _setup(env)
+    monkeypatch.setattr(env, "get_charge_targets_for_unit", lambda side, u: [0, 1])
+    monkeypatch.setattr(
+        env, "_melee_strength_score",
+        lambda side, idx: 9.0 if side == "model" else (1.0 if idx == 1 else 5.0),
+    )
+    # advantage vs t1 = 9-1=8 > vs t0 = 9-5=4 → t1
+    assert env._best_charge_target("model", 0) == 1
+
+
+def test_mc_charge_apply_beats_pass_when_reroll_makes_charge(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env.unit_health[1] = 0.0
+    env.enemy_health[1] = 0.0
+    env._reaction_net_by_side = {"model": _HpAwareNet(env, "model")}
+    monkeypatch.setattr(env, "_best_charge_target", lambda side, u: 0)
+
+    def fake_charge(side, u, t):
+        # apply (реролл-запись) → успех (engaged); pass → нет
+        if env._command_reroll_record_exists(side, u, "charge"):
+            env.unitInAttack[u] = [1, t]
+            env.enemy_health[t] = max(0.0, float(env.enemy_health[t]) - 2.0)
+
+    monkeypatch.setattr(env, "_simulate_charge_attempt", fake_charge)
+    ma, mp = env._mc_value_command_reroll_charge("model", 0, "charge", samples=4)
+    assert ma > mp
