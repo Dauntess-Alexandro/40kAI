@@ -1060,6 +1060,12 @@ class Warhammer40kEnv(gym.Env):
             action_spaces[f"shoot_num_{i}"] = spaces.Discrete(len(enemy))
             action_spaces[f"charge_num_{i}"] = spaces.Discrete(len(enemy))
 
+        # Под-проект 1: пофазные головы выбора стратагемы (аддитивно; применение — под-проект 3).
+        from core.engine.phases.stratagems import STRATAGEM_PHASES, stratagem_action_choices
+        for _ph in STRATAGEM_PHASES:
+            action_spaces[f"strat_{_ph.value}"] = spaces.Discrete(len(stratagem_action_choices(_ph)))
+            action_spaces[f"strat_{_ph.value}_unit"] = spaces.Discrete(len(model))
+
         # ✅ 3) Теперь только ОДИН раз создаём spaces.Dict
         self.action_space = spaces.Dict(action_spaces)
         global _ACTION_KEYS_LOGGED

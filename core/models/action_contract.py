@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
+from core.engine.phases.stratagems import STRATAGEM_PHASES
+
 BASE_ACTION_HEADS = ["move", "attack", "use_cp", "cp_on"]
 
 
@@ -14,6 +16,9 @@ def ordered_action_keys(len_model: int) -> list[str]:
     keys += [f"move_num_{i}" for i in range(n)]
     keys += [f"shoot_num_{i}" for i in range(n)]
     keys += [f"charge_num_{i}" for i in range(n)]
+    for ph in STRATAGEM_PHASES:
+        keys.append(f"strat_{ph.value}")
+        keys.append(f"strat_{ph.value}_unit")
     return keys
 
 

@@ -48,6 +48,17 @@ def _make_mock_env(*, steps_before_done: int = 2):
         "use_cp": np.array([1], dtype=bool),
         "cp_on": np.array([1], dtype=bool),
         "move_num_0": np.array([1, 1], dtype=bool),
+        # Пофазные головы strat_<phase> (аддитивно, Task 2): 1 юнит модели.
+        "strat_command": np.array([1, 1], dtype=bool),
+        "strat_command_unit": np.array([1], dtype=bool),
+        "strat_movement": np.array([1, 1], dtype=bool),
+        "strat_movement_unit": np.array([1], dtype=bool),
+        "strat_shooting": np.array([1, 1, 1], dtype=bool),
+        "strat_shooting_unit": np.array([1], dtype=bool),
+        "strat_charge": np.array([1, 1], dtype=bool),
+        "strat_charge_unit": np.array([1], dtype=bool),
+        "strat_fight": np.array([1, 1, 1, 1], dtype=bool),
+        "strat_fight_unit": np.array([1], dtype=bool),
     }
 
     with patch("core.models.gumbel_muzero_selfplay.unwrap_env", return_value=env_u):

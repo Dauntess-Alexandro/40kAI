@@ -432,7 +432,11 @@ def build_action_masks_by_head(env, len_model, log_fn=None, debug=False, side: s
 def convertToDict(action, len_model: int | None = None):
     naction = action.numpy()[0]
     if len_model is None:
-        len_model = max(0, (len(naction) - 4) // 3)
+        # Формула учитывает новые пофазные головы (5 фаз × 2 = 10 ключей аддитивно):
+        # total = 4 (BASE) + 3×n (per-unit) + 10 (strat) → n = (total - 14) // 3
+        from core.engine.phases.stratagems import STRATAGEM_PHASES
+        strat_keys = 2 * len(STRATAGEM_PHASES)
+        len_model = max(0, (len(naction) - 4 - strat_keys) // 3)
     return action_tensor_to_dict(action, len_model=int(len_model))
 
 def optimize_model(

@@ -122,7 +122,9 @@ class _BatchEvalEnv:
 def _run_batch_env(*, batch_eval_size: int, seed: int = 17, terminal_on_step: bool = False):
     len_model = 1
     n_obs = 16
-    n_actions = [5, 2, 4, 4, 5, 2, 24]
+    # Пофазные головы strat_<phase>/<phase>_unit добавлены аддитивно (Task 2).
+    # len_model=1: base(7) + strat_command(2,1) + strat_movement(2,1) + strat_shooting(3,1) + strat_charge(2,1) + strat_fight(4,1) = 17
+    n_actions = [5, 2, 4, 4, 5, 2, 24, 2, 1, 2, 1, 3, 1, 2, 1, 4, 1]
     env = _BatchEvalEnv(n_obs=n_obs, n_actions=n_actions, len_model=len_model, terminal_on_step=terminal_on_step)
     legal_dict = env.get_legal_action_masks_by_head("model")
     legal = [legal_dict[k] for k in ordered_action_keys(len_model)]
