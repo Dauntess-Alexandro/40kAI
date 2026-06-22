@@ -2347,6 +2347,36 @@ class Warhammer40kEnv(gym.Env):
                 rec["consumed"] = True
         return effects or None
 
+    def _build_reroll_decider(self, attacker_side, attacker_idx, defender_side, defender_idx):
+        def _find(side, unit_idx, roll):
+            for rec in list(getattr(self, "active_stratagem_effects", []) or []):
+                if (
+                    rec.get("effect_id") == "command_reroll"
+                    and not rec.get("consumed", False)
+                    and str(rec.get("phase", "")) == "fight"
+                    and str(rec.get("side", "")) == str(side)
+                    and int(rec.get("unit_idx", -1)) == int(unit_idx)
+                    and str(rec.get("reroll_roll", "")) == str(roll)
+                    and int(rec.get("round", getattr(self, "battle_round", 1)))
+                    == int(getattr(self, "battle_round", 1))
+                ):
+                    return rec
+            return None
+
+        def decider(stage, dice, threshold):
+            if stage in ("hit", "wound"):
+                rec = _find(attacker_side, attacker_idx, stage)
+            elif stage == "save":
+                rec = _find(defender_side, defender_idx, "save")
+            else:
+                rec = None
+            if rec is None:
+                return False
+            rec["consumed"] = True
+            return True
+
+        return decider
+
     def _clear_phase_stratagem_effects(self, phase: str) -> None:
         phase = str(phase)
         self.active_stratagem_effects = [
@@ -7385,6 +7415,7 @@ class Warhammer40kEnv(gym.Env):
                 hp_before = self.enemy_health[def_idx]
                 models_before = _remaining_models("enemy", def_idx, hp_before)
                 fight_effect = self._fight_effects_for_attacker("model", att_idx)
+                reroll_decider = self._build_reroll_decider("model", att_idx, "enemy", def_idx)
 
                 _logger = None
                 if quiet is False and use_roll_logger:
@@ -7399,6 +7430,7 @@ class Warhammer40kEnv(gym.Env):
                         rangeOfComb="Melee",
                         effects=fight_effect,
                         roller=_logger.roll,
+                        reroll_decider=reroll_decider,
                     )
                 else:
                     dmg, modHealth = attack(
@@ -7409,6 +7441,7 @@ class Warhammer40kEnv(gym.Env):
                         defender_data,
                         rangeOfComb="Melee",
                         effects=fight_effect,
+                        reroll_decider=reroll_decider,
                     )
 
                 self._apply_health_update("enemy", def_idx, modHealth, reason="fight")
@@ -7471,6 +7504,7 @@ class Warhammer40kEnv(gym.Env):
                 hp_before = self.unit_health[def_idx]
                 models_before = _remaining_models("model", def_idx, hp_before)
                 fight_effect = self._fight_effects_for_attacker("enemy", att_idx)
+                reroll_decider = self._build_reroll_decider("enemy", att_idx, "model", def_idx)
 
                 _logger = None
                 manual_dice = os.getenv("MANUAL_DICE", "0") == "1"
@@ -7486,9 +7520,11 @@ class Warhammer40kEnv(gym.Env):
                         rangeOfComb="Melee",
                         effects=fight_effect,
                         roller=_logger.roll,
+                        reroll_decider=reroll_decider,
                     )
                 else:
                     extra_kwargs = {"roller": dice_fn} if manual_dice else {}
+                    extra_kwargs["reroll_decider"] = reroll_decider
                     dmg, modHealth = attack(
                         self.enemy_health[att_idx],
                         weapon,

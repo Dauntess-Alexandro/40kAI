@@ -62,3 +62,26 @@ def test_save_die_not_rerolled_twice_effect_then_decider():
         reroll_decider=decider,
     )
     assert float(sum(dmg)) == 6.0
+
+
+def test_defender_command_reroll_applies_to_save():
+    import numpy as np
+
+    from tests.engine.phases._helpers import build_env
+
+    env = build_env()
+    env.battle_round = 1
+    env.active_stratagem_effects = [
+        {
+            "side": "enemy",
+            "unit_idx": 0,
+            "round": 1,
+            "phase": "fight",
+            "effect_id": "command_reroll",
+            "reroll_roll": "save",
+            "consumed": False,
+        }
+    ]
+    decider = env._build_reroll_decider("model", 0, "enemy", 0)
+    assert decider("save", np.array([2]), 4) is True
+    assert decider("hit", np.array([2]), 4) is False

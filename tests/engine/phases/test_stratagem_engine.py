@@ -53,3 +53,15 @@ def test_command_reroll_payload_records_roll_subtype():
     rec = [r for r in env.active_stratagem_effects if r["effect_id"] == "command_reroll"][0]
     assert rec["reroll_roll"] == "hit"
     assert rec["consumed"] is False
+
+
+def test_command_reroll_payload_allows_save_subtype():
+    env = build_env()
+    env.enemyCP = 3
+    env.battle_round = 1
+    env.stratagem_used = []
+    env.active_stratagem_effects = []
+    stratagem_engine.apply(env, "enemy", "command_reroll", 0, phase="fight", reroll_roll="save")
+    rec = [r for r in env.active_stratagem_effects if r["effect_id"] == "command_reroll"][0]
+    assert rec["reroll_roll"] == "save"
+    assert rec["side"] == "enemy"
