@@ -1840,6 +1840,30 @@ class Warhammer40kEnv(gym.Env):
             use_cp_mask[1] = True
         masks["use_cp"] = use_cp_mask
 
+        # Под-проект 2: маски пофазных голов стратагем (заменяют дефолтный all-True).
+        from core.engine.phases.stratagems import STRATAGEM_PHASES, stratagem_action_choices
+
+        for _ph in STRATAGEM_PHASES:
+            _skey = f"strat_{_ph.value}"
+            if _skey in spaces:
+                _choices = stratagem_action_choices(_ph)
+                _sm = np.zeros(len(_choices), dtype=bool)
+                _sm[0] = True  # none всегда легален
+                for _k in range(1, len(_choices)):
+                    if self._stratagem_choice_legal(side, _ph, _choices[_k]):
+                        _sm[_k] = True
+                masks[_skey] = _sm
+            _ukey = f"strat_{_ph.value}_unit"
+            if _ukey in spaces:
+                _un = int(spaces[_ukey].n)
+                _um = np.zeros(_un, dtype=bool)
+                for _i in range(min(_un, len(unit_health))):
+                    if unit_health[_i] > 0:
+                        _um[_i] = True
+                if not _um.any():
+                    _um[0] = True
+                masks[_ukey] = _um
+
         # move_num_i: legal overlay для каждого юнита
         for i in range(len(unit_health)):
             key = f"move_num_{i}"
