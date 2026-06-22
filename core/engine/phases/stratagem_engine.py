@@ -70,7 +70,7 @@ def apply(
         if active is None:
             active = []
             e.active_stratagem_effects = active
-        roll = reroll_roll if reroll_roll in ("hit", "wound", "save", "damage", "attacks", "advance") else "wound"
+        roll = reroll_roll if reroll_roll in ("hit", "wound", "save", "damage", "attacks", "advance", "charge") else "wound"
         active.append(
             {
                 "side": str(side),

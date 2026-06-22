@@ -2435,6 +2435,25 @@ class Warhammer40kEnv(gym.Env):
             )
             return current_roll
 
+    def _two_dice_values(self, raw) -> np.ndarray:
+        if isinstance(raw, np.ndarray):
+            values = [int(v) for v in raw.tolist()]
+        elif isinstance(raw, (list, tuple)):
+            values = [int(v) for v in raw]
+        else:
+            values = [int(raw)]
+        if len(values) < 2:
+            values = (values + [1, 1])[:2]
+        return np.asarray(values[:2], dtype=int)
+
+    def _charge_roll_with_reroll(self, side: str, unit_idx: int, roll_fn=None) -> tuple[np.ndarray, int]:
+        roller = roll_fn or dice
+        dice_vals = self._two_dice_values(roller(num=2))
+        rec = self._consume_command_reroll_record(side, int(unit_idx), "charge", "charge")
+        if rec is not None:
+            dice_vals = self._two_dice_values(roller(num=2))
+        return dice_vals, int(np.sum(dice_vals))
+
     def _clear_phase_stratagem_effects(self, phase: str) -> None:
         phase = str(phase)
         self.active_stratagem_effects = [
@@ -6645,8 +6664,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log_unit("MODEL", modelName, i, "Нет целей в 12\", чардж пропущен.")
                         continue
                     chargeAble = []
-                    dice_vals = dice(num=2)
-                    diceRoll = sum(dice_vals)
+                    dice_vals, diceRoll = self._charge_roll_with_reroll("model", i)
                     if _do_charge:
                         if potential_targets:
                             for j in potential_targets:
@@ -6767,6 +6785,7 @@ class Warhammer40kEnv(gym.Env):
                     "data": {"reward_delta": reward_delta},
                 }
             )
+            self._clear_phase_stratagem_effects("charge")
             return reward_delta
         elif side == "enemy" and action is not None and not manual:
             any_charge_targets = False
@@ -6808,8 +6827,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log_unit("enemy", unit_id, i, "Нет целей в 12\", чардж пропущен.")
                         continue
                     chargeAble = []
-                    dice_vals = dice(num=2)
-                    diceRoll = sum(dice_vals)
+                    dice_vals, diceRoll = self._charge_roll_with_reroll("enemy", i)
                     for j in range(len(self.unit_health)):
                         if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
                             if distance(self.unit_coords[j], self.enemy_coords[i]) - diceRoll <= 5:
@@ -6948,7 +6966,7 @@ class Warhammer40kEnv(gym.Env):
                             response = True
                             j = int(attk_value) - 21
                             self._log("Бросок 2D6...", verbose_only=True)
-                            roll = player_dice(num=2)
+                            roll, roll_total = self._charge_roll_with_reroll("enemy", i, roll_fn=player_dice)
                             self._log(f"Бросок: {roll[0]} и {roll[1]}", verbose_only=True)
                             dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
                             self._log_unit_phase(
@@ -6956,9 +6974,9 @@ class Warhammer40kEnv(gym.Env):
                                 "charge",
                                 playerName,
                                 i,
-                                f"Charge объявлен по цели {self._format_unit_label('model', j)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {sum(roll)}.",
+                                f"Charge объявлен по цели {self._format_unit_label('model', j)}. Дистанция: {dist_to_target:.1f}. Бросок 2D6: {roll[0]} + {roll[1]} = {roll_total}.",
                             )
-                            if distance(self.enemy_coords[i], self.unit_coords[j]) - sum(roll) <= 5:
+                            if distance(self.enemy_coords[i], self.unit_coords[j]) - roll_total <= 5:
                                 self._log(f"{unit_label} успешно зачарджил {self._format_unit_label('model', j)}")
                                 self.enemyInAttack[i][0] = 1
                                 self.enemyInAttack[i][1] = j
@@ -7005,7 +7023,7 @@ class Warhammer40kEnv(gym.Env):
                         self._log(f"{self._format_unit_label('enemy', i)}: был Advance — чардж невозможен.")
                 else:
                     chargeAble = []
-                    diceRoll = sum(dice(num=2))
+                    _dice_vals, diceRoll = self._charge_roll_with_reroll("enemy", i)
                     for j in range(len(self.unit_health)):
                         if distance(self.enemy_coords[i], self.unit_coords[j]) <= 12 and self.unitInAttack[j][0] == 0:
                             if distance(self.enemy_coords[i], self.unit_coords[j]) - diceRoll <= 5:
@@ -7080,6 +7098,7 @@ class Warhammer40kEnv(gym.Env):
                             self._log(
                                 f"{self._format_unit_label('enemy', i)} не смог зачарджить {self._format_unit_label('model', idOfM)} (бросок {diceRoll} vs нужно {required:.1f})"
                             )
+        self._clear_phase_stratagem_effects("charge")
         return None
 
     def fight_phase(self, side: str):
