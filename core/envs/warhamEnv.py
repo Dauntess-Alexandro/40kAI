@@ -2436,7 +2436,8 @@ class Warhammer40kEnv(gym.Env):
         """Применить стратагему из головы strat_<phase> (action-driven, детерминированно).
 
         Валидация: легальна (_stratagem_choice_legal) + конкретный юнит жив + имеет keyword +
-        не применена уже (_stratagem_already_active, anti-double с MC-хуком/fight-планом).
+        не применена уже (_stratagem_already_active — единственный anti-double;
+        MC-хук и fight-план удалены в T2/T3).
         Вызывается в начале фазы ДО старых хуков. Голова idx=0 (none) → no-op.
         """
         if not isinstance(action, dict):

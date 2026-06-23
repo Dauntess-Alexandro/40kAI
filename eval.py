@@ -510,7 +510,6 @@ def run_episode(
             "skip_charge_while_options_exist": "Пропущен charge при доступных вариантах.",
             "default_shoot_choice_with_options": "Выбран дефолтный shoot при наличии альтернатив.",
             "stay_while_move_options_exist": "Выбран stay при доступных вариантах движения.",
-            "cp_not_used": "CP не использован в этот шаг.",
         }
         parts = []
         for token in str(verdict_raw).split(","):

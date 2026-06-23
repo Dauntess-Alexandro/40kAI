@@ -289,8 +289,7 @@ def legal_stratagem_options(
     """Какие стратагемы доступны сейчас (read-only).
 
     Фильтры: фаза, триггер, хватает ли CP, юнит жив, есть ли нужный keyword.
-    legacy_patch несёт strat_{phase} и strat_{phase}_unit для различения в AZ MCTS;
-    insane_bravery дополнительно несёт use_cp и cp_on (специальный Case).
+    legacy_patch несёт strat_{phase} и strat_{phase}_unit для различения в AZ MCTS.
     """
     e = _unwrap(env)
     is_model = side == "model"
@@ -338,18 +337,10 @@ def legal_stratagem_options(
                         )
                     )
                 continue
-            if d.id == "insane_bravery":
-                legacy_patch = {
-                    "use_cp": 1,
-                    "cp_on": i,
-                    f"strat_{phase.value}": stratagem_choice_index(phase, d.id),
-                    f"strat_{phase.value}_unit": i,
-                }
-            else:
-                legacy_patch = {
-                    f"strat_{phase.value}": stratagem_choice_index(phase, d.id),
-                    f"strat_{phase.value}_unit": i,
-                }
+            legacy_patch = {
+                f"strat_{phase.value}": stratagem_choice_index(phase, d.id),
+                f"strat_{phase.value}_unit": i,
+            }
             options.append(
                 ActionOption(
                     kind=ActionKind.USE_STRATAGEM,

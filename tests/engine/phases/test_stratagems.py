@@ -78,8 +78,6 @@ def test_command_bravery_cp_gate_and_patch():
         assert o.kind is ActionKind.USE_STRATAGEM
         assert o.meta["stratagem_id"] == "insane_bravery"
         assert o.legacy_patch == {
-            "use_cp": 1,
-            "cp_on": int(o.unit_idx),
             "strat_command": stratagem_choice_index(Phase.COMMAND, "insane_bravery"),
             "strat_command_unit": int(o.unit_idx),
         }

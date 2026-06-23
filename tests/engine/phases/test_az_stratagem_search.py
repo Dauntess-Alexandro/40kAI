@@ -172,4 +172,4 @@ def test_head_fight_applies_exactly_one_cp():
     with env.simulation_mode():
         env.fight_phase("model", action=action)
     # ровно одно списание CP (нет двойного применения)
-    assert cp_before - env.modelCP <= 1
+    assert cp_before - env.modelCP == 1

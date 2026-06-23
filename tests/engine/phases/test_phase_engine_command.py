@@ -8,10 +8,6 @@ def _bravery_idx():
     return stratagem_action_choices(Phase.COMMAND).index("insane_bravery")
 
 
-def _action(use_cp: int, cp_on: int, n: int) -> dict:
-    return flat_default_action(n, use_cp=int(use_cp), cp_on=int(cp_on))
-
-
 def _action_bravery(n: int, unit: int = 0) -> dict:
     """Action с strat_command=insane_bravery, нацеленный на юнит `unit`."""
     a = flat_default_action(n)
@@ -62,7 +58,7 @@ def test_decide_bravery_false_keeps_battleshock():
     n = len(env.unit_health)
     snap = env.snapshot_state()
     with env.simulation_mode():
-        bs, _r = env.command_phase("model", action=_action(0, 0, n), decide_bravery=lambda i: False)
+        bs, _r = env.command_phase("model", action=_action_no_bravery(n), decide_bravery=lambda i: False)
         used = list(env.stratagem_used)
     env.restore_state(snap)
     assert bs[0] is True

@@ -155,8 +155,6 @@ def test_command_window_offers_bravery_only_with_cp():
     for o in bravery:
         assert o.meta["stratagem_id"] == "insane_bravery"
         assert o.legacy_patch == {
-            "use_cp": 1,
-            "cp_on": int(o.unit_idx),
             "strat_command": stratagem_choice_index(Phase.COMMAND, "insane_bravery"),
             "strat_command_unit": int(o.unit_idx),
         }
