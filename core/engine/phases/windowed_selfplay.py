@@ -124,21 +124,31 @@ def make_charge_decide_from_action_dict(
 
 
 def make_fight_decide_from_action_dict(
-    env,
+    env,  # noqa: ARG001 — сохраняем сигнатуру для совместимости
     action_dict: dict | None,
 ) -> Callable[[DecisionWindow], ActionOption]:
-    """Маппинг _pending_fight_stratagem_plan → fight-окна (option/MCTS)."""
-    e = _unwrap(env)
-    plan = dict(getattr(e, "_pending_fight_stratagem_plan", None) or {})
+    """Маппинг strat_fight/strat_fight_unit → fight-окна (голова AZ MCTS)."""
+    from core.engine.phases.stratagems import stratagem_choice_str
+    from core.engine.phases.types import Phase as _Ph
+
+    _ = env  # сигнатура сохраняется; _pending_fight_stratagem_plan снесён
+    idx = _action_int(action_dict, "strat_fight", 0)
+    unit = _action_int(action_dict, "strat_fight_unit", 0)
+    choice = stratagem_choice_str(_Ph.FIGHT, idx)
 
     def decide(window: DecisionWindow) -> ActionOption:
         u = window.cursor_unit_idx
-        sid = plan.get(u) if u is not None else None
-        if sid:
-            sid_s = str(sid)
+        if choice and choice not in ("none", "pass") and u is not None and int(u) == unit:
+            # choice может быть "command_reroll:hit" → base_id="command_reroll", sub="hit"
+            if ":" in choice:
+                base_id, sub = choice.split(":", 1)
+            else:
+                base_id, sub = choice, None
             for opt in window.options:
-                if opt.kind is ActionKind.USE_STRATAGEM and str(opt.meta.get("stratagem_id", "")) == sid_s:
-                    return opt
+                if opt.kind is ActionKind.USE_STRATAGEM:
+                    if str(opt.meta.get("stratagem_id", "")) == base_id:
+                        if sub is None or str(opt.meta.get("reroll_roll", "")) == sub:
+                            return opt
         return _pick_pass(window)
 
     return decide
@@ -166,9 +176,7 @@ def run_model_charge_from_action(env, action_dict: dict | None, state=None):
 
 
 def run_model_fight_from_action(env, action_dict: dict | None, state=None):
-    e = _unwrap(env)
-    decide = make_fight_decide_from_action_dict(e, action_dict)
-    e._pending_fight_stratagem_plan = None
+    decide = make_fight_decide_from_action_dict(env, action_dict)
     return phase_engine.run_fight(env, "model", decide, state)
 
 

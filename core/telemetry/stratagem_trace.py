@@ -286,14 +286,13 @@ class StratagemEpisodeTracer:
         )
 
     def run_model_step(self, env, env_unwrapped, step_no: int, action_dict: dict):
-        fight_plan = dict(getattr(env_unwrapped, "_pending_fight_stratagem_plan", None) or {})
         specs = log_stratagem_attempts(
             self.log_fn,
             step_no=step_no,
             env_side="model",
             learner_side=self.learner_side,
             action_dict=action_dict,
-            fight_plan=fight_plan,
+            fight_plan={},
             ep_attempts=self.ep_attempts,
             emit=True,
             tag=self.tag,
@@ -301,15 +300,7 @@ class StratagemEpisodeTracer:
         su_before = stratagem_used_snapshot(env_unwrapped)
         cp_model_before = cp_for_env_side(env_unwrapped, "model")
         cp_enemy_before = cp_for_env_side(env_unwrapped, "enemy")
-        try:
-            result = env.step(action_dict)
-        finally:
-            try:
-                from core.models.option_candidates import attach_fight_stratagem_plan
-
-                attach_fight_stratagem_plan(env, None)
-            except Exception:
-                pass
+        result = env.step(action_dict)
         log_stratagem_journal_diff(
             self.log_fn,
             step_no=step_no,

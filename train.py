@@ -5461,20 +5461,7 @@ def _actor_learner_actor_entry(
 
                 def _model_half() -> None:
                     nonlocal next_obs, reward, done, res, info2, last_info, last_res, ep_reward, ep_len, obs, steps_done, buf
-                    if DQN_REACTION_VALUE_POLICY:
-                        from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
-                        from core.models.option_candidates import attach_fight_stratagem_plan
-
-                        attach_fight_stratagem_plan(
-                            env, dqn_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
-                        )
-                    try:
-                        next_obs, reward, done, res, info2 = env.step(action_dict)
-                    finally:
-                        if DQN_REACTION_VALUE_POLICY:
-                            from core.models.option_candidates import attach_fight_stratagem_plan
-
-                            attach_fight_stratagem_plan(env, None)
+                    next_obs, reward, done, res, info2 = env.step(action_dict)
                     last_info = info2 if isinstance(info2, dict) else {}
                     last_res = res
                     ep_reward += float(reward)
@@ -5865,20 +5852,7 @@ def _actor_learner_actor_entry_ppo(
                     for i_u in range(len(model)):
                         action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
 
-                    if PPO_REACTION_VALUE_POLICY:
-                        from core.models.option_candidates import attach_fight_stratagem_plan
-                        from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
-
-                        attach_fight_stratagem_plan(
-                            env, ppo_build_fight_plan(env, cpu_net, torch.device("cpu"), side="model")
-                        )
-                    try:
-                        next_obs, reward, _done, res, info2 = env.step(action_dict)
-                    finally:
-                        if PPO_REACTION_VALUE_POLICY:
-                            from core.models.option_candidates import attach_fight_stratagem_plan
-
-                            attach_fight_stratagem_plan(env, None)
+                    next_obs, reward, _done, res, info2 = env.step(action_dict)
                     done = _done
                     last_info = info2 if isinstance(info2, dict) else last_info
                     last_res = res

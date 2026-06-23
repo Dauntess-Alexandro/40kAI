@@ -81,40 +81,6 @@ def test_generate_windows_has_shooting_charge_stratagem_options():
 
 
 # ---------------------------------------------------------------------------
-# Task 3: anti-double (голова strat_fight + pending fight plan)
-# ---------------------------------------------------------------------------
-
-
-def test_head_and_fight_plan_no_double_apply():
-    """Голова strat_fight и старый fight-план оба просят command_reroll на юните 0.
-
-    fight_phase применяет голову ПЕРЕД pending plan → plan видит запись в
-    stratagem_used/active_stratagem_effects и пропускает (MC-гейт
-    _command_reroll_record_exists → уже применён → пропуск).
-    Итого: ровно одно списание CP, не два.
-    """
-    env = build_env()
-    _setup(env)
-    env.unit_health[0] = 6.0
-    env.enemy_health[0] = 6.0
-    env.unitInAttack[0] = [1, 0]
-    env.enemyInAttack[0] = [1, 0]
-    env.unitCharged = [0] * len(env.unit_health)
-    env.enemyCharged = [0] * len(env.enemy_health)
-    # и голова, и старый fight-план просят command_reroll на юните 0
-    action = {
-        "strat_fight": stratagem_choice_index(Phase.FIGHT, "command_reroll:hit"),
-        "strat_fight_unit": 0,
-    }
-    env._pending_fight_stratagem_plan = {0: "command_reroll"}
-    cp_before = env.modelCP
-    with env.simulation_mode():
-        env.fight_phase("model", action=action)
-    # ровно одно списание CP (нет двойного применения)
-    assert cp_before - env.modelCP <= 1
-
-
-# ---------------------------------------------------------------------------
 # Task 3: policy-таргет strat_fight головы не вырожден
 # ---------------------------------------------------------------------------
 
@@ -183,9 +149,13 @@ def test_final_policy_from_visits_nondegenerate_for_strat_head():
     )
 
 
-def test_head_and_colon_fight_plan_no_double_apply():
-    """anti-double: голова strat_fight + colon-form fight-план (как у AZ) на одном юните →
-    ровно одно списание CP (colon-ветка _apply_pending_fight_stratagem_plan видит record и пропускает)."""
+# ---------------------------------------------------------------------------
+# Task 3: anti-double через head-путь (windowed_selfplay)
+# ---------------------------------------------------------------------------
+
+
+def test_head_fight_applies_exactly_one_cp():
+    """strat_fight-голова применяет command_reroll на юните 0 → ровно одно списание CP."""
     env = build_env()
     _setup(env)
     env.unit_health[0] = 6.0
@@ -198,8 +168,8 @@ def test_head_and_colon_fight_plan_no_double_apply():
         "strat_fight": stratagem_choice_index(Phase.FIGHT, "command_reroll:hit"),
         "strat_fight_unit": 0,
     }
-    env._pending_fight_stratagem_plan = {0: "command_reroll:hit"}  # AZ colon-форма
     cp_before = env.modelCP
     with env.simulation_mode():
         env.fight_phase("model", action=action)
-    assert cp_before - env.modelCP <= 1  # без двойного списания
+    # ровно одно списание CP (нет двойного применения)
+    assert cp_before - env.modelCP <= 1

@@ -32,7 +32,6 @@ from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumbel_az_algo
 from core.models.eval_agent import build_eval_agent, resolve_eval_search_cfg
 from core.models.opponent_adapter import load_agent_opponent
-from core.models.option_candidates import attach_fight_stratagem_plan
 from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
 from project_paths import AGENT_EVAL_LOG_PATH, ARTIFACTS_MODELS_DIR, EVAL_STOP_FLAG_PATH, ensure_runtime_dirs
@@ -668,10 +667,8 @@ def run_episode(
 
         def _model_half() -> None:
             nonlocal done, info, episode_len, total_reward
-            # Действие фазы + план реакций (file-страт. бой) — единый путь через агента.
-            attach_fight_stratagem_plan(env, None)
+            # Действие фазы — единый путь через агента; fight-стратагемы через голову strat_fight.
             action_dict, _plan = learner_agent.select_action(env_unwrapped, "model")
-            attach_fight_stratagem_plan(env, _plan)
             masks_counts = _head_masks_counts()
             shoot_targets = 0
             try:
@@ -700,14 +697,13 @@ def run_episode(
                     masks_counts=masks_counts,
                     shoot_targets=int(shoot_targets),
                 )
-            fight_plan = dict(getattr(env_unwrapped, "_pending_fight_stratagem_plan", None) or {})
             model_attempt_specs = log_stratagem_attempts(
                 _trace,
                 step_no=step_no,
                 env_side="model",
                 learner_side=learner_side,
                 action_dict=action_dict,
-                fight_plan=fight_plan,
+                fight_plan={},
                 ep_attempts=ep_stratagem_attempts,
                 emit=(trace_style == "warhammer"),
                 tag="WH40K",
@@ -719,10 +715,7 @@ def run_episode(
             su_before = stratagem_used_snapshot(env_unwrapped)
             cp_model_before = cp_for_env_side(env_unwrapped, "model")
             cp_enemy_before = cp_for_env_side(env_unwrapped, "enemy")
-            try:
-                _next_observation, _reward, _done, _, _info = env.step(action_dict)
-            finally:
-                attach_fight_stratagem_plan(env, None)
+            _next_observation, _reward, _done, _, _info = env.step(action_dict)
             new_strat_records = log_stratagem_journal_diff(
                 _trace,
                 step_no=step_no,

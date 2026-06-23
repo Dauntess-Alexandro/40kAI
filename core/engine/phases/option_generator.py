@@ -210,8 +210,7 @@ def generate_windows(env, side: str = "model") -> list[DecisionWindow]:
     """Упорядоченные окна хода: command → movement → shooting → charge → fight.
 
     Fight-окна: стратагемы боя (Hungry Void, Command Re-roll) на живого юнита;
-    исполнение в env.step — через _pending_fight_stratagem_plan (option/MCTS)
-    или PhaseEngine.run_fight.
+    исполнение в env.step — через голову strat_fight (AZ MCTS) или PhaseEngine.run_fight.
     """
     e = _unwrap(env)
     health = e.unit_health if side == "model" else e.enemy_health

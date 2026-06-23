@@ -1,7 +1,7 @@
-"""DQN ↔ стратагемы: V-proxy (masked max-Q), fight-plan builder, policy install.
+"""DQN ↔ стратагемы: V-proxy (masked max-Q), policy install.
 
-Переиспользует AZ-инфру (reaction_value_policy, attach_fight_stratagem_plan)
-поверх DQN.infer_with_value.
+Реакции (reaction_value_policy) поверх DQN.infer_with_value.
+Fight-стратагемы применяются через голову strat_fight (_apply_action_stratagem).
 """
 
 from __future__ import annotations
@@ -11,9 +11,6 @@ import os
 import numpy as np
 import torch
 
-from core.engine.phases.stratagem_engine import apply as _apply_stratagem
-from core.engine.phases.stratagems import for_phase, usage_limit_reached
-from core.engine.phases.types import Phase
 from core.models.action_contract import ordered_action_keys
 from core.models.utils import unwrap_env
 
@@ -61,41 +58,3 @@ def dqn_value(env, policy_net, device, side: str) -> float:
     with torch.no_grad():
         _, v = policy_net.infer_with_value(obs, masks_by_head=masks)
     return float(v.reshape(-1)[0].item())
-
-
-def dqn_build_fight_plan(env, policy_net, device, side: str = "model") -> dict[int, str]:
-    """Hungry Void / Command Re-roll план через max-Q lookahead (2 ветки на юнит)."""
-    e = unwrap_env(env)
-    if getattr(e, "_reaction_sim_active", False):
-        return {}
-    health = e.unit_health if side == "model" else e.enemy_health
-    in_attack = e.unitInAttack if side == "model" else e.enemyInAttack
-    plan: dict[int, str] = {}
-    eps = 1e-3
-    for d in for_phase(Phase.FIGHT):
-        cp = int(e.modelCP if side == "model" else e.enemyCP)
-        if cp < d.cp_cost:
-            continue
-        if usage_limit_reached(e, side, d, phase="fight"):
-            continue
-        for u in range(len(health)):
-            if health[u] <= 0 or in_attack[u][0] != 1:
-                continue
-            if u in plan:
-                continue
-            if d.id == "command_reroll":
-                plan[u] = d.id  # пре-фильтр: финальное «да/нет» и подтип — MC в _apply_pending_fight_stratagem_plan
-                continue
-            snap = e.snapshot_state()
-            try:
-                with e.simulation_mode():
-                    e.restore_state(snap)
-                    _apply_stratagem(e, side, d.id, u, phase="fight")
-                    v_apply = dqn_value(e, policy_net, device, side)
-                    e.restore_state(snap)
-                    v_pass = dqn_value(e, policy_net, device, side)
-            finally:
-                e.restore_state(snap)
-            if v_apply > v_pass + eps:
-                plan[u] = d.id
-    return plan
