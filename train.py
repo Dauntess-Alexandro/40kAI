@@ -4195,6 +4195,12 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     algo="dqn",
                     actor_idx=int(payload.get("actor_idx", -1) or -1),
                 )
+                # Per-episode стратагемная сводка (DQN)
+                if _trace_ep_enabled(int(episodes_finished)):
+                    from core.telemetry.stratagem_trace import episode_stratagem_summary_line
+                    _strat_line = episode_stratagem_summary_line(payload, ep_label=int(episodes_finished), tag="TRAIN")
+                    if _strat_line:
+                        append_agent_log(_strat_line)
 
                 # Periodic DET-like eval для Actor-Learner (аналог DET_EVAL в основном loop).
                 if (
@@ -4936,6 +4942,12 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                     algo="ppo",
                     actor_idx=int(payload.get("actor_idx", -1) or -1),
                 )
+                # Per-episode стратагемная сводка (PPO)
+                if _trace_ep_enabled(int(episodes_finished)):
+                    from core.telemetry.stratagem_trace import episode_stratagem_summary_line
+                    _strat_line = episode_stratagem_summary_line(payload, ep_label=int(episodes_finished), tag="TRAIN")
+                    if _strat_line:
+                        append_agent_log(_strat_line)
 
                 # Periodic DET-like eval для PPO Actor-Learner (как в DQN actor-learner).
                 if (
@@ -5601,6 +5613,10 @@ def _actor_learner_actor_entry(
                     end_reason = "suspicious_wipeout_enemy"
                     result = "draw"
 
+                # Стратагемная сводка per-episode для learner-лога
+                from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
+                _dqn_strat_payload = collect_ep_stratagem_payload(env_unwrapped)
+
                 data_q.put(
                     (
                         "ep",
@@ -5638,6 +5654,7 @@ def _actor_learner_actor_entry(
                                 "shoot_taken_when_targets": int(shoot_taken_when_targets),
                                 "move": {"stay": int(move_stay), "nonstay": int(move_nonstay)},
                             },
+                            **_dqn_strat_payload,
                         },
                     )
                 )
@@ -5914,6 +5931,10 @@ def _actor_learner_actor_entry_ppo(
                     elif vp_diff == 0:
                         result = "draw"
 
+                # Стратагемная сводка per-episode для learner-лога
+                from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
+                _ppo_strat_payload = collect_ep_stratagem_payload(env_unwrapped)
+
                 data_q.put(
                     (
                         "ep",
@@ -5930,6 +5951,7 @@ def _actor_learner_actor_entry_ppo(
                             "result": str(result),
                             "end_reason": str(end_reason),
                             "end_code": int(last_res),
+                            **_ppo_strat_payload,
                         },
                     )
                 )

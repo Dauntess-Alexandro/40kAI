@@ -5,6 +5,63 @@ import os
 from collections import Counter
 
 
+def episode_stratagem_summary_line(
+    source,
+    *,
+    ep_label: str | int = "",
+    tag: str = "TRAIN",
+) -> str | None:
+    """Per-episode сводка стратагем из журнала env + счётчиков реролла.
+
+    *source* — либо unwrapped env (с атрибутами stratagem_used,
+    _cmd_reroll_fired, _cmd_reroll_wasted), либо dict-payload от актора
+    (ключи _strat_applied, _strat_applied_total, _cmd_reroll_fired,
+    _cmd_reroll_wasted).  Возвращает None если данных нет / всё нулевое.
+    """
+    if isinstance(source, dict):
+        # payload-словарь от актора
+        applied: dict[str, int] = dict(source.get("_strat_applied") or {})
+        applied_total = int(source.get("_strat_applied_total") or 0)
+        fired = int(source.get("_cmd_reroll_fired") or 0)
+        wasted = int(source.get("_cmd_reroll_wasted") or 0)
+    else:
+        # unwrapped env
+        used = list(getattr(source, "stratagem_used", None) or [])
+        counts: Counter[str] = Counter(str(rec[1]) for rec in used if len(rec) > 1)
+        applied = dict(counts)
+        applied_total = sum(counts.values())
+        fired = int(getattr(source, "_cmd_reroll_fired", 0) or 0)
+        wasted = int(getattr(source, "_cmd_reroll_wasted", 0) or 0)
+
+    if not applied and not fired and not wasted:
+        return None
+    return (
+        f"[{tag}][STRATAGEM_SUMMARY] ep={ep_label} "
+        f"applied={applied} applied_total={applied_total} "
+        f"cmd_reroll_fired={fired} cmd_reroll_wasted={wasted}"
+    )
+
+
+def collect_ep_stratagem_payload(env_unwrapped) -> dict:
+    """Сериализация стратагемных данных env в dict для payload актора.
+
+    Вызывать в конце эпизода из actor-процесса; результат мержить в ep-payload
+    для передачи learner'у через data_q.
+    """
+    used = list(getattr(env_unwrapped, "stratagem_used", None) or [])
+    counts: Counter[str] = Counter(str(rec[1]) for rec in used if len(rec) > 1)
+    fired = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
+    wasted = int(getattr(env_unwrapped, "_cmd_reroll_wasted", 0) or 0)
+    if not counts and not fired and not wasted:
+        return {}
+    return {
+        "_strat_applied": dict(counts),
+        "_strat_applied_total": int(sum(counts.values())),
+        "_cmd_reroll_fired": fired,
+        "_cmd_reroll_wasted": wasted,
+    }
+
+
 def train_stratagem_trace_enabled() -> bool:
     """Включено при VERBOSE_LOGS=1 (или явно TRAIN_STRATAGEM_TRACE=1)."""
     return (
