@@ -9,6 +9,7 @@ import re
 import sys
 import types
 from collections import Counter
+from typing import Any
 
 import gymnasium as gym
 import torch
@@ -213,6 +214,9 @@ def _build_env_from_train_roster():
         from train import _build_units_from_config, _load_roster_config
     except Exception as exc:
         return None, None, None, str(exc)
+    # train.py на import-time затёр PHASE_OBS_FEATURES (else-ветка, TRAIN_ALGO=dqn) —
+    # переустанавливаем резолвленное значение ДО gym.make, иначе obs соберётся неверного размера.
+    _reapply_resolved_phase_obs()
     try:
         roster_config = _load_roster_config()
         b_len = int(roster_config.get("b_len", 40))
@@ -229,6 +233,99 @@ def _build_env_from_train_roster():
         return env, model_units, enemy_units, None
     except Exception as exc:
         return None, None, None, str(exc)
+
+
+# Резолвленные phase_obs/reaction env-vars (заполняется _resolve_phase_obs_for_agent),
+# чтобы переустановить их после import train (см. _reapply_resolved_phase_obs).
+_PHASE_OBS_RESOLVED_ENV: dict[str, str] = {}
+
+
+def _load_agent_contract_extras(agent_id: str) -> dict[str, Any] | None:
+    """Лёгкая загрузка extras из контракта агента (без torch-weights)."""
+    try:
+        from core.engine.agent_registry import _find_agent_entry_on_disk, _load_json
+
+        entry = _find_agent_entry_on_disk(agent_id)
+        if entry is not None:
+            contract = _load_json(entry.get("contract_path", ""), {})
+            return contract.get("extras") if isinstance(contract, dict) else None
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_phase_obs_for_agent(agent_id: str) -> None:
+    """Резолвит PHASE_OBS_FEATURES и AZ_REACTION_VALUE_POLICY ДО постройки env.
+
+    Приоритет: контракт агента (extras) → hyperparams.json → env-var → 0.
+    """
+    import json
+
+    from core.engine.phases.obs_features import resolve_phase_obs_features
+
+    # 1. Контракт агента
+    contract_extras = _load_agent_contract_extras(agent_id) or {}
+    contract_phase = contract_extras.get("phase_obs_features")
+    contract_reaction = contract_extras.get("reaction_value_policy")
+
+    # 2. Hyperparams
+    hp: dict[str, Any] = {}
+    try:
+        with open("hyperparams.json", encoding="utf-8") as f:
+            hp = json.load(f)
+    except Exception:
+        pass
+    az_cfg = hp.get("alphazero_tree", {}) if isinstance(hp, dict) else {}
+    hp_phase = az_cfg.get("phase_obs_features")
+    hp_reaction = az_cfg.get("reaction_value_policy")
+
+    # 3. Env vars
+    env_phase = os.getenv("PHASE_OBS_FEATURES")
+    env_reaction = os.getenv("AZ_REACTION_VALUE_POLICY")
+
+    _TRUTHY = {"1", "true", "yes", "on"}
+
+    # Резолв phase_obs_features
+    if contract_phase is not None:
+        resolved_phase = str(contract_phase).strip().lower() in _TRUTHY
+        log(f"[RESOLVE] phase_obs_features={int(resolved_phase)} (из контракта агента)")
+    else:
+        resolved_phase = resolve_phase_obs_features(env_value=env_phase, cfg_value=hp_phase)
+        if resolved_phase:
+            log(f"[RESOLVE] phase_obs_features={int(resolved_phase)} (из hyperparams/env)")
+        else:
+            log("[RESOLVE] phase_obs_features=0 (дефолт)")
+
+    # Резолв reaction_value_policy
+    if contract_reaction is not None:
+        resolved_reaction = str(contract_reaction).strip().lower() in _TRUTHY
+        log(f"[RESOLVE] reaction_value_policy={int(resolved_reaction)} (из контракта агента)")
+    else:
+        resolved_reaction = resolve_phase_obs_features(env_value=env_reaction, cfg_value=hp_reaction)
+        if resolved_reaction:
+            log(f"[RESOLVE] reaction_value_policy={int(resolved_reaction)} (из hyperparams/env)")
+        else:
+            log("[RESOLVE] reaction_value_policy=0 (дефолт)")
+
+    os.environ["PHASE_OBS_FEATURES"] = "1" if resolved_phase else "0"
+    os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if resolved_reaction else "0"
+
+    # Запоминаем резолвленные значения, чтобы переустановить их ПОСЛЕ `from train import`
+    # (train.py на import-time затирает PHASE_OBS_FEATURES в else-ветке, см. _reapply_resolved_phase_obs).
+    _PHASE_OBS_RESOLVED_ENV["PHASE_OBS_FEATURES"] = os.environ["PHASE_OBS_FEATURES"]
+    _PHASE_OBS_RESOLVED_ENV["AZ_REACTION_VALUE_POLICY"] = os.environ["AZ_REACTION_VALUE_POLICY"]
+
+
+def _reapply_resolved_phase_obs() -> None:
+    """Переустанавливает резолвленные phase_obs/reaction env-vars после импорта train.
+
+    Зачем: `_build_env_from_train_roster` делает `from train import ...`; train.py на
+    import-time (TRAIN_ALGO=dqn в процессе eval → else-ветка) жёстко ставит
+    PHASE_OBS_FEATURES="0", затирая значение резолвера. Вызываем это ПОСЛЕ импорта train
+    и ДО постройки env, чтобы env собрался с правильным obs-size (контракт агента).
+    """
+    for key, value in _PHASE_OBS_RESOLVED_ENV.items():
+        os.environ[key] = value
 
 
 def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, action_masks=None, shoot_mask=None):
@@ -978,10 +1075,14 @@ def main():
 
     os.environ.setdefault("MANUAL_DICE", "0")
 
+    selected_agent_id = (args.learner_agent_id or "").strip()
+    if selected_agent_id:
+        _resolve_phase_obs_for_agent(selected_agent_id)
+
     env, model_units, enemy_units, checkpoint, pickle_path, checkpoint_path = load_latest_model(args.model)
     if env is None:
         # Fallback: если указаны agent-id, можем построить env без legacy pickle.
-        if (args.learner_agent_id or "").strip():
+        if selected_agent_id:
             env, model_units, enemy_units, err = _build_env_from_train_roster()
             if env is None:
                 log(

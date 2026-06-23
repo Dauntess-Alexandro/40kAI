@@ -12,6 +12,17 @@ import torch
 
 from project_paths import ARTIFACTS_MODELS_DIR, PROJECT_ROOT, resolve_share_models_root
 
+
+# Lazy import to avoid circular import at module-load time.
+def _phase_obs_features_enabled() -> bool:
+    from core.engine.phases.obs_features import phase_obs_features_enabled
+
+    return phase_obs_features_enabled()
+
+
+def _env_bool(name: str, default: str = "0") -> bool:
+    return str(os.getenv(str(name), str(default))).strip().lower() in {"1", "true", "yes", "on"}
+
 AGENTS_ROOT = str(ARTIFACTS_MODELS_DIR / "agents")
 AGENTS_REGISTRY_PATH = str(ARTIFACTS_MODELS_DIR / "agents_registry.json")
 DEFAULT_RULESET_VERSION = "only_war_v2"
@@ -167,12 +178,21 @@ def make_env_contract(
 ) -> dict[str, Any]:
     obs_signature = f"vec:{int(n_observations)}"
     act_signature = "heads:" + ",".join(str(int(v)) for v in n_actions)
+
+    # Автоматически добавляем phase_obs_features и reaction_value_policy в extras
+    # (не перетирая явно переданные ключи — agent-переданные ключи приоритетны).
+    auto_extras: dict[str, Any] = {
+        "phase_obs_features": int(_phase_obs_features_enabled()),
+        "reaction_value_policy": int(_env_bool("AZ_REACTION_VALUE_POLICY", "1")),
+    }
+    merged_extras = {**auto_extras, **(extras or {})}
+
     payload = {
         "ruleset_version": str(ruleset_version or DEFAULT_RULESET_VERSION),
         "mission_name": str(mission_name or "only_war"),
         "obs_space_signature": obs_signature,
         "action_space_signature": act_signature,
-        "extras": extras or {},
+        "extras": merged_extras,
     }
     payload["contract_hash"] = _hash_compact(
         {
