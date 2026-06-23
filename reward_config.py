@@ -59,6 +59,10 @@ VP_OBJECTIVE_STREAK_LINEAR_CAP = 2.0
 COMMAND_INSANE_BRAVERY_REWARD = 0.5
 # Штраф за неэффективное/ошибочное применение Insane Bravery.
 COMMAND_INSANE_BRAVERY_PENALTY = 0.5
+# Command Re-roll — штраф за взведённый, но не сработавший реролл (per-step net,
+# applied − fired стороны model). Учит голову взводить command_reroll избирательно.
+# Сработавшие рероллы НЕ штрафуются. См. spec 2026-06-23-command-reroll-wasted-penalty.
+COMMAND_REROLL_WASTED_PENALTY = 0.05
 # Бонус в движении, если цель в мили уже уничтожена/достигнута выгодная ситуация.
 MOVEMENT_MELEE_TARGET_DEAD_BONUS = 0.3
 # Штраф за отступление из мили (fallback), когда это нежелательно.
