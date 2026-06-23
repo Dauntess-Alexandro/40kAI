@@ -289,28 +289,7 @@ def _heuristic_debug_enabled() -> bool:
     return os.getenv("HEURISTIC_DEBUG", "0") == "1" or os.getenv("REWARD_DEBUG", "0") == "1"
 
 
-def _cmdreroll_mc_samples() -> int:
-    """
-    Количество семплов для Monte-Carlo оценки значения Command Re-roll.
-    По умолчанию 8, минимум 1.
-    Переменная окружения: CMDREROLL_MC_SAMPLES.
-    """
-    try:
-        return max(1, int(os.getenv("CMDREROLL_MC_SAMPLES", "8")))
-    except (TypeError, ValueError):
-        return 8
 
-
-def _cmdreroll_mc_eps() -> float:
-    """
-    Epsilon для Monte-Carlo оценки Command Re-roll (для числовой стабильности).
-    По умолчанию 1e-3.
-    Переменная окружения: CMDREROLL_MC_EPS.
-    """
-    try:
-        return float(os.getenv("CMDREROLL_MC_EPS", "1e-3"))
-    except (TypeError, ValueError):
-        return 1e-3
 
 def auto_dice(num=1, max=6):
     """RNG-роллер с такой же сигнатурой, как player_dice (для логов бота)."""
@@ -2497,312 +2476,6 @@ class Warhammer40kEnv(gym.Env):
                 return True
         return False
 
-    def _value_pick_command_reroll(self, side: str, unit_idx: int, phase: str, rolls):
-        """value-выбор под-типа Command Re-roll через установленный reaction_policy.
-
-        FIGHT/SHOOTING/CHARGE (MC): для каждого под-типа считает (mean_apply, mean_pass)
-        через _mc_value_command_reroll_{fight,shooting,charge} (симуляция самого
-        броска/атаки) и берёт под-тип с макс. mean_apply среди проходящих
-        mean_apply > mean_pass + eps — выбор НЕ вырожден (различает hit/wound по исходу).
-        Прочие фазы (movement, Stage 4): generic-policy loop, value subtype-агностичен
-        (реролл = −1 CP + флаг used) → выбор вырождается в «первый под-тип, проходящий гейт».
-        Guards: нет policy/нет сети стороны/рекурсия reaction-сима/мало CP/запись уже есть
-        → None (parity, без побочек).
-        """
-        policy = getattr(self, "reaction_policy", None)
-        if policy is None:
-            return None
-        if bool(getattr(self, "_reaction_sim_active", False)):
-            return None
-        net = getattr(self, "_reaction_net_by_side", {}).get(side)
-        if net is None:
-            return None
-        cp = int(self.modelCP if side == "model" else self.enemyCP)
-        if cp < 1:  # command_reroll.cp_cost = 1 (core stratagem)
-            return None
-        if self._command_reroll_record_exists(side, int(unit_idx), str(phase)):
-            return None
-        if str(phase) == "fight":
-            samples = _cmdreroll_mc_samples()
-            eps = _cmdreroll_mc_eps()
-            best_roll = None
-            best_apply = None
-            for roll in rolls:
-                mean_apply, mean_pass = self._mc_value_command_reroll_fight(side, int(unit_idx), str(roll), samples)
-                if mean_apply > mean_pass + eps and (best_apply is None or mean_apply > best_apply):
-                    best_apply = mean_apply
-                    best_roll = roll
-            return str(best_roll) if best_roll is not None else None
-        _mc_by_phase = {
-            "shooting": self._mc_value_command_reroll_shooting,
-            "charge": self._mc_value_command_reroll_charge,
-        }
-        if str(phase) in _mc_by_phase:
-            samples = _cmdreroll_mc_samples()
-            eps = _cmdreroll_mc_eps()
-            mc_fn = _mc_by_phase[str(phase)]
-            best_roll = None
-            best_apply = None
-            for roll in rolls:
-                mean_apply, mean_pass = mc_fn(side, int(unit_idx), str(roll), samples)
-                if mean_apply > mean_pass + eps and (best_apply is None or mean_apply > best_apply):
-                    best_apply = mean_apply
-                    best_roll = roll
-            return str(best_roll) if best_roll is not None else None
-        for roll in rolls:
-            ctx = {
-                "side": side,
-                "stratagem_id": "command_reroll",
-                "phase": str(phase),
-                "chosen": int(unit_idx),
-                "candidates": [int(unit_idx)],
-                "cp": cp,
-                "env": self,
-                "resolve_trigger": None,
-                "net": net,
-                "reroll_roll": roll,
-            }
-            try:
-                if bool(policy(ctx)):
-                    return str(roll)
-            except Exception:
-                continue
-        return None
-
-    def _simulate_fight_attack(self, side: str, att_idx: int, def_idx: int) -> None:
-        """Симулировать melee-атаку att_idx по def_idx (читает активный reroll-эффект), применить урон.
-
-        Используется только в MC-симуляции (внутри snapshot/restore). reason='fight_sim'.
-        """
-        if side == "model":
-            a_side, atk_h, atk_w, atk_d = "model", self.unit_health, self.unit_melee, self.unit_data
-            d_side, def_h, def_d = "enemy", self.enemy_health, self.enemy_data
-        else:
-            a_side, atk_h, atk_w, atk_d = "enemy", self.enemy_health, self.enemy_melee, self.enemy_data
-            d_side, def_h, def_d = "model", self.unit_health, self.unit_data
-        ai, di = int(att_idx), int(def_idx)
-        if not (0 <= ai < len(atk_h)) or atk_h[ai] <= 0:
-            return
-        if not (0 <= di < len(def_h)) or def_h[di] <= 0:
-            return
-        fight_effect = self._fight_effects_for_attacker(a_side, ai)
-        reroll_decider = self._build_reroll_decider(a_side, ai, d_side, di)
-        _dmg, mod_health = attack(
-            atk_h[ai], atk_w[ai], atk_d[ai], def_h[di], def_d[di],
-            rangeOfComb="Melee", effects=fight_effect, reroll_decider=reroll_decider,
-        )
-        self._apply_health_update(d_side, di, mod_health, reason="fight_sim")
-
-    def _expected_shoot_damage(self, side: str, shooter_idx: int, target_idx: int) -> float:
-        """Аналитический EV урона выстрела (без сети/RNG): attacks·P(hit)·P(wound)·P(fail_save)·avg_dmg.
-
-        Для выбора репрезентативной цели MC (ранжирование), не для точного урона.
-        """
-        from core.engine.utils import _to_int, _wound_target
-
-        if side == "model":
-            weapon, defender = self.unit_weapon[shooter_idx], self.enemy_data[target_idx]
-        else:
-            weapon, defender = self.enemy_weapon[shooter_idx], self.unit_data[target_idx]
-        if not isinstance(weapon, dict):
-            return 0.0
-        attacks = max(0, _to_int(weapon.get("A", weapon.get("Attacks", 1)), default=1))
-        bs = _to_int(weapon.get("BS", 4), default=4)
-        s = _to_int(weapon.get("S", 4), default=4)
-        ap = _to_int(weapon.get("AP", 0), default=0)
-        t = _to_int(defender.get("T", 4), default=4)
-        sv = _to_int(defender.get("Sv", 7), default=7)
-        inv = _to_int(defender.get("IVSave", 0), default=0)
-        p_hit = max(0.0, min(1.0, (7 - max(2, min(6, bs))) / 6.0))
-        wt = _wound_target(s, t) if (s and t) else 7
-        p_wound = max(0.0, min(1.0, (7 - max(2, min(6, wt))) / 6.0)) if wt <= 6 else 0.0
-        save_t = sv - ap  # как в движке (utils.attack): AP хранится отрицательным, -ap ухудшает сейв
-        if inv and (save_t > inv or save_t > 6):
-            save_t = inv
-        p_fail_save = 1.0 if save_t > 6 else max(0.0, min(1.0, (max(2, save_t) - 1) / 6.0))
-        dmg_raw = weapon.get("Damage", weapon.get("D", 1))
-        avg_dmg = {"D3": 2.0, "D6": 3.5}.get(str(dmg_raw).strip().upper(), float(_to_int(dmg_raw, default=1)))
-        return float(attacks) * p_hit * p_wound * p_fail_save * avg_dmg
-
-    def _best_shoot_target(self, side: str, shooter_idx: int) -> int | None:
-        targets = list(self.get_shoot_targets_for_unit(side, int(shooter_idx)) or [])
-        if not targets:
-            return None
-        return max(targets, key=lambda t: self._expected_shoot_damage(side, int(shooter_idx), int(t)))
-
-    def _simulate_shoot_attack(self, side: str, shooter_idx: int, target_idx: int) -> None:
-        """Симулировать выстрел shooter_idx по target_idx (читает reroll-эффект shooting), применить урон.
-
-        Только в MC-симуляции (внутри snapshot/restore). reason='shooting_sim'.
-        """
-        if side == "model":
-            a_side, atk_h, atk_w, atk_d = "model", self.unit_health, self.unit_weapon, self.unit_data
-            d_side, def_h, def_d = "enemy", self.enemy_health, self.enemy_data
-        else:
-            a_side, atk_h, atk_w, atk_d = "enemy", self.enemy_health, self.enemy_weapon, self.enemy_data
-            d_side, def_h, def_d = "model", self.unit_health, self.unit_data
-        ai, di = int(shooter_idx), int(target_idx)
-        if not (0 <= ai < len(atk_h)) or atk_h[ai] <= 0:
-            return
-        if not (0 <= di < len(def_h)) or def_h[di] <= 0:
-            return
-        if not isinstance(atk_w[ai], dict):
-            return
-        fight_effect = self._fight_effects_for_attacker(a_side, ai)
-        reroll_decider = self._build_reroll_decider(a_side, ai, d_side, di, phase="shooting")
-        _dmg, mod_health = attack(
-            atk_h[ai], atk_w[ai], atk_d[ai], def_h[di], def_d[di],
-            rangeOfComb="Ranged", effects=fight_effect, reroll_decider=reroll_decider,
-            distance_to_target=self._shooting_distance_between_units(a_side, ai, d_side, di),
-        )
-        self._apply_health_update(d_side, di, mod_health, reason="shooting_sim")
-
-    def _mc_value_command_reroll_shooting(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
-        """MC-оценка реролла (subtype) для выстрела юнита по argmax-EV цели: (mean_apply, mean_pass)."""
-        net = getattr(self, "_reaction_net_by_side", {}).get(side)
-        if net is None:
-            return 0.0, 0.0
-        target = self._best_shoot_target(side, int(unit_idx))
-        if target is None:
-            return 0.0, 0.0
-        means: dict[str, float] = {}
-        for branch in ("pass", "apply"):
-            vals: list[float] = []
-            for _ in range(max(1, int(samples))):
-                inner = self.snapshot_state()
-                self._reaction_sim_active = True
-                try:
-                    with self.simulation_mode():
-                        if branch == "apply":
-                            _apply_stratagem(self, side, "command_reroll", int(unit_idx), phase="shooting", reroll_roll=str(subtype))
-                        self._simulate_shoot_attack(side, int(unit_idx), int(target))
-                        vals.append(self._reaction_net_value(side, net))
-                finally:
-                    self._reaction_sim_active = False
-                    self.restore_state(inner)
-            means[branch] = sum(vals) / max(1, len(vals))
-        return means["apply"], means["pass"]
-
-    def _best_charge_target(self, side: str, unit_idx: int) -> int | None:
-        """Выбрать цель заряда с макс. melee-преимуществом (my_ms - opp_ms), тай-брейк ближайшая.
-
-        Из get_charge_targets_for_unit: ищем макс. преимущество, затем минимальное расстояние.
-        """
-        targets = list(self.get_charge_targets_for_unit(side, int(unit_idx)) or [])
-        if not targets:
-            return None
-        opp = "enemy" if side == "model" else "model"
-        my = self._melee_strength_score(side, int(unit_idx))
-        my_coords = self.unit_coords if side == "model" else self.enemy_coords
-        opp_coords = self.enemy_coords if side == "model" else self.unit_coords
-
-        def _key(t):
-            adv = my - self._melee_strength_score(opp, int(t))
-            dist = distance(my_coords[int(unit_idx)], opp_coords[int(t)])
-            return (adv, -dist)  # макс. преимущество, тай-брейк ближайшая
-
-        return int(max(targets, key=_key))
-
-    def _simulate_charge_attempt(self, side: str, unit_idx: int, target_idx: int) -> None:
-        """Симулировать charge unit_idx→target_idx: 2D6 (реролл обеих при записи), при успехе — engaged.
-
-        Только в MC-симуляции. Без реального перемещения — выставляет inAttack для value-головы.
-        """
-        ui, ti = int(unit_idx), int(target_idx)
-        if side == "model":
-            my_coords, opp_coords = self.unit_coords, self.enemy_coords
-            my_in, opp_in = self.unitInAttack, self.enemyInAttack
-            opp_h = self.enemy_health
-        else:
-            my_coords, opp_coords = self.enemy_coords, self.unit_coords
-            my_in, opp_in = self.enemyInAttack, self.unitInAttack
-            opp_h = self.unit_health
-        if not (0 <= ti < len(opp_h)) or opp_h[ti] <= 0:
-            return
-        _dice, total = self._charge_roll_with_reroll(side, ui)
-        dist = distance(my_coords[ui], opp_coords[ti])
-        if dist - float(total) <= 5:  # порог успеха как в charge_phase (model-путь)
-            my_in[ui] = [1, ti]
-            opp_in[ti] = [1, ui]
-
-    def _mc_value_command_reroll_charge(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
-        """MC-оценка charge-реролла для юнита по best-trade цели: (mean_apply, mean_pass)."""
-        net = getattr(self, "_reaction_net_by_side", {}).get(side)
-        if net is None:
-            return 0.0, 0.0
-        target = self._best_charge_target(side, int(unit_idx))
-        if target is None:
-            return 0.0, 0.0
-        means: dict[str, float] = {}
-        for branch in ("pass", "apply"):
-            vals: list[float] = []
-            for _ in range(max(1, int(samples))):
-                inner = self.snapshot_state()
-                self._reaction_sim_active = True
-                try:
-                    with self.simulation_mode():
-                        if branch == "apply":
-                            _apply_stratagem(self, side, "command_reroll", int(unit_idx), phase="charge", reroll_roll=str(subtype))
-                        self._simulate_charge_attempt(side, int(unit_idx), int(target))
-                        vals.append(self._reaction_net_value(side, net))
-                finally:
-                    self._reaction_sim_active = False
-                    self.restore_state(inner)
-            means[branch] = sum(vals) / max(1, len(vals))
-        return means["apply"], means["pass"]
-
-    def _mc_value_command_reroll_fight(self, side: str, unit_idx: int, subtype: str, samples: int) -> tuple[float, float]:
-        """MC-оценка реролла (subtype) для атаки engaged-юнита: (mean_apply, mean_pass).
-
-        Для каждой ветки гоняет samples симуляций атаки (apply: реролл активен), усредняет value.
-        Безопасно: (0.0, 0.0) при отсутствии сети/цели. Снапшот/restore на каждый сэмпл, recursion-guard.
-        """
-        net = getattr(self, "_reaction_net_by_side", {}).get(side)
-        if net is None:
-            return 0.0, 0.0
-        in_attack = self.unitInAttack if side == "model" else self.enemyInAttack
-        ui = int(unit_idx)
-        if not (0 <= ui < len(in_attack)) or in_attack[ui][0] != 1:
-            return 0.0, 0.0
-        def_idx = int(in_attack[ui][1])
-        means: dict[str, float] = {}
-        for branch in ("pass", "apply"):
-            vals: list[float] = []
-            for _ in range(max(1, int(samples))):
-                inner = self.snapshot_state()
-                self._reaction_sim_active = True
-                try:
-                    with self.simulation_mode():
-                        if branch == "apply":
-                            _apply_stratagem(self, side, "command_reroll", ui, phase="fight", reroll_roll=str(subtype))
-                        self._simulate_fight_attack(side, ui, def_idx)
-                        vals.append(self._reaction_net_value(side, net))
-                finally:
-                    self._reaction_sim_active = False
-                    self.restore_state(inner)
-            means[branch] = sum(vals) / max(1, len(vals))
-        return means["apply"], means["pass"]
-
-    def _apply_phase_command_reroll(self, side: str, phase: str, candidate_units, rolls) -> None:
-        """Stage 4: применить value-выбранный Command Re-roll по кандидатам в начале фазы.
-
-        No-op без reaction_policy (parity). Применяется ДО резолва фазы — резолв читает запись
-        (advance/charge через consume, shooting через decider). CP списывается в _apply_stratagem.
-        """
-        if getattr(self, "reaction_policy", None) is None:
-            return
-        for u in list(candidate_units):
-            ui = int(u)
-            roll = self._value_pick_command_reroll(side, ui, str(phase), rolls)
-            if roll is None:
-                continue
-            try:
-                _apply_stratagem(self, side, "command_reroll", ui, phase=str(phase), reroll_roll=roll)
-            except Exception as exc:
-                self._log(
-                    f"[STRATAGEM] value Command Re-roll не применён ({phase}, side={side}, unit={ui}): {exc}"
-                )
-
     def _apply_action_stratagem(self, side: str, phase, action) -> None:
         """Применить стратагему из головы strat_<phase> (action-driven, детерминированно).
 
@@ -2919,9 +2592,9 @@ class Warhammer40kEnv(gym.Env):
         """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan).
 
         Маршрутизация по записи: command_reroll:<roll> — применить под-тип напрямую
-        (выбор дерева MCTS); plain command_reroll — через MC-гейт _value_pick_command_reroll
-        (без политики → None → пропуск, parity); прочие стратагемы (hungry_void и т.д.) —
-        прежний value-гейт _should_use_stratagem (без политики → всегда True, legacy).
+        (выбор дерева MCTS); plain command_reroll — пропуск (MC-гейт удалён в Task 2);
+        прочие стратагемы (hungry_void и т.д.) — прежний value-гейт _should_use_stratagem
+        (без политики → всегда True, legacy). Полный снос build_fight_plan — Task 3.
         """
         plan = getattr(self, "_pending_fight_stratagem_plan", None)
         self._pending_fight_stratagem_plan = None
@@ -2954,10 +2627,9 @@ class Warhammer40kEnv(gym.Env):
                         reroll_roll=sid_raw.split(":", 1)[1],
                     )
                 elif sid_raw == "command_reroll":
-                    roll = self._value_pick_command_reroll(side, ui, "fight", ("hit", "wound"))  # MC-гейт
-                    if roll is None:
-                        continue
-                    _apply_stratagem(self, side, "command_reroll", ui, phase="fight", reroll_roll=roll)
+                    # plain command_reroll без под-типа: MC-гейт удалён (Task 2) → пропуск.
+                    # build_fight_plan полностью сносится в Task 3.
+                    continue
                 else:
                     if not self._should_use_stratagem(
                         sid_raw, side, ui, [ui], "fight", cp,
@@ -6411,13 +6083,6 @@ class Warhammer40kEnv(gym.Env):
             from core.engine.phases.types import Phase
 
             self._apply_action_stratagem(side, Phase.SHOOTING, action)
-        _sh_health = self.unit_health if side == "model" else self.enemy_health
-        self._apply_phase_command_reroll(
-            side,
-            "shooting",
-            [i for i in range(len(_sh_health)) if self._unit_can_shoot_now(side, i)],
-            ("hit", "wound"),
-        )
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] shooting phase active ({action_mode})")
@@ -7107,10 +6772,6 @@ class Warhammer40kEnv(gym.Env):
             from core.engine.phases.types import Phase
 
             self._apply_action_stratagem(side, Phase.CHARGE, action)
-        _ch_health = self.unit_health if side == "model" else self.enemy_health
-        self._apply_phase_command_reroll(
-            side, "charge", [i for i in range(len(_ch_health)) if _ch_health[i] > 0], ("charge",)
-        )
         if side == "enemy" and _heuristic_debug_enabled():
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] charge phase active ({action_mode})")

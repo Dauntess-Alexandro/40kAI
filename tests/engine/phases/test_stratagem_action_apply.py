@@ -1,4 +1,4 @@
-from core.engine.phases.stratagems import stratagem_action_choices
+from core.engine.phases.stratagems import stratagem_action_choices, stratagem_choice_index
 from core.engine.phases.types import Phase
 from tests.engine.phases._helpers import build_env, flat_default_action
 
@@ -161,3 +161,43 @@ def test_bravery_via_use_cp_no_longer_triggers():
     with env.simulation_mode():
         env.command_phase("model", action=action)
     assert not any(r[1] == "insane_bravery" for r in env.stratagem_used)
+
+
+# ---------------------------------------------------------------------------
+# Task 2: снос MC command_reroll-машинерии (TDD — сначала падают, потом зелёные)
+# ---------------------------------------------------------------------------
+
+
+def test_mc_value_methods_removed():
+    """MC-методы command_reroll должны быть удалены из env (under-project 5a, Task 2)."""
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    for name in (
+        "_value_pick_command_reroll",
+        "_apply_phase_command_reroll",
+        "_mc_value_command_reroll_fight",
+        "_mc_value_command_reroll_shooting",
+        "_mc_value_command_reroll_charge",
+        "_simulate_fight_attack",
+        "_simulate_shoot_attack",
+        "_simulate_charge_attempt",
+    ):
+        assert not hasattr(env, name), f"{name} должен быть удалён (снос MC, под-проект 5a)"
+
+
+def test_head_path_still_applies_command_reroll_fight():
+    """head-путь (_apply_action_stratagem) применяет command_reroll в fight_phase."""
+    env = build_env()
+    _setup(env)
+    env.unit_health[0] = 6.0
+    env.enemy_health[0] = 6.0
+    env.unitInAttack[0] = [1, 0]
+    env.enemyInAttack[0] = [1, 0]
+    env.unitCharged = [0] * len(env.unit_health)
+    env.enemyCharged = [0] * len(env.enemy_health)
+    action = flat_default_action(len(env.unit_health))
+    action["strat_fight"] = stratagem_choice_index(Phase.FIGHT, "command_reroll:hit")
+    action["strat_fight_unit"] = 0
+    with env.simulation_mode():
+        env.fight_phase("model", action=action)
+    assert any(r[1] == "command_reroll" and r[3] == "fight" for r in env.stratagem_used)

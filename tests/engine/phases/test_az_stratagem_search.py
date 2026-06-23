@@ -90,7 +90,7 @@ def test_head_and_fight_plan_no_double_apply():
 
     fight_phase применяет голову ПЕРЕД pending plan → plan видит запись в
     stratagem_used/active_stratagem_effects и пропускает (MC-гейт
-    _value_pick_command_reroll → _command_reroll_record_exists → None).
+    _command_reroll_record_exists → уже применён → пропуск).
     Итого: ровно одно списание CP, не два.
     """
     env = build_env()
