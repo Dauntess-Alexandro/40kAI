@@ -318,6 +318,9 @@ def run_episode(
     learner_side: str = "P1",
 ):
     env_unwrapped = unwrap_env(env)
+    # --- cmd_reroll телеметрия: захватываем старт для per-episode дельты ---
+    _cmd_reroll_fired_start = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
+    _cmd_reroll_wasted_start = int(getattr(env_unwrapped, "_cmd_reroll_wasted", 0) or 0)
     # algo/epsilon уехали внутрь агентов; для логов читаем из learner_agent.
     algo = str(getattr(learner_agent, "algo", "")).strip().lower()
     epsilon = float(getattr(getattr(learner_agent, "cfg", None), "epsilon", 0.0) or 0.0)
@@ -849,11 +852,15 @@ def run_episode(
         f"model_vp={model_vp} enemy_vp={enemy_vp} vp_diff={vp_diff} "
         f"episode_len={episode_len} reward_total={float(total_reward):.4f}"
     )
+    # --- cmd_reroll телеметрия: per-episode дельта ---
+    _cmd_reroll_fired_ep = max(0, int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0) - _cmd_reroll_fired_start)
+    _cmd_reroll_wasted_ep = max(0, int(getattr(env_unwrapped, "_cmd_reroll_wasted", 0) or 0) - _cmd_reroll_wasted_start)
     _trace(
         "[TRACE][STRATAGEM_SUMMARY] "
         f"attempts={dict(ep_stratagem_attempts)} applied={dict(ep_stratagem_applied)} "
         f"attempt_total={sum(ep_stratagem_attempts.values())} "
-        f"applied_total={sum(ep_stratagem_applied.values())}"
+        f"applied_total={sum(ep_stratagem_applied.values())} "
+        f"cmd_reroll_fired={_cmd_reroll_fired_ep} cmd_reroll_wasted={_cmd_reroll_wasted_ep}"
     )
     if trace_style == "warhammer":
         winner_side = "draw"
@@ -871,7 +878,8 @@ def run_episode(
             "[WH40K][STRATAGEM_SUMMARY] "
             f"attempts={dict(ep_stratagem_attempts)} applied={dict(ep_stratagem_applied)} "
             f"attempt_total={sum(ep_stratagem_attempts.values())} "
-            f"applied_total={sum(ep_stratagem_applied.values())}"
+            f"applied_total={sum(ep_stratagem_applied.values())} "
+            f"cmd_reroll_fired={_cmd_reroll_fired_ep} cmd_reroll_wasted={_cmd_reroll_wasted_ep}"
         )
     for r_idx in sorted(round_stats.keys()):
         rs = round_stats.get(r_idx, {})
