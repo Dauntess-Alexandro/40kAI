@@ -28,9 +28,10 @@ class TestStratagemTrace(unittest.TestCase):
         self.assertEqual(new, [("model", "overwatch", 1, "shoot", 1)])
 
     def test_stratagem_attempt_from_action_use_cp(self) -> None:
+        # task-4: контракт-ключи use_cp/cp_on удалены → функция всегда (None, None)
         sid, unit = stratagem_attempt_from_action({"use_cp": 1, "cp_on": 0})
-        self.assertEqual(sid, "insane_bravery")
-        self.assertEqual(unit, 0)
+        self.assertIsNone(sid)
+        self.assertIsNone(unit)
 
         sid2, unit2 = stratagem_attempt_from_action({"use_cp": 0, "cp_on": 0})
         self.assertIsNone(sid2)
@@ -43,13 +44,14 @@ class TestStratagemTrace(unittest.TestCase):
         self.assertEqual(eval_side_label("enemy", "P2"), "P1")
 
     def test_collect_stratagem_attempt_specs(self) -> None:
+        # task-4: use_cp/cp_on удалены из контракта → use_cp-ветка мертва; только fight_plan
         specs = collect_stratagem_attempt_specs(
             {"use_cp": 1, "cp_on": 0},
             {1: "hungry_void"},
         )
         self.assertEqual(
             specs,
-            [("insane_bravery", 0, "use_cp"), ("hungry_void", 1, "fight_plan")],
+            [("hungry_void", 1, "fight_plan")],
         )
 
     def test_train_stratagem_trace_enabled_env(self) -> None:

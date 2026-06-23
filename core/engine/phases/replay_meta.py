@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, fields
+from dataclasses import dataclass, fields
 from typing import Any
 
 
@@ -60,9 +60,7 @@ def _unwrap(env):
 def _infer_stratagem_id(action_dict: dict | None) -> str | None:
     if not isinstance(action_dict, dict):
         return None
-    use_cp = int(action_dict.get("use_cp", 0) or 0)
-    if use_cp == 1:
-        return "insane_bravery"
+    # task-4: use_cp/cp_on удалены из контракта; insane_bravery теперь через strat_command-голову
     plan = action_dict.get("_fight_stratagem_plan")
     if isinstance(plan, dict) and plan:
         # первый выбранный fight-стратагем (плоский step не кодирует их в головах)
@@ -153,8 +151,9 @@ def az_transition_to_rollout_dict(transition, *, policy_version: int | None = No
 
 def az_transition_from_rollout_dict(raw: dict, *, default_policy_version: int = 0):
     """Десериализация AZTransition из rollout dict (обратная совместимость без phase_meta)."""
-    from core.models.alphazero_replay import AZTransition
     import numpy as np
+
+    from core.models.alphazero_replay import AZTransition
 
     if not isinstance(raw, dict):
         return None
@@ -201,8 +200,9 @@ def gmz_transition_to_rollout_dict(transition, *, policy_version: int | None = N
 
 
 def gmz_transition_from_rollout_dict(raw: dict, *, default_policy_version: int = 0):
-    from core.models.gumbel_muzero_replay import GMZTransition
     import numpy as np
+
+    from core.models.gumbel_muzero_replay import GMZTransition
 
     if not isinstance(raw, dict):
         return None

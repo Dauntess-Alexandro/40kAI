@@ -10,8 +10,8 @@
   - Heroic Intervention (после успешного charge move)
 """
 
-import sys
 import pickle
+import sys
 
 
 def _build_action(env):
@@ -20,8 +20,6 @@ def _build_action(env):
         "attack": 1,
         "charge": 0,
         "shoot": 0,
-        "use_cp": 0,
-        "cp_on": 0,
     }
     for i in range(len(env.unit_health)):
         action[f"move_num_{i}"] = 0

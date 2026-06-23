@@ -218,7 +218,7 @@ VP_STALL_PENALTY = 0.08
 VP_STALL_STEP_GROWTH = 0.08
 VP_STALL_PENALTY_MAX_MULT = 2.0
 
-# Anti-loop по повторяющимся action tuples (move/attack/shoot/charge/use_cp/cp_on)
+# Anti-loop по повторяющимся action tuples (move/attack/shoot/charge)
 # Штраф включается при длинной серии одинаковых действий.
 ACTION_REPEAT_STEPS_THRESHOLD = 3
 ACTION_REPEAT_PENALTY = 0.04

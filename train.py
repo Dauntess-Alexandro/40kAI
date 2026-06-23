@@ -1933,7 +1933,7 @@ def _format_action_trace_summary(ep_idx_1based: int, actor_idx: int | None, payl
         except Exception:
             return 0.0
 
-    heads = ("move", "attack", "shoot", "charge", "use_cp", "cp_on")
+    heads = ("move", "attack", "shoot", "charge")
     head_skip = ",".join([f"{h}:{_g_int(skip,h)}" for h in heads])
     head_invalid = ",".join([f"{h}:{_g_int(invalid,h)}" for h in heads])
     head_skip_rate = ",".join([f"{h}:{_g_f(skip_rate,h):.3f}" for h in heads])
@@ -5324,9 +5324,9 @@ def _actor_learner_actor_entry(
             trace_lines: list[str] = []
             round_timeline: list[dict] = []
             step_idx = 0
-            action_head_total = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
-            action_head_skip = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
-            action_head_invalid = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0, "use_cp": 0, "cp_on": 0})
+            action_head_total = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0})
+            action_head_skip = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0})
+            action_head_invalid = Counter({"move": 0, "attack": 0, "shoot": 0, "charge": 0})
             shoot_windows_with_targets = 0
             shoot_windows_without_targets = 0
             shoot_taken_when_targets = 0
@@ -5405,7 +5405,7 @@ def _actor_learner_actor_entry(
 
                 # --- episode action analytics (cheap) ---
                 try:
-                    for _h in ("move", "attack", "shoot", "charge", "use_cp", "cp_on"):
+                    for _h in ("move", "attack", "shoot", "charge"):
                         action_head_total[_h] += 1
 
                     move_dir = int(action_dict.get("move", 4))
@@ -5418,8 +5418,6 @@ def _actor_learner_actor_entry(
                     if int(action_dict.get("attack", 0)) == 0:
                         action_head_skip["attack"] += 1
                         action_head_skip["charge"] += 1
-                    if int(action_dict.get("use_cp", 0)) == 0:
-                        action_head_skip["use_cp"] += 1
 
                     valid_shoot_indices = []
                     if shoot_mask is not None:
@@ -5443,7 +5441,6 @@ def _actor_learner_actor_entry(
                             f"step={step_idx} eps={eps_threshold:.3f} "
                             f"move={move_dir} attack={int(action_dict.get('attack',0))} "
                             f"shoot={int(action_dict.get('shoot',-1))} charge={int(action_dict.get('charge',0))} "
-                            f"use_cp={int(action_dict.get('use_cp',0))} cp_on={int(action_dict.get('cp_on',0))} "
                             f"shoot_targets={len(valid_shoot_indices)}"
                         )
                 except Exception:
@@ -5633,10 +5630,10 @@ def _actor_learner_actor_entry(
                             "trace_steps": list(trace_lines) if (_trace_ep_enabled(ep_idx_1based) and trace_lines) else None,
                             "trace_actions": {
                                 "steps": int(max(1, int(ep_len))),
-                                "skip": {k: int(action_head_skip.get(k, 0)) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
-                                "invalid": {k: int(action_head_invalid.get(k, 0)) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
-                                "skip_rate": {k: float(action_head_skip.get(k, 0)) / float(max(1, int(ep_len))) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
-                                "invalid_rate": {k: float(action_head_invalid.get(k, 0)) / float(max(1, int(ep_len))) for k in ("move","attack","shoot","charge","use_cp","cp_on")},
+                                "skip": {k: int(action_head_skip.get(k, 0)) for k in ("move","attack","shoot","charge")},
+                                "invalid": {k: int(action_head_invalid.get(k, 0)) for k in ("move","attack","shoot","charge")},
+                                "skip_rate": {k: float(action_head_skip.get(k, 0)) / float(max(1, int(ep_len))) for k in ("move","attack","shoot","charge")},
+                                "invalid_rate": {k: float(action_head_invalid.get(k, 0)) / float(max(1, int(ep_len))) for k in ("move","attack","shoot","charge")},
                                 "shoot_windows": {"with_targets": int(shoot_windows_with_targets), "without_targets": int(shoot_windows_without_targets)},
                                 "shoot_taken_when_targets": int(shoot_taken_when_targets),
                                 "move": {"stay": int(move_stay), "nonstay": int(move_nonstay)},

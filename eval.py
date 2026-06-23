@@ -437,8 +437,6 @@ def run_episode(
         attack_val = _safe_int(action_dict.get("attack", 0), 0)
         shoot_val = _aggregate_per_unit_max(action_dict, "shoot_num", n_units, default=-1)
         charge_val = _aggregate_per_unit_max(action_dict, "charge_num", n_units, default=0)
-        use_cp_val = _safe_int(action_dict.get("use_cp", 0), 0)
-        cp_on_val = _safe_int(action_dict.get("cp_on", 0), 0)
         move_units = []
         shoot_units = []
         charge_units = []
@@ -452,7 +450,7 @@ def run_episode(
         return (
             f"move={move_val}({move_dir_labels.get(move_val, 'unk')}) "
             f"attack={attack_val} shoot={shoot_val} charge={charge_val} "
-            f"use_cp={use_cp_val} cp_on={cp_on_val} move_num=[{move_units_text}] "
+            f"move_num=[{move_units_text}] "
             f"shoot_num=[{','.join(shoot_units)}] charge_num=[{','.join(charge_units)}]"
         )
 
@@ -487,7 +485,6 @@ def run_episode(
         attack = _safe_int(action_dict.get("attack", 0), 0)
         shoot = _aggregate_per_unit_max(action_dict, "shoot_num", len(model_units), default=-1)
         charge = _aggregate_per_unit_max(action_dict, "charge_num", len(model_units), default=0)
-        use_cp = _safe_int(action_dict.get("use_cp", 0), 0)
 
         if shoot_targets <= 0 and shoot >= 0:
             verdicts.append("shoot_without_targets")
@@ -499,8 +496,6 @@ def run_episode(
             verdicts.append("default_shoot_choice_with_options")
         if move_v > 1 and move == 4:
             verdicts.append("stay_while_move_options_exist")
-        if use_cp == 0:
-            verdicts.append("cp_not_used")
 
         if not verdicts:
             return "ok"
@@ -542,8 +537,6 @@ def run_episode(
         attack = _safe_int(action_dict.get("attack", 0), 0)
         shoot = _aggregate_per_unit_max(action_dict, "shoot_num", len(model_units), default=-1)
         charge = _aggregate_per_unit_max(action_dict, "charge_num", len(model_units), default=0)
-        use_cp = _safe_int(action_dict.get("use_cp", 0), 0)
-        cp_on = _safe_int(action_dict.get("cp_on", 0), 0)
 
         mv_valid, mv_total = _mask_tuple(masks_counts, "move")
         at_valid, at_total = _mask_tuple(masks_counts, "attack")
@@ -552,7 +545,7 @@ def run_episode(
 
         _trace(
             "[WH40K][PHASE][COMMAND] "
-            f"step={step_no} side={side_label} use_cp={use_cp} cp_on={cp_on} "
+            f"step={step_no} side={side_label} "
             f"attack_options={at_valid}/{at_total} shoot_options={sh_valid}/{sh_total} charge_options={ch_valid}/{ch_total}"
         )
         _trace(
@@ -751,7 +744,6 @@ def run_episode(
                         "attack_nonzero": 0,
                         "shoot_nonzero": 0,
                         "charge_nonzero": 0,
-                        "use_cp_head_set": 0,  # head активирован (use_cp>0) — НЕ факт применения стратагемы
                         "strat_attempt": 0,
                         "strat_applied": 0,
                     },
@@ -767,7 +759,6 @@ def run_episode(
                     _safe_int(action_dict.get(f"charge_num_{i}", 0), 0) > 0
                     for i in range(int(len(model_units)))
                 ) else 0
-                st["use_cp_head_set"] += 1 if _safe_int(action_dict.get("use_cp", 0), 0) > 0 else 0
                 st["strat_attempt"] += len(model_attempt_specs)
                 st["strat_applied"] += len(new_strat_records)
             model_ctrl = _info.get("model controlled objectives", []) if isinstance(_info, dict) else []
@@ -893,7 +884,6 @@ def run_episode(
             f"attack_nonzero={int(rs.get('attack_nonzero', 0) or 0)} "
             f"shoot_nonzero={int(rs.get('shoot_nonzero', 0) or 0)} "
             f"charge_nonzero={int(rs.get('charge_nonzero', 0) or 0)} "
-            f"use_cp_head_set={int(rs.get('use_cp_head_set', 0) or 0)} "
             f"strat_attempt={int(rs.get('strat_attempt', 0) or 0)} "
             f"strat_applied={int(rs.get('strat_applied', 0) or 0)}"
         )
@@ -904,7 +894,6 @@ def run_episode(
                 f"attack={int(rs.get('attack_nonzero', 0) or 0)} "
                 f"shoot={int(rs.get('shoot_nonzero', 0) or 0)} "
                 f"charge={int(rs.get('charge_nonzero', 0) or 0)} "
-                f"use_cp_head_set={int(rs.get('use_cp_head_set', 0) or 0)} "
                 f"strat_attempt={int(rs.get('strat_attempt', 0) or 0)} "
                 f"strat_applied={int(rs.get('strat_applied', 0) or 0)}"
             )
@@ -1319,7 +1308,7 @@ def main():
         action_tuple_counter: Counter[tuple] = Counter()
         model_action_re = re.compile(
             r"move=(?P<move>-?\d+).*?attack=(?P<attack>-?\d+).*?shoot=(?P<shoot>-?\d+).*?"
-            r"charge=(?P<charge>-?\d+).*?use_cp=(?P<use_cp>-?\d+).*?cp_on=(?P<cp_on>-?\d+).*?"
+            r"charge=(?P<charge>-?\d+).*?"
             r"masks=\(move:(?P<move_v>\d+)/(?P<move_t>\d+), attack:(?P<attack_v>\d+)/(?P<attack_t>\d+), "
             r"shoot:(?P<shoot_v>\d+)/(?P<shoot_t>\d+), charge:(?P<charge_v>\d+)/(?P<charge_t>\d+),"
         )
@@ -1361,13 +1350,11 @@ def main():
                         attack = int(m.group("attack"))
                         shoot = int(m.group("shoot"))
                         charge = int(m.group("charge"))
-                        use_cp = int(m.group("use_cp"))
-                        cp_on = int(m.group("cp_on"))
                         move_v = int(m.group("move_v"))
                         shoot_v = int(m.group("shoot_v"))
                         charge_v = int(m.group("charge_v"))
                         step_metrics["total_model_steps"] += 1
-                        action_tuple_counter[(move, attack, shoot, charge, use_cp, cp_on)] += 1
+                        action_tuple_counter[(move, attack, shoot, charge)] += 1
                         if move_v > 1:
                             step_metrics["move_opt_steps"] += 1
                             if move == 4:

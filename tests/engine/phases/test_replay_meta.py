@@ -10,7 +10,7 @@ from core.engine.phases.replay_meta import (
     gmz_transition_to_rollout_dict,
     replay_phase_meta_enabled,
 )
-from core.models.alphazero_replay import AZTransition, AlphaZeroReplayBuffer
+from core.models.alphazero_replay import AlphaZeroReplayBuffer, AZTransition
 from core.models.gumbel_muzero_replay import GMZTransition, GumbelMuZeroReplayBuffer
 from tests.engine.phases._helpers import build_env
 
@@ -103,6 +103,8 @@ def test_gmz_rollout_wire_roundtrip():
 
 
 def test_capture_replay_phase_meta_from_env(monkeypatch):
+    # task-4: use_cp/cp_on удалены из контракта; _infer_stratagem_id возвращает None
+    # для обычного action_dict без _fight_stratagem_plan
     monkeypatch.setenv("REPLAY_PHASE_META", "1")
     assert replay_phase_meta_enabled()
     env = build_env()
@@ -111,14 +113,34 @@ def test_capture_replay_phase_meta_from_env(monkeypatch):
     env.modelCP = 2
     meta = capture_replay_phase_meta(
         env,
-        action_dict={"use_cp": 1, "cp_on": 0, "attack": 0},
+        action_dict={"attack": 0},
         cp_before=2,
         phase="command",
     )
     assert meta is not None
     assert meta.phase == "command"
-    assert meta.stratagem_id == "insane_bravery"
+    assert meta.stratagem_id is None
     assert meta.cp_before == 2
+
+
+def test_capture_replay_phase_meta_fight_plan_stratagem(monkeypatch):
+    # fight_plan по-прежнему инферирует stratagem_id через _infer_stratagem_id
+    monkeypatch.setenv("REPLAY_PHASE_META", "1")
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    env.phase = "fight"
+    env.modelCP = 3
+    # chosen_option задаём явно чтобы обойти _action_dict_summary (не переваривает вложенный dict)
+    meta = capture_replay_phase_meta(
+        env,
+        action_dict={"_fight_stratagem_plan": {0: "hungry_void"}, "attack": 1},
+        cp_before=3,
+        phase="fight",
+        chosen_option='{"attack": 1}',
+    )
+    assert meta is not None
+    assert meta.stratagem_id == "hungry_void"
+    assert meta.cp_before == 3
 
 
 def test_gmz_replay_buffer_legacy_load():

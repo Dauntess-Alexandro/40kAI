@@ -4,16 +4,6 @@ from __future__ import annotations
 import os
 from collections import Counter
 
-# use_cp head → id стратагемы (см. warhamEnv action_space); fight — через fight_plan.
-# ВАЖНО: heads 2/3/4 — только для трейс-логов; в плоском action_dict они НЕ исполняются
-# (реакции идут через value-gate). Реально применяется только head 1 (insane_bravery).
-USE_CP_STRATAGEM_HEAD: dict[int, str] = {
-    1: "insane_bravery",
-    2: "overwatch",       # трейс-only; в flat path не исполняется
-    3: "smokescreen",     # трейс-only; в flat path не исполняется
-    4: "heroic_intervention",  # трейс-only; в flat path не исполняется
-}
-
 
 def train_stratagem_trace_enabled() -> bool:
     """Включено при VERBOSE_LOGS=1 (или явно TRAIN_STRATAGEM_TRACE=1)."""
@@ -79,12 +69,12 @@ def new_stratagem_records(before: tuple[tuple, ...], after: tuple[tuple, ...]) -
 
 
 def stratagem_attempt_from_action(action_dict: dict) -> tuple[str | None, int | None]:
-    """Попытка через flat use_cp/cp_on (command/reaction heads)."""
-    use_cp = int(action_dict.get("use_cp", 0) or 0)
-    sid = USE_CP_STRATAGEM_HEAD.get(use_cp)
-    if not sid:
-        return None, None
-    return sid, int(action_dict.get("cp_on", 0) or 0)
+    """Попытка через strat_command-голову (контракт use_cp/cp_on удалён в task-4).
+
+    Функция сохранена для обратной совместимости трейса; всегда возвращает (None, None)
+    т.к. ключи use_cp/cp_on более не присутствуют в action_dict.
+    """
+    return None, None
 
 
 def trace_side_label(env_side: str, learner_side: str) -> str:
@@ -106,12 +96,12 @@ def collect_stratagem_attempt_specs(
     action_dict: dict | None,
     fight_plan: dict | None = None,
 ) -> list[tuple[str, int | None, str]]:
-    """Список попыток: (stratagem_id, unit_idx, source)."""
+    """Список попыток: (stratagem_id, unit_idx, source).
+
+    use_cp/cp_on-ветка удалена (task-4): стратагемы теперь только через fight_plan
+    и strat_command-голову (журнал stratagem_used).
+    """
     specs: list[tuple[str, int | None, str]] = []
-    if isinstance(action_dict, dict):
-        sid, unit = stratagem_attempt_from_action(action_dict)
-        if sid:
-            specs.append((sid, unit, "use_cp"))
     for u_idx, fid in dict(fight_plan or {}).items():
         specs.append((str(fid), int(u_idx), "fight_plan"))
     return specs
@@ -136,26 +126,11 @@ def log_stratagem_attempts(
         return specs
     side = trace_side_label(env_side, learner_side)
     for sid, unit, source in specs:
-        if source == "use_cp" and isinstance(action_dict, dict):
-            try:
-                use_cp_v = int(action_dict.get("use_cp", 0) or 0)
-            except (TypeError, ValueError):
-                use_cp_v = 0
-            try:
-                cp_on_v = int(action_dict.get("cp_on", 0) or 0)
-            except (TypeError, ValueError):
-                cp_on_v = 0
-            trace_fn(
-                f"[{tag}][STRATAGEM][ATTEMPT] "
-                f"step={step_no} side={side} env_side={env_side} stratagem={sid} unit={unit} "
-                f"use_cp={use_cp_v} cp_on={cp_on_v}"
-            )
-        else:
-            trace_fn(
-                f"[{tag}][STRATAGEM][ATTEMPT] "
-                f"step={step_no} side={side} env_side={env_side} stratagem={sid} unit={unit} "
-                f"source={source}"
-            )
+        trace_fn(
+            f"[{tag}][STRATAGEM][ATTEMPT] "
+            f"step={step_no} side={side} env_side={env_side} stratagem={sid} unit={unit} "
+            f"source={source}"
+        )
     return specs
 
 
@@ -202,11 +177,10 @@ def log_stratagem_journal_diff(
         )
         if applied:
             continue
-        miss_tail = f"source={source} " if source != "use_cp" else ""
         trace_fn(
             f"[{tag}][STRATAGEM][MISS] "
             f"step={step_no} side={side} env_side={env_side_acting} attempted={sid} unit={unit} "
-            f"{miss_tail}reason=no_journal_entry"
+            f"source={source} reason=no_journal_entry"
         )
     return new_records
 
