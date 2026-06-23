@@ -1024,10 +1024,7 @@ class Warhammer40kEnv(gym.Env):
         action_spaces = {
             'move':   spaces.Discrete(5),          # legacy: глобальное направление (используется как fallback)
             'attack': spaces.Discrete(2),          # 0 = fallback/leave fight, 1 = try charge/engage
-            'use_cp': spaces.Discrete(5),          # 0 none, 1 bravery, 2 overwatch, 3 smokescreen, 4 heroic
-                                                   # реально исполняется только 1 (Insane Bravery);
-                                                   # 2/3/4 — реакции через value-gate, не плоский head
-            'cp_on':  spaces.Discrete(len(model))  # на какого своего юнита тратить CP
+            # use_cp/cp_on убраны (Task 4): bravery теперь только через strat_command head.
         }
 
         # ✅ 2) Добавляем индивидуальные per-unit головы для каждого модельного юнита:
@@ -1788,29 +1785,8 @@ class Warhammer40kEnv(gym.Env):
                 m[0] = True
             masks[key] = m
 
-        # cp_on: legacy bravery target; при reaction_policy head мёртв (движок выбирает юнит).
-        cp_n = int(spaces["cp_on"].n)
-        rvp_on = getattr(self, "reaction_policy", None) is not None
-        cp_mask = np.zeros(cp_n, dtype=bool)
-        if rvp_on:
-            cp_mask[0] = True
-        else:
-            for idx in range(min(cp_n, len(unit_health))):
-                if unit_health[idx] > 0:
-                    cp_mask[idx] = True
-            if not cp_mask.any():
-                cp_mask[:] = True
-        masks["cp_on"] = cp_mask
-
-        # use_cp: реакции (2/3/4) не исполняются через action head.
-        use_cp_n = int(spaces["use_cp"].n)
-        use_cp_mask = np.zeros(use_cp_n, dtype=bool)
-        use_cp_mask[0] = True
-        # use_cp=1 для bravery больше не используется (bravery через strat_command).
-        # use_cp_mask[1] остаётся False.
-        masks["use_cp"] = use_cp_mask
-
         # Под-проект 2: маски пофазных голов стратагем (заменяют дефолтный all-True).
+        # use_cp/cp_on убраны из контракта (Task 4): bravery только через strat_command head.
         from core.engine.phases.stratagems import STRATAGEM_PHASES, stratagem_action_choices
 
         for _ph in STRATAGEM_PHASES:
@@ -1900,13 +1876,14 @@ class Warhammer40kEnv(gym.Env):
 
     def _action_signature(self, action) -> tuple[int, int, int, int]:
         # B2: shoot/charge стали per-unit головами — в сигнатуре повтора их больше нет.
+        # Task 4: use_cp/cp_on убраны из контракта; сигнатура фиксируется на -1 для них.
         if not isinstance(action, dict):
             return (-1, -1, -1, -1)
         return (
             self._coerce_int(action.get("move", -1), default=-1),
             self._coerce_int(action.get("attack", -1), default=-1),
-            self._coerce_int(action.get("use_cp", -1), default=-1),
-            self._coerce_int(action.get("cp_on", -1), default=-1),
+            -1,  # use_cp: убран из контракта (Task 4), bravery через strat_command
+            -1,  # cp_on: убран из контракта (Task 4)
         )
 
     def _cell_from_coord(self, coord) -> tuple[int, int]:

@@ -7,7 +7,7 @@ import torch
 
 from core.engine.phases.stratagems import STRATAGEM_PHASES
 
-BASE_ACTION_HEADS = ["move", "attack", "use_cp", "cp_on"]
+BASE_ACTION_HEADS = ["move", "attack"]
 
 
 def ordered_action_keys(len_model: int) -> list[str]:

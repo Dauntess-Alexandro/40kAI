@@ -12,7 +12,7 @@ def default_action_dict(len_model: int) -> dict[str, int]:
     Пофазные головы strat_<phase>/<phase>_unit — аддитивно, применение под-проект 3.
     """
     n = int(len_model)
-    action: dict[str, int] = {"move": 4, "attack": 1, "use_cp": 0, "cp_on": 0}
+    action: dict[str, int] = {"move": 4, "attack": 1}
     for i in range(n):
         action[f"move_num_{i}"] = 0
         action[f"shoot_num_{i}"] = 0

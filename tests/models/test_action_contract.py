@@ -15,7 +15,7 @@ def test_ordered_keys_have_per_unit_shoot_charge():
         strat_keys.append(f"strat_{ph.value}")
         strat_keys.append(f"strat_{ph.value}_unit")
     assert keys == [
-        "move", "attack", "use_cp", "cp_on",
+        "move", "attack",
         "move_num_0", "move_num_1",
         "shoot_num_0", "shoot_num_1",
         "charge_num_0", "charge_num_1",
