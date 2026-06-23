@@ -14,16 +14,16 @@ def episode_stratagem_summary_line(
     """Per-episode сводка стратагем из журнала env + счётчиков реролла.
 
     *source* — либо unwrapped env (с атрибутами stratagem_used,
-    _cmd_reroll_fired, _cmd_reroll_wasted), либо dict-payload от актора
-    (ключи _strat_applied, _strat_applied_total, _cmd_reroll_fired,
-    _cmd_reroll_wasted).  Возвращает None если данных нет / всё нулевое.
+    _cmd_reroll_fired), либо dict-payload от актора
+    (ключи _strat_applied, _strat_applied_total, _cmd_reroll_fired).
+    wasted считается арифметикой: max(0, applied['command_reroll'] − fired).
+    Возвращает None если данных нет / всё нулевое.
     """
     if isinstance(source, dict):
         # payload-словарь от актора
         applied: dict[str, int] = dict(source.get("_strat_applied") or {})
         applied_total = int(source.get("_strat_applied_total") or 0)
         fired = int(source.get("_cmd_reroll_fired") or 0)
-        wasted = int(source.get("_cmd_reroll_wasted") or 0)
     else:
         # unwrapped env
         used = list(getattr(source, "stratagem_used", None) or [])
@@ -31,7 +31,9 @@ def episode_stratagem_summary_line(
         applied = dict(counts)
         applied_total = sum(counts.values())
         fired = int(getattr(source, "_cmd_reroll_fired", 0) or 0)
-        wasted = int(getattr(source, "_cmd_reroll_wasted", 0) or 0)
+
+    applied_cr = int(applied.get("command_reroll", 0))
+    wasted = max(0, applied_cr - fired)
 
     if not applied and not fired and not wasted:
         return None
@@ -51,14 +53,12 @@ def collect_ep_stratagem_payload(env_unwrapped) -> dict:
     used = list(getattr(env_unwrapped, "stratagem_used", None) or [])
     counts: Counter[str] = Counter(str(rec[1]) for rec in used if len(rec) > 1)
     fired = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
-    wasted = int(getattr(env_unwrapped, "_cmd_reroll_wasted", 0) or 0)
-    if not counts and not fired and not wasted:
+    if not counts and not fired:
         return {}
     return {
         "_strat_applied": dict(counts),
         "_strat_applied_total": int(sum(counts.values())),
         "_cmd_reroll_fired": fired,
-        "_cmd_reroll_wasted": wasted,
     }
 
 
@@ -258,7 +258,8 @@ class StratagemEpisodeTracer:
         reroll_suffix = ""
         if env_unwrapped is not None:
             fired = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
-            wasted = int(getattr(env_unwrapped, "_cmd_reroll_wasted", 0) or 0)
+            applied_cr = int(self.ep_applied.get("command_reroll", 0))
+            wasted = max(0, applied_cr - fired)
             reroll_suffix = f" cmd_reroll_fired={fired} cmd_reroll_wasted={wasted}"
         self.log_fn(
             f"[{self.tag}][STRATAGEM_SUMMARY] ep={ep_label} "
