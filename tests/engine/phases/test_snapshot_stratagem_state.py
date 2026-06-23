@@ -1,9 +1,19 @@
 from core.engine.phases import stratagem_engine
+from core.engine.phases.stratagems import stratagem_action_choices
+from core.engine.phases.types import Phase
 from tests.engine.phases._helpers import build_env, flat_default_action
 
 
-def _action(use_cp: int, cp_on: int, n: int) -> dict:
-    return flat_default_action(n, use_cp=int(use_cp), cp_on=int(cp_on))
+def _bravery_idx():
+    return stratagem_action_choices(Phase.COMMAND).index("insane_bravery")
+
+
+def _action_bravery(n: int, unit: int = 0) -> dict:
+    """Action с strat_command=insane_bravery."""
+    a = flat_default_action(n)
+    a["strat_command"] = _bravery_idx()
+    a["strat_command_unit"] = unit
+    return a
 
 
 def test_snapshot_restore_preserves_stratagem_journal_and_enemy_cp():
@@ -39,7 +49,7 @@ def test_enemy_insane_bravery_records_journal_and_snapshot_restore_preserves_it(
     env.stratagem_used = []
 
     with env.simulation_mode():
-        battle_shock = env.command_phase("enemy", action=_action(1, 0, n))
+        battle_shock = env.command_phase("enemy", action=_action_bravery(n, unit=0))
 
     expected = ("enemy", "insane_bravery", env.battle_round, "command", 0)
     assert battle_shock[0] is False

@@ -1834,10 +1834,8 @@ class Warhammer40kEnv(gym.Env):
         use_cp_n = int(spaces["use_cp"].n)
         use_cp_mask = np.zeros(use_cp_n, dtype=bool)
         use_cp_mask[0] = True
-        cp_now = int(self.modelCP if is_model else self.enemyCP)
-        phase_cmd = str(getattr(self, "phase", "")).lower() == "command"
-        if not rvp_on and cp_now > 0 and phase_cmd:
-            use_cp_mask[1] = True
+        # use_cp=1 для bravery больше не используется (bravery через strat_command).
+        # use_cp_mask[1] остаётся False.
         masks["use_cp"] = use_cp_mask
 
         # Под-проект 2: маски пофазных голов стратагем (заменяют дефолтный all-True).
@@ -5360,21 +5358,19 @@ class Warhammer40kEnv(gym.Env):
                         self.modelOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if getattr(self, "reaction_policy", None) is not None and decide_bravery is None:
-                            _use_bravery = self._should_use_stratagem(
-                                "insane_bravery", "model", i, [i], "command", int(self.modelCP),
-                                net=getattr(self, "_reaction_net_by_side", {}).get("model"),
-                            )
-                        elif decide_bravery is not None:
+                        if decide_bravery is not None:
                             _use_bravery = bool(decide_bravery(i))
                         else:
-                            _use_bravery = bool(action and action.get("use_cp") == 1 and action.get("cp_on") == i)
-                            if not _use_bravery and isinstance(action, dict):
+                            _use_bravery = False
+                            if isinstance(action, dict):
                                 from core.engine.phases.stratagems import stratagem_choice_str
                                 from core.engine.phases.types import Phase as _Ph
 
-                                _cmd_choice = stratagem_choice_str(_Ph.COMMAND, int(action.get("strat_command", 0) or 0))
-                                if _cmd_choice == "insane_bravery" and int(action.get("strat_command_unit", 0) or 0) == i:
+                                if (
+                                    stratagem_choice_str(_Ph.COMMAND, int(action.get("strat_command", 0) or 0))
+                                    == "insane_bravery"
+                                    and int(action.get("strat_command_unit", 0) or 0) == i
+                                ):
                                     _use_bravery = True
                         if _use_bravery:
                             _bravery = _apply_stratagem(self, "model", "insane_bravery", i, phase="command")
@@ -5422,8 +5418,6 @@ class Warhammer40kEnv(gym.Env):
             self.enemyCP += 1
             self.modelCP += 1
             battle_shock = [False] * len(self.enemy_health)
-            cp_on = action.get("cp_on", 0) if isinstance(action, dict) else 0
-            use_cp = action.get("use_cp", 0) if isinstance(action, dict) else 0
             for i in range(len(self.enemy_health)):
                 unit_label = self._format_unit_label("enemy", i)
                 if self.enemy_health[i] <= 0:
@@ -5447,23 +5441,17 @@ class Warhammer40kEnv(gym.Env):
                         self.enemyOC[i] = 0
                         if self.trunc is False:
                             self._log(f"{unit_label}: тест Battle-shock провален.")
-                        if getattr(self, "reaction_policy", None) is not None:
-                            _use_bravery = self._should_use_stratagem(
-                                "insane_bravery", "enemy", i, [i], "command", int(self.enemyCP),
-                                net=getattr(self, "_reaction_net_by_side", {}).get("enemy"),
-                            )
-                        else:
-                            _use_bravery = (use_cp == 1 and cp_on == i)
-                            if not _use_bravery and isinstance(action, dict):
-                                from core.engine.phases.stratagems import stratagem_choice_str
-                                from core.engine.phases.types import Phase as _Ph
+                        _use_bravery = False
+                        if isinstance(action, dict):
+                            from core.engine.phases.stratagems import stratagem_choice_str
+                            from core.engine.phases.types import Phase as _Ph
 
-                                if (
-                                    stratagem_choice_str(_Ph.COMMAND, int(action.get("strat_command", 0) or 0))
-                                    == "insane_bravery"
-                                    and int(action.get("strat_command_unit", 0) or 0) == i
-                                ):
-                                    _use_bravery = True
+                            if (
+                                stratagem_choice_str(_Ph.COMMAND, int(action.get("strat_command", 0) or 0))
+                                == "insane_bravery"
+                                and int(action.get("strat_command_unit", 0) or 0) == i
+                            ):
+                                _use_bravery = True
                         if _use_bravery:
                             _bravery = _apply_stratagem(self, "enemy", "insane_bravery", i, phase="command")
                             if _bravery["ok"]:

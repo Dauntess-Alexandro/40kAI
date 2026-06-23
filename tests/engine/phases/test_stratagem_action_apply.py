@@ -147,3 +147,17 @@ def test_command_strat_head_triggers_bravery():
     with env.simulation_mode():
         env.command_phase("model", action=action)
     assert any(r[1] == "insane_bravery" for r in env.stratagem_used)
+
+
+def test_bravery_via_use_cp_no_longer_triggers():
+    """use_cp/cp_on без strat_command НЕ должен триггерить bravery (head-only)."""
+    env = build_env()
+    _setup(env)
+    env.phase = "command"
+    env.unit_health[0] = 1.0
+    env.unit_data[0]["Ld"] = 13  # 2D6<=12<13 → провал battle-shock
+    action = flat_default_action(len(env.unit_health), use_cp=1, cp_on=0)
+    # strat_command не задан (0) → bravery НЕ должен примениться (head-only)
+    with env.simulation_mode():
+        env.command_phase("model", action=action)
+    assert not any(r[1] == "insane_bravery" for r in env.stratagem_used)

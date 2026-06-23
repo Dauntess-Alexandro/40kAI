@@ -1,8 +1,23 @@
+from core.engine.phases.stratagems import stratagem_action_choices
+from core.engine.phases.types import Phase
 from tests.engine.phases._helpers import build_env, flat_default_action
 
 
-def _action(use_cp: int, cp_on: int, n: int) -> dict:
-    return flat_default_action(n, use_cp=int(use_cp), cp_on=int(cp_on))
+def _bravery_idx():
+    return stratagem_action_choices(Phase.COMMAND).index("insane_bravery")
+
+
+def _action_bravery(n: int, unit: int = 0) -> dict:
+    """Action с strat_command=insane_bravery, нацеленный на юнит `unit`."""
+    a = flat_default_action(n)
+    a["strat_command"] = _bravery_idx()
+    a["strat_command_unit"] = unit
+    return a
+
+
+def _action_no_bravery(n: int) -> dict:
+    """Action без bravery (strat_command=0 → none)."""
+    return flat_default_action(n)
 
 
 def test_command_bravery_routed_through_engine_records_journal():
@@ -19,7 +34,7 @@ def test_command_bravery_routed_through_engine_records_journal():
     snap = env.snapshot_state()
     with env.simulation_mode():
         try:
-            battle_shock, _reward = env.command_phase("model", action=_action(1, 0, n))
+            battle_shock, _reward = env.command_phase("model", action=_action_bravery(n, unit=0))
             # Bravery спасла юнит 0
             assert battle_shock[0] is False
             # запись в журнале появилась
@@ -45,7 +60,7 @@ def test_command_no_bravery_when_not_requested():
     snap = env.snapshot_state()
     with env.simulation_mode():
         try:
-            battle_shock, _reward = env.command_phase("model", action=_action(0, 0, n))
+            battle_shock, _reward = env.command_phase("model", action=_action_no_bravery(n))
             # Bravery не запрошена → юнит 0 в battle-shock, журнал пуст
             assert battle_shock[0] is True
             assert env.stratagem_used == []

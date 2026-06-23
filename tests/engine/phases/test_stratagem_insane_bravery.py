@@ -74,41 +74,33 @@ def test_insane_bravery_blocked_without_cp():
     assert all(rec[1] != "insane_bravery" for rec in env.stratagem_used)
 
 
-def test_insane_bravery_value_gate_used_when_policy(monkeypatch):
+def test_strat_command_head_triggers_bravery_model(monkeypatch):
+    """strat_command=insane_bravery триггерит bravery для model-стороны."""
+    from core.engine.phases.stratagems import stratagem_action_choices
     from tests.engine.phases._helpers import build_env
+
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
-    calls = {}
-    def fake_gate(sid, side, chosen, cand, phase, cp, **k):
-        calls["sid"] = sid
-        return True
-    env.reaction_policy = object()  # не None
-    monkeypatch.setattr(env, "_should_use_stratagem", fake_gate)
-    # форсим провал battle-shock на юните 0
     monkeypatch.setattr("core.envs.warhamEnv.dice", lambda num=1: [1, 1])
     env.unit_health[0] = 1
     env.unit_data[0]["W"] = 4  # ниже половины
     env.modelCP = 3
-    env.command_phase("model", action={"use_cp": 0, "cp_on": -1})
-    assert calls.get("sid") == "insane_bravery"
+    bravery_idx = stratagem_action_choices(Phase.COMMAND).index("insane_bravery")
+    env.command_phase("model", action={"strat_command": bravery_idx, "strat_command_unit": 0})
+    assert any(r[1] == "insane_bravery" for r in env.stratagem_used)
 
 
-def test_insane_bravery_value_gate_used_when_policy_enemy(monkeypatch):
+def test_strat_command_head_triggers_bravery_enemy(monkeypatch):
+    """strat_command=insane_bravery триггерит bravery для enemy-стороны."""
+    from core.engine.phases.stratagems import stratagem_action_choices
     from tests.engine.phases._helpers import build_env
+
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
-    calls = {}
-    def fake_gate(sid, side, chosen, cand, phase, cp, **k):
-        calls["sid"] = sid
-        calls["side"] = side
-        return True
-    env.reaction_policy = object()  # не None
-    env._reaction_net_by_side = {"enemy": object()}
-    monkeypatch.setattr(env, "_should_use_stratagem", fake_gate)
     monkeypatch.setattr("core.envs.warhamEnv.dice", lambda num=1: [1, 1])
     env.enemy_health[0] = 1
     env.enemy_data[0]["W"] = 4  # ниже половины
     env.enemyCP = 3
-    env.command_phase("enemy", action={"use_cp": 0, "cp_on": -1})
-    assert calls.get("sid") == "insane_bravery"
-    assert calls.get("side") == "enemy"
+    bravery_idx = stratagem_action_choices(Phase.COMMAND).index("insane_bravery")
+    env.command_phase("enemy", action={"strat_command": bravery_idx, "strat_command_unit": 0})
+    assert any(r[1] == "insane_bravery" for r in env.stratagem_used)

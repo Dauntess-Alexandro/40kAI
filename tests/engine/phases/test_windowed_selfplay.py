@@ -1,5 +1,3 @@
-import pytest
-
 from core.engine.phases.option_generator import command_window
 from core.engine.phases.types import ActionKind
 from core.engine.phases.windowed_selfplay import (
@@ -9,7 +7,7 @@ from core.engine.phases.windowed_selfplay import (
     windowed_selfplay_enabled,
 )
 from tests.engine.phases._helpers import build_env
-from tests.engine.phases.test_phase_engine_command import _action, _setup_failing_unit0
+from tests.engine.phases.test_phase_engine_command import _action_bravery, _action_no_bravery, _setup_failing_unit0
 
 
 def test_windowed_selfplay_enabled_by_default(monkeypatch):
@@ -22,11 +20,11 @@ def test_windowed_selfplay_disabled_when_env_zero(monkeypatch):
     assert windowed_selfplay_enabled() is False
 
 
-def test_command_decide_maps_use_cp_to_stratagem():
+def test_command_decide_maps_strat_command_to_stratagem():
     env = build_env()
     env.modelCP = 2
     win = command_window(env, "model")
-    decide = make_command_decide_from_action_dict(_action(1, 0, len(env.unit_health)))
+    decide = make_command_decide_from_action_dict(_action_bravery(len(env.unit_health), unit=0))
     opt = decide(win)
     assert opt.kind is ActionKind.USE_STRATAGEM
     assert opt.unit_idx == 0
@@ -36,7 +34,7 @@ def test_command_decide_maps_use_cp_to_stratagem():
 def test_command_decide_pass_when_no_bravery():
     env = build_env()
     win = command_window(env, "model")
-    decide = make_command_decide_from_action_dict(_action(0, 0, len(env.unit_health)))
+    decide = make_command_decide_from_action_dict(_action_no_bravery(len(env.unit_health)))
     opt = decide(win)
     assert opt.kind is ActionKind.PASS
 
@@ -45,7 +43,7 @@ def test_run_model_command_equivalent_to_command_phase_action():
     env = build_env()
     _setup_failing_unit0(env)
     n = len(env.unit_health)
-    action = _action(1, 0, n)
+    action = _action_bravery(n, unit=0)
     snap = env.snapshot_state()
 
     with env.simulation_mode():
@@ -72,7 +70,7 @@ def test_command_replay_meta_when_windowed(monkeypatch):
     monkeypatch.setenv("WINDOWED_SELFPLAY", "1")
     env = build_env()
     _setup_failing_unit0(env)
-    action = _action(1, 0, len(env.unit_health))
+    action = _action_bravery(len(env.unit_health), unit=0)
     meta = merge_command_meta_into(None, env, action, cp_before=2)
     assert meta is not None
     assert meta.window_id == "windowed_turn:model"
@@ -83,5 +81,5 @@ def test_command_replay_meta_when_windowed(monkeypatch):
 def test_merge_command_meta_noop_when_disabled(monkeypatch):
     monkeypatch.setenv("WINDOWED_SELFPLAY", "0")
     env = build_env()
-    out = merge_command_meta_into(None, env, _action(1, 0, 2), cp_before=1)
+    out = merge_command_meta_into(None, env, _action_bravery(2, unit=0), cp_before=1)
     assert out is None

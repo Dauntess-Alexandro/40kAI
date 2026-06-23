@@ -39,17 +39,22 @@ def _action_int(action_dict: dict | None, key: str, default: int = 0) -> int:
 def make_command_decide_from_action_dict(
     action_dict: dict | None,
 ) -> Callable[[DecisionWindow], ActionOption]:
-    """Маппинг плоских голов use_cp/cp_on → выбор опции command_window."""
-    use_cp = _action_int(action_dict, "use_cp", 0)
-    cp_on = _action_int(action_dict, "cp_on", 0)
+    """Маппинг strat_command/strat_command_unit → выбор опции command_window."""
+    from core.engine.phases.stratagems import stratagem_choice_str
+    from core.engine.phases.types import Phase as _Ph
+
+    strat_cmd = _action_int(action_dict, "strat_command", 0)
+    strat_unit = _action_int(action_dict, "strat_command_unit", 0)
+    choice = stratagem_choice_str(_Ph.COMMAND, strat_cmd)
 
     def decide(window: DecisionWindow) -> ActionOption:
-        if use_cp == 1:
+        if choice and choice != "none":
             for opt in window.options:
                 if (
                     opt.kind is ActionKind.USE_STRATAGEM
+                    and opt.meta.get("stratagem_id") == choice
                     and opt.unit_idx is not None
-                    and int(opt.unit_idx) == cp_on
+                    and int(opt.unit_idx) == strat_unit
                 ):
                     return opt
         return _pick_pass(window)
