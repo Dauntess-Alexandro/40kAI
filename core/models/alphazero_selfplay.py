@@ -222,5 +222,5 @@ def play_episode_with_mcts(
             if int(actor_idx) >= 0
             else f"steps={int(steps)}"
         )
-        strat_tracer.log_episode_summary(ep_label)
+        strat_tracer.log_episode_summary(ep_label, env_unwrapped=env_u)
     return out, last_info

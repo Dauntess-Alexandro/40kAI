@@ -1093,6 +1093,8 @@ class Warhammer40kEnv(gym.Env):
         self.enemyStrat = {"overwatch": -1, "smokescreen": -1}
         self.stratagem_used = []
         self.active_stratagem_effects = []
+        self._cmd_reroll_fired: int = 0
+        self._cmd_reroll_wasted: int = 0
         self.reaction_policy = None
         self.unitFellBack = []
         self.enemyFellBack = []
@@ -2395,6 +2397,8 @@ class Warhammer40kEnv(gym.Env):
                     continue
                 effects[key] = "one"
                 rec["consumed"] = True
+                if not self._in_simulation_mode():
+                    self._cmd_reroll_fired += 1
         return effects or None
 
     def _fight_effects_for_attacker(self, side: str, unit_idx: int):
@@ -2428,6 +2432,8 @@ class Warhammer40kEnv(gym.Env):
             if rec is None:
                 return False
             rec["consumed"] = True
+            if not self._in_simulation_mode():
+                self._cmd_reroll_fired += 1
             return True
 
         return decider
@@ -2493,6 +2499,8 @@ class Warhammer40kEnv(gym.Env):
                 == int(getattr(self, "battle_round", 1))
             ):
                 rec["consumed"] = True
+                if not self._in_simulation_mode():
+                    self._cmd_reroll_fired += 1
                 return rec
         return None
 
@@ -2539,6 +2547,15 @@ class Warhammer40kEnv(gym.Env):
 
     def _clear_phase_stratagem_effects(self, phase: str) -> None:
         phase = str(phase)
+        if not self._in_simulation_mode():
+            wasted = sum(
+                1
+                for rec in (getattr(self, "active_stratagem_effects", []) or [])
+                if str(rec.get("phase", "")) == phase
+                and rec.get("effect_id") == "command_reroll"
+                and not rec.get("consumed", False)
+            )
+            self._cmd_reroll_wasted += wasted
         self.active_stratagem_effects = [
             dict(rec)
             for rec in list(getattr(self, "active_stratagem_effects", []) or [])
@@ -7452,6 +7469,8 @@ class Warhammer40kEnv(gym.Env):
         self.enemyVP = 0
         self.stratagem_used = []
         self.active_stratagem_effects = []
+        self._cmd_reroll_fired = 0
+        self._cmd_reroll_wasted = 0
         self.battle_round = 1
         _first = getattr(self, "first_turn_side", None)
         if _first not in ("model", "enemy"):

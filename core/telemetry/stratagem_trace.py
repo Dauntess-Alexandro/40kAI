@@ -195,14 +195,20 @@ class StratagemEpisodeTracer:
         self.ep_attempts: Counter[str] = Counter()
         self.ep_applied: Counter[str] = Counter()
 
-    def log_episode_summary(self, ep_label: str | int) -> None:
+    def log_episode_summary(self, ep_label: str | int, *, env_unwrapped=None) -> None:
         if not self.ep_attempts and not self.ep_applied:
             return
+        reroll_suffix = ""
+        if env_unwrapped is not None:
+            fired = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
+            wasted = int(getattr(env_unwrapped, "_cmd_reroll_wasted", 0) or 0)
+            reroll_suffix = f" cmd_reroll_fired={fired} cmd_reroll_wasted={wasted}"
         self.log_fn(
             f"[{self.tag}][STRATAGEM_SUMMARY] ep={ep_label} "
             f"attempts={dict(self.ep_attempts)} applied={dict(self.ep_applied)} "
             f"attempt_total={sum(self.ep_attempts.values())} "
             f"applied_total={sum(self.ep_applied.values())}"
+            f"{reroll_suffix}"
         )
         self.ep_attempts.clear()
         self.ep_applied.clear()
