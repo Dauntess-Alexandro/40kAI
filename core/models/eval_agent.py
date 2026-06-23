@@ -19,7 +19,6 @@ from core.models.alphazero_ids import (
     is_alphazero_net_algo,
     is_gumbel_az_algo,
 )
-from core.models.option_candidates import attach_fight_stratagem_plan
 from core.models.utils import (
     build_action_masks_by_head,
     build_shoot_action_mask,
@@ -168,25 +167,10 @@ class EvalAgent:
 
     def as_policy_fn(self, env, side: str) -> Callable[[Any], dict]:
         def _fn(_obs_any):
-            act, plan = self.select_action(env, side)
-            attach_fight_stratagem_plan(env, plan)
+            act, _plan = self.select_action(env, side)
             return act
 
         return _fn
-
-    # --- реакции (file-страт. бой) ---
-    def _fight_plan(self, env, side):
-        if self.reaction_net is None:
-            return None
-        if self.algo == "ppo":
-            from core.models.ppo_stratagem_bridge import ppo_build_fight_plan
-
-            return ppo_build_fight_plan(env, self.reaction_net, self.device, side=side)
-        if self.algo == "dqn":
-            from core.models.dqn_stratagem_bridge import dqn_build_fight_plan
-
-            return dqn_build_fight_plan(env, self.reaction_net, self.device, side=side)
-        return None
 
     # --- per-algo действия (тела 1:1 с opponent_adapter.build_policy_fn) ---
     def _select_dqn(self, env, obs_t, masks_cpu, side):
@@ -198,7 +182,7 @@ class EvalAgent:
             action_dict = convertToDict(torch.tensor([action_list], device="cpu"))
             for i_u in range(self.len_model):
                 action_dict[f"move_num_{i_u}"] = int(action_list[6 + i_u])
-            return action_dict, self._fight_plan(env, side)
+            return action_dict, None
         with torch.no_grad():
             decision = self.net(obs_t)
         shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False, side=side)
@@ -216,7 +200,7 @@ class EvalAgent:
         action_dict = convertToDict(torch.tensor([action], device="cpu"))
         for i_u in range(self.len_model):
             action_dict[f"move_num_{i_u}"] = int(action[6 + i_u])
-        return action_dict, self._fight_plan(env, side)
+        return action_dict, None
 
     def _select_ppo(self, env, obs_t, masks_cpu, side):
         # PPO→temperature: в stochastic-режиме сэмпл из политики с температурой;
@@ -234,7 +218,7 @@ class EvalAgent:
         action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
         for i_u in range(self.len_model):
             action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
-        return action_dict, self._fight_plan(env, side)
+        return action_dict, None
 
     def _select_az(self, env, obs_np, masks_cpu, side):
         legal = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
@@ -262,8 +246,7 @@ class EvalAgent:
             action = [int(x) for x in selected]
         else:
             action = [int(np.argmax(p)) for p in pi] or [int(x) for x in selected]
-        plan = getattr(s, "last_selected_fight_plan", None)
-        return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=self.len_model), plan
+        return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=self.len_model), None
 
     def _select_muzero(self, env, obs_np, masks_cpu, side):
         legal = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]

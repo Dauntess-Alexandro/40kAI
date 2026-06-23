@@ -51,11 +51,7 @@ def root_joint_candidates_window_nodes(
         perturb_top_m=int(perturb_top_m),
     )
     tuples = [p.joint_tuple for p in plans]
-    fight_plans = {p.joint_tuple: p.fight_stratagem_plan for p in plans}
     if not tuples:
         return RootJointCandidates(tuples=((0,) * len(priors),))
     capped = tuples[: max(1, int(max_candidates))]
-    return RootJointCandidates(
-        tuples=tuple(capped),
-        fight_plans={t: fight_plans.get(t, ()) for t in capped},
-    )
+    return RootJointCandidates(tuples=tuple(capped))

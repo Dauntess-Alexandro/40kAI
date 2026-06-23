@@ -16,7 +16,6 @@ from core.engine.phases.replay_meta import (
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 from core.models.action_contract import ordered_action_keys
 from core.models.alphazero_replay import AZTransition
-from core.models.option_candidates import attach_fight_stratagem_plan
 from core.models.utils import convertToDict, unwrap_env
 from core.telemetry.stratagem_trace import (
     make_stratagem_tracer_for_train,
@@ -134,17 +133,13 @@ def play_episode_with_mcts(
         action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
         cp_before = snapshot_cp_before(env_u) if replay_phase_meta_enabled() else None
         phase_at_move = str(getattr(env_u, "phase", "") or "")
-        attach_fight_stratagem_plan(env, getattr(mcts, "last_selected_fight_plan", None))
         step_no = int(steps) + 1
-        try:
-            if strat_tracer is not None:
-                next_state, reward, done, trunc, info = strat_tracer.run_model_step(
-                    env, env_u, step_no, action_dict
-                )
-            else:
-                next_state, reward, done, trunc, info = env.step(action_dict)
-        finally:
-            attach_fight_stratagem_plan(env, None)
+        if strat_tracer is not None:
+            next_state, reward, done, trunc, info = strat_tracer.run_model_step(
+                env, env_u, step_no, action_dict
+            )
+        else:
+            next_state, reward, done, trunc, info = env.step(action_dict)
         phase_meta = capture_replay_phase_meta(
             env_u,
             action_dict=action_dict,

@@ -7,14 +7,14 @@ Stage 4: кандидаты корня tree-MCTS из generate_windows с про
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 
 from core.engine.phases.legacy_compiler import compile_options_to_action_dict
 from core.engine.phases.option_generator import generate_windows
-from core.engine.phases.types import ActionKind, ActionOption, DecisionWindow, Phase
+from core.engine.phases.types import ActionOption, DecisionWindow
 from core.models.action_contract import ordered_action_keys
 from core.models.utils import unwrap_env
 
@@ -39,15 +39,13 @@ class TurnPlanCandidate:
     action_dict: dict[str, int]
     joint_tuple: tuple[int, ...]
     projected_prior: float = 0.0
-    fight_stratagem_plan: tuple[tuple[int, str], ...] = ()
 
 
 @dataclass(frozen=True)
 class RootJointCandidates:
-    """Joint-кандидаты корня MCTS + fight-стратагемы (не входят в joint tuple)."""
+    """Joint-кандидаты корня MCTS (fight-стратагемы применяются через head strat_fight)."""
 
     tuples: tuple[tuple[int, ...], ...]
-    fight_plans: dict[tuple[int, ...], tuple[tuple[int, str], ...]] = field(default_factory=dict)
 
     def __iter__(self):
         return iter(self.tuples)
@@ -57,19 +55,6 @@ class RootJointCandidates:
 
     def __getitem__(self, key):
         return self.tuples[key]
-
-    def fight_plan_for(self, joint_tuple: tuple[int, ...]) -> dict[int, str]:
-        raw = self.fight_plans.get(joint_tuple, ())
-        return {int(u): str(s) for u, s in raw}
-
-
-def attach_fight_stratagem_plan(env, fight_plan: dict[int, str] | None) -> None:
-    """Задать план fight-стратагем перед env.step (option/MCTS rollout)."""
-    e = unwrap_env(env)
-    if fight_plan:
-        e._pending_fight_stratagem_plan = dict(fight_plan)
-    else:
-        e._pending_fight_stratagem_plan = None
 
 
 def joint_tuple_from_action_dict(action_dict: dict[str, int], len_model: int) -> tuple[int, ...]:
@@ -171,30 +156,6 @@ def _choices_from_windows(
     return tuple(choices), tuple(options)
 
 
-def _fight_stratagem_plan_from_choices(
-    windows: list[DecisionWindow],
-    choice_by_window: dict[str, int],
-) -> tuple[tuple[int, str], ...]:
-    plan: list[tuple[int, str]] = []
-    for w in windows:
-        if w.phase is not Phase.FIGHT or not w.options:
-            continue
-        oi = int(choice_by_window.get(w.window_id, 0))
-        oi = max(0, min(oi, len(w.options) - 1))
-        opt = w.options[oi]
-        if opt.kind is ActionKind.USE_STRATAGEM and opt.unit_idx is not None:
-            sid = str(opt.meta.get("stratagem_id", "") or "")
-            if sid == "command_reroll":
-                # Сохраняем выбранный деревом под-тип (hit/wound) в colon-форме,
-                # чтобы apply-путь применил реролл напрямую (AZ/MCTS не ставит reaction_policy).
-                roll = str(opt.meta.get("reroll_roll", "") or opt.param.get("reroll_roll", "") or "")
-                if roll:
-                    sid = f"command_reroll:{roll}"
-            if sid:
-                plan.append((int(opt.unit_idx), sid))
-    return tuple(plan)
-
-
 def _turn_plan_from_choices(
     windows: list[DecisionWindow],
     choice_by_window: dict[str, int],
@@ -206,14 +167,12 @@ def _turn_plan_from_choices(
     ad = compile_options_to_action_dict(list(options), int(len_model))
     jt = joint_tuple_from_action_dict(ad, int(len_model))
     pp = score_joint_prior(priors, legal_masks, jt)
-    fight_plan = _fight_stratagem_plan_from_choices(windows, choice_by_window)
     return TurnPlanCandidate(
         window_choices=window_choices,
         options=options,
         action_dict=ad,
         joint_tuple=jt,
         projected_prior=pp,
-        fight_stratagem_plan=fight_plan,
     )
 
 
@@ -434,21 +393,14 @@ def root_joint_candidates(
         perturb_top_m=int(perturb_top_m),
     )
     tuples: list[tuple[int, ...]] = [p.joint_tuple for p in plans]
-    fight_plans: dict[tuple[int, ...], tuple[tuple[int, str], ...]] = {
-        p.joint_tuple: p.fight_stratagem_plan for p in plans
-    }
 
     if resolved == "option_plus":
         legacy_greedy = joint[0] if joint else tuples[0]
         if legacy_greedy not in tuples:
             tuples.insert(0, legacy_greedy)
-            fight_plans.setdefault(legacy_greedy, ())
 
     if not tuples:
         fallback = joint[:1] if joint else [tuple(0 for _ in priors)]
         return RootJointCandidates(tuples=tuple(fallback))
     capped = tuples[: max(1, int(max_candidates))]
-    return RootJointCandidates(
-        tuples=tuple(capped),
-        fight_plans={t: fight_plans.get(t, ()) for t in capped},
-    )
+    return RootJointCandidates(tuples=tuple(capped))

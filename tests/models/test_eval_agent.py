@@ -1,4 +1,3 @@
-import torch
 
 from core.models.action_contract import action_sizes_from_env
 from core.models.eval_agent import (
@@ -45,15 +44,15 @@ def test_reaction_net_none_for_gmz():
     assert _reaction_net_for_algo("alphazero_tree", sentinel) is sentinel
 
 
-def test_as_policy_fn_attaches_fight_plan(monkeypatch):
+def test_as_policy_fn_returns_action(monkeypatch):
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     a = _agent(env, "ppo", net=object(), reaction_net=object())
-    monkeypatch.setattr(a, "select_action", lambda e, side: ({"move_num_0": 0}, {0: "command_reroll"}))
+    monkeypatch.setattr(a, "select_action", lambda e, side: ({"move_num_0": 0}, None))
     fn = a.as_policy_fn(env, "enemy")
     out = fn(env.get_observation_for_side("enemy"))
     assert out == {"move_num_0": 0}
-    assert dict(getattr(env, "_pending_fight_stratagem_plan", None) or {}) == {0: "command_reroll"}
+    assert not hasattr(env, "_pending_fight_stratagem_plan") or getattr(env, "_pending_fight_stratagem_plan", None) is None
 
 
 def test_build_eval_agent_ppo_smoke():

@@ -1311,9 +1311,6 @@ class Warhammer40kEnv(gym.Env):
         snap["stratagem_used"] = [tuple(x) for x in _su] if _su is not None else []
         _ase = _ga(_self, "active_stratagem_effects", None)
         snap["active_stratagem_effects"] = [dict(x) for x in _ase] if _ase is not None else []
-        _pfsp = _ga(_self, "_pending_fight_stratagem_plan", None)
-        snap["_pending_fight_stratagem_plan"] = dict(_pfsp) if isinstance(_pfsp, dict) else None
-
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
             v = _ga(_self, _k, None)
@@ -1395,10 +1392,6 @@ class Warhammer40kEnv(gym.Env):
             _self.stratagem_used = [tuple(x) for x in snapshot["stratagem_used"]]
         if "active_stratagem_effects" in snapshot:
             _self.active_stratagem_effects = [dict(x) for x in snapshot["active_stratagem_effects"]]
-        if "_pending_fight_stratagem_plan" in snapshot:
-            _pfsp = snapshot.get("_pending_fight_stratagem_plan")
-            _self._pending_fight_stratagem_plan = dict(_pfsp) if isinstance(_pfsp, dict) else None
-
         # --- sets ---
         for _k in ("_phase_unit_logged", "_terrain_shaping_shot_bonus_units"):
             if _k in snapshot:
@@ -2462,20 +2455,6 @@ class Warhammer40kEnv(gym.Env):
 
         return decider
 
-    def _command_reroll_record_exists(self, side: str, unit_idx: int, phase: str) -> bool:
-        """Есть ли уже запись Command Re-roll для (side, unit, phase) в текущем раунде (любой под-тип)."""
-        rnd = int(getattr(self, "battle_round", 1) or 1)
-        for rec in list(getattr(self, "active_stratagem_effects", []) or []):
-            if (
-                rec.get("effect_id") == "command_reroll"
-                and str(rec.get("side", "")) == str(side)
-                and int(rec.get("unit_idx", -1)) == int(unit_idx)
-                and str(rec.get("phase", "")) == str(phase)
-                and int(rec.get("round", rnd)) == rnd
-            ):
-                return True
-        return False
-
     def _apply_action_stratagem(self, side: str, phase, action) -> None:
         """Применить стратагему из головы strat_<phase> (action-driven, детерминированно).
 
@@ -2587,58 +2566,6 @@ class Warhammer40kEnv(gym.Env):
             for rec in list(getattr(self, "active_stratagem_effects", []) or [])
             if str(rec.get("phase", "")) != phase
         ]
-
-    def _apply_pending_fight_stratagem_plan(self, side: str) -> None:
-        """Применить план fight-стратагем из option/MCTS (_pending_fight_stratagem_plan).
-
-        Маршрутизация по записи: command_reroll:<roll> — применить под-тип напрямую
-        (выбор дерева MCTS); plain command_reroll — пропуск (MC-гейт удалён в Task 2);
-        прочие стратагемы (hungry_void и т.д.) — прежний value-гейт _should_use_stratagem
-        (без политики → всегда True, legacy). Полный снос build_fight_plan — Task 3.
-        """
-        plan = getattr(self, "_pending_fight_stratagem_plan", None)
-        self._pending_fight_stratagem_plan = None
-        if not plan:
-            return
-        health = self.unit_health if side == "model" else self.enemy_health
-        in_attack = self.unitInAttack if side == "model" else self.enemyInAttack
-        for u, sid in dict(plan).items():
-            ui = int(u)
-            if not (0 <= ui < len(health)) or health[ui] <= 0:
-                continue
-            if in_attack[ui][0] != 1:
-                continue
-            # B3 follow-up: читаем CP заново на каждой итерации — соседний юнит мог уже списать CP,
-            # иначе value-гейт оценивал бы по устаревшему запасу.
-            cp = self.modelCP if side == "model" else self.enemyCP
-            sid_raw = str(sid)
-            try:
-                if sid_raw.startswith("command_reroll:"):
-                    # anti-double: action-голова strat_fight могла уже применить реролл на юните
-                    # (под-проект 4) → не дублируем colon-формой fight-плана.
-                    if self._command_reroll_record_exists(side, ui, "fight"):
-                        continue
-                    _apply_stratagem(
-                        self,
-                        side,
-                        "command_reroll",
-                        ui,
-                        phase="fight",
-                        reroll_roll=sid_raw.split(":", 1)[1],
-                    )
-                elif sid_raw == "command_reroll":
-                    # plain command_reroll без под-типа: MC-гейт удалён (Task 2) → пропуск.
-                    # build_fight_plan полностью сносится в Task 3.
-                    continue
-                else:
-                    if not self._should_use_stratagem(
-                        sid_raw, side, ui, [ui], "fight", cp,
-                        net=getattr(self, "_reaction_net_by_side", {}).get(side),
-                    ):
-                        continue
-                    _apply_stratagem(self, side, sid_raw, ui, phase="fight")
-            except Exception as exc:
-                self._log(f"[STRATAGEM] pending fight plan: не применили {sid!r} на юните {ui}: {exc}")
 
     def _unit_can_shoot_now(self, side: str, unit_idx: int) -> bool:
         if side == "enemy":
@@ -7276,7 +7203,6 @@ class Warhammer40kEnv(gym.Env):
             from core.engine.phases.types import Phase
 
             self._apply_action_stratagem(side, Phase.FIGHT, action)
-        self._apply_pending_fight_stratagem_plan(side)
         reward_delta = 0.0
         engaged_pairs = []
         pre_enemy_hp_total = None

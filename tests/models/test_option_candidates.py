@@ -6,7 +6,6 @@ from core.engine.phases.types import ActionKind
 from core.models.action_contract import ordered_action_keys
 from core.models.option_candidates import (
     action_dict_from_joint_tuple,
-    attach_fight_stratagem_plan,
     build_turn_plan_candidates,
     filter_joint_candidates,
     joint_action_candidates,
@@ -130,39 +129,6 @@ def test_root_joint_mode_joint_unchanged():
     assert a == list(b)
 
 
-def test_turn_plan_can_carry_fight_stratagem_plan():
-    env = build_env()
-    env.modelCP = 2
-    env._invalidate_target_cache("test")
-    n = len(env.unit_health)
-    keys = ordered_action_keys(n)
-    priors = [np.ones(env.action_space.spaces[k].n, dtype=np.float32) for k in keys]
-    legal = [np.ones(p.size, dtype=bool) for p in priors]
-
-    plans = build_turn_plan_candidates(env, n, priors, legal, max_candidates=64, perturb_top_m=8)
-    with_fight = [p for p in plans if p.fight_stratagem_plan]
-    assert with_fight, "должен быть план с fight-стратагемой при CP>=1"
-
-    root = root_joint_candidates(
-        mode="option",
-        priors=priors,
-        legal_masks=legal,
-        env=env,
-        len_model=n,
-        max_candidates=32,
-    )
-    sample = with_fight[0].joint_tuple
-    assert root.fight_plan_for(sample) == dict(with_fight[0].fight_stratagem_plan)
-
-
-def test_attach_fight_stratagem_plan_sets_pending():
-    env = build_env()
-    attach_fight_stratagem_plan(env, {0: "hungry_void"})
-    assert env._pending_fight_stratagem_plan == {0: "hungry_void"}
-    attach_fight_stratagem_plan(env, None)
-    assert env._pending_fight_stratagem_plan is None
-
-
 def test_root_option_plus_contains_legacy_greedy():
     env = build_env()
     env.unit_coords[0] = [10, 10]
@@ -183,61 +149,3 @@ def test_root_option_plus_contains_legacy_greedy():
         max_candidates=32,
     )
     assert joint[0] in list(tuples)
-
-
-def test_fight_stratagem_plan_command_reroll_colon_form():
-    """command_reroll должен кодироваться в colon-форме (command_reroll:hit),
-    чтобы AZ/MCTS-путь без reaction_policy мог применить реролл напрямую."""
-    from core.engine.phases.types import (
-        ActionKind,
-        ActionOption,
-        DecisionWindow,
-        Phase,
-        SubStep,
-        Timing,
-    )
-    from core.models.option_candidates import _fight_stratagem_plan_from_choices
-
-    # Окно с command_reroll:hit (выбор дерева)
-    opt_cr = ActionOption(
-        kind=ActionKind.USE_STRATAGEM,
-        unit_idx=0,
-        meta={"stratagem_id": "command_reroll", "reroll_roll": "hit"},
-        param={"stratagem_id": "command_reroll", "reroll_roll": "hit"},
-    )
-    win_cr = DecisionWindow(
-        window_id="fight:model:cr",
-        owner_side="model",
-        phase=Phase.FIGHT,
-        sub_step=SubStep.FIGHT_UNIT,
-        timing=Timing.MAIN,
-        cursor_unit_idx=0,
-        options=[opt_cr],
-    )
-
-    # Окно с обычной стратагемой (не command_reroll) — должна оставаться без двоеточия
-    opt_hv = ActionOption(
-        kind=ActionKind.USE_STRATAGEM,
-        unit_idx=1,
-        meta={"stratagem_id": "hungry_void"},
-        param={"stratagem_id": "hungry_void"},
-    )
-    win_hv = DecisionWindow(
-        window_id="fight:model:hv",
-        owner_side="model",
-        phase=Phase.FIGHT,
-        sub_step=SubStep.FIGHT_UNIT,
-        timing=Timing.MAIN,
-        cursor_unit_idx=1,
-        options=[opt_hv],
-    )
-
-    plan = _fight_stratagem_plan_from_choices(
-        [win_cr, win_hv],
-        {win_cr.window_id: 0, win_hv.window_id: 0},
-    )
-
-    # command_reroll должен быть в colon-форме с подтипом
-    assert (0, "command_reroll:hit") in plan, f"ожидали command_reroll:hit, получили: {plan}"
-    # hungry_void — без двоеточия
-    assert (1, "hungry_void") in plan, f"ожидали hungry_void, получили: {plan}"

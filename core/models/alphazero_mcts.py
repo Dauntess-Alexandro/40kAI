@@ -3,17 +3,16 @@ from __future__ import annotations
 import math
 import threading
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 import numpy as np
 import torch
 
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.option_candidates import (
-    attach_fight_stratagem_plan,
     joint_action_candidates,
     root_joint_candidates,
 )
@@ -209,7 +208,6 @@ class AlphaZeroFactorizedMCTS:
         self.cfg = config or MCTSConfig()
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.last_run_stats: dict[str, float] = {}
-        self.last_selected_fight_plan: dict[int, str] = {}
         cache_size = int(getattr(self.cfg, "eval_cache_size", 10000) or 10000)
         self._eval_cache = EvalCache(max_size=cache_size)
         self._evaluator = evaluator  # Optional[Evaluator]
@@ -258,7 +256,7 @@ class AlphaZeroFactorizedMCTS:
         if n == 0:
             return []
 
-        values: list[Optional[float]] = [None] * n
+        values: list[float | None] = [None] * n
         uncached_indices: list[int] = []
 
         for i, leaf in enumerate(leaves):
@@ -295,7 +293,7 @@ class AlphaZeroFactorizedMCTS:
 
         return [float(v) for v in values]  # type: ignore[arg-type]
 
-    def _terminal_value_from_info(self, info: dict[str, Any]) -> Optional[float]:
+    def _terminal_value_from_info(self, info: dict[str, Any]) -> float | None:
         winner = str((info or {}).get("winner", "") or "").strip().lower()
         end_reason = str((info or {}).get("end reason", "") or "").strip().lower()
         if winner in {"model", "learner", "ai"} or end_reason == "wipeout_enemy":
@@ -350,7 +348,6 @@ class AlphaZeroFactorizedMCTS:
             "eval_cache_hits": float(self._eval_cache.hits),
             "eval_cache_misses": float(self._eval_cache.misses),
         }
-        self.last_selected_fight_plan = {}
         return policy_targets, selected_actions, value
 
     def _run_one_sim_on_clone(
@@ -367,7 +364,6 @@ class AlphaZeroFactorizedMCTS:
         simulate_enemy: bool,
         reset_options: dict | None,
         rng_seed: int | None = None,
-        fight_plan: dict[int, str] | None = None,
     ) -> dict:
         """Run one MCTS simulation on a clone env. Thread-safe: uses its own snapshot/restore."""
         import numpy as _np
@@ -377,7 +373,7 @@ class AlphaZeroFactorizedMCTS:
         env_u = unwrap_env(clone_env)
         snapshot = env_u.snapshot_state() if hasattr(env_u, "snapshot_state") else None
         current_obs = _np.asarray(obs, dtype=_np.float32)
-        leaf_value: Optional[float] = None
+        leaf_value: float | None = None
         needs_net_eval = False
         depth_reached = 0
         leaf_legal: list[_np.ndarray] = []
@@ -388,10 +384,6 @@ class AlphaZeroFactorizedMCTS:
                 current_action = list(action_list)
                 for depth in range(max_depth):
                     depth_reached = depth + 1
-                    attach_fight_stratagem_plan(
-                        clone_env,
-                        fight_plan if depth == 0 else None,
-                    )
                     action_dict = action_tensor_to_dict(
                         torch.tensor([current_action], dtype=torch.long),
                         len_model=int(len_model),
@@ -703,7 +695,6 @@ class AlphaZeroFactorizedMCTS:
 
             def _pool_worker(sim_idx: int, action_list_i: list[int]) -> tuple[int, dict]:
                 with _pool.acquire() as clone_env:
-                    fp = candidates.fight_plan_for(tuple(action_list_i))
                     result = self._run_one_sim_on_clone(
                         clone_env=clone_env,
                         obs=obs,
@@ -716,12 +707,11 @@ class AlphaZeroFactorizedMCTS:
                         simulate_enemy=simulate_enemy,
                         reset_options=reset_options,
                         rng_seed=sim_idx,
-                        fight_plan=fp,
                     )
                 return sim_idx, result
 
             # Submit all sims; pool semaphore limits concurrency to n_parallel
-            sim_results_par: list[Optional[dict]] = [None] * sims
+            sim_results_par: list[dict | None] = [None] * sims
             with ThreadPoolExecutor(max_workers=n_parallel) as executor:
                 futures_map = {
                     executor.submit(_pool_worker, i, al): i
@@ -779,11 +769,9 @@ class AlphaZeroFactorizedMCTS:
                     action_list = [int(np.argmax(priors[i])) for i in range(len(priors))]
                 else:
                     action_list = list(child.action_tuple)
-                fight_plan = candidates.fight_plan_for(tuple(action_list))
-
                 snapshot = env_u.snapshot_state() if hasattr(env_u, "snapshot_state") else None
                 current_obs = np.asarray(obs, dtype=np.float32)
-                leaf_value: Optional[float] = None
+                leaf_value: float | None = None
                 needs_net_eval = False
                 depth_reached = 0
                 path = [root]
@@ -797,10 +785,6 @@ class AlphaZeroFactorizedMCTS:
                         current_action = list(action_list)
                         for depth in range(max_depth):
                             depth_reached = depth + 1
-                            attach_fight_stratagem_plan(
-                                env,
-                                fight_plan if depth == 0 else None,
-                            )
                             action_dict = action_tensor_to_dict(
                                 torch.tensor([current_action], dtype=torch.long),
                                 len_model=int(len_model),
@@ -884,8 +868,6 @@ class AlphaZeroFactorizedMCTS:
         policy_targets, selected_actions = self._final_policy_from_visits(
             root, priors, legal_masks, temperature, move_count, candidate_mode=candidate_mode
         )
-        self.last_selected_fight_plan = candidates.fight_plan_for(tuple(int(a) for a in selected_actions))
-
         self.last_run_stats = {
             "mode": "tree",
             "simulations": float(sims),
@@ -909,7 +891,7 @@ class AlphaZeroFactorizedMCTS:
         legal_masks_by_head: list[np.ndarray],
         temperature: float = 1.0,
         env=None,
-        len_model: Optional[int] = None,
+        len_model: int | None = None,
         enemy_policy_fn=None,
         reset_options: dict | None = None,
         move_count: int | None = None,
