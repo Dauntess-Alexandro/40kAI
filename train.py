@@ -6022,7 +6022,7 @@ def _actor_learner_actor_entry_alphazero(
         len_model = int(len(model))
 
         # B3-full: установка reaction_value_policy (net-value lookahead реакций) — прямой az_net.
-        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on"):
+        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "1")).strip().lower() in ("1", "true", "yes", "on"):
             try:
                 from core.models.reaction_value_policy import make_reaction_value_policy
 
@@ -6295,7 +6295,7 @@ def _az_env_worker_entry(
         len_model = int(len(model))
 
         # B3-full: установка reaction_value_policy (net-value lookahead реакций) через evaluator-адаптер.
-        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "0")).strip().lower() in ("1", "true", "yes", "on"):
+        if str(os.getenv("AZ_REACTION_VALUE_POLICY", "1")).strip().lower() in ("1", "true", "yes", "on"):
             try:
                 import numpy as _np
 
