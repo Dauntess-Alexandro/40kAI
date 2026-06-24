@@ -8487,6 +8487,9 @@ class Warhammer40kEnv(gym.Env):
             self.last_end_reason = ""
             self.last_winner = None
         info = self.get_info()
+        # Fix 1: величина штрафа за впустую-command_reroll (>=0) — чтобы трейнер сохранил
+        # его вне per-step клиппинга reward (на «полезных» шагах клип съедал -0.05).
+        info["command_reroll_wasted_penalty"] = float(_cr_waste_penalty)
         return self._get_observation(), reward, self.game_over, res, info
 
     def player(self):

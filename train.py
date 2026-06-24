@@ -661,6 +661,20 @@ def maybe_clip_reward(value: float, enabled: bool, lo=None, hi=None):
     return clipped, clipped != float(value)
 
 
+def clip_reward_preserving_penalty(reward, penalty, enabled, lo=None, hi=None):
+    """Клипует игровую часть reward, сохраняя штраф (penalty) вне клипа.
+
+    *reward* уже содержит вычтенный штраф (env.step). На «полезных» шагах игровая часть
+    >= верхней границы клипа, и при обычном клипе -penalty исчезал. Здесь добавляем штраф
+    назад, клипуем игровую часть, затем вычитаем штраф снова — так штраф всегда виден агенту.
+    При выключенном клипе возвращаем reward без изменений (penalty уже внутри).
+    """
+    pen = float(penalty or 0.0)
+    base = float(reward) + pen
+    base_clipped, _ = maybe_clip_reward(base, enabled, lo, hi)
+    return base_clipped - pen
+
+
 def _dqn_ctor_kwargs():
     return {
         "dueling": DUELING_ENABLED,
@@ -5506,8 +5520,13 @@ def _actor_learner_actor_entry(
                     except Exception:
                         pass
 
-                    r_clipped, _clipped = maybe_clip_reward(
-                        float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
+                    # Fix 1: клипуем игровую часть, сохраняя штраф за впустую-command_reroll вне клипа.
+                    r_clipped = clip_reward_preserving_penalty(
+                        float(reward),
+                        float((info2 or {}).get("command_reroll_wasted_penalty", 0.0) or 0.0),
+                        bool(clip_reward_enabled),
+                        float(clip_reward_min),
+                        float(clip_reward_max),
                     )
 
                     n_step_buf.append(
@@ -5871,8 +5890,13 @@ def _actor_learner_actor_entry_ppo(
                     last_info = info2 if isinstance(info2, dict) else last_info
                     last_res = res
 
-                    r_clipped, _clipped = maybe_clip_reward(
-                        float(reward), bool(clip_reward_enabled), float(clip_reward_min), float(clip_reward_max)
+                    # Fix 1: клипуем игровую часть, сохраняя штраф за впустую-command_reroll вне клипа.
+                    r_clipped = clip_reward_preserving_penalty(
+                        float(reward),
+                        float((info2 or {}).get("command_reroll_wasted_penalty", 0.0) or 0.0),
+                        bool(clip_reward_enabled),
+                        float(clip_reward_min),
+                        float(clip_reward_max),
                     )
                     steps_buf.append(
                         {
