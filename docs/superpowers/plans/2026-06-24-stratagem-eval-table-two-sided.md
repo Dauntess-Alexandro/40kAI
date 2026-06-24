@@ -392,16 +392,16 @@ MISS:
 
 - [ ] **Step 7: Прокинуть opponent_agent_id в месте вызова writer**
 
-В блоке сводки, где вызывается `_write_stratagem_report(...)`, добавить opponent id. Использовать реальный идентификатор оппонента, доступный в этой области (по аналогии с `selected_agent_id` для learner — найди соответствующую переменную оппонента в eval, напр. `selected_opponent_agent_id`; при отсутствии — строку `"heuristic"`):
+В блоке сводки, где вызывается `_write_stratagem_report(...)`, добавить opponent id. Реальная переменная оппонента в `eval.py` (внутри `main`) называется **`opponent_agent_id`** (строка ~1252, `opponent_agent_id = (args.opponent_agent_id or "").strip()`). Она в той же области видимости, что и `selected_agent_id`, поэтому `globals()` НЕ нужен — обращаемся напрямую. При отсутствии (игра против эвристики) переменная уже равна `""` → fallback на `"heuristic"`:
 
 ```python
-    _opp_label = str(globals().get("selected_opponent_agent_id", "") or "") or "heuristic"
+    _opp_label = str(opponent_agent_id or "") or "heuristic"
     _md_path, _csv_path = _write_stratagem_report(
         step_metrics, agent_id=_agent_label, out_dir=_results_dir, opponent_agent_id=_opp_label
     )
 ```
 
-> Примечание исполнителю: имя переменной оппонента сверь по коду eval (как в прошлой задаче сверял `ARTIFACTS_RESULTS_DIR`/`selected_agent_id`). Если оппонент-агента нет (игра против эвристики) — оставить `"heuristic"`.
+> Примечание исполнителю: `opponent_agent_id` — локальная переменная функции `main` (не global). Если вызов writer находится в другой функции/области, где этой переменной нет — прокинь её через параметр или используй `args.opponent_agent_id` (доступно везде, где есть `args`). Против эвристики → `"heuristic"`.
 
 - [ ] **Step 8: Полный прогон тестов + smoke**
 
