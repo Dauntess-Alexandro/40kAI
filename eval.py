@@ -1051,6 +1051,71 @@ def _aggregate_swap(res_a: dict, res_b: dict) -> dict:
             "total_games": n, "draws": int(res_a["draws"]) + int(res_b["draws"])}
 
 
+def _extract_model_stratagem_aggregates(step_metrics) -> dict:
+    """Распаковать model-only стратагемные агрегаты из step_metrics (префикс m_)."""
+    def _by_prefix(prefix: str) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for key, val in step_metrics.items():
+            if key.startswith(prefix):
+                out[key[len(prefix):]] = int(val)
+        return out
+
+    return {
+        "attempts": _by_prefix("m_strat_attempt_"),
+        "applied": _by_prefix("m_strat_applied_"),
+        "miss": _by_prefix("m_strat_miss_"),
+        "games_used": _by_prefix("m_strat_games_used_"),
+        "wins_used": _by_prefix("m_strat_wins_used_"),
+        "games_total": int(step_metrics.get("m_games_total", 0) or 0),
+        "model_wins_total": int(step_metrics.get("m_model_wins_total", 0) or 0),
+    }
+
+
+def _write_stratagem_report(step_metrics, *, agent_id: str, out_dir: str) -> tuple[str, str]:
+    """Построить таблицу стратагем (model-only) и записать Markdown + CSV.
+
+    Возвращает (md_path, csv_path). При ошибке записи — пробрасывает с понятным
+    русским сообщением (что/где/что делать).
+    """
+    import datetime
+    import os
+
+    from core.telemetry.stratagem_report import (
+        build_stratagem_rows,
+        rows_to_csv,
+        rows_to_markdown,
+    )
+
+    agg = _extract_model_stratagem_aggregates(step_metrics)
+    rows = build_stratagem_rows(
+        attempts=agg["attempts"], applied=agg["applied"], miss=agg["miss"],
+        games_used=agg["games_used"], wins_used=agg["wins_used"],
+        games_total=agg["games_total"], model_wins_total=agg["model_wins_total"],
+    )
+    games = agg["games_total"]
+    winrate = (agg["model_wins_total"] / games) if games > 0 else 0.0
+    date = datetime.date.today().isoformat()
+    md = rows_to_markdown(rows, header_meta={
+        "agent_id": agent_id, "games": games, "winrate": winrate, "date": date,
+    })
+    csv = rows_to_csv(rows)
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        md_path = os.path.join(out_dir, f"stratagem_eval_{stamp}.md")
+        csv_path = os.path.join(out_dir, f"stratagem_eval_{stamp}.csv")
+        with open(md_path, "w", encoding="utf-8") as fh:
+            fh.write(md)
+        with open(csv_path, "w", encoding="utf-8") as fh:
+            fh.write(csv)
+    except OSError as exc:
+        raise OSError(
+            f"Не удалось записать отчёт по стратагемам в {out_dir} "
+            f"(_write_stratagem_report): {exc}. Проверь права/путь artifacts/results."
+        ) from exc
+    return md_path, csv_path
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--games", type=int, default=50)
@@ -1422,9 +1487,13 @@ def main():
         step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
         strat_attempt_re = re.compile(r"stratagem=(?P<sid>\S+)")
         strat_applied_re = re.compile(r"applied=(?P<sid>\S+)")
+        strat_env_side_re = re.compile(r"env_side=(?P<side>model|enemy)")
+        strat_miss_sid_re = re.compile(r"attempted=(?P<sid>\S+)")
         _label = f" [{assignment_label}]" if assignment_label else ""
 
         for idx in range(1, _games + 1):
+            ep_model_applied_sids: set[str] = set()
+            ep_model_attempt_sids: set[str] = set()  # пока не используется в таблице, для будущего
             if eval_stop_requested():
                 log(f"Остановка по запросу пользователя после {idx - 1}/{_games} игр{_label}.")
                 break
@@ -1479,13 +1548,32 @@ def main():
                     m = strat_attempt_re.search(line)
                     if m:
                         step_metrics[f"strat_attempt_{m.group('sid')}"] += 1
+                    _es = strat_env_side_re.search(line)
+                    if _es and _es.group("side") == "model":
+                        _m = strat_attempt_re.search(line)
+                        if _m:
+                            sid = _m.group("sid")
+                            step_metrics[f"m_strat_attempt_{sid}"] += 1
+                            ep_model_attempt_sids.add(sid)
                 elif line.startswith("[WH40K][STRATAGEM] applied="):
                     step_metrics["stratagem_applied_total"] += 1
                     m = strat_applied_re.search(line)
                     if m:
                         step_metrics[f"strat_applied_{m.group('sid')}"] += 1
+                    _es = strat_env_side_re.search(line)
+                    if _es and _es.group("side") == "model":
+                        _m = strat_applied_re.search(line)
+                        if _m:
+                            sid = _m.group("sid")
+                            step_metrics[f"m_strat_applied_{sid}"] += 1
+                            ep_model_applied_sids.add(sid)
                 elif line.startswith("[WH40K][STRATAGEM][MISS]"):
                     step_metrics["stratagem_miss_total"] += 1
+                    _es = strat_env_side_re.search(line)
+                    if _es and _es.group("side") == "model":
+                        _m = strat_miss_sid_re.search(line)
+                        if _m:
+                            step_metrics[f"m_strat_miss_{_m.group('sid')}"] += 1
                 elif line.startswith("[TRACE][STEP_VERDICT]"):
                     verdict_raw = line.split("verdict=", 1)[-1].strip()
                     for token in verdict_raw.split(","):
@@ -1533,6 +1621,14 @@ def main():
             else:
                 _draws += 1
                 winner_side = "draw"
+
+            step_metrics["m_games_total"] += 1
+            if winner == "model":
+                step_metrics["m_model_wins_total"] += 1
+            for sid in ep_model_applied_sids:
+                step_metrics[f"m_strat_games_used_{sid}"] += 1
+                if winner == "model":
+                    step_metrics[f"m_strat_wins_used_{sid}"] += 1
 
             if winner_side == "P1":
                 p1_wins += 1
@@ -1684,6 +1780,20 @@ def main():
     rewards_learner = _report["rewards_learner"]
     end_reasons_v2 = _report["end_reasons_v2"]
     step_metrics = _report["step_metrics"]
+    try:
+        from project_paths import ARTIFACTS_RESULTS_DIR  # каталог artifacts/results
+        _results_dir = str(ARTIFACTS_RESULTS_DIR)
+    except Exception:
+        _results_dir = "artifacts/results"
+    _agent_label = str(selected_agent_id or "") or "eval_model"
+    _md_path, _csv_path = _write_stratagem_report(
+        step_metrics, agent_id=_agent_label, out_dir=_results_dir
+    )
+    log(
+        f"[EVAL][STRATAGEM_TABLE] games={int(step_metrics.get('m_games_total', 0) or 0)} "
+        f"model_wins={int(step_metrics.get('m_model_wins_total', 0) or 0)} "
+        f"md={_md_path} csv={_csv_path}"
+    )
     action_tuple_counter = _report["action_tuple_counter"]
 
     winrate_p1_all = p1_wins / played_games if played_games else 0.0
