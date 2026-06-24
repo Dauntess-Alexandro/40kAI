@@ -1,4 +1,5 @@
 import torch
+
 from core.models.muzero_value_net_builder import (
     build_gmz_net_from_search_cfg,
     build_smz_net_from_search_cfg,
@@ -45,3 +46,16 @@ def test_load_value_net_weights_roundtrip(tmp_path):
 def test_load_value_net_weights_missing_returns_false():
     net = build_gmz_net_from_search_cfg(_CFG, device=torch.device("cpu"))
     assert load_value_net_weights(net, "no_such_file.pth") is False
+
+
+def test_write_init_weights_from_cfg_roundtrip(tmp_path):
+    import json
+
+    from core.models.muzero_value_net_builder import write_init_weights_from_cfg
+
+    cfg_path = tmp_path / "gmz_remote_search_cfg.json"
+    cfg_path.write_text(json.dumps(_CFG), encoding="utf-8")
+    out = tmp_path / "latest_gmz_policy.pth"
+    p = write_init_weights_from_cfg(str(cfg_path), str(out), algo="gmz")
+    net = build_gmz_net_from_search_cfg(_CFG, device=torch.device("cpu"))
+    assert load_value_net_weights(net, p) is True

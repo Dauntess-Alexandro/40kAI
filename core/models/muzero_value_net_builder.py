@@ -54,3 +54,29 @@ def load_value_net_weights(net, weights_path: str, *, device=None) -> bool:
         return True
     except Exception:
         return False
+
+
+def write_init_weights_from_cfg(search_cfg_path: str, out_path: str, *, algo: str = "gmz", device=None) -> str:
+    """Bootstrap: построить сеть из search_cfg и сохранить СЛУЧАЙНО инициализированные веса.
+
+    Позволяет поднять remote IS без предварительного обучения на ПК1 — сервер стартует с
+    рандома, learner потом синканёт настоящие веса (формы совпадают, обе строятся из cfg).
+    Возвращает out_path. Бросает с понятным сообщением, если cfg не читается/битый.
+    """
+    import json
+
+    import torch
+
+    dev = device or torch.device("cpu")
+    try:
+        with open(search_cfg_path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except OSError as exc:
+        raise OSError(
+            f"write_init_weights_from_cfg: не удалось прочитать search_cfg {search_cfg_path}: {exc}. "
+            f"Где: bootstrap весов. Что делать: укажи путь к *_remote_search_cfg.json (на шаре/actor_sync)."
+        ) from exc
+    net = build_smz_net_from_search_cfg(payload, device=dev) if str(algo).lower() == "smz" \
+        else build_gmz_net_from_search_cfg(payload, device=dev)
+    torch.save(net.state_dict(), out_path)
+    return out_path
