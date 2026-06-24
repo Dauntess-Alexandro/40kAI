@@ -148,6 +148,12 @@ def command_reroll_options_for_unit(
     i = int(unit_idx)
     if not (0 <= i < len(health)) or health[i] <= 0:
         return []
+    # Гейт «нет цели — нет реролла»: не предлагаем command_reroll, если у юнита нет предстоящего
+    # броска в этой фазе (нет валидной цели стрельбы/чарджа) — иначе CP тратится впустую (wasted).
+    if phase is Phase.SHOOTING and not e.get_shoot_targets_for_unit(side, i):
+        return []
+    if phase is Phase.CHARGE and not e.get_charge_targets_for_unit(side, i):
+        return []
     options: list[ActionOption] = []
     for roll in rolls:
         options.append(
