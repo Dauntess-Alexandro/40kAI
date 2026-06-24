@@ -215,6 +215,15 @@ if /i "%MODE%"=="check" (
   exit /b 0
 )
 
+REM Авто-bootstrap: весов нет, но search_cfg есть -> генерим РАНДОМНЫЕ веса рядом с cfg
+REM (старт без предобучения на ПК1; learner потом синканёт настоящие веса, формы совпадут).
+if not exist "%GMZ_REMOTE_WEIGHTS_PATH%" if "%GMZ_REMOTE_INIT_WEIGHTS%"=="" if exist "%GMZ_REMOTE_SEARCH_CONFIG%" (
+  for %%I in ("%GMZ_REMOTE_SEARCH_CONFIG%") do set "GMZ_REMOTE_WEIGHTS_PATH=%%~dpIlatest_gmz_policy.pth"
+  echo [BOOTSTRAP] Весов нет — генерирую рандомные из cfg ^(без предобучения на ПК1^)...
+  python "%TOOLS%\write_gmz_init_weights.py" --search-cfg "%GMZ_REMOTE_SEARCH_CONFIG%" --out "!GMZ_REMOTE_WEIGHTS_PATH!"
+  if exist "!GMZ_REMOTE_WEIGHTS_PATH!" ( echo [BOOTSTRAP] OK: !GMZ_REMOTE_WEIGHTS_PATH! ) else ( echo [BOOTSTRAP][WARN] не удалось сгенерировать веса — см. вывод выше. )
+)
+
 if not exist "%GMZ_REMOTE_WEIGHTS_PATH%" (
   if "%GMZ_REMOTE_INIT_WEIGHTS%"=="" (
     echo [ОШИБКА] Нет файла весов: %GMZ_REMOTE_WEIGHTS_PATH%
