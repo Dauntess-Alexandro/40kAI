@@ -16,6 +16,7 @@ from core.engine.phases.replay_meta import (
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.gumbel_muzero_replay import GMZTransition
+from core.models.muzero_stratagem_bridge import maybe_install_muzero_reactions
 from core.models.utils import unwrap_env
 
 
@@ -62,9 +63,17 @@ def play_episode_with_gumbel_muzero(
     policy_version: int = 0,
     episode_id: int = 0,
     deterministic: bool = False,
+    reaction_algo_tag: str = "GMZ",
 ) -> tuple[list[GMZTransition], dict]:
     cfg = config or GumbelSelfPlayConfig()
     env_u = unwrap_env(env)
+    maybe_install_muzero_reactions(
+        env,
+        search=search,
+        inference_fn=inference_fn,
+        flag_env=f"{reaction_algo_tag}_REACTION_VALUE_POLICY",
+        log_tag=reaction_algo_tag,
+    )
     full_trace_enabled = (
         str(os.getenv("ACTION_TRACE_ENABLED", "0")).strip() == "1"
         or str(os.getenv("VERBOSE_LOGS", "0")).strip() == "1"

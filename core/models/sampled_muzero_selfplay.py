@@ -13,4 +13,5 @@ __all__ = ["SampledSelfPlayConfig", "play_episode_with_sampled_muzero"]
 def play_episode_with_sampled_muzero(**kwargs):
     """Прогон эпизода с sampled-поиском. selfplay-петля идентична gmz: search.run имеет
     ту же сигнатуру, поэтому переиспользуем play_episode_with_gumbel_muzero как есть."""
+    kwargs.setdefault("reaction_algo_tag", "SMZ")
     return play_episode_with_gumbel_muzero(**kwargs)
