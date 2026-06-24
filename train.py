@@ -7533,6 +7533,7 @@ def _gmz_env_worker_entry(
     remote_host: str = "",
     remote_port: int = 5555,
     remote_auth_token: str = "",
+    reaction_algo: str = "gmz",
 ):
     """CPU env worker: env + opponent; inference через GPU inference server."""
     try:
@@ -7549,6 +7550,40 @@ def _gmz_env_worker_entry(
         mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
         env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
         len_model = int(len(model))
+
+        # IS: локальная value-сеть для умных реакций (Подход 1) — реакции считаются ЛОКАЛЬНО на
+        # воркере, без сетевых round-trip. GMZ/SMZ — общий воркер, различаем по reaction_algo.
+        from core.models.muzero_stratagem_bridge import (
+            install_worker_reaction_value_net,
+            refresh_worker_reaction_net,
+        )
+        from core.models.muzero_value_net_builder import (
+            build_gmz_net_from_search_cfg,
+            build_smz_net_from_search_cfg,
+        )
+
+        if str(reaction_algo).strip().lower() == "smz":
+            _r_cfg, _r_w = "smz_remote_search_cfg.json", "latest_smz_policy.pth"
+            _r_flag, _r_tag, _r_build = "SMZ_REACTION_VALUE_POLICY", "SMZ", build_smz_net_from_search_cfg
+        else:
+            _r_cfg, _r_w = "gmz_remote_search_cfg.json", "latest_gmz_policy.pth"
+            _r_flag, _r_tag, _r_build = "GMZ_REACTION_VALUE_POLICY", "GMZ", build_gmz_net_from_search_cfg
+        _reaction_assets_dir = os.path.join(MODELS_DIR, "actor_sync")
+
+        def _try_install_reaction_net():
+            return install_worker_reaction_value_net(
+                env,
+                assets_dir=_reaction_assets_dir,
+                cfg_name=_r_cfg,
+                weights_name=_r_w,
+                build_net_fn=_r_build,
+                flag_env=_r_flag,
+                log_tag=_r_tag,
+                log_fn=append_agent_log,
+            )
+
+        _reaction_net = _try_install_reaction_net()
+        _reaction_refresh_k = max(1, int(os.getenv("MUZERO_REACTION_NET_REFRESH_EVERY_EP", "10")))
 
         mode = str(inference_server_mode or "local").strip().lower()
         if mode == "remote":
@@ -7618,6 +7653,15 @@ def _gmz_env_worker_entry(
         rollout_batch: list[dict] = []
         for _ep in range(int(episodes)):
             ep_idx_1based = int(_ep) + 1
+            # refresh/retry локальной value-сети реакций каждые K эпизодов: если поставлена —
+            # перегружаем веса; если нет (ассеты не были синканы на старте) — пробуем поставить снова.
+            if int(_ep) > 0 and (int(_ep) % _reaction_refresh_k == 0):
+                if _reaction_net is None:
+                    _reaction_net = _try_install_reaction_net()
+                else:
+                    refresh_worker_reaction_net(
+                        _reaction_net, assets_dir=_reaction_assets_dir, weights_name=_r_w
+                    )
             attacker_side, defender_side = roll_off_attacker_defender(
                 manual_roll_allowed=False,
                 log_fn=None,
@@ -8630,6 +8674,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                     str(GMZ_INFERENCE_REMOTE_HOST),
                     int(GMZ_INFERENCE_REMOTE_PORT),
                     str(GMZ_INFERENCE_REMOTE_AUTH_TOKEN),
+                    "gmz",
                 )
                 p = ctx.Process(
                     target=_gmz_env_worker_entry,
@@ -9392,6 +9437,7 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
                     str(SMZ_INFERENCE_REMOTE_HOST),
                     int(SMZ_INFERENCE_REMOTE_PORT),
                     str(SMZ_INFERENCE_REMOTE_AUTH_TOKEN),
+                    "smz",
                 )
                 p = ctx.Process(
                     target=_gmz_env_worker_entry,
