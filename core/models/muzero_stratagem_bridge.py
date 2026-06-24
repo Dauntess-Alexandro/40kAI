@@ -64,3 +64,61 @@ def maybe_install_muzero_reactions(
         return False
     net = getattr(search, "net", None)
     return install_muzero_reaction_policy(env, net, both_sides=True, log_tag=log_tag, log_fn=log_fn)
+
+
+def install_worker_reaction_value_net(
+    env, *, assets_dir, cfg_name, weights_name, build_net_fn,
+    flag_env, log_tag, device=None, log_fn=None,
+):
+    """IS-воркер: построить локальную value-сеть из assets_dir и поставить reaction_policy.
+
+    assets_dir содержит cfg_name (*_remote_search_cfg.json) и weights_name (latest_*_policy.pth).
+    Флаг ВЫКЛ / нет файлов / ошибка → None (legacy-реакции), без падения воркера.
+    """
+    import json
+
+    import torch
+
+    from core.models.muzero_value_net_builder import load_value_net_weights
+
+    if not muzero_reaction_value_policy_enabled(flag_env):
+        return None
+    _dev = device or torch.device("cpu")
+    try:
+        cfg_path = os.path.join(assets_dir, cfg_name)
+        weights_path = os.path.join(assets_dir, weights_name)
+        if not (os.path.isfile(cfg_path) and os.path.isfile(weights_path)):
+            (log_fn or print)(
+                f"[{log_tag}][ENV_WORKER] reaction_value_policy skip: нет {cfg_name}/{weights_name} "
+                f"в {assets_dir} (ещё не синканы) — legacy-реакции."
+            )
+            return None
+        with open(cfg_path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        net = build_net_fn(payload, device=_dev)
+        if not load_value_net_weights(net, weights_path, device=_dev):
+            (log_fn or print)(
+                f"[{log_tag}][ENV_WORKER][WARN] не удалось загрузить веса {weights_path} — legacy-реакции."
+            )
+            return None
+        ok = install_muzero_reaction_policy(env, net, log_tag=log_tag, log_fn=log_fn)
+        return net if ok else None
+    except Exception as exc:  # noqa: BLE001 — воркер не должен падать
+        (log_fn or print)(
+            f"[{log_tag}][ENV_WORKER][WARN] установка локальной value-сети реакций не удалась "
+            f"(install_worker_reaction_value_net): {exc}. Legacy-реакции."
+        )
+        return None
+
+
+def refresh_worker_reaction_net(net, *, assets_dir, weights_name, device=None) -> bool:
+    """Перегрузить веса локальной value-сети реакций (refresh). net=None → False."""
+    import torch
+
+    from core.models.muzero_value_net_builder import load_value_net_weights
+
+    if net is None:
+        return False
+    return load_value_net_weights(
+        net, os.path.join(assets_dir, weights_name), device=device or torch.device("cpu")
+    )
