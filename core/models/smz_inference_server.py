@@ -11,7 +11,6 @@ from typing import Any
 import numpy as np
 import torch
 
-from core.models.sampled_muzero_model import make_sampled_muzero_net
 from core.models.sampled_muzero_search import (
     BatchedSampledMuZeroSearch,
     SampledMuZeroSearchConfig,
@@ -285,14 +284,9 @@ def smz_inference_server_entry(
                 "и положите smz_remote_search_cfg.json рядом с весами (SMB/actor_sync)."
             )
 
-        net = make_sampled_muzero_net(
-            obs_dim=obs_dim,
-            action_sizes=action_sizes,
-            latent_dim=int(search_cfg_payload.get("latent_dim", 256)),
-            hidden_dim=int(search_cfg_payload.get("hidden_dim", 256)),
-            num_layers=int(search_cfg_payload.get("num_layers", 2)),
-            action_embed_dim=int(search_cfg_payload.get("action_embed_dim", 64)),
-        ).to(device)
+        from core.models.muzero_value_net_builder import build_smz_net_from_search_cfg
+
+        net = build_smz_net_from_search_cfg(search_cfg_payload, device=device)
         net.load_state_dict(normalize_state_dict(init_weights))
         net.eval()
 

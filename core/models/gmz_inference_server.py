@@ -6,7 +6,7 @@ import os
 import queue
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -268,7 +268,7 @@ def gmz_inference_server_entry(
     clear_tree_on_weight_sync: bool = False,
 ) -> None:
     """Top-level entry for Windows spawn."""
-    server: Optional[GMZInferenceServer] = None
+    server: GMZInferenceServer | None = None
     try:
         if torch.cuda.is_available():
             torch.cuda.set_device(0)
@@ -276,21 +276,9 @@ def gmz_inference_server_entry(
         else:
             device = torch.device("cpu")
 
-        latent_dim = int(search_cfg_payload.get("latent_dim", 256))
-        hidden_dim = int(search_cfg_payload.get("hidden_dim", 256))
-        num_layers = int(search_cfg_payload.get("num_layers", 2))
-        action_embed_dim = int(search_cfg_payload.get("action_embed_dim", 64))
-        obs_dim = int(search_cfg_payload.get("obs_dim", 0))
-        action_sizes = [int(x) for x in search_cfg_payload.get("action_sizes", [])]
+        from core.models.muzero_value_net_builder import build_gmz_net_from_search_cfg
 
-        net = GumbelMuZeroNet(
-            obs_dim=obs_dim,
-            action_sizes=action_sizes,
-            latent_dim=latent_dim,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            action_embed_dim=action_embed_dim,
-        ).to(device)
+        net = build_gmz_net_from_search_cfg(search_cfg_payload, device=device)
         net.load_state_dict(normalize_state_dict(init_weights))
         net.eval()
 
