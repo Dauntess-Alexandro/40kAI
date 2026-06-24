@@ -2391,7 +2391,7 @@ AZ_REACTION_VALUE_POLICY = False
 if is_az_algo(TRAIN_ALGO):
     AZ_PHASE_OBS_FEATURES = resolve_phase_obs_features(
         env_value=os.getenv("PHASE_OBS_FEATURES"),
-        cfg_value=AZ_CFG.get("phase_obs_features", 0),
+        cfg_value=AZ_CFG.get("phase_obs_features", 1),
     )
     os.environ["PHASE_OBS_FEATURES"] = "1" if AZ_PHASE_OBS_FEATURES else "0"
     # B3-full: стратагемы через net-value lookahead (дефолт 1 для AZ; 0 = legacy «всегда реагировать»).
@@ -2401,7 +2401,14 @@ if is_az_algo(TRAIN_ALGO):
     )
     os.environ["AZ_REACTION_VALUE_POLICY"] = "1" if AZ_REACTION_VALUE_POLICY else "0"
 else:
-    os.environ["PHASE_OBS_FEATURES"] = "0"
+    # phase_obs_features теперь дефолт-ВКЛ и для не-AZ алго (dqn/ppo/gumbel_muzero/sampled_muzero):
+    # резолвим из секции hyperparams того же алго (env-var приоритетнее), дефолт 1.
+    _algo_phase_cfg = data.get(str(TRAIN_ALGO), {}) if isinstance(data, dict) else {}
+    _algo_phase_obs = resolve_phase_obs_features(
+        env_value=os.getenv("PHASE_OBS_FEATURES"),
+        cfg_value=_algo_phase_cfg.get("phase_obs_features", 1),
+    )
+    os.environ["PHASE_OBS_FEATURES"] = "1" if _algo_phase_obs else "0"
     os.environ["AZ_REACTION_VALUE_POLICY"] = "0"
 AZ_MCTS_MAX_DEPTH = int(os.getenv("AZ_MCTS_MAX_DEPTH", str(AZ_CFG.get("mcts_max_depth", 1))))
 AZ_MCTS_ROOT_DIRICHLET_ONLY = str(
