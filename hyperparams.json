@@ -60,12 +60,11 @@
         "lr_scheduler": "none",
         "adaptive_entropy": 0,
         "entropy_target": 0.5,
-        "entropy_adapt_lr": 0.05,
-        "reaction_value_policy": 1
+        "entropy_adapt_lr": 0.05
     },
     "alphazero_tree": {
-        "inference_server_enabled": 1,
-        "inference_server_mode": "remote",
+        "inference_server_enabled": 0,
+        "inference_server_mode": "local",
         "num_env_workers": 8,
         "inference_batch_size": 32,
         "inference_batch_interval_ms": 10,
@@ -73,7 +72,7 @@
         "inference_remote_host": "192.168.0.101",
         "inference_remote_port": 5555,
         "inference_remote_auth_token": "",
-        "distributed_actors_enabled": 1,
+        "distributed_actors_enabled": 0,
         "distributed_actors_port": 5557,
         "distributed_actors_bind_host": "0.0.0.0",
         "distributed_actors_auth_token": "",
