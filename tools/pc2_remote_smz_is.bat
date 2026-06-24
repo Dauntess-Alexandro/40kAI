@@ -193,6 +193,15 @@ if /i "%MODE%"=="check" (
   exit /b 0
 )
 
+REM Авто-bootstrap: весов нет, но search_cfg есть -> генерим РАНДОМНЫЕ веса рядом с cfg
+REM (старт без предобучения на ПК1; learner потом синканёт настоящие веса, формы совпадут).
+if not exist "%SMZ_REMOTE_WEIGHTS_PATH%" if "%SMZ_REMOTE_INIT_WEIGHTS%"=="" if exist "%SMZ_REMOTE_SEARCH_CONFIG%" (
+  for %%I in ("%SMZ_REMOTE_SEARCH_CONFIG%") do set "SMZ_REMOTE_WEIGHTS_PATH=%%~dpIlatest_smz_policy.pth"
+  echo [BOOTSTRAP] Весов нет — генерирую рандомные из cfg ^(без предобучения на ПК1^)...
+  python "%TOOLS%\write_gmz_init_weights.py" --algo smz --search-cfg "%SMZ_REMOTE_SEARCH_CONFIG%" --out "!SMZ_REMOTE_WEIGHTS_PATH!"
+  if exist "!SMZ_REMOTE_WEIGHTS_PATH!" ( echo [BOOTSTRAP] OK: !SMZ_REMOTE_WEIGHTS_PATH! ) else ( echo [BOOTSTRAP][WARN] не удалось сгенерировать веса — см. вывод выше. )
+)
+
 if not exist "%SMZ_REMOTE_WEIGHTS_PATH%" (
   if "%SMZ_REMOTE_INIT_WEIGHTS%"=="" (
     echo [ОШИБКА] Нет файла весов: %SMZ_REMOTE_WEIGHTS_PATH%
