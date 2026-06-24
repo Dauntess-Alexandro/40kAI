@@ -44,6 +44,20 @@ def episode_stratagem_summary_line(
     )
 
 
+def emit_episode_stratagem_log(source, *, ep_label="", tag: str = "TRAIN") -> str | None:
+    """Залогировать per-episode сводку стратагем, если включён debug-трейс (VERBOSE_LOGS=1).
+
+    Для путей без собственного трейсера (GMZ/SMZ): берёт env/payload, строит строку и пишет
+    в train-лог. Выключено без трейса; пустые данные → ничего. Возвращает записанную строку (или None).
+    """
+    if not train_stratagem_trace_enabled():
+        return None
+    line = episode_stratagem_summary_line(source, ep_label=ep_label, tag=tag)
+    if line:
+        append_train_stratagem_log(line)
+    return line
+
+
 def collect_ep_stratagem_payload(env_unwrapped) -> dict:
     """Сериализация стратагемных данных env в dict для payload актора.
 

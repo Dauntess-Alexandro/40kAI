@@ -213,4 +213,16 @@ def play_episode_with_gumbel_muzero(
                 last_info = dict(gi)
         except Exception:
             last_info = {}
+
+    # debug-логи стратагем (VERBOSE_LOGS=1): какие стратагемы и как часто применила сторона.
+    # Покрывает GMZ и SMZ (общая selfplay), все пути (IS-воркер/локал-актор/eval). Тег — по алго.
+    try:
+        from core.telemetry.stratagem_trace import emit_episode_stratagem_log
+
+        emit_episode_stratagem_log(
+            env_u, ep_label=int(episode_id) + 1, tag=str(reaction_algo_tag).upper()
+        )
+    except Exception:
+        pass
+
     return out, last_info
