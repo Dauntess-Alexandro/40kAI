@@ -50,6 +50,8 @@ def load_value_net_weights(net, weights_path: str, *, device=None) -> bool:
 
     try:
         sd = torch.load(weights_path, map_location=device or torch.device("cpu"))
+        if isinstance(sd, dict) and "state_dict" in sd:
+            sd = sd["state_dict"]  # обёртка чекпойнта {"state_dict": ...} (как у learner/сервера)
         net.load_state_dict(normalize_state_dict(sd), strict=False)
         return True
     except Exception:
@@ -78,5 +80,6 @@ def write_init_weights_from_cfg(search_cfg_path: str, out_path: str, *, algo: st
         ) from exc
     net = build_smz_net_from_search_cfg(payload, device=dev) if str(algo).lower() == "smz" \
         else build_gmz_net_from_search_cfg(payload, device=dev)
-    torch.save(net.state_dict(), out_path)
+    # Формат как у learner/сервера: обёртка {"state_dict": ...} (сервер делает payload.get("state_dict")).
+    torch.save({"state_dict": net.state_dict()}, out_path)
     return out_path

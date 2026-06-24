@@ -59,3 +59,8 @@ def test_write_init_weights_from_cfg_roundtrip(tmp_path):
     p = write_init_weights_from_cfg(str(cfg_path), str(out), algo="gmz")
     net = build_gmz_net_from_search_cfg(_CFG, device=torch.device("cpu"))
     assert load_value_net_weights(net, p) is True
+    # формат должен совпадать с тем, что ждёт сервер/learner: обёртка {"state_dict": ...}
+    payload = torch.load(p, map_location="cpu")
+    assert isinstance(payload, dict) and "state_dict" in payload
+    net2 = build_gmz_net_from_search_cfg(_CFG, device=torch.device("cpu"))
+    net2.load_state_dict(payload["state_dict"], strict=False)  # сервер-стиль (payload.get("state_dict"))
