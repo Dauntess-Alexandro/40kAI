@@ -84,6 +84,21 @@ def describe_obs_dim_mismatch(*, checkpoint_obs_dim: int, current_obs_dim: int) 
     return base + "Что делать: укажите чекпойнт той же архитектуры/ростера или начните с нуля."
 
 
+def obs_dim_mismatch_message(expected: int, actual: int) -> str | None:
+    """RU-сообщение для remote IS при несовпадении obs_dim сети и входящего запроса.
+
+    None, если размеры совпадают. Иначе — понятная подсказка (вместо cryptic mat1/mat2 ошибки):
+    что случилось + что делать (перегенерить search_cfg, удалить старые веса, перезапустить).
+    """
+    if int(expected) == int(actual):
+        return None
+    return (
+        f"[REMOTE_IS] obs_dim сети={int(expected)} != запрос={int(actual)}. "
+        "Перегенери search_cfg на ПК1 (tools\\write_*_remote_search_cfg.bat) и удали старые "
+        "latest_*_policy.pth на шаре, затем перезапусти сервер."
+    )
+
+
 def base_observation_length(n_model: int, n_enemy: int, n_objective_points: int) -> int:
     """Фактическая длина базового вектора get_observation_for_side (без phase-расширения)."""
     return int(n_model) * 3 + 1 + int(n_enemy) * 3 + 1 + int(n_objective_points) * 2 + 1
