@@ -457,13 +457,15 @@ Expected: PASS (2 passed).
 
 - [ ] **Step 7: Вызвать запись отчёта в сводке.** После `eval.py:1686` (`step_metrics = _report["step_metrics"]`) и рядом с `[SUMMARY_V2]` добавить:
 
+> **Уточнение дирижёра (сверено с кодом):** `project_paths.py` экспортирует `ARTIFACTS_RESULTS_DIR` (НЕ `RESULTS_DIR`); в области сводки доступна переменная `selected_agent_id` (НЕ `_run_agent_label`). Использовать именно эти имена.
+
 ```python
     try:
-        from project_paths import RESULTS_DIR  # каталог artifacts/results
-        _results_dir = str(RESULTS_DIR)
+        from project_paths import ARTIFACTS_RESULTS_DIR  # каталог artifacts/results
+        _results_dir = str(ARTIFACTS_RESULTS_DIR)
     except Exception:
         _results_dir = "artifacts/results"
-    _agent_label = str(globals().get("_run_agent_label", "") or "eval_model")
+    _agent_label = str(selected_agent_id or "") or "eval_model"
     _md_path, _csv_path = _write_stratagem_report(
         step_metrics, agent_id=_agent_label, out_dir=_results_dir
     )
@@ -474,7 +476,7 @@ Expected: PASS (2 passed).
     )
 ```
 
-> Примечание исполнителю: если `project_paths` не экспортирует `RESULTS_DIR`, использовать существующий путь к `artifacts/results` тем же способом, что и соседний код eval (сверься по файлу); fallback-строка уже задана. Для `agent_id` взять реально доступный в этой области идентификатор learner-агента (аргумент CLI `--learner-agent-id`/переменную), при отсутствии — оставить `eval_model`.
+> Примечание исполнителю: `selected_agent_id` — это та же переменная, что задаётся из CLI `--learner-agent-id` (см. `eval.py:1078`); она в области видимости функции `main()`, где находится сводка. Если по какой-то причине переменная недоступна — fallback `"eval_model"`.
 
 - [ ] **Step 8: Прогнать полный набор тестов модуля + eval-парсера и smoke**
 
