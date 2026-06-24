@@ -318,9 +318,12 @@ class GMZRemoteInferenceServer:
         try:
             responses = self._engine.build_batch_responses(req_dicts)
         except Exception as exc:
+            from core.engine.phases.obs_features import matmul_obs_mismatch_hint
+
+            msg = matmul_obs_mismatch_hint(str(exc)) or f"batch error: {exc}"
             for item in batch:
-                self._send_error(item.identity, f"batch error: {exc}")
-            _log(f"[GMZ][REMOTE_IS] batch_error: {exc}", self.log_path)
+                self._send_error(item.identity, msg)
+            _log(f"[GMZ][REMOTE_IS] batch_error: {msg}", self.log_path)
             return
         by_env = {int(r.get("env_id", 0)): r for r in responses}
         for item in batch:

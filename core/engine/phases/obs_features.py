@@ -99,6 +99,30 @@ def obs_dim_mismatch_message(expected: int, actual: int) -> str | None:
     )
 
 
+def matmul_obs_mismatch_hint(exc_str: str) -> str | None:
+    """Превратить cryptic torch-ошибку matmul (obs не совпал) в понятную RU-подсказку.
+
+    None, если это не похоже на shape-mismatch входа. Парсит '(1x41 and 17x256)':
+    actual obs=41, ожидаемый вход сети=17 → obs_dim_mismatch_message.
+    """
+    import re
+
+    s = str(exc_str)
+    if "mat1 and mat2" not in s and "cannot be multiplied" not in s:
+        return None
+    m = re.search(r"\(\d+x(\d+) and (\d+)x", s)
+    if m:
+        actual, expected = int(m.group(1)), int(m.group(2))
+        msg = obs_dim_mismatch_message(expected, actual)
+        if msg:
+            return msg
+    return (
+        f"[REMOTE_IS] вход сети не совпал по размеру obs ({s}). "
+        "Перегенери search_cfg на ПК1 (tools\\write_*_remote_search_cfg.bat) и удали старые "
+        "latest_*_policy.pth на шаре, затем перезапусти сервер."
+    )
+
+
 def base_observation_length(n_model: int, n_enemy: int, n_objective_points: int) -> int:
     """Фактическая длина базового вектора get_observation_for_side (без phase-расширения)."""
     return int(n_model) * 3 + 1 + int(n_enemy) * 3 + 1 + int(n_objective_points) * 2 + 1
