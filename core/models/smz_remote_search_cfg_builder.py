@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import collections
-import json
 import os
-import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,9 +18,9 @@ from core.engine.mission import (
 )
 from core.models.action_contract import action_sizes_from_env
 from core.models.remote_is_search_cfg_common import (
-    RemoteIsEnsureResult as SmzEnsureResult,
     TRAIN_DATA_SNAPSHOT_NAME,
     copy_train_data_snapshot,
+    current_env_obs_dim,
     ensure_remote_search_cfg,
     load_roster_for_search,
     measure_env_dims_from_roster,
@@ -30,9 +28,10 @@ from core.models.remote_is_search_cfg_common import (
     search_cfg_local_targets,
     write_payload_to_targets,
 )
-
+from core.models.remote_is_search_cfg_common import (
+    RemoteIsEnsureResult as SmzEnsureResult,
+)
 from project_paths import (
-    ARTIFACTS_MODELS_DIR,
     RUNTIME_STATE_DIR,
     TRAIN_DATA_PATH,
     ensure_runtime_dirs,
@@ -83,6 +82,7 @@ def ensure_smz_remote_search_cfg(share_root: str) -> SmzEnsureResult:
             weights_name=SMZ_WEIGHTS_NAME,
         ),
         local_targets=lambda **kw: search_cfg_local_targets(ACTOR_SYNC_SEARCH_CFG_NAME, **kw),
+        current_obs_dim_fn=lambda: current_env_obs_dim(),
     )
 
 

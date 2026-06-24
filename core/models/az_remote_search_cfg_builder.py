@@ -10,6 +10,7 @@ from typing import Any
 from core.models.az_rollout_sink import write_az_remote_search_cfg
 from core.models.remote_is_search_cfg_common import (
     copy_train_data_snapshot,
+    current_env_obs_dim,
     ensure_remote_search_cfg,
     load_roster_for_search,
     resolve_smb_paths,
@@ -63,9 +64,8 @@ def _dims_from_env_contract(contract: dict) -> tuple[int, list[int]]:
 
 
 def _dims_from_roster(*, actor_sync_dir: str | None) -> tuple[int, list[int]]:
-    from core.models.remote_is_search_cfg_common import measure_env_dims_from_roster
-
     import train as tr  # noqa: WPS433
+    from core.models.remote_is_search_cfg_common import measure_env_dims_from_roster
 
     roster = load_roster_for_search(actor_sync_dir=actor_sync_dir)
     obs_dim, action_sizes = measure_env_dims_from_roster(roster, tr._build_units_from_config)
@@ -146,4 +146,5 @@ def ensure_az_remote_search_cfg(share_root: str):
         ),
         resolve_paths=resolve_az_smb_paths,
         local_targets=lambda **kw: search_cfg_local_targets(SEARCH_CFG_NAME, **kw),
+        current_obs_dim_fn=lambda: current_env_obs_dim(),
     )

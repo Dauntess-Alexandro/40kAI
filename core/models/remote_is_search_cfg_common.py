@@ -208,6 +208,47 @@ def write_payload_to_targets(payload: dict[str, Any], targets: list[Path]) -> li
     return written
 
 
+def current_env_obs_dim(actor_sync_dir: str | None = None) -> int:
+    """Текущий obs_dim env (с учётом phase_obs). 0 при невозможности измерить (тогда сверка пропускается)."""
+    try:
+        import train as tr  # noqa: WPS433
+
+        roster = load_roster_for_search(actor_sync_dir=actor_sync_dir)
+        obs_dim, _ = measure_env_dims_from_roster(roster, tr._build_units_from_config)
+        return int(obs_dim)
+    except Exception:
+        return 0
+
+
+def _obs_dim_requires_republish(paths: RemoteIsSmbPaths, current_obs_dim_fn) -> bool:
+    """True, если obs_dim существующего cfg не совпадает с текущим env → нужно перепубликовать.
+
+    Побочно: при подтверждённом несовпадении удаляет устаревшие веса (форма не сойдётся),
+    чтобы сервер сгенерил bootstrap заново. Любая ошибка измерения → False (откат к старому).
+    """
+    if current_obs_dim_fn is None:
+        return False
+    try:
+        cur = int(current_obs_dim_fn() or 0)
+        with open(paths.search_cfg_path, encoding="utf-8") as handle:
+            cfg_obs = int(json.load(handle).get("obs_dim", 0) or 0)
+    except Exception:
+        return False
+    if cur > 0 and cfg_obs > 0 and cur != cfg_obs:
+        print(
+            f"[REMOTE_IS] obs_dim cfg={cfg_obs} != env={cur} → перепубликую search_cfg "
+            "и удаляю устаревшие latest_*_policy.pth.",
+            flush=True,
+        )
+        try:
+            if os.path.isfile(paths.weights_path):
+                os.remove(paths.weights_path)
+        except OSError:
+            pass
+        return True
+    return False
+
+
 def ensure_remote_search_cfg(
     share_root: str,
     *,
@@ -215,16 +256,18 @@ def ensure_remote_search_cfg(
     publish_from_repo: Callable[..., list[str]],
     resolve_paths: Callable[[str], RemoteIsSmbPaths],
     local_targets: Callable[..., list[Path]],
+    current_obs_dim_fn: Callable[[], int] | None = None,
 ) -> RemoteIsEnsureResult:
     paths = resolve_paths(share_root)
     if os.path.isfile(paths.search_cfg_path) and is_valid_search_cfg(paths.search_cfg_path):
-        return RemoteIsEnsureResult(
-            ok=True,
-            message=f"search_cfg на месте: {paths.search_cfg_path}",
-            search_cfg_path=paths.search_cfg_path,
-            weights_path=paths.weights_path,
-            action="found",
-        )
+        if not _obs_dim_requires_republish(paths, current_obs_dim_fn):
+            return RemoteIsEnsureResult(
+                ok=True,
+                message=f"search_cfg на месте: {paths.search_cfg_path}",
+                search_cfg_path=paths.search_cfg_path,
+                weights_path=paths.weights_path,
+                action="found",
+            )
 
     try:
         written = publish_from_repo(

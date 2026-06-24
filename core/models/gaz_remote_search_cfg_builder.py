@@ -20,6 +20,7 @@ from typing import Any
 from core.models.az_rollout_sink import write_az_remote_search_cfg
 from core.models.remote_is_search_cfg_common import (
     copy_train_data_snapshot,
+    current_env_obs_dim,
     ensure_remote_search_cfg,
     load_roster_for_search,
     measure_env_dims_from_roster,
@@ -158,4 +159,5 @@ def ensure_gaz_remote_search_cfg(share_root: str):
         ),
         resolve_paths=resolve_gaz_smb_paths,
         local_targets=lambda **kw: search_cfg_local_targets(SEARCH_CFG_NAME, **kw),
+        current_obs_dim_fn=lambda: current_env_obs_dim(),
     )

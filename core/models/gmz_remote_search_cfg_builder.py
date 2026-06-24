@@ -1,31 +1,31 @@
 """Сборка gmz_remote_search_cfg.json для remote IS (те же поля, что train → search_cfg_payload)."""
 from __future__ import annotations
 
-import collections
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import gymnasium as gym
-import numpy as np
-
 from core.engine.mission import (
-    deploy_for_mission,
     normalize_mission_name,
-    post_deploy_setup,
 )
-from core.models.action_contract import action_sizes_from_env
-from project_paths import ARTIFACTS_MODELS_DIR, RUNTIME_STATE_DIR, TRAIN_DATA_PATH, ensure_runtime_dirs, share_actor_sync_dir
 from core.models.remote_is_search_cfg_common import (
     copy_train_data_snapshot,
+    current_env_obs_dim,
     ensure_remote_search_cfg,
     load_roster_for_search,
     measure_env_dims_from_roster,
     resolve_smb_paths,
     search_cfg_local_targets,
     write_payload_to_targets,
+)
+from project_paths import (
+    ARTIFACTS_MODELS_DIR,
+    RUNTIME_STATE_DIR,
+    TRAIN_DATA_PATH,
+    ensure_runtime_dirs,
+    share_actor_sync_dir,
 )
 
 ACTOR_SYNC_SEARCH_CFG_NAME = "gmz_remote_search_cfg.json"
@@ -55,7 +55,7 @@ def build_gmz_remote_search_cfg_payload_from_dims(
     sources: list[str] | str | None = None,
     mission: str = "",
 ) -> dict[str, Any]:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     src_list: list[str]
     if isinstance(sources, str):
@@ -79,7 +79,7 @@ def build_gmz_remote_search_cfg_payload_from_dims(
         "prior_weight": float(prior_weight),
         "batch_recurrent": int(1 if batch_recurrent else 0),
         "tree_reuse": int(1 if tree_reuse else 0),
-        "_generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "_generated_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "_sources": src_list,
         **({"_mission": normalize_mission_name(mission)} if mission else {}),
     }
@@ -196,6 +196,7 @@ def ensure_gmz_remote_search_cfg(share_root: str):
         ),
         resolve_paths=resolve_gmz_smb_paths,
         local_targets=lambda **kw: search_cfg_local_targets(ACTOR_SYNC_SEARCH_CFG_NAME, **kw),
+        current_obs_dim_fn=lambda: current_env_obs_dim(),
     )
 
 
@@ -220,7 +221,7 @@ def build_gmz_remote_search_cfg_payload(*, train_module: Any) -> dict[str, Any]:
         "prior_weight": float(tr.GMZ_PRIOR_WEIGHT),
         "batch_recurrent": int(tr.GMZ_BATCH_RECURRENT),
         "tree_reuse": int(tr.GMZ_TREE_REUSE),
-        "_generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "_generated_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "_sources": {
             "roster": str(TRAIN_DATA_PATH) if os.path.isfile(str(TRAIN_DATA_PATH)) else "train defaults",
             "hyperparams": "hyperparams.json → gumbel_muzero",
