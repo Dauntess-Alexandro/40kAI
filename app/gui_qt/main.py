@@ -7486,6 +7486,15 @@ class GUIController(QtCore.QObject):
                     parsed_total = max(parsed_total, fallback_total)
                 return current, parsed_total
 
+        # Не считаем прогрессом per-actor / трейс / summary строки: их ep= — это ЛОКАЛЬНЫЙ
+        # счётчик отдельного актора/эпизода, а не глобальный прогресс. Иначе бар скачет вниз
+        # (напр. 41% → 4%), ловя ep= из [TRACE]/[..][EP]/[STRATAGEM_SUMMARY]/actor=. Глобальный
+        # прогресс приходит из [TRAIN][PROGRESS] (выше) и tqdm.
+        _noise_markers = ("actor=", "[trace]", "stratagem", "][ep]")
+        _low = normalized.lower()
+        if any(tok in _low for tok in _noise_markers):
+            return None, fallback_total
+
         ep_match = re.search(r"\bep=(\d+)(?:\s*/\s*(\d+))?", normalized)
         if ep_match:
             current = int(ep_match.group(1))
