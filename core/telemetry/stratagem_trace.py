@@ -224,6 +224,9 @@ def log_stratagem_journal_diff(
     tag: str = "WH40K",
 ) -> list[tuple]:
     new_records = new_stratagem_records(su_before, su_after)
+    for rec in new_records:
+        sid = str(rec[1])
+        ep_applied[sid] += 1
     if not emit:
         return new_records
     for rec in new_records:
@@ -234,7 +237,6 @@ def log_stratagem_journal_diff(
         unit = rec[4] if len(rec) > 4 else None
         cp_after = cp_for_env_side(env_unwrapped, env_side)
         cp_before = cp_model_before if env_side == "model" else cp_enemy_before
-        ep_applied[sid] += 1
         trace_fn(
             f"[{tag}][STRATAGEM] "
             f"applied={sid} side={trace_side_label(env_side, learner_side)} env_side={env_side} "

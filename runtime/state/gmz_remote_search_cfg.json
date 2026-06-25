@@ -1,15 +1,23 @@
 {
-  "obs_dim": 17,
+  "obs_dim": 41,
   "action_sizes": [
     5,
     2,
-    5,
-    2,
     24,
     24,
     2,
     2,
     2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    3,
+    2,
+    2,
+    2,
+    4,
     2
   ],
   "latent_dim": 256,
@@ -24,7 +32,7 @@
   "prior_weight": 0.25,
   "batch_recurrent": 1,
   "tree_reuse": 1,
-  "_generated_utc": "2026-06-21T13:48:16Z",
+  "_generated_utc": "2026-06-25T09:57:45Z",
   "_sources": [
     "train.py:auto"
   ],

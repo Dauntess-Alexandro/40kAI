@@ -2,16 +2,19 @@ import argparse
 import datetime
 import importlib
 import json
+import multiprocessing as mp
 import os
 import pickle
+import queue
 import random
-import re
 import sys
 import types
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Any
 
 import gymnasium as gym
+import numpy as np
 import torch
 
 import core.envs  # noqa: F401 (регистрация '40kAI-v0')
@@ -32,6 +35,8 @@ from core.engine.phases.obs_features import phase_obs_features_enabled
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumbel_az_algo
 from core.models.eval_agent import build_eval_agent, resolve_eval_search_cfg
+from core.models.eval_parallel import EvalWorkerConfig, eval_worker_entry
+from core.models.eval_result import EpisodeResult, WorkerError
 from core.models.opponent_adapter import load_agent_opponent
 from core.models.sampled_muzero_search import SampledMuZeroSearch, SampledMuZeroSearchConfig
 from core.models.utils import normalize_state_dict
@@ -120,6 +125,200 @@ def log(message: str) -> None:
         enc = getattr(sys.stdout, "encoding", None) or "utf-8"
         print(rendered.encode(enc, errors="replace").decode(enc, errors="replace"), flush=True)
     _append_eval_log(message)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(str(os.getenv(str(name), str(default))).strip() or str(default))
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _strat_metric_prefix(env_side: str) -> str:
+    return "m_" if str(env_side) == "model" else "o_"
+
+
+def _record_stratagem_attempt_metrics(
+    metrics: Counter[str],
+    attempt_specs: list[tuple[str, int | None, str]],
+    *,
+    env_side: str,
+) -> None:
+    pfx = _strat_metric_prefix(env_side)
+    for sid, _unit, _source in list(attempt_specs or []):
+        sid = str(sid or "").strip()
+        if not sid:
+            continue
+        metrics["stratagem_attempt_total"] += 1
+        metrics[f"strat_attempt_{sid}"] += 1
+        metrics[f"{pfx}strat_attempt_{sid}"] += 1
+
+
+def _record_stratagem_apply_and_miss_metrics(
+    metrics: Counter[str],
+    *,
+    new_records: list[tuple],
+    attempt_specs: list[tuple[str, int | None, str]],
+    env_side_acting: str,
+    model_applied_sids: set[str],
+    opp_applied_sids: set[str],
+) -> None:
+    for rec in list(new_records or []):
+        if len(rec) < 2:
+            continue
+        env_side = str(rec[0])
+        sid = str(rec[1] or "").strip()
+        if not sid:
+            continue
+        pfx = _strat_metric_prefix(env_side)
+        metrics["stratagem_applied_total"] += 1
+        metrics[f"strat_applied_{sid}"] += 1
+        metrics[f"{pfx}strat_applied_{sid}"] += 1
+        if env_side == "model":
+            model_applied_sids.add(sid)
+        else:
+            opp_applied_sids.add(sid)
+
+    pfx_acting = _strat_metric_prefix(env_side_acting)
+    for sid, unit, _source in list(attempt_specs or []):
+        sid = str(sid or "").strip()
+        if not sid:
+            continue
+        applied = any(
+            len(r) > 4
+            and r[0] == env_side_acting
+            and str(r[1]) == sid
+            and (unit is None or r[4] == unit)
+            for r in list(new_records or [])
+        )
+        if applied:
+            continue
+        metrics["stratagem_miss_total"] += 1
+        metrics[f"{pfx_acting}strat_miss_{sid}"] += 1
+
+
+@dataclass
+class AssignmentAccumulator:
+    wins: int = 0
+    losses: int = 0
+    draws: int = 0
+    p1_wins: int = 0
+    p2_wins: int = 0
+    vp_diffs: list[int] = field(default_factory=list)
+    p1_vps: list[int] = field(default_factory=list)
+    p2_vps: list[int] = field(default_factory=list)
+    ep_lens: list[int] = field(default_factory=list)
+    hp_diffs_p1_minus_p2: list[float] = field(default_factory=list)
+    kill_diffs_p1_minus_p2: list[float] = field(default_factory=list)
+    rewards_learner: list[float] = field(default_factory=list)
+    end_reasons_v2: Counter[str] = field(default_factory=Counter)
+    step_metrics: Counter[str] = field(default_factory=Counter)
+    action_tuple_counter: Counter[tuple] = field(default_factory=Counter)
+
+
+def new_assignment_accumulator() -> AssignmentAccumulator:
+    return AssignmentAccumulator()
+
+
+def _accumulate_episode_result(
+    acc: AssignmentAccumulator,
+    *,
+    idx: int,
+    result: EpisodeResult,
+    learner_side: str,
+    opponent_side: str,
+) -> dict[str, Any]:
+    """Merge one structured eval result into assignment accumulator.
+
+    Важно: trace/log строки здесь не читаются. Метрики берём только из полей
+    EpisodeResult, чтобы EVAL_ACTION_TRACE не влиял на отчёты.
+    """
+    del idx  # индекс нужен вызывающей стороне для логов/progress.
+    winner = result.winner
+    if learner_side == "P1":
+        p1_vp = result.model_vp
+        p2_vp = result.enemy_vp
+        vp_diff_p1_minus_p2 = result.vp_diff
+        hp_diff_p1_minus_p2 = result.hp_diff_model_minus_enemy
+        kill_diff_p1_minus_p2 = result.kill_diff_model_minus_enemy
+    else:
+        p1_vp = result.enemy_vp
+        p2_vp = result.model_vp
+        vp_diff_p1_minus_p2 = -result.vp_diff
+        hp_diff_p1_minus_p2 = -result.hp_diff_model_minus_enemy
+        kill_diff_p1_minus_p2 = -result.kill_diff_model_minus_enemy
+
+    acc.vp_diffs.append(int(result.vp_diff))
+    acc.p1_vps.append(int(p1_vp))
+    acc.p2_vps.append(int(p2_vp))
+    acc.ep_lens.append(int(result.episode_len))
+    acc.hp_diffs_p1_minus_p2.append(float(hp_diff_p1_minus_p2))
+    acc.kill_diffs_p1_minus_p2.append(float(kill_diff_p1_minus_p2))
+    acc.rewards_learner.append(float(result.total_reward))
+
+    if winner == "model":
+        acc.wins += 1
+        winner_side = learner_side
+    elif winner == "enemy":
+        acc.losses += 1
+        winner_side = opponent_side
+    else:
+        acc.draws += 1
+        winner_side = "draw"
+
+    acc.step_metrics.update(result.metrics or {})
+    acc.action_tuple_counter.update(result.action_tuple_counter or {})
+
+    acc.step_metrics["m_games_total"] += 1
+    if winner == "model":
+        acc.step_metrics["m_model_wins_total"] += 1
+    for sid in set(result.model_applied_sids or set()):
+        acc.step_metrics[f"m_strat_games_used_{sid}"] += 1
+        if winner == "model":
+            acc.step_metrics[f"m_strat_wins_used_{sid}"] += 1
+    if winner == "enemy":
+        acc.step_metrics["o_opp_wins_total"] += 1
+    for sid in set(result.opp_applied_sids or set()):
+        acc.step_metrics[f"o_strat_games_used_{sid}"] += 1
+        if winner == "enemy":
+            acc.step_metrics[f"o_strat_wins_used_{sid}"] += 1
+
+    if winner_side == "P1":
+        acc.p1_wins += 1
+    elif winner_side == "P2":
+        acc.p2_wins += 1
+
+    acc.end_reasons_v2[str(result.end_reason or "unknown")] += 1
+    return {
+        "winner_side": winner_side,
+        "p1_vp": p1_vp,
+        "p2_vp": p2_vp,
+        "vp_diff_p1_minus_p2": vp_diff_p1_minus_p2,
+        "hp_diff_p1_minus_p2": hp_diff_p1_minus_p2,
+        "kill_diff_p1_minus_p2": kill_diff_p1_minus_p2,
+    }
+
+
+def _assignment_accumulator_to_dict(acc: AssignmentAccumulator, *, learner_side: str) -> dict:
+    return {
+        "model_wins": acc.wins,
+        "enemy_wins": acc.losses,
+        "draws": acc.draws,
+        "games": len(acc.vp_diffs),
+        "p1_wins": acc.p1_wins,
+        "p2_wins": acc.p2_wins,
+        "vp_diffs": acc.vp_diffs,
+        "p1_vps": acc.p1_vps,
+        "p2_vps": acc.p2_vps,
+        "ep_lens": acc.ep_lens,
+        "hp_diffs_p1_minus_p2": acc.hp_diffs_p1_minus_p2,
+        "kill_diffs_p1_minus_p2": acc.kill_diffs_p1_minus_p2,
+        "rewards_learner": acc.rewards_learner,
+        "end_reasons_v2": acc.end_reasons_v2,
+        "step_metrics": acc.step_metrics,
+        "action_tuple_counter": acc.action_tuple_counter,
+        "learner_side": learner_side,
+    }
 
 
 def _env_bool(name: str, default: str = "0") -> bool:
@@ -233,6 +432,99 @@ def _build_env_from_train_roster():
         return env, model_units, enemy_units, None
     except Exception as exc:
         return None, None, None, str(exc)
+
+
+def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
+    """Собрать env + eval-агентов внутри worker-процесса.
+
+    MVP параллельного eval поддерживает registry-agent путь. Legacy checkpoint без
+    learner-agent-id остаётся на последовательном пути, чтобы не pickle'ить сети.
+    """
+    learner_agent_id = str(getattr(cfg, "learner_agent_id", "") or "").strip()
+    if not learner_agent_id:
+        raise ValueError(
+            "Не задан learner_agent_id для parallel eval. "
+            "Где: eval.py (_build_eval_runtime_for_worker). "
+            "Что сделать дальше: выберите агента из registry или поставьте EVAL_WORKERS=1."
+        )
+
+    _resolve_phase_obs_for_agent(learner_agent_id)
+    env, model_units, enemy_units, err = _build_env_from_train_roster()
+    if env is None:
+        raise RuntimeError(
+            "Не удалось собрать окружение worker из roster_config. "
+            "Где: eval.py (_build_eval_runtime_for_worker/_build_env_from_train_roster). "
+            f"Что сделать дальше: проверьте roster_config/train.py. Детали: {err}"
+        )
+
+    env_unwrapped = unwrap_env(env)
+    state, _info = env.reset(options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True})
+    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    n_actions = n_actions_from_env(env, len(model_units))
+    eval_contract = make_env_contract(
+        n_observations=len(state),
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=str(getattr(cfg, "ruleset_version", "") or os.getenv("RULESET_VERSION", "only_war_v2")),
+    )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    payload = load_agent_by_id(learner_agent_id)
+    ok, reason = compatible_contracts(eval_contract, payload.get("contract", {}))
+    if not ok:
+        raise ValueError(
+            f"Несовместимый learner-agent-id={learner_agent_id}: {reason}. "
+            "Где: eval.py (_build_eval_runtime_for_worker). "
+            "Что сделать дальше: выберите агента с тем же контрактом окружения."
+        )
+    policy_state = payload.get("policy_state")
+    meta = payload.get("meta") if isinstance(payload, dict) else {}
+    algo = resolve_agent_algo(
+        meta=meta if isinstance(meta, dict) else {},
+        policy_state=policy_state if isinstance(policy_state, dict) else None,
+        target_state=payload.get("target_state") if isinstance(payload, dict) else None,
+        agent_id=learner_agent_id,
+    )
+    learner_agent = build_eval_agent(
+        algo=algo,
+        policy_state=normalize_state_dict(policy_state),
+        contract=eval_contract,
+        len_model=len(model_units),
+        cfg=resolve_eval_search_cfg(algo),
+        device=device,
+    )
+
+    opponent_agent = None
+    opponent_agent_id = str(getattr(cfg, "opponent_agent_id", "") or "").strip()
+    if opponent_agent_id:
+        opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=eval_contract)
+        opponent_agent = build_eval_agent(
+            algo=opp.algo,
+            policy_state=opp.policy_state,
+            contract=opp.contract,
+            len_model=len(enemy_units),
+            cfg=resolve_eval_search_cfg(opp.algo),
+            device=device,
+        )
+
+    _reaction_net_by_side = {
+        "model": learner_agent.reaction_net,
+        "enemy": getattr(opponent_agent, "reaction_net", None),
+    }
+    if any(v is not None for v in _reaction_net_by_side.values()):
+        from core.models.reaction_value_policy import make_reaction_value_policy
+
+        env_unwrapped._reaction_net_by_side = _reaction_net_by_side
+        env_unwrapped.reaction_policy = make_reaction_value_policy(_reaction_net_by_side, device=device)
+
+    return {
+        "env": env,
+        "model_units": model_units,
+        "enemy_units": enemy_units,
+        "learner_agent": learner_agent,
+        "opponent_agent": opponent_agent,
+        "device": device,
+    }
 
 
 # Резолвленные phase_obs/reaction env-vars (заполняется _resolve_phase_obs_for_agent),
@@ -413,7 +705,17 @@ def run_episode(
     device,
     *,
     learner_side: str = "P1",
-):
+    seed: int | None = None,
+) -> EpisodeResult:
+    if seed is not None:
+        try:
+            random.seed(int(seed))
+            np.random.seed(int(seed) % (2**32 - 1))
+            torch.manual_seed(int(seed))
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(int(seed))
+        except Exception:
+            pass
     env_unwrapped = unwrap_env(env)
     # --- cmd_reroll телеметрия: захватываем старт для per-episode дельты ---
     _cmd_reroll_fired_start = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
@@ -442,11 +744,12 @@ def run_episode(
 
     from core.envs.warhamEnv import resolve_first_turn_side
     env_unwrapped.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
-    _append_eval_log(
+    event_log_block: list[str] = [
         f"[FIRST_TURN] mode={os.getenv('FIRST_TURN', 'roll')} first={env_unwrapped.first_turn_side}"
-    )
+    ]
 
     _, info = env.reset(
+        seed=seed,
         options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True}
     )
 
@@ -459,6 +762,10 @@ def run_episode(
     trace_style = str(os.getenv("EVAL_TRACE_STYLE", "warhammer")).strip().lower() or "warhammer"
     opponent_side = "P2" if str(learner_side).upper() == "P1" else "P1"
     trace_lines: list[str] = []
+    ep_metrics: Counter[str] = Counter()
+    ep_action_tuple_counter: Counter[tuple[int, int, int, int]] = Counter()
+    ep_model_applied_sids: set[str] = set()
+    ep_opp_applied_sids: set[str] = set()
     current_round = 0
     round_stats: dict[int, dict[str, int]] = {}
     ep_stratagem_attempts: Counter[str] = Counter()
@@ -709,20 +1016,20 @@ def run_episode(
                         action = base_enemy_fn(obs_any)
                         _trace(f"[TRACE][ENEMY_ACTION] step={step_no} action={action}")
                         if isinstance(action, dict):
-                            enemy_attempt_specs.extend(
-                                log_stratagem_attempts(
-                                    _trace,
-                                    step_no=step_no,
-                                    env_side="enemy",
-                                    learner_side=learner_side,
-                                    action_dict=action,
-                                    fight_plan=None,
-                                    ep_attempts=ep_stratagem_attempts,
-                                    emit=(trace_style == "warhammer"),
-                                    tag="WH40K",
-                                )
+                            attempt_specs = log_stratagem_attempts(
+                                _trace,
+                                step_no=step_no,
+                                env_side="enemy",
+                                learner_side=learner_side,
+                                action_dict=action,
+                                fight_plan=None,
+                                ep_attempts=ep_stratagem_attempts,
+                                emit=(trace_enabled and trace_style == "warhammer"),
+                                tag="WH40K",
                             )
-                            if trace_style == "warhammer":
+                            enemy_attempt_specs.extend(attempt_specs)
+                            _record_stratagem_attempt_metrics(ep_metrics, attempt_specs, env_side="enemy")
+                            if trace_enabled and trace_style == "warhammer":
                                 _emit_wh40k_phase_report(
                                     side_label=opponent_side,
                                     step_no=step_no,
@@ -738,7 +1045,7 @@ def run_episode(
                 env_unwrapped.enemyTurn(trunc=True, policy_fn=_logged_opponent_policy)
             else:
                 env_unwrapped.enemyTurn(trunc=True)
-            log_stratagem_journal_diff(
+            enemy_new_strat_records = log_stratagem_journal_diff(
                 _trace,
                 step_no=step_no,
                 env_side_acting="enemy",
@@ -750,8 +1057,16 @@ def run_episode(
                 env_unwrapped=env_unwrapped,
                 attempt_specs=enemy_attempt_specs,
                 ep_applied=ep_stratagem_applied,
-                emit=(trace_style == "warhammer"),
+                emit=(trace_enabled and trace_style == "warhammer"),
                 tag="WH40K",
+            )
+            _record_stratagem_apply_and_miss_metrics(
+                ep_metrics,
+                new_records=enemy_new_strat_records,
+                attempt_specs=enemy_attempt_specs,
+                env_side_acting="enemy",
+                model_applied_sids=ep_model_applied_sids,
+                opp_applied_sids=ep_opp_applied_sids,
             )
             # Не делаем break здесь: run_battle_round сам прервёт раунд через game_over.
             # Лог game_over переехал ниже, после run_battle_round.
@@ -761,6 +1076,28 @@ def run_episode(
             # Действие фазы — единый путь через агента; fight-стратагемы через голову strat_fight.
             action_dict, _plan = learner_agent.select_action(env_unwrapped, "model")
             masks_counts = _head_masks_counts()
+            n_units = int(len(model_units))
+            move = _safe_int(action_dict.get("move", 4), 4)
+            attack = _safe_int(action_dict.get("attack", 0), 0)
+            shoot = _aggregate_per_unit_max(action_dict, "shoot_num", n_units, default=-1)
+            charge = _aggregate_per_unit_max(action_dict, "charge_num", n_units, default=0)
+            move_v, _move_t = masks_counts.get("move", (0, 0))
+            shoot_v, _shoot_t = masks_counts.get("shoot", (0, 0))
+            charge_v, _charge_t = masks_counts.get("charge", (0, 0))
+            ep_metrics["total_model_steps"] += 1
+            ep_action_tuple_counter[(move, attack, shoot, charge)] += 1
+            if move_v > 1:
+                ep_metrics["move_opt_steps"] += 1
+                if move == 4:
+                    ep_metrics["stay_opt_steps"] += 1
+            if shoot_v > 1:
+                ep_metrics["shoot_opt_steps"] += 1
+                if shoot == 0:
+                    ep_metrics["shoot_zero_opt_steps"] += 1
+            if charge_v > 1:
+                ep_metrics["charge_opt_steps"] += 1
+                if charge == 0:
+                    ep_metrics["charge_zero_opt_steps"] += 1
             shoot_targets = 0
             try:
                 shoot_mask_for_log = build_shoot_action_mask(env)
@@ -772,11 +1109,12 @@ def run_episode(
                 f"[TRACE][MODEL_ACTION] step={step_no} action={action_dict} "
                 f"shoot_targets={shoot_targets}"
             )
-            _trace(
-                f"[TRACE][MODEL_ACTION_HUMAN] step={step_no} {_human_action(action_dict)} "
-                f"masks=({_head_masks_summary()})"
-            )
-            if trace_style == "warhammer":
+            if trace_enabled:
+                _trace(
+                    f"[TRACE][MODEL_ACTION_HUMAN] step={step_no} {_human_action(action_dict)} "
+                    f"masks=({_head_masks_summary()})"
+                )
+            if trace_enabled and trace_style == "warhammer":
                 _trace(
                     f"[WH40K][ORDERS] step={step_no} side={eval_side_label('model', learner_side)} "
                     f"{_human_action_with_units(action_dict)}"
@@ -796,12 +1134,23 @@ def run_episode(
                 action_dict=action_dict,
                 fight_plan={},
                 ep_attempts=ep_stratagem_attempts,
-                emit=(trace_style == "warhammer"),
+                emit=(trace_enabled and trace_style == "warhammer"),
                 tag="WH40K",
             )
+            _record_stratagem_attempt_metrics(ep_metrics, model_attempt_specs, env_side="model")
             verdict = _step_verdict(action_dict, masks_counts=masks_counts, shoot_targets=shoot_targets)
+            for token in str(verdict).split(","):
+                token = token.strip()
+                if not token or token == "ok":
+                    continue
+                if token == "stay_while_move_options_exist":
+                    ep_metrics["verdict_stay"] += 1
+                elif token == "skip_charge_while_options_exist":
+                    ep_metrics["verdict_skip_charge"] += 1
+                elif token == "default_shoot_choice_with_options":
+                    ep_metrics["verdict_default_shoot"] += 1
             _trace(f"[TRACE][STEP_VERDICT] step={step_no} verdict={verdict}")
-            if trace_style == "warhammer":
+            if trace_enabled and trace_style == "warhammer":
                 _trace(f"[WH40K][TACTIC_VERDICT] step={step_no} { _step_verdict_ru(verdict) }")
             su_before = stratagem_used_snapshot(env_unwrapped)
             cp_model_before = cp_for_env_side(env_unwrapped, "model")
@@ -819,15 +1168,23 @@ def run_episode(
                 env_unwrapped=env_unwrapped,
                 attempt_specs=model_attempt_specs,
                 ep_applied=ep_stratagem_applied,
-                emit=(trace_style == "warhammer"),
+                emit=(trace_enabled and trace_style == "warhammer"),
                 tag="WH40K",
+            )
+            _record_stratagem_apply_and_miss_metrics(
+                ep_metrics,
+                new_records=new_strat_records,
+                attempt_specs=model_attempt_specs,
+                env_side_acting="model",
+                model_applied_sids=ep_model_applied_sids,
+                opp_applied_sids=ep_opp_applied_sids,
             )
             battle_round = _safe_int(_info.get("battle round", 0), 0)
             nonlocal current_round
             if battle_round > 0 and battle_round != current_round:
                 current_round = battle_round
                 _trace(f"[TRACE][ROUND] battle_round={current_round} turn={_safe_int(_info.get('turn', 0), 0)}")
-                if trace_style == "warhammer":
+                if trace_enabled and trace_style == "warhammer":
                     _trace(
                         "[WH40K][ROUND_START] "
                         f"BR={current_round} TURN={_safe_int(_info.get('turn', 0), 0)} "
@@ -861,6 +1218,10 @@ def run_episode(
                 st["strat_applied"] += len(new_strat_records)
             model_ctrl = _info.get("model controlled objectives", []) if isinstance(_info, dict) else []
             enemy_ctrl = _info.get("player controlled objectives", []) if isinstance(_info, dict) else []
+            ep_metrics["step_result_total"] += 1
+            model_ctrl_n = len(model_ctrl) if isinstance(model_ctrl, (list, tuple)) else 0
+            if model_ctrl_n == 0:
+                ep_metrics["step_result_model_ctrl_zero"] += 1
             model_health = _info.get("model health", []) if isinstance(_info, dict) else []
             enemy_health = _info.get("player health", []) if isinstance(_info, dict) else []
             model_hp_total = (
@@ -886,7 +1247,7 @@ def run_episode(
                 f"winner={_info.get('winner', None)} "
                 f"end_reason={_info.get('end reason', '')}"
             )
-            if trace_style == "warhammer":
+            if trace_enabled and trace_style == "warhammer":
                 _trace(
                     "[WH40K][BATTLESTATE] "
                     f"BR={battle_round} TURN={_safe_int(_info.get('turn', 0), 0)} "
@@ -897,7 +1258,7 @@ def run_episode(
                     f"{opponent_side}_ctrl={len(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else 0} "
                     f"reward={_safe_float(_reward, 0.0):.4f}"
                 )
-            if trace_everything:
+            if trace_enabled and trace_everything:
                 try:
                     _trace(
                         "[TRACE][STEP_INFO_JSON] "
@@ -1027,17 +1388,22 @@ def run_episode(
 
     hp_diff_model_minus_enemy = _safe_sum(model_health) - _safe_sum(enemy_health)
     kill_diff_model_minus_enemy = _safe_sum(model_alive) - _safe_sum(enemy_alive)
-    return (
-        winner,
-        end_reason or "unknown",
-        vp_diff,
-        model_vp,
-        enemy_vp,
-        episode_len,
-        total_reward,
-        hp_diff_model_minus_enemy,
-        kill_diff_model_minus_enemy,
-        trace_lines,
+    return EpisodeResult(
+        winner=winner,
+        end_reason=end_reason or "unknown",
+        vp_diff=int(vp_diff),
+        model_vp=int(model_vp),
+        enemy_vp=int(enemy_vp),
+        episode_len=int(episode_len),
+        total_reward=float(total_reward),
+        hp_diff_model_minus_enemy=float(hp_diff_model_minus_enemy),
+        kill_diff_model_minus_enemy=float(kill_diff_model_minus_enemy),
+        metrics=ep_metrics,
+        action_tuple_counter=ep_action_tuple_counter,
+        model_applied_sids=ep_model_applied_sids,
+        opp_applied_sids=ep_opp_applied_sids,
+        trace_block=trace_lines,
+        event_log_block=event_log_block,
     )
 
 
@@ -1481,54 +1847,172 @@ def main():
         # зеркальные ростеры. При --swap-sides с асимметричными ростерами граница move-head цикла
         # (range(len_model)) у сторон может отличаться — учесть при анализе таких прогонов.
         _opponent_side = "P2" if str(_learner_side).upper() == "P1" else "P1"
-        wins = 0
-        losses = 0
-        _draws = 0
-        p1_wins = 0
-        p2_wins = 0
-        vp_diffs: list[int] = []
-        p1_vps: list[int] = []
-        p2_vps: list[int] = []
-        ep_lens: list[int] = []
-        hp_diffs_p1_minus_p2: list[float] = []
-        kill_diffs_p1_minus_p2: list[float] = []
-        rewards_learner: list[float] = []
-        end_reasons_v2: Counter[str] = Counter()
-        step_metrics: Counter[str] = Counter()
-        action_tuple_counter: Counter[tuple] = Counter()
-        model_action_re = re.compile(
-            r"move=(?P<move>-?\d+).*?attack=(?P<attack>-?\d+).*?shoot=(?P<shoot>-?\d+).*?"
-            r"charge=(?P<charge>-?\d+).*?"
-            r"masks=\(move:(?P<move_v>\d+)/(?P<move_t>\d+), attack:(?P<attack_v>\d+)/(?P<attack_t>\d+), "
-            r"shoot:(?P<shoot_v>\d+)/(?P<shoot_t>\d+), charge:(?P<charge_v>\d+)/(?P<charge_t>\d+),"
-        )
-        step_result_re = re.compile(r"model_ctrl_n=(?P<model_ctrl>\d+)")
-        strat_attempt_re = re.compile(r"stratagem=(?P<sid>\S+)")
-        strat_applied_re = re.compile(r"applied=(?P<sid>\S+)")
-        strat_env_side_re = re.compile(r"env_side=(?P<side>model|enemy)")
-        strat_miss_sid_re = re.compile(r"attempted=(?P<sid>\S+)")
         _label = f" [{assignment_label}]" if assignment_label else ""
+        acc = new_assignment_accumulator()
+        base_seed = _env_int("EVAL_BASE_SEED", 0)
+        eval_workers = max(1, _env_int("EVAL_WORKERS", 1))
+
+        def _write_blocks(idx: int, result: EpisodeResult) -> None:
+            for line in list(result.event_log_block or []):
+                _append_eval_log(f"[GAME {idx}]{_label} {line}")
+            for line in list(result.trace_block or []):
+                _append_eval_log(f"[TRACE][GAME {idx}]{_label} {line}")
+
+        def _merge_and_log(idx: int, result: EpisodeResult, *, progress_done: int | None = None) -> None:
+            _write_blocks(idx, result)
+            d = _accumulate_episode_result(
+                acc,
+                idx=idx,
+                result=result,
+                learner_side=_learner_side,
+                opponent_side=_opponent_side,
+            )
+            shown_idx = progress_done if progress_done is not None else idx
+            log(
+                "Игра "
+                f"{shown_idx}/{_games}{_label}: "
+                f"winner={result.winner} "
+                f"winner_side={d['winner_side']} "
+                f"model_vp={result.model_vp} "
+                f"enemy_vp={result.enemy_vp} "
+                f"vp_diff_model_minus_enemy={result.vp_diff} "
+                f"p1_vp={d['p1_vp']} "
+                f"p2_vp={d['p2_vp']} "
+                f"vp_diff_p1_minus_p2={d['vp_diff_p1_minus_p2']} "
+                f"episode_len={result.episode_len} "
+                f"reward_learner={result.total_reward:.3f} "
+                f"hp_diff_p1_minus_p2={d['hp_diff_p1_minus_p2']:.3f} "
+                f"kill_diff_p1_minus_p2={d['kill_diff_p1_minus_p2']:.3f} "
+                f"end_reason={result.end_reason}"
+            )
+
+        if eval_workers > 1 and (assignment_label or not selected_agent_id):
+            log(
+                "[EVAL][WORKER][FALLBACK] parallel eval отключён для этого назначения. "
+                "Где: eval.py (_run_assignment). Что сделать дальше: используйте registry learner-agent-id "
+                "без swap-sides или поставьте EVAL_WORKERS=1."
+            )
+            eval_workers = 1
+
+        if eval_workers > 1:
+            total_jobs = int(_games)
+            eval_workers = min(eval_workers, max(1, total_jobs))
+            jobs = [(idx, base_seed + idx) for idx in range(1, total_jobs + 1)]
+            chunks = [jobs[i::eval_workers] for i in range(eval_workers)]
+            env_keys = [
+                "PHASE_OBS_FEATURES",
+                "AZ_REACTION_VALUE_POLICY",
+                "AZ_EVAL_MODE",
+                "AZ_EVAL_OPPONENT_MODE",
+                "AZ_EVAL_MCTS_TEMPERATURE",
+                "AZ_EVAL_OPPONENT_MCTS_TEMPERATURE",
+                "AZ_EVAL_MCTS_SIMS",
+                "AZ_EVAL_OPPONENT_MCTS_SIMS",
+                "GMZ_EVAL_MODE",
+                "GMZ_OPPONENT_MODE",
+                "GMZ_EVAL_TEMPERATURE",
+                "GMZ_EVAL_OPPONENT_TEMPERATURE",
+                "SMZ_EVAL_MODE",
+                "SMZ_OPPONENT_MODE",
+                "SMZ_EVAL_TEMPERATURE",
+                "SMZ_EVAL_OPPONENT_TEMPERATURE",
+                "GAZ_EVAL_MODE",
+                "GAZ_EVAL_OPPONENT_MODE",
+                "GAZ_EVAL_TEMPERATURE",
+                "DQN_EVAL_MODE",
+                "DQN_EVAL_EPSILON",
+                "PPO_EVAL_MODE",
+                "PPO_EVAL_TEMPERATURE",
+                "HEURISTIC_MODE",
+                "DEPLOYMENT_MODE",
+                "MISSION_NAME",
+                "RULESET_VERSION",
+                "EVAL_ACTION_TRACE",
+                "EVAL_TRACE_STYLE",
+                "EVAL_TRACE_MAX_LINES_PER_GAME",
+                "EVAL_TRACE_EVERYTHING",
+                "EVAL_STOP_FLAG_PATH",
+            ]
+            cfg = EvalWorkerConfig(
+                learner_agent_id=str(selected_agent_id),
+                opponent_agent_id=str(opponent_agent_id or ""),
+                learner_side=str(_learner_side),
+                mission_name=str(mission_name),
+                ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
+                model_path=str(args.model or ""),
+                base_seed=int(base_seed),
+                trace_enabled=str(os.getenv("EVAL_ACTION_TRACE", "1")).strip() == "1",
+                trace_style=str(os.getenv("EVAL_TRACE_STYLE", "warhammer")).strip().lower() or "warhammer",
+                env_overrides={k: os.environ[k] for k in env_keys if k in os.environ},
+            )
+            log(f"[EVAL][WORKER] parallel start workers={eval_workers} games={total_jobs}{_label}")
+            ctx = mp.get_context("spawn")
+            result_q = ctx.Queue()
+            stop_ev = ctx.Event()
+            procs = []
+            for worker_id, chunk in enumerate(chunks):
+                if not chunk:
+                    continue
+                proc = ctx.Process(target=eval_worker_entry, args=(worker_id, cfg, chunk, result_q, stop_ev))
+                proc.daemon = False
+                proc.start()
+                procs.append(proc)
+
+            completed = 0
+            failed = 0
+            while completed + failed < total_jobs:
+                if eval_stop_requested():
+                    stop_ev.set()
+                try:
+                    item = result_q.get(timeout=0.25)
+                except queue.Empty:
+                    if stop_ev.is_set() and not any(p.is_alive() for p in procs):
+                        break
+                    dead_bad = [p for p in procs if p.exitcode not in (None, 0)]
+                    if dead_bad:
+                        for p in dead_bad:
+                            log(
+                                f"[EVAL][WORKER] воркер pid={p.pid} завершился с кодом {p.exitcode}. "
+                                "Где: eval.py (_run_assignment). Что сделать дальше: проверьте traceback выше "
+                                "или уменьшите EVAL_WORKERS."
+                            )
+                        break
+                    continue
+                if isinstance(item, WorkerError):
+                    failed += 1
+                    log(f"[EVAL][WORKER] {item.message}")
+                    if item.traceback_tail:
+                        _append_eval_log(f"[EVAL][WORKER][TRACEBACK] {item.traceback_tail}")
+                    continue
+                idx, result = item
+                if isinstance(result, EpisodeResult):
+                    completed += 1
+                    _merge_and_log(int(idx), result, progress_done=completed)
+                else:
+                    failed += 1
+                    log(f"[EVAL][WORKER] Некорректный результат игры idx={idx}: {type(result).__name__}")
+
+            stop_ev.set()
+            for proc in procs:
+                proc.join(timeout=5)
+                if proc.is_alive():
+                    log(
+                        f"[EVAL][WORKER] принудительно завершаю зависший воркер pid={proc.pid}. "
+                        "Где: eval.py (_run_assignment). Что сделать дальше: уменьшите EVAL_WORKERS."
+                    )
+                    proc.terminate()
+                    proc.join(timeout=2)
+            if failed or completed < total_jobs:
+                log(
+                    f"[EVAL][WORKER] partial report: completed={completed}/{total_jobs}, failed={failed}{_label}."
+                )
+            return _assignment_accumulator_to_dict(acc, learner_side=_learner_side)
 
         for idx in range(1, _games + 1):
-            ep_model_applied_sids: set[str] = set()
-            ep_model_attempt_sids: set[str] = set()  # пока не используется в таблице, для будущего
-            ep_opp_applied_sids: set[str] = set()
-            ep_opp_attempt_sids: set[str] = set()
             if eval_stop_requested():
                 log(f"Остановка по запросу пользователя после {idx - 1}/{_games} игр{_label}.")
                 break
-            (
-                winner,
-                end_reason,
-                vp_diff,
-                model_vp,
-                enemy_vp,
-                episode_len,
-                total_reward,
-                hp_diff_model_minus_enemy,
-                kill_diff_model_minus_enemy,
-                trace_lines,
-            ) = run_episode(
+            result = run_episode(
                 _env,
                 _model_units,
                 _enemy_units,
@@ -1536,178 +2020,11 @@ def main():
                 _opponent_agent,
                 _device,
                 learner_side=_learner_side,
+                seed=base_seed + idx,
             )
-            for line in trace_lines:
-                _append_eval_log(f"[TRACE][GAME {idx}]{_label} {line}")
-                if line.startswith("[TRACE][MODEL_ACTION_HUMAN]"):
-                    m = model_action_re.search(line)
-                    if m:
-                        move = int(m.group("move"))
-                        attack = int(m.group("attack"))
-                        shoot = int(m.group("shoot"))
-                        charge = int(m.group("charge"))
-                        move_v = int(m.group("move_v"))
-                        shoot_v = int(m.group("shoot_v"))
-                        charge_v = int(m.group("charge_v"))
-                        step_metrics["total_model_steps"] += 1
-                        action_tuple_counter[(move, attack, shoot, charge)] += 1
-                        if move_v > 1:
-                            step_metrics["move_opt_steps"] += 1
-                            if move == 4:
-                                step_metrics["stay_opt_steps"] += 1
-                        if shoot_v > 1:
-                            step_metrics["shoot_opt_steps"] += 1
-                            if shoot == 0:
-                                step_metrics["shoot_zero_opt_steps"] += 1
-                        if charge_v > 1:
-                            step_metrics["charge_opt_steps"] += 1
-                            if charge == 0:
-                                step_metrics["charge_zero_opt_steps"] += 1
-                elif line.startswith("[WH40K][STRATAGEM][ATTEMPT]"):
-                    step_metrics["stratagem_attempt_total"] += 1
-                    m = strat_attempt_re.search(line)
-                    if m:
-                        step_metrics[f"strat_attempt_{m.group('sid')}"] += 1
-                    _es = strat_env_side_re.search(line)
-                    if _es:
-                        _side = _es.group("side")
-                        _pfx = "m_" if _side == "model" else "o_"
-                        _ep_set = ep_model_attempt_sids if _side == "model" else ep_opp_attempt_sids
-                        _m = strat_attempt_re.search(line)
-                        if _m:
-                            sid = _m.group("sid")
-                            step_metrics[f"{_pfx}strat_attempt_{sid}"] += 1
-                            _ep_set.add(sid)
-                elif line.startswith("[WH40K][STRATAGEM] applied="):
-                    step_metrics["stratagem_applied_total"] += 1
-                    m = strat_applied_re.search(line)
-                    if m:
-                        step_metrics[f"strat_applied_{m.group('sid')}"] += 1
-                    _es = strat_env_side_re.search(line)
-                    if _es:
-                        _side = _es.group("side")
-                        _pfx = "m_" if _side == "model" else "o_"
-                        _ep_set = ep_model_applied_sids if _side == "model" else ep_opp_applied_sids
-                        _m = strat_applied_re.search(line)
-                        if _m:
-                            sid = _m.group("sid")
-                            step_metrics[f"{_pfx}strat_applied_{sid}"] += 1
-                            _ep_set.add(sid)
-                elif line.startswith("[WH40K][STRATAGEM][MISS]"):
-                    step_metrics["stratagem_miss_total"] += 1
-                    _es = strat_env_side_re.search(line)
-                    if _es:
-                        _side = _es.group("side")
-                        _pfx = "m_" if _side == "model" else "o_"
-                        _m = strat_miss_sid_re.search(line)
-                        if _m:
-                            step_metrics[f"{_pfx}strat_miss_{_m.group('sid')}"] += 1
-                elif line.startswith("[TRACE][STEP_VERDICT]"):
-                    verdict_raw = line.split("verdict=", 1)[-1].strip()
-                    for token in verdict_raw.split(","):
-                        token = token.strip()
-                        if not token or token == "ok":
-                            continue
-                        if token == "stay_while_move_options_exist":
-                            step_metrics["verdict_stay"] += 1
-                        elif token == "skip_charge_while_options_exist":
-                            step_metrics["verdict_skip_charge"] += 1
-                        elif token == "default_shoot_choice_with_options":
-                            step_metrics["verdict_default_shoot"] += 1
-                elif line.startswith("[TRACE][STEP_RESULT]"):
-                    m = step_result_re.search(line)
-                    if m:
-                        step_metrics["step_result_total"] += 1
-                        if int(m.group("model_ctrl")) == 0:
-                            step_metrics["step_result_model_ctrl_zero"] += 1
-            if _learner_side == "P1":
-                p1_vp = model_vp
-                p2_vp = enemy_vp
-                vp_diff_p1_minus_p2 = vp_diff
-                hp_diff_p1_minus_p2 = hp_diff_model_minus_enemy
-                kill_diff_p1_minus_p2 = kill_diff_model_minus_enemy
-            else:
-                p1_vp = enemy_vp
-                p2_vp = model_vp
-                vp_diff_p1_minus_p2 = -vp_diff
-                hp_diff_p1_minus_p2 = -hp_diff_model_minus_enemy
-                kill_diff_p1_minus_p2 = -kill_diff_model_minus_enemy
+            _merge_and_log(idx, result)
 
-            vp_diffs.append(vp_diff)
-            p1_vps.append(p1_vp)
-            p2_vps.append(p2_vp)
-            ep_lens.append(int(episode_len))
-            hp_diffs_p1_minus_p2.append(float(hp_diff_p1_minus_p2))
-            kill_diffs_p1_minus_p2.append(float(kill_diff_p1_minus_p2))
-            rewards_learner.append(float(total_reward))
-            if winner == "model":
-                wins += 1
-                winner_side = _learner_side
-            elif winner == "enemy":
-                losses += 1
-                winner_side = _opponent_side
-            else:
-                _draws += 1
-                winner_side = "draw"
-
-            step_metrics["m_games_total"] += 1
-            if winner == "model":
-                step_metrics["m_model_wins_total"] += 1
-            for sid in ep_model_applied_sids:
-                step_metrics[f"m_strat_games_used_{sid}"] += 1
-                if winner == "model":
-                    step_metrics[f"m_strat_wins_used_{sid}"] += 1
-            if winner == "enemy":
-                step_metrics["o_opp_wins_total"] += 1
-            for sid in ep_opp_applied_sids:
-                step_metrics[f"o_strat_games_used_{sid}"] += 1
-                if winner == "enemy":
-                    step_metrics[f"o_strat_wins_used_{sid}"] += 1
-
-            if winner_side == "P1":
-                p1_wins += 1
-            elif winner_side == "P2":
-                p2_wins += 1
-
-            end_reasons_v2[str(end_reason or "unknown")] += 1
-            log(
-                "Игра "
-                f"{idx}/{_games}{_label}: "
-                f"winner={winner} "
-                f"winner_side={winner_side} "
-                f"model_vp={model_vp} "
-                f"enemy_vp={enemy_vp} "
-                f"vp_diff_model_minus_enemy={vp_diff} "
-                f"p1_vp={p1_vp} "
-                f"p2_vp={p2_vp} "
-                f"vp_diff_p1_minus_p2={vp_diff_p1_minus_p2} "
-                f"episode_len={episode_len} "
-                f"reward_learner={total_reward:.3f} "
-                f"hp_diff_p1_minus_p2={hp_diff_p1_minus_p2:.3f} "
-                f"kill_diff_p1_minus_p2={kill_diff_p1_minus_p2:.3f} "
-                f"end_reason={end_reason}"
-            )
-
-        played_games = len(vp_diffs)
-        return {
-            "model_wins": wins,
-            "enemy_wins": losses,
-            "draws": _draws,
-            "games": played_games,
-            "p1_wins": p1_wins,
-            "p2_wins": p2_wins,
-            "vp_diffs": vp_diffs,
-            "p1_vps": p1_vps,
-            "p2_vps": p2_vps,
-            "ep_lens": ep_lens,
-            "hp_diffs_p1_minus_p2": hp_diffs_p1_minus_p2,
-            "kill_diffs_p1_minus_p2": kill_diffs_p1_minus_p2,
-            "rewards_learner": rewards_learner,
-            "end_reasons_v2": end_reasons_v2,
-            "step_metrics": step_metrics,
-            "action_tuple_counter": action_tuple_counter,
-            "learner_side": _learner_side,
-        }
+        return _assignment_accumulator_to_dict(acc, learner_side=_learner_side)
 
     # --- Запуск назначений ---
     do_swap = bool(getattr(args, "swap_sides", False)) and opponent_agent is not None

@@ -215,6 +215,7 @@ class GUIController(QtCore.QObject):
     evalModelPathChanged = QtCore.Signal(str)
     evalModelLabelChanged = QtCore.Signal(str)
     evalGamesChanged = QtCore.Signal(int)
+    evalWorkersChanged = QtCore.Signal(int)
     evalActionTraceChanged = QtCore.Signal(bool)
     evalLogTextChanged = QtCore.Signal(str)
     evalSummaryTextChanged = QtCore.Signal(str)
@@ -374,6 +375,7 @@ class GUIController(QtCore.QObject):
         self._eval_model_path = ""
         self._eval_model_label = "Модель не выбрана"
         self._eval_games = 50
+        self._eval_workers = 1
         # Детальный per-step trace eval (EVAL_ACTION_TRACE). ON по умолчанию (как было);
         # OFF заметно ускоряет eval (не форматит ~500 строк/игра), не теряя winrate/таблицу стратагем.
         self._eval_action_trace = True
@@ -1373,6 +1375,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=evalGamesChanged)
     def evalGames(self) -> int:
         return self._eval_games
+
+    @QtCore.Property(int, notify=evalWorkersChanged)
+    def evalWorkers(self) -> int:
+        return self._eval_workers
 
     @QtCore.Property(bool, notify=evalActionTraceChanged)
     def evalActionTrace(self) -> bool:
@@ -3080,6 +3086,20 @@ class GUIController(QtCore.QObject):
                 self._eval_live_games_total = value
             self.evalGamesChanged.emit(value)
             self._update_eval_matchup_text()
+            self.evalSetupChanged.emit()
+
+    @QtCore.Slot(int)
+    def set_eval_workers(self, value: int) -> None:
+        if value <= 0:
+            self._emit_status(
+                "Некорректное значение воркеров для оценки. "
+                "Где: gui_qt/main.py (set_eval_workers). "
+                "Что делать: укажите число больше нуля."
+            )
+            return
+        if self._eval_workers != value:
+            self._eval_workers = value
+            self.evalWorkersChanged.emit(value)
             self.evalSetupChanged.emit()
 
     @QtCore.Slot(bool)
@@ -5667,6 +5687,7 @@ class GUIController(QtCore.QObject):
         env.insert("FORCE_GREEDY", "1")
         env.insert("EVAL_EPSILON", "0")
         env.insert("EVAL_ACTION_TRACE", "1" if self._eval_action_trace else "0")
+        env.insert("EVAL_WORKERS", str(self._eval_workers))
         env.insert("PYTHONPATH", self._pythonpath_with_core())
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
@@ -5846,7 +5867,7 @@ class GUIController(QtCore.QObject):
             mode_parts.append(gaz_opp_tail)
         mode_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
         eval_start_msg = (
-            f"Старт оценки: игр={self._eval_games}, learner_side={learner_side}, "
+            f"Старт оценки: игр={self._eval_games}, workers={self._eval_workers}, learner_side={learner_side}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
             f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}"
             f"{mode_tail}, exploration=off."

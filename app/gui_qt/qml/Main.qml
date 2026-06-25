@@ -4896,6 +4896,38 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                RowLayout {
+                                    spacing: root.spacingXs
+                                    Label {
+                                        text: "Воркеры:"
+                                        font.bold: true
+                                    }
+                                    TextField {
+                                        id: evalWorkersField
+                                        text: controller.evalWorkers.toString()
+                                        validator: IntValidator { bottom: 1 }
+                                        Layout.preferredWidth: Math.round(86 * root.uiScale)
+                                        enabled: !controller.running
+                                        font.family: root.fontDataFamily
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: "1 = последовательный eval; >1 = параллельные процессы, выше нагрузка на CPU/GPU."
+                                        background: Rectangle {
+                                            radius: 0
+                                            color: parent.enabled ? "#253244" : "#202734"
+                                            border.width: 1
+                                            border.color: parent.activeFocus ? "#b88a26" : "#3a475b"
+                                        }
+                                        onEditingFinished: {
+                                            var value = parseInt(text)
+                                            if (!isNaN(value)) {
+                                                controller.set_eval_workers(value)
+                                                text = controller.evalWorkers.toString()
+                                            } else {
+                                                text = controller.evalWorkers.toString()
+                                            }
+                                        }
+                                    }
+                                }
                                 TacticalCheckBox {
                                     text: "ДЕТАЛЬНЫЙ ЛОГ"
                                     scaleRef: root.uiScale
@@ -6337,6 +6369,11 @@ ApplicationWindow {
         function onEvalGamesChanged(value) {
             if (typeof evalGamesField !== "undefined" && evalGamesField) {
                 evalGamesField.text = value.toString()
+            }
+        }
+        function onEvalWorkersChanged(value) {
+            if (typeof evalWorkersField !== "undefined" && evalWorkersField) {
+                evalWorkersField.text = value.toString()
             }
         }
     }
