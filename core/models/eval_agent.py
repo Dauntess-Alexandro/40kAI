@@ -25,6 +25,7 @@ from core.models.utils import (
     convertToDict,
     normalize_state_dict,
     sample_action_list_from_space,
+    unwrap_env,
 )
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
@@ -166,8 +167,14 @@ class EvalAgent:
         raise ValueError(f"EvalAgent: неподдержанный algo={self.algo}")
 
     def as_policy_fn(self, env, side: str) -> Callable[[Any], dict]:
+        # Воркеры self-play (GMZ/PPO vs снапшот-оппонент) передают env, обёрнутый gym.make
+        # в OrderEnforcing; в текущей версии Gymnasium обёртки не проксируют кастомные методы
+        # движка (get_observation_for_side и т.п.) → AttributeError. Снимаем обёртки до
+        # Warhammer40kEnv (как eval: env_unwrapped). Идемпотентно для уже-развёрнутого env.
+        base_env = unwrap_env(env)
+
         def _fn(_obs_any):
-            act, _plan = self.select_action(env, side)
+            act, _plan = self.select_action(base_env, side)
             return act
 
         return _fn

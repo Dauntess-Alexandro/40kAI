@@ -55,6 +55,35 @@ def test_as_policy_fn_returns_action(monkeypatch):
     assert not hasattr(env, "_pending_fight_stratagem_plan") or getattr(env, "_pending_fight_stratagem_plan", None) is None
 
 
+def test_as_policy_fn_unwraps_gym_wrapper(monkeypatch):
+    # Регрессия (GMZ/PPO vs снапшот-оппонент): воркеры self-play передают в build_policy_fn/
+    # as_policy_fn env, обёрнутый gym.make в OrderEnforcing. В текущей версии Gymnasium обёртки
+    # не проксируют кастомные методы движка → env.get_observation_for_side падал AttributeError
+    # ('OrderEnforcing' object has no attribute 'get_observation_for_side'). as_policy_fn обязан
+    # развернуть обёртку до Warhammer40kEnv (как делает eval: env_unwrapped).
+    from gymnasium.wrappers import OrderEnforcing
+
+    env = build_env()
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    a = _agent(env, "ppo", net=object(), reaction_net=object())
+
+    seen = {}
+
+    def _fake_select(e, side):
+        # select_action обязан получить РАЗВёрнутый env с методами движка.
+        seen["obs"] = e.get_observation_for_side(side)
+        return ({"move_num_0": 0}, None)
+
+    monkeypatch.setattr(a, "select_action", _fake_select)
+
+    wrapped = OrderEnforcing(env)
+    fn = a.as_policy_fn(wrapped, "enemy")
+    out = fn(None)
+
+    assert out == {"move_num_0": 0}
+    assert seen["obs"] is not None
+
+
 def test_build_eval_agent_ppo_smoke():
     # End-to-end: фабрика собирает реальную PPO-сеть из контракта env и даёт рабочий select_action.
     env = build_env()
