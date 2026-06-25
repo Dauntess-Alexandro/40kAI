@@ -148,6 +148,13 @@ def command_reroll_options_for_unit(
     i = int(unit_idx)
     if not (0 <= i < len(health)) or health[i] <= 0:
         return []
+    # Подзадача 3.3: advance reroll нелегален в movement-окне.
+    # Advance не имеет pass/fail-критерия, поэтому не предлагаем его как legal option,
+    # сохраняя при этом подтип в action-contract/choices.
+    if phase is Phase.MOVEMENT:
+        rolls = tuple(roll for roll in rolls if str(roll) != "advance")
+        if not rolls:
+            return []
     # Гейт «нет цели — нет реролла»: не предлагаем command_reroll, если у юнита нет предстоящего
     # броска в этой фазе (нет валидной цели стрельбы/чарджа) — иначе CP тратится впустую (wasted).
     if phase is Phase.SHOOTING and not e.get_shoot_targets_for_unit(side, i):

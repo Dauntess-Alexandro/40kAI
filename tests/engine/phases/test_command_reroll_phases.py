@@ -3,7 +3,7 @@ import numpy as np
 import core.envs.warhamEnv as warham_mod
 from core.engine.phases import phase_engine, stratagem_engine
 from core.engine.phases.option_generator import movement_options_for_unit
-from core.engine.phases.stratagems import by_id
+from core.engine.phases.stratagems import by_id, stratagem_choice_index
 from core.engine.phases.types import ActionKind, Phase
 from tests.engine.phases._helpers import build_env, flat_default_action
 
@@ -100,7 +100,13 @@ def test_command_reroll_registry_includes_charge_phase():
     assert Phase.CHARGE in by_id("command_reroll").phases
 
 
-def test_movement_command_reroll_advance_updates_final_roll(monkeypatch):
+def test_movement_command_reroll_advance_is_illegal_option(monkeypatch):
+    """Подзадача 3.3A: command_reroll:advance — нелегальная опция в movement-окне.
+
+    advance не имеет pass/fail-критерия, поэтому option_generator не предлагает его,
+    а direct action-head strat_movement=command_reroll:advance не arm-ит effect
+    и не тратит CP (action-контракт не меняется — подтип остаётся в choices).
+    """
     calls = []
 
     def fake_dice(*, min=1, max=6, num=1):
@@ -110,18 +116,80 @@ def test_movement_command_reroll_advance_updates_final_roll(monkeypatch):
     monkeypatch.setattr(warham_mod, "dice", fake_dice)
     env = build_env()
     _movement_setup(env)
+    start_cp = env.modelCP
     chosen = _advance_option_with_non_max_roll(env)
     action = flat_default_action(len(env.unit_health), **chosen.legacy_patch)
-    stratagem_engine.apply(env, "model", "command_reroll", 0, phase="movement", reroll_roll="advance")
+    # direct action-head выставляет command_reroll:advance (контракт не меняется),
+    # но guard должен не arm-ить effect и не тратить CP.
+    action["strat_movement"] = stratagem_choice_index(Phase.MOVEMENT, "command_reroll:advance")
+    action["strat_movement_unit"] = 0
 
     with env.simulation_mode():
         env.movement_phase("model", action=action, battle_shock=[False] * len(env.unit_health))
 
-    assert calls == [(1, 6, 1)]
-    assert env.model_advance_roll[0] == 6
+    # advance reroll не arm-ится → нет записи command_reroll в movement-окне.
+    assert not any(
+        r.get("effect_id") == "command_reroll" and r.get("phase") == "movement"
+        for r in env.active_stratagem_effects
+    )
+    assert not any(r[1] == "command_reroll" and r[3] == "movement" for r in env.stratagem_used)
+    # CP не тратится (arm бесплатен + advance не arm-ится).
+    assert env.modelCP == start_cp
+    # reroll-броска advance не происходит (advance_roll остаётся исходным).
+    assert calls == []
 
 
-def test_charge_command_reroll_rerolls_both_dice_and_can_succeed(monkeypatch):
+def _armed_charge_reroll(env, side="model", unit_idx=0):
+    """Вручную вставить armed command_reroll:charge (paid=False), как делает apply при CP>=1."""
+    rec = {
+        "effect_id": "command_reroll",
+        "phase": "charge",
+        "side": side,
+        "unit_idx": int(unit_idx),
+        "reroll_roll": "charge",
+        "round": int(getattr(env, "battle_round", 1)),
+        "consumed": False,
+        "paid": False,
+    }
+    env.active_stratagem_effects.append(rec)
+    return rec
+
+
+def test_charge_reroll_first_roll_success_keeps_cp(monkeypatch):
+    """Подзадача 3.3B: первый 2D6 успешен → CP не тратится, reroll не применяется.
+
+    rolls [6,6]=12, цель в дистанции 9 (required=4). armed charge reroll, modelCP=1.
+    Ожидание: один бросок 2D6, CP остаётся 1, charge успешен.
+    """
+    calls = []
+
+    def fake_dice(*, min=1, max=6, num=1):
+        calls.append((min, max, num))
+        return np.array([6, 6])
+
+    monkeypatch.setattr(warham_mod, "dice", fake_dice)
+    env = build_env()
+    _charge_setup(env)
+    env.modelCP = 1
+    rec = _armed_charge_reroll(env)
+    action = flat_default_action(len(env.unit_health), attack=1, charge_num_0=0)
+
+    with env.simulation_mode():
+        env.charge_phase("model", advanced_flags=[False] * len(env.unit_health), action=action)
+
+    assert calls == [(1, 6, 2)]  # только первый бросок — reroll не нужен
+    assert env.modelCP == 1  # успешный first roll → CP не тратится
+    assert rec["paid"] is False
+    assert rec["consumed"] is False
+    assert env.unitCharged[0] == 1  # charge успешен
+
+
+def test_charge_reroll_first_fail_then_reroll_succeeds_spends_cp(monkeypatch):
+    """Подзадача 3.3B: первый 2D6 провален → reroll, CP тратится на actual failed charge.
+
+    rolls [1,1]=2 (провал, required=4) затем [6,6]=12 (успех). modelCP=1.
+    Ожидание: два броска 2D6, CP=0, charge успешен.
+    """
     rolls = [np.array([1, 1]), np.array([6, 6])]
     calls = []
 
@@ -132,16 +200,48 @@ def test_charge_command_reroll_rerolls_both_dice_and_can_succeed(monkeypatch):
     monkeypatch.setattr(warham_mod, "dice", fake_dice)
     env = build_env()
     _charge_setup(env)
+    env.modelCP = 1
+    rec = _armed_charge_reroll(env)
     action = flat_default_action(len(env.unit_health), attack=1, charge_num_0=0)
-    stratagem_engine.apply(env, "model", "command_reroll", 0, phase="charge", reroll_roll="charge")
 
     with env.simulation_mode():
         env.charge_phase("model", advanced_flags=[False] * len(env.unit_health), action=action)
 
-    assert calls == [(1, 6, 2), (1, 6, 2)]
-    assert env.unitInAttack[0] == [1, 0]
-    assert env.enemyInAttack[0] == [1, 0]
-    assert env.unitCharged[0] == 1
+    assert calls == [(1, 6, 2), (1, 6, 2)]  # первый провален → reroll
+    assert env.modelCP == 0  # actual failed charge → CP списан один раз
+    assert rec["paid"] is True
+    assert rec["consumed"] is True
+    assert env.unitCharged[0] == 1  # reroll успешен → charge удался
+
+
+def test_charge_reroll_first_fail_no_cp_no_reroll(monkeypatch):
+    """Подзадача 3.3B: первый 2D6 провален, но CP=0 → reroll не применяется, CP не в минус.
+
+    rolls [1,1]=2 (провал, required=4). armed rec paid=False, но modelCP=0.
+    Ожидание: один бросок 2D6, reroll не применяется, CP=0 (не в минус), charge провален.
+    """
+    calls = []
+
+    def fake_dice(*, min=1, max=6, num=1):
+        calls.append((min, max, num))
+        return np.array([1, 1])
+
+    monkeypatch.setattr(warham_mod, "dice", fake_dice)
+    env = build_env()
+    _charge_setup(env)
+    env.modelCP = 0
+    # Вручную вставляем armed rec (apply при CP=0 не arm-ит) — моделируем «был CP, потратили».
+    rec = _armed_charge_reroll(env)
+    action = flat_default_action(len(env.unit_health), attack=1, charge_num_0=0)
+
+    with env.simulation_mode():
+        env.charge_phase("model", advanced_flags=[False] * len(env.unit_health), action=action)
+
+    assert calls == [(1, 6, 2)]  # нет CP → reroll не применяется
+    assert env.modelCP == 0  # CP не ушёл в минус
+    assert rec["paid"] is False
+    assert rec["consumed"] is False
+    assert env.unitCharged[0] == 0  # charge провален
 
 
 def test_command_reroll_unlimited_allows_two_rolls_same_phase():
@@ -220,15 +320,15 @@ def test_shooting_command_reroll_save_belongs_to_defender(monkeypatch):
     assert calls == [{"hit": False, "save": True}]
 
 
-def test_run_movement_window_offers_and_arms_command_reroll():
-    """Подзадача 2.1: windowed-путь movement — arm command_reroll пишет запись, CP НЕ списывается."""
+def test_run_movement_window_does_not_offer_advance_reroll():
+    """Подзадача 3.3A: windowed movement больше не предлагает command_reroll:advance."""
     env = build_env()
     _movement_setup(env)
     start_cp = env.modelCP
     with env.simulation_mode():
         phase_engine.run_movement(env, "model", _pick_reroll_window(0, "advance"))
-    assert ("model", "command_reroll", env.battle_round, "movement", 0) in env.stratagem_used
-    assert env.modelCP == start_cp  # arm бесплатен — CP не списан
+    assert ("model", "command_reroll", env.battle_round, "movement", 0) not in env.stratagem_used
+    assert env.modelCP == start_cp
 
 
 def test_run_shooting_window_offers_and_arms_command_reroll():

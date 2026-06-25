@@ -64,6 +64,22 @@ def test_strat_phase_mask_cp_gating():
     assert bool(fm2[choices.index("command_reroll:wound")]) is True
 
 
+def test_strat_movement_mask_advance_reroll_illegal():
+    """Подзадача 3.3A: command_reroll:advance — нелегальная опция в movement-маске при CP.
+
+    action-контракт не меняется (подтип остаётся в choices), но mask должна быть False,
+    чтобы policy/MCTS не выбирали advance reroll как legal option.
+    """
+    env = build_env()
+    _setup(env, cp=2)
+    masks = env.get_legal_action_masks_by_head("model")
+    fm = masks["strat_movement"]
+    from core.engine.phases.stratagems import stratagem_action_choices
+    choices = stratagem_action_choices(Phase.MOVEMENT)
+    assert bool(fm[0]) is True  # none всегда
+    assert bool(fm[choices.index("command_reroll:advance")]) is False  # advance нелегален
+
+
 def test_strat_unit_mask_alive_only():
     env = build_env()
     _setup(env, cp=2)

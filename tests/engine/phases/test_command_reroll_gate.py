@@ -41,3 +41,13 @@ def test_cp_gate_still_blocks_even_with_target(monkeypatch):
     env, eu = _eu_with_cp(cp=0)
     monkeypatch.setattr(eu, "get_shoot_targets_for_unit", lambda side, idx: [1])
     assert command_reroll_options_for_unit(env, "model", 0, phase=Phase.SHOOTING, rolls=("hit", "wound")) == []
+
+
+def test_movement_advance_option_not_offered():
+    """Подзадача 3.3A: command_reroll:advance — нелегальная опция в movement-окне.
+
+    advance не имеет pass/fail-критерия, поэтому option_generator не должен
+    предлагать его даже при CP и живом юните (action-контракт не меняется).
+    """
+    env, eu = _eu_with_cp(cp=5)
+    assert command_reroll_options_for_unit(env, "model", 0, phase=Phase.MOVEMENT, rolls=("advance",)) == []

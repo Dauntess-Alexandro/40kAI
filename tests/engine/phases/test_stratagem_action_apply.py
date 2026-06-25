@@ -91,16 +91,19 @@ def test_apply_action_stratagem_anti_double():
 # ---------------------------------------------------------------------------
 
 
-def test_movement_phase_applies_strat_head_advance():
+def test_movement_phase_does_not_apply_illegal_advance_reroll_head():
     env = build_env()
     _setup(env)
     env.phase = "movement"
+    start_cp = env.modelCP
     action = flat_default_action(len(env.unit_health))
     action["strat_movement"] = _idx(Phase.MOVEMENT, "command_reroll:advance")
     action["strat_movement_unit"] = 0
     with env.simulation_mode():
         env.movement_phase("model", action=action, battle_shock=[False] * len(env.unit_health))
-    assert any(r[1] == "command_reroll" and r[3] == "movement" for r in env.stratagem_used)
+    assert env.modelCP == start_cp
+    assert not any(r[1] == "command_reroll" and r[3] == "movement" for r in env.stratagem_used)
+    assert not any(r.get("effect_id") == "command_reroll" for r in env.active_stratagem_effects)
 
 
 def test_fight_phase_action_param_applies_strat_head():

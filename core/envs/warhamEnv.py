@@ -1861,6 +1861,10 @@ class Warhammer40kEnv(gym.Env):
         if str(choice) == "none":
             return True
         base_id = str(choice).split(":", 1)[0]
+        sub = str(choice).split(":", 1)[1] if ":" in str(choice) else None
+        phase_str = phase.value if hasattr(phase, "value") else str(phase)
+        if base_id == "command_reroll" and phase_str == "movement" and sub == "advance":
+            return False
         try:
             d = by_id(base_id)
         except KeyError:
@@ -1869,7 +1873,6 @@ class Warhammer40kEnv(gym.Env):
         cp = int(self.modelCP if is_model else self.enemyCP)
         if cp < int(d.cp_cost):
             return False
-        phase_str = phase.value if hasattr(phase, "value") else str(phase)
         if usage_limit_reached(self, side, d, phase=phase_str):
             return False
         health = self.unit_health if is_model else self.enemy_health
@@ -2516,6 +2519,8 @@ class Warhammer40kEnv(gym.Env):
             return
         base_id = choice.split(":", 1)[0]
         sub = choice.split(":", 1)[1] if ":" in choice else None
+        if base_id == "command_reroll" and phase_str == "movement" and sub == "advance":
+            return
         unit = int(action.get(f"strat_{phase_str}_unit", 0) or 0)
         is_model = side == "model"
         health = self.unit_health if is_model else self.enemy_health
@@ -2600,10 +2605,27 @@ class Warhammer40kEnv(gym.Env):
     def _charge_roll_with_reroll(self, side: str, unit_idx: int, roll_fn=None) -> tuple[np.ndarray, int]:
         roller = roll_fn or dice
         dice_vals = self._two_dice_values(roller(num=2))
-        rec = self._consume_command_reroll_record(side, int(unit_idx), "charge", "charge")
-        if rec is not None:
-            dice_vals = self._two_dice_values(roller(num=2))
         return dice_vals, int(np.sum(dice_vals))
+
+    def _maybe_reroll_failed_charge(
+        self,
+        side: str,
+        unit_idx: int,
+        dice_vals,
+        target_distance: float,
+        roll_fn=None,
+    ) -> tuple[np.ndarray, int]:
+        current_vals = self._two_dice_values(dice_vals)
+        current_total = int(np.sum(current_vals))
+        required = max(0.0, float(target_distance) - 5.0)
+        if float(current_total) >= required:
+            return current_vals, current_total
+        rec = self._consume_command_reroll_record(side, int(unit_idx), "charge", "charge")
+        if rec is None:
+            return current_vals, current_total
+        roller = roll_fn or dice
+        rerolled_vals = self._two_dice_values(roller(num=2))
+        return rerolled_vals, int(np.sum(rerolled_vals))
 
     def _clear_phase_stratagem_effects(self, phase: str) -> None:
         phase = str(phase)
@@ -6807,6 +6829,15 @@ class Warhammer40kEnv(gym.Env):
                         continue
                     chargeAble = []
                     dice_vals, diceRoll = self._charge_roll_with_reroll("model", i)
+                    idOfE = int(_charge_target) if decide_charge is not None else int(action.get(f"charge_num_{i}", 0))
+                    if _do_charge and 0 <= idOfE < len(self.enemy_health) and idOfE in potential_targets:
+                        target_distance = distance(self.enemy_coords[idOfE], self.unit_coords[i])
+                        dice_vals, diceRoll = self._maybe_reroll_failed_charge(
+                            "model",
+                            i,
+                            dice_vals,
+                            target_distance,
+                        )
                     if _do_charge:
                         if potential_targets:
                             for j in potential_targets:
@@ -6818,7 +6849,6 @@ class Warhammer40kEnv(gym.Env):
                                     if distance(self.enemy_coords[j], self.unit_coords[i]) - diceRoll <= 5:
                                         chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfE = int(_charge_target) if decide_charge is not None else int(action.get(f"charge_num_{i}", 0))
                         target_list = self._format_unit_choices("enemy", chargeAble)
                         dist_to_target = distance(self.enemy_coords[idOfE], self.unit_coords[i]) if idOfE in chargeAble else None
                         if _verbose_logs_enabled():
@@ -6970,12 +7000,20 @@ class Warhammer40kEnv(gym.Env):
                         continue
                     chargeAble = []
                     dice_vals, diceRoll = self._charge_roll_with_reroll("enemy", i)
+                    idOfM = int(action.get(f"charge_num_{i}", 0))
+                    if 0 <= idOfM < len(self.unit_health) and idOfM in potential_targets:
+                        target_distance = distance(self.unit_coords[idOfM], self.enemy_coords[i])
+                        dice_vals, diceRoll = self._maybe_reroll_failed_charge(
+                            "enemy",
+                            i,
+                            dice_vals,
+                            target_distance,
+                        )
                     for j in range(len(self.unit_health)):
                         if distance(self.unit_coords[j], self.enemy_coords[i]) <= 12 and self.unitInAttack[j][0] == 0 and self.unit_health[j] > 0:
                             if distance(self.unit_coords[j], self.enemy_coords[i]) - diceRoll <= 5:
                                 chargeAble.append(j)
                     if len(chargeAble) > 0:
-                        idOfM = int(action.get(f"charge_num_{i}", 0))
                         heur_charge_target, charge_scored = self._enemy_heur_pick_charge_target(i, [int(v) for v in chargeAble])
                         target_list = self._format_unit_choices("model", chargeAble)
                         dist_to_target = distance(self.unit_coords[idOfM], self.enemy_coords[i]) if idOfM in chargeAble else None
@@ -7109,8 +7147,15 @@ class Warhammer40kEnv(gym.Env):
                             j = int(attk_value) - 21
                             self._log("Бросок 2D6...", verbose_only=True)
                             roll, roll_total = self._charge_roll_with_reroll("enemy", i, roll_fn=player_dice)
-                            self._log(f"Бросок: {roll[0]} и {roll[1]}", verbose_only=True)
                             dist_to_target = distance(self.enemy_coords[i], self.unit_coords[j])
+                            roll, roll_total = self._maybe_reroll_failed_charge(
+                                "enemy",
+                                i,
+                                roll,
+                                dist_to_target,
+                                roll_fn=player_dice,
+                            )
+                            self._log(f"Бросок: {roll[0]} и {roll[1]}", verbose_only=True)
                             self._log_unit_phase(
                                 self._side_label("enemy", manual=True),
                                 "charge",
