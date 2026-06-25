@@ -103,9 +103,15 @@ def test_apply_command_reroll_arm_still_appends_stratagem_used():
     assert env.modelCP == 1  # arm бесплатен, но запись в журнале есть
 
 
-def test_fight_effects_for_attacker_returns_reroll_wounds():
+def test_fight_effects_for_attacker_skips_command_reroll_wound():
+    """Подзадача 3.2: command_reroll hit/wound НЕ идёт через static effects.
+    _stratagem_effects_for_attacker() должен пропустить запись command_reroll
+    (reroll проходит через _build_reroll_decider в момент фактического failed die).
+    Ожидание: возвращает None, CP не списан, rec не paid/consumed, fired unchanged.
+    """
     env = build_env()
-    env.modelCP = 1  # CP для legacy pay-on-apply на consume
+    env.modelCP = 1
+    fired_before = env._cmd_reroll_fired
     env.active_stratagem_effects = [
         {
             "side": "model",
@@ -119,12 +125,20 @@ def test_fight_effects_for_attacker_returns_reroll_wounds():
         }
     ]
     eff = env._fight_effects_for_attacker("model", 0)
-    assert eff == {"reroll_wounds": "one"}
+    assert eff is None
+    assert env.modelCP == 1  # CP не списан на setup
+    assert env._cmd_reroll_fired == fired_before  # fired не вырос
+    rr = [r for r in env.active_stratagem_effects if r.get("effect_id") == "command_reroll"][0]
+    assert rr["paid"] is False
+    assert rr["consumed"] is False
 
 
-def test_fight_effect_consumed_after_first_read():
+def test_fight_effect_command_reroll_not_consumed_on_setup():
+    """Подзадача 3.2: повторный вызов _stratagem_effects_for_attacker() не мутирует rec —
+    command_reroll ждёт фактического failed die через decider.
+    """
     env = build_env()
-    env.modelCP = 1  # CP для legacy pay-on-apply на consume
+    env.modelCP = 1
     env.battle_round = 1
     env.active_stratagem_effects = [
         {
@@ -139,9 +153,13 @@ def test_fight_effect_consumed_after_first_read():
         }
     ]
     first = env._fight_effects_for_attacker("model", 0)
-    assert first == {"reroll_wounds": "one"}
     second = env._fight_effects_for_attacker("model", 0)
+    assert first is None
     assert second is None
+    rr = [r for r in env.active_stratagem_effects if r.get("effect_id") == "command_reroll"][0]
+    assert rr["consumed"] is False
+    assert rr["paid"] is False
+    assert env.modelCP == 1
 
 
 def _engaged(env):
@@ -167,16 +185,45 @@ def _pick(unit_idx, sid):
     return decide
 
 
-def test_run_fight_command_reroll_arms_without_cp_charge():
-    """Подзадача 3.1: arm command_reroll в fight бесплатен, но consume в fight-резолве
-    списывает CP (legacy pay-on-apply). Запись в stratagem_used остаётся (action-telemetry)."""
+def test_run_fight_command_reroll_arms_without_cp_charge(monkeypatch):
+    """Подзадача 3.2: arm command_reroll в fight бесплатен. CP списывается только в момент
+    фактического failed die через reroll_decider (не через static effects на setup).
+    Запись в stratagem_used остаётся (action-telemetry)."""
+    import core.envs.warhamEnv as warham_mod
+
+    decider_calls = []
+
+    def fake_attack(attacker_health, weapon, attacker_data, defender_health, defender_data, *args, **kwargs):
+        effects = kwargs.get("effects")
+        decider = kwargs.get("reroll_decider")
+        # command_reroll НЕ должен попасть в static effects (идёт через decider).
+        assert effects is None or "reroll_wounds" not in (effects or {})
+        assert effects is None or "reroll_hits" not in (effects or {})
+        # decider есть и вызывается с фактическим failed die → списывает CP.
+        if decider is not None:
+            decider_calls.append(bool(decider("wound", np.array([2]), 4)))
+        return [0.0], defender_health
+
+    def pick_wound(window):
+        for o in window.options:
+            if (
+                o.kind is ActionKind.USE_STRATAGEM
+                and o.meta.get("stratagem_id") == "command_reroll"
+                and o.param.get("reroll_roll") == "wound"
+                and o.unit_idx == 0
+            ):
+                return o
+        return window.options[0]
+
+    monkeypatch.setattr(warham_mod, "attack", fake_attack)
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     _engaged(env)
-    random.seed(7)
-    np.random.seed(7)
     with env.simulation_mode():
-        phase_engine.run_fight(env, "model", _pick(0, "command_reroll"))
-    # arm бесплатен, но consume в fight-резолве списал CP (pay-on-apply на consume).
+        phase_engine.run_fight(env, "model", pick_wound)
+    # arm бесплатен; CP списан только через decider при failed die (wound=2 < 4).
+    # Первый вызов decider → True (CP списан, rec consumed); последующие → False (rec уже consumed).
     assert env.modelCP == 0
+    assert decider_calls and decider_calls[0] is True
+    assert all(c is False for c in decider_calls[1:])
     assert ("model", "command_reroll", env.battle_round, "fight", 0) in env.stratagem_used

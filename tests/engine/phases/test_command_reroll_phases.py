@@ -165,25 +165,35 @@ def test_command_reroll_unlimited_allows_two_rolls_same_phase():
 
 
 def test_shooting_command_reroll_wound_reaches_attack_effect(monkeypatch):
+    """Подзадача 3.2: command_reroll wound НЕ попадает в static effects (effects без reroll_wounds),
+    а проходит через reroll_decider. fake_attack проверяет: effects не содержит command_reroll-ключей,
+    а decider("wound", [1], 4) возвращает True и списывает CP."""
     calls = []
 
     def fake_attack(attacker_health, weapon, attacker_data, defender_health, defender_data, *args, **kwargs):
         effects = kwargs.get("effects")
-        calls.append(effects)
-        damage = 2.0 if isinstance(effects, dict) and effects.get("reroll_wounds") == "one" else 0.0
-        return [damage], defender_health - damage
+        decider = kwargs.get("reroll_decider")
+        # command_reroll НЕ должен попасть в static effects.
+        assert effects is None or "reroll_wounds" not in (effects or {})
+        assert effects is None or "reroll_hits" not in (effects or {})
+        # decider есть и вызывается с фактическим failed die → списывает CP.
+        decider_result = None
+        if decider is not None:
+            decider_result = bool(decider("wound", np.array([1]), 4))
+        calls.append(decider_result)
+        return [0.0], defender_health
 
     monkeypatch.setattr(warham_mod, "attack", fake_attack)
     env = build_env()
     _shooting_setup(env)
-    start_hp = float(env.enemy_health[0])
     stratagem_engine.apply(env, "model", "command_reroll", 0, phase="shooting", reroll_roll="wound")
 
     with env.simulation_mode():
         env.shooting_phase("model", advanced_flags=[False] * len(env.unit_health), action=_shoot_action(env))
 
-    assert calls and calls[0] == {"reroll_wounds": "one"}
-    assert float(env.enemy_health[0]) == start_hp - 2.0
+    # decider вызван с failed die (1 < 4) → True, CP списан.
+    assert calls and calls[0] is True
+    assert env.modelCP == 1  # _shooting_setup ставит modelCP=2; arm бесплатен, decider списал 1 → 1
 
 
 def test_shooting_command_reroll_save_belongs_to_defender(monkeypatch):

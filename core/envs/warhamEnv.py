@@ -2429,18 +2429,12 @@ class Warhammer40kEnv(gym.Env):
                 unit_data_list = self.unit_data if str(side) == "model" else self.enemy_data
                 if 0 <= int(unit_idx) < len(unit_data_list) and self._unit_has_keyword(unit_data_list[int(unit_idx)], "character"):
                     effects["ap_improve"] = int(effects.get("ap_improve", 0)) + 1
-            elif rec.get("effect_id") == "command_reroll" and not rec.get("consumed", False):
-                roll = str(rec.get("reroll_roll", "wound"))
-                key = {"hit": "reroll_hits", "wound": "reroll_wounds"}.get(roll)
-                if key is None:
-                    continue
-                # Legacy pay-on-apply: списать CP на consume. Нет CP — не рероллить.
-                if not self._pay_for_command_reroll_record(rec):
-                    continue
-                effects[key] = "one"
-                rec["consumed"] = True
-                if not self._in_simulation_mode():
-                    self._cmd_reroll_fired += 1
+            elif rec.get("effect_id") == "command_reroll":
+                # Подзадача 3.2: attack reroll (hit/wound) НЕ идёт через static effects.
+                # Оплата/consume происходят в момент фактического failed die через
+                # _build_reroll_decider (см. ниже). Здесь запись намеренно пропускается,
+                # чтобы атаки без провала стоили 0 CP и не помечали rec consumed/paid.
+                continue
         return effects or None
 
     def _fight_effects_for_attacker(self, side: str, unit_idx: int):
@@ -2464,6 +2458,20 @@ class Warhammer40kEnv(gym.Env):
                     return rec
             return None
 
+        def _has_failed_die(dice, threshold):
+            """Есть ли eligible failed die: int(d) < int(threshold).
+
+            Поддерживает scalar, list, tuple, numpy array. Для damage/attacks attack()
+            передаёт threshold=max_roll+1 (невозможный), поэтому любой roll ниже него
+            eligible — текущая семантика low variable roll сохраняется.
+            """
+            try:
+                vals = list(dice)
+            except TypeError:
+                vals = [dice]
+            th = int(threshold)
+            return any(int(d) < th for d in vals)
+
         def decider(stage, dice, threshold):
             if stage in ("hit", "wound", "damage", "attacks"):
                 rec = _find(attacker_side, attacker_idx, stage)
@@ -2473,7 +2481,11 @@ class Warhammer40kEnv(gym.Env):
                 rec = None
             if rec is None:
                 return False
-            # Legacy pay-on-apply: списать CP на consume. Нет CP — не рероллить.
+            # Подзадача 3.2: оплата/consume только при фактическом eligible failed die.
+            # Нет проваленной кости → 0 CP, rec не consumed/paid, fired не растёт.
+            if not _has_failed_die(dice, threshold):
+                return False
+            # Есть failed die: списать CP на consume. Нет CP — не рероллить.
             if not self._pay_for_command_reroll_record(rec):
                 return False
             rec["consumed"] = True
