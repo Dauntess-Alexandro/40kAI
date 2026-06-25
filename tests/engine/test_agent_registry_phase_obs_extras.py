@@ -82,3 +82,73 @@ def test_contract_extras_do_not_affect_compatible_contracts():
     ok, reason = compatible_contracts(c0, c1)
     assert ok is True
     assert reason == ""
+
+
+# --- reaction_value_policy резолвится ПО АЛГО (а не хардкод AZ для всех) ---
+# Регрессия: GMZ/SMZ-агенты получали reaction_value_policy=0 по AZ-флагу, хотя
+# обучались с реакциями ON через свой флаг → eval молча отключал умные реакции.
+
+
+def test_contract_reaction_gmz_uses_gmz_flag_not_az():
+    """gumbel_muzero: reaction берётся из GMZ_REACTION_VALUE_POLICY, не из AZ."""
+    with patch.dict(
+        os.environ,
+        {"GMZ_REACTION_VALUE_POLICY": "1", "AZ_REACTION_VALUE_POLICY": "0"},
+        clear=False,
+    ):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+            extras={"train_algo": "gumbel_muzero"},
+        )
+    assert contract["extras"]["reaction_value_policy"] == 1
+
+
+def test_contract_reaction_smz_uses_smz_flag_not_az():
+    """sampled_muzero: reaction берётся из SMZ_REACTION_VALUE_POLICY, не из AZ."""
+    with patch.dict(
+        os.environ,
+        {"SMZ_REACTION_VALUE_POLICY": "1", "AZ_REACTION_VALUE_POLICY": "0"},
+        clear=False,
+    ):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+            extras={"train_algo": "sampled_muzero"},
+        )
+    assert contract["extras"]["reaction_value_policy"] == 1
+
+
+def test_contract_reaction_az_uses_az_flag():
+    """alphazero_tree: reaction по AZ_REACTION_VALUE_POLICY (другие флаги не влияют)."""
+    with patch.dict(
+        os.environ,
+        {"AZ_REACTION_VALUE_POLICY": "0", "GMZ_REACTION_VALUE_POLICY": "1"},
+        clear=False,
+    ):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+            extras={"train_algo": "alphazero_tree"},
+        )
+    assert contract["extras"]["reaction_value_policy"] == 0
+
+
+def test_contract_reaction_gumbel_az_rides_az_flag():
+    """gumbel_az едет на AZ-инфре → reaction по AZ_REACTION_VALUE_POLICY."""
+    with patch.dict(
+        os.environ,
+        {"AZ_REACTION_VALUE_POLICY": "1", "GMZ_REACTION_VALUE_POLICY": "0"},
+        clear=False,
+    ):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+            extras={"train_algo": "gumbel_az"},
+        )
+    assert contract["extras"]["reaction_value_policy"] == 1
+
+
+def test_contract_reaction_unknown_algo_falls_back_to_az():
+    """Нет/неизвестный train_algo → прежнее поведение (AZ-флаг), back-compat."""
+    with patch.dict(os.environ, {"AZ_REACTION_VALUE_POLICY": "1"}, clear=False):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+        )
+    assert contract["extras"]["reaction_value_policy"] == 1

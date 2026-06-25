@@ -23,6 +23,30 @@ def _phase_obs_features_enabled() -> bool:
 def _env_bool(name: str, default: str = "0") -> bool:
     return str(os.getenv(str(name), str(default))).strip().lower() in {"1", "true", "yes", "on"}
 
+
+# Каждый алго включает value-gate реакций своим env-флагом {TAG}_REACTION_VALUE_POLICY
+# (см. core/models/*: GMZ/SMZ/AZ/GAZ/DQN/PPO). Контракт обязан резолвить флаг ПО АЛГО,
+# иначе хардкод AZ молча пишет 0 для GMZ/SMZ-агентов, и eval отключает их умные реакции
+# (тот же класс, что algo-allowlist). gumbel_az едет на AZ-инфре → AZ-флаг.
+_REACTION_FLAG_TAG_BY_ALGO = {
+    "dqn": "DQN",
+    "ppo": "PPO",
+    "alphazero_tree": "AZ",
+    "gumbel_az": "AZ",
+    "gumbel_muzero": "GMZ",
+    "sampled_muzero": "SMZ",
+}
+
+
+def _reaction_value_policy_for_algo(algo: str | None) -> int:
+    """reaction_value_policy для контракта по train_algo (дефолт ON у каждого флага).
+
+    Неизвестный/отсутствующий algo → AZ-флаг (прежнее поведение, back-compat).
+    """
+    tag = _REACTION_FLAG_TAG_BY_ALGO.get(str(algo or "").strip().lower(), "AZ")
+    return int(_env_bool(f"{tag}_REACTION_VALUE_POLICY", "1"))
+
+
 AGENTS_ROOT = str(ARTIFACTS_MODELS_DIR / "agents")
 AGENTS_REGISTRY_PATH = str(ARTIFACTS_MODELS_DIR / "agents_registry.json")
 DEFAULT_RULESET_VERSION = "only_war_v2"
@@ -181,9 +205,11 @@ def make_env_contract(
 
     # Автоматически добавляем phase_obs_features и reaction_value_policy в extras
     # (не перетирая явно переданные ключи — agent-переданные ключи приоритетны).
+    # reaction_value_policy резолвится ПО АЛГО (extras["train_algo"]): GMZ/SMZ имеют
+    # свои флаги, хардкод AZ молча писал 0 для них и отключал умные реакции на eval.
     auto_extras: dict[str, Any] = {
         "phase_obs_features": int(_phase_obs_features_enabled()),
-        "reaction_value_policy": int(_env_bool("AZ_REACTION_VALUE_POLICY", "1")),
+        "reaction_value_policy": _reaction_value_policy_for_algo((extras or {}).get("train_algo")),
     }
     merged_extras = {**auto_extras, **(extras or {})}
 
