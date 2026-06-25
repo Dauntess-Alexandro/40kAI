@@ -154,9 +154,18 @@ def test_final_policy_from_visits_nondegenerate_for_strat_head():
 # ---------------------------------------------------------------------------
 
 
-def test_head_fight_arms_command_reroll_without_cp_charge():
-    """Подзадача 3.1: strat_fight-голова применяет command_reroll на юните 0 → arm бесплатен,
-    но consume в fight-резолве списывает CP (legacy pay-on-apply). Ровно одна запись в stratagem_used."""
+def test_head_fight_arms_command_reroll_without_cp_charge(monkeypatch):
+    """Подзадача 3.3: strat_fight-голова бесплатно arm'ит command_reroll на юните 0.
+
+    Fake attack не вызывает reroll_decider, поэтому фактического failed die в smoke нет.
+    Проверяем arm/no-double: CP не списан при setup, в stratagem_used ровно одна запись.
+    """
+    import core.envs.warhamEnv as warham_mod
+
+    def fake_attack(attacker_health, weapon, attacker_data, defender_health, defender_data, *args, **kwargs):
+        return [0.0], defender_health
+
+    monkeypatch.setattr(warham_mod, "attack", fake_attack)
     env = build_env()
     _setup(env)
     env.unit_health[0] = 6.0
@@ -172,7 +181,7 @@ def test_head_fight_arms_command_reroll_without_cp_charge():
     cp_before = env.modelCP
     with env.simulation_mode():
         env.fight_phase("model", action=action)
-    # arm бесплатен, но consume в fight-резолве списал CP (pay-on-apply на consume).
-    assert cp_before - env.modelCP == 1
+    # arm бесплатен; fake attack не вызывает decider, поэтому CP списывать не за что.
+    assert env.modelCP == cp_before
     # ровно одна запись command_reroll (нет двойного применения)
     assert [r[1] for r in env.stratagem_used].count("command_reroll") == 1
