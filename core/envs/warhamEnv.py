@@ -39,7 +39,8 @@ from core.engine.phases.obs_features import (
     legacy_observation_space_size,
     phase_obs_features_enabled,
 )
-from core.engine.phases.stratagem_engine import apply as _apply_stratagem, charge_cp as _charge_cp
+from core.engine.phases.stratagem_engine import apply as _apply_stratagem
+from core.engine.phases.stratagem_engine import charge_cp as _charge_cp
 from core.engine.skills import apply_end_of_command_phase
 from core.engine.state_export import write_state_json
 from project_paths import ARTIFACTS_METRICS_DIR, BOARD_PATH, RUNTIME_STATE_DIR

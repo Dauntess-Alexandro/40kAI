@@ -1,5 +1,5 @@
 from core.engine.utils import attack
-from tests.engine.test_attack_effects import StubRoller, _ATT_DATA, _ranged_weapon
+from tests.engine.test_attack_effects import _ATT_DATA, StubRoller, _ranged_weapon
 
 
 def test_reroll_decider_rerolls_worst_failed_wound():
