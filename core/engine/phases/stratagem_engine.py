@@ -7,6 +7,30 @@ def _unwrap(env):
     return getattr(env, "unwrapped", env)
 
 
+def charge_cp(env, side: str, cost: int) -> bool:
+    """Единая точка CP-расхода. Списывает `cost` CP у стороны `side`.
+
+    side == "model" → env.modelCP, иначе env.enemyCP (по текущему стилю файла).
+    Гарантии:
+    - cost <= 0: CP не меняется, возвращает True (бесплатное применение).
+    - текущий CP < cost: CP не меняется, возвращает False (CP никогда не уходит в минус).
+    - успех: CP уменьшается ровно на cost, возвращает True.
+    """
+    e = _unwrap(env)
+    cost = int(cost)
+    if cost <= 0:
+        return True
+    is_model = side == "model"
+    cp = int(e.modelCP if is_model else e.enemyCP)
+    if cp < cost:
+        return False
+    if is_model:
+        e.modelCP = cp - cost
+    else:
+        e.enemyCP = cp - cost
+    return True
+
+
 def apply(
     env,
     side: str,
@@ -24,17 +48,12 @@ def apply(
     """
     e = _unwrap(env)
     d = by_id(stratagem_id)
-    is_model = side == "model"
     # B1c: hard-guard по usage_limit — нельзя применить стратагему сверх лимита окна.
     if usage_limit_reached(e, side, d, phase=phase):
         return {"ok": False, "cp_spent": 0, "reason": "usage_limit"}
-    cp = int(e.modelCP if is_model else e.enemyCP)
-    if cp < d.cp_cost:
+    # Единая точка CP-расхода; CP никогда не уходит в минус.
+    if not charge_cp(e, side, d.cp_cost):
         return {"ok": False, "cp_spent": 0, "reason": "not_enough_cp"}
-    if is_model:
-        e.modelCP = cp - d.cp_cost
-    else:
-        e.enemyCP = cp - d.cp_cost
     used = getattr(e, "stratagem_used", None)
     if used is None:
         used = []
