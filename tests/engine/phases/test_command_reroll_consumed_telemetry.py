@@ -357,3 +357,30 @@ class TestBackwardCompatPaidFlag:
         assert rec["consumed"] is True
         assert env.modelCP == 1  # CP не списан (legacy-запись уже оплачена на arm)
         assert env._cmd_reroll_fired == 1
+
+
+class TestEndOfPhaseCleanup:
+    """End-of-phase cleanup удаляет armed-not-fired без списания CP."""
+
+    def test_clear_phase_removes_armed_not_fired_without_cp_loss(self):
+        env = build_env()
+        env.modelCP = 1
+        _make_reroll_record(env, side="model", unit_idx=0, phase="fight", reroll_roll="hit")
+        env.active_stratagem_effects.append(
+            {
+                "effect_id": "command_reroll",
+                "consumed": False,
+                "paid": False,
+                "phase": "shooting",
+                "side": "model",
+                "unit_idx": 0,
+                "reroll_roll": "hit",
+                "round": int(env.battle_round),
+            }
+        )
+
+        env._clear_phase_stratagem_effects("fight")
+
+        assert env.modelCP == 1
+        assert all(str(rec.get("phase")) != "fight" for rec in env.active_stratagem_effects)
+        assert any(str(rec.get("phase")) == "shooting" for rec in env.active_stratagem_effects)

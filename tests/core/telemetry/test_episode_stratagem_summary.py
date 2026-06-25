@@ -1,6 +1,7 @@
 """Тесты для episode_stratagem_summary_line — per-episode сводка стратагем из env.
 
 wasted считается арифметикой: max(0, applied['command_reroll'] − fired).
+После реактивного гейта это диагностика armed-not-fired, CP не потрачен.
 """
 from __future__ import annotations
 
@@ -41,7 +42,7 @@ class TestEpisodeStratagemSummaryLine(unittest.TestCase):
         assert "cmd_reroll_wasted=0" in line
 
     def test_wasted_computed_from_applied_minus_fired(self) -> None:
-        """applied command_reroll=10, fired=3 → wasted=7."""
+        """applied command_reroll=10, fired=3 → armed-not-fired диагностика=7."""
         env = SimpleNamespace(
             stratagem_used=[("model", "command_reroll", r, "shoot", 0) for r in range(10)],
             _cmd_reroll_fired=3,
@@ -106,7 +107,7 @@ class TestEpisodeStratagemSummaryLine(unittest.TestCase):
         assert "ep=7" in line
         assert "applied_total=7" in line
         assert "cmd_reroll_fired=1" in line
-        # wasted = max(0, 5 − 1) = 4
+        # cmd_reroll_wasted = armed-not-fired диагностика: max(0, 5 − 1) = 4
         assert "cmd_reroll_wasted=4" in line
 
     def test_summary_line_from_payload_dict_empty(self) -> None:

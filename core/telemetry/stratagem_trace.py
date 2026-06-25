@@ -16,7 +16,9 @@ def episode_stratagem_summary_line(
     *source* — либо unwrapped env (с атрибутами stratagem_used,
     _cmd_reroll_fired), либо dict-payload от актора
     (ключи _strat_applied, _strat_applied_total, _cmd_reroll_fired).
-    wasted считается арифметикой: max(0, applied['command_reroll'] − fired).
+    cmd_reroll_wasted считается арифметикой: max(0, applied['command_reroll'] − fired).
+    После реактивного гейта это диагностика armed-not-fired, CP не потрачен;
+    это не штрафуемый waste. Строка лога сохранена для back-compat парсеров.
     Возвращает None если данных нет / всё нулевое.
     """
     if isinstance(source, dict):
@@ -273,6 +275,8 @@ class StratagemEpisodeTracer:
         if env_unwrapped is not None:
             fired = int(getattr(env_unwrapped, "_cmd_reroll_fired", 0) or 0)
             applied_cr = int(self.ep_applied.get("command_reroll", 0))
+            # cmd_reroll_wasted = armed-not-fired, CP не потрачен; диагностика,
+            # не штрафуемый waste. Имя поля в логе сохраняем для парсеров.
             wasted = max(0, applied_cr - fired)
             reroll_suffix = f" cmd_reroll_fired={fired} cmd_reroll_wasted={wasted}"
         self.log_fn(

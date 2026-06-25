@@ -1203,11 +1203,10 @@ class Warhammer40kEnv(gym.Env):
         )
 
     def _command_reroll_wasted_penalty(self, applied_step: int, fired_step: int) -> float:
-        """Штраф за впустую-command_reroll за шаг (per-step net). 0 под симуляцией."""
-        if self._in_simulation_mode():
-            return 0.0
-        wasted = max(0, int(applied_step) - int(fired_step))
-        return float(reward_cfg.COMMAND_REROLL_WASTED_PENALTY) * wasted
+        """Back-compat поле штрафа command_reroll после реактивного гейта."""
+        # Реактивный гейт: CP списывается только на actual reroll провала, waste
+        # структурно невозможен. Функция/поле сохранены для back-compat, всегда 0.0.
+        return 0.0
 
     @contextmanager
     def simulation_mode(self):
@@ -8578,8 +8577,8 @@ class Warhammer40kEnv(gym.Env):
             self.last_end_reason = ""
             self.last_winner = None
         info = self.get_info()
-        # Fix 1: величина штрафа за впустую-command_reroll (>=0) — чтобы трейнер сохранил
-        # его вне per-step клиппинга reward (на «полезных» шагах клип съедал -0.05).
+        # Back-compat поле reward/info: после реактивного гейта CP за armed-not-fired
+        # не списывается, поэтому penalty всегда 0.0.
         info["command_reroll_wasted_penalty"] = float(_cr_waste_penalty)
         return self._get_observation(), reward, self.game_over, res, info
 
