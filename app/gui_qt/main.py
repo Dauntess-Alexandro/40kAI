@@ -215,6 +215,7 @@ class GUIController(QtCore.QObject):
     evalModelPathChanged = QtCore.Signal(str)
     evalModelLabelChanged = QtCore.Signal(str)
     evalGamesChanged = QtCore.Signal(int)
+    evalActionTraceChanged = QtCore.Signal(bool)
     evalLogTextChanged = QtCore.Signal(str)
     evalSummaryTextChanged = QtCore.Signal(str)
     evalSetupChanged = QtCore.Signal()
@@ -373,6 +374,9 @@ class GUIController(QtCore.QObject):
         self._eval_model_path = ""
         self._eval_model_label = "Модель не выбрана"
         self._eval_games = 50
+        # Детальный per-step trace eval (EVAL_ACTION_TRACE). ON по умолчанию (как было);
+        # OFF заметно ускоряет eval (не форматит ~500 строк/игра), не теряя winrate/таблицу стратагем.
+        self._eval_action_trace = True
         self._eval_log_text = ""
         self._eval_summary_text = "Итог оценки появится после завершения eval.py."
         self._eval_policy_options = ["heuristic", "agent"]
@@ -1369,6 +1373,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(int, notify=evalGamesChanged)
     def evalGames(self) -> int:
         return self._eval_games
+
+    @QtCore.Property(bool, notify=evalActionTraceChanged)
+    def evalActionTrace(self) -> bool:
+        return self._eval_action_trace
 
     @QtCore.Property(str, notify=evalLogTextChanged)
     def evalLogText(self) -> str:
@@ -3073,6 +3081,13 @@ class GUIController(QtCore.QObject):
             self.evalGamesChanged.emit(value)
             self._update_eval_matchup_text()
             self.evalSetupChanged.emit()
+
+    @QtCore.Slot(bool)
+    def set_eval_action_trace(self, value: bool) -> None:
+        value = bool(value)
+        if self._eval_action_trace != value:
+            self._eval_action_trace = value
+            self.evalActionTraceChanged.emit(value)
 
     @QtCore.Slot(str)
     def set_eval_p1_policy(self, value: str) -> None:
@@ -5651,6 +5666,7 @@ class GUIController(QtCore.QObject):
         env = QtCore.QProcessEnvironment.systemEnvironment()
         env.insert("FORCE_GREEDY", "1")
         env.insert("EVAL_EPSILON", "0")
+        env.insert("EVAL_ACTION_TRACE", "1" if self._eval_action_trace else "0")
         env.insert("PYTHONPATH", self._pythonpath_with_core())
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)

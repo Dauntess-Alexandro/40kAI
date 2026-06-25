@@ -4896,6 +4896,16 @@ ApplicationWindow {
                                         }
                                     }
                                 }
+                                TacticalCheckBox {
+                                    text: "ДЕТАЛЬНЫЙ ЛОГ"
+                                    scaleRef: root.uiScale
+                                    labelFontFamily: root.fontUiFamily
+                                    labelFontSize: root.evalCaptionSize
+                                    labelColorEnabled: root.uiTextMain
+                                    checked: controller.evalActionTrace
+                                    enabled: !controller.running
+                                    onToggled: controller.set_eval_action_trace(checked)
+                                }
                             }
                         }
 
