@@ -145,6 +145,7 @@ def test_charge_command_reroll_rerolls_both_dice_and_can_succeed(monkeypatch):
 
 
 def test_command_reroll_unlimited_allows_two_rolls_same_phase():
+    """Подзадача 2.1: два arm command_reroll в одной фазе разрешены (UNLIMITED); CP НЕ списывается на arm."""
     env = build_env()
     _shooting_setup(env)
     env.modelCP = 2
@@ -154,7 +155,7 @@ def test_command_reroll_unlimited_allows_two_rolls_same_phase():
 
     assert first["ok"] is True
     assert second["ok"] is True
-    assert env.modelCP == 0
+    assert env.modelCP == 2  # arm бесплатен — CP не списан за оба arm
     rolls = [
         rec.get("reroll_roll")
         for rec in env.active_stratagem_effects
@@ -209,37 +210,37 @@ def test_shooting_command_reroll_save_belongs_to_defender(monkeypatch):
     assert calls == [{"hit": False, "save": True}]
 
 
-def test_run_movement_window_offers_and_applies_command_reroll():
-    """Windowed-путь movement: окно предлагает Command Re-roll/advance, выбор → запись+CP."""
+def test_run_movement_window_offers_and_arms_command_reroll():
+    """Подзадача 2.1: windowed-путь movement — arm command_reroll пишет запись, CP НЕ списывается."""
     env = build_env()
     _movement_setup(env)
     start_cp = env.modelCP
     with env.simulation_mode():
         phase_engine.run_movement(env, "model", _pick_reroll_window(0, "advance"))
     assert ("model", "command_reroll", env.battle_round, "movement", 0) in env.stratagem_used
-    assert env.modelCP == start_cp - 1
+    assert env.modelCP == start_cp  # arm бесплатен — CP не списан
 
 
-def test_run_shooting_window_offers_and_applies_command_reroll():
-    """Windowed-путь shooting: окно предлагает Command Re-roll/wound, выбор → запись+CP."""
+def test_run_shooting_window_offers_and_arms_command_reroll():
+    """Подзадача 2.1: windowed-путь shooting — arm command_reroll пишет запись, CP НЕ списывается."""
     env = build_env()
     _shooting_setup(env)
     start_cp = env.modelCP
     with env.simulation_mode():
         phase_engine.run_shooting(env, "model", _pick_reroll_window(0, "wound"))
     assert ("model", "command_reroll", env.battle_round, "shooting", 0) in env.stratagem_used
-    assert env.modelCP == start_cp - 1
+    assert env.modelCP == start_cp  # arm бесплатен — CP не списан
 
 
-def test_run_charge_window_offers_and_applies_command_reroll():
-    """Windowed-путь charge: окно предлагает Command Re-roll/charge, выбор → запись+CP."""
+def test_run_charge_window_offers_and_arms_command_reroll():
+    """Подзадача 2.1: windowed-путь charge — arm command_reroll пишет запись, CP НЕ списывается."""
     env = build_env()
     _charge_setup(env)
     start_cp = env.modelCP
     with env.simulation_mode():
         phase_engine.run_charge(env, "model", _pick_reroll_window(0, "charge"))
     assert ("model", "command_reroll", env.battle_round, "charge", 0) in env.stratagem_used
-    assert env.modelCP == start_cp - 1
+    assert env.modelCP == start_cp  # arm бесплатен — CP не списан
 
 
 def test_run_movement_window_default_decide_does_not_use_cp():

@@ -154,8 +154,9 @@ def test_final_policy_from_visits_nondegenerate_for_strat_head():
 # ---------------------------------------------------------------------------
 
 
-def test_head_fight_applies_exactly_one_cp():
-    """strat_fight-голова применяет command_reroll на юните 0 → ровно одно списание CP."""
+def test_head_fight_arms_command_reroll_without_cp_charge():
+    """Подзадача 2.1: strat_fight-голова применяет command_reroll на юните 0 → arm без списания CP
+    (pay-on-apply перенесён на consume-точку; ровно одна запись в stratagem_used, без дубля)."""
     env = build_env()
     _setup(env)
     env.unit_health[0] = 6.0
@@ -171,5 +172,7 @@ def test_head_fight_applies_exactly_one_cp():
     cp_before = env.modelCP
     with env.simulation_mode():
         env.fight_phase("model", action=action)
-    # ровно одно списание CP (нет двойного применения)
-    assert cp_before - env.modelCP == 1
+    # arm бесплатен — CP не списан (pay-on-apply — отдельная подзадача)
+    assert cp_before - env.modelCP == 0
+    # ровно одна запись command_reroll (нет двойного применения)
+    assert [r[1] for r in env.stratagem_used].count("command_reroll") == 1

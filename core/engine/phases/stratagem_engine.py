@@ -40,9 +40,14 @@ def apply(
     *,
     reroll_roll: str = "wound",
 ) -> dict:
-    """Списать CP за стратагему и записать использование в журнал env.
+    """Применить стратагему (arm) и записать использование в журнал env.
 
-    Единая точка CP-расхода. Решение «можно ли» — по наличию CP (cp >= cost).
+    CP-расход:
+    - command_reroll: arm БЕЗ оплаты (pay-on-apply перенесён на consume-точку в warhamEnv),
+      но CP-check сохраняется — нельзя arm при CP < cost (легальность выбора, CP не в минус).
+      Эффект помечается consumed=False + paid=False (armed, не оплачен).
+    - остальные стратагемы: списание CP сразу через единую точку charge_cp.
+    Решение «можно ли» — по наличию CP (cp >= cost) и usage_limit.
     unit_idx пока резервируется для Stage 7 (эффект на юнита applies вызывающим).
     Возвращает {"ok": bool, "cp_spent": int, "reason": str | None}.
     """
@@ -51,9 +56,17 @@ def apply(
     # B1c: hard-guard по usage_limit — нельзя применить стратагему сверх лимита окна.
     if usage_limit_reached(e, side, d, phase=phase):
         return {"ok": False, "cp_spent": 0, "reason": "usage_limit"}
-    # Единая точка CP-расхода; CP никогда не уходит в минус.
-    if not charge_cp(e, side, d.cp_cost):
+    # CP-расход. command_reroll: arm без оплаты, но CP-check сохраняется (CP не в минус).
+    # Остальные стратагемы: списание CP сразу (единая точка charge_cp).
+    if d.effect_id == "command_reroll":
+        cp_now = int(e.modelCP if side == "model" else e.enemyCP)
+        if cp_now < d.cp_cost:
+            return {"ok": False, "cp_spent": 0, "reason": "not_enough_cp"}
+        cp_spent = 0
+    elif not charge_cp(e, side, d.cp_cost):
         return {"ok": False, "cp_spent": 0, "reason": "not_enough_cp"}
+    else:
+        cp_spent = d.cp_cost
     used = getattr(e, "stratagem_used", None)
     if used is None:
         used = []
@@ -90,6 +103,8 @@ def apply(
             active = []
             e.active_stratagem_effects = active
         roll = reroll_roll if reroll_roll in ("hit", "wound", "save", "damage", "attacks", "advance", "charge") else "wound"
+        # paid=False: arm без оплаты (pay-on-apply перенесён на consume-точку в warhamEnv).
+        # consumed=False: эффект ещё не «сработал» (ждёт совпадающего броска).
         active.append(
             {
                 "side": str(side),
@@ -99,6 +114,7 @@ def apply(
                 "effect_id": "command_reroll",
                 "reroll_roll": roll,
                 "consumed": False,
+                "paid": False,
             }
         )
-    return {"ok": True, "cp_spent": d.cp_cost, "reason": None}
+    return {"ok": True, "cp_spent": cp_spent, "reason": None}
