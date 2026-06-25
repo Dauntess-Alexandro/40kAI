@@ -1194,20 +1194,6 @@ class Warhammer40kEnv(gym.Env):
     def _in_simulation_mode(self) -> bool:
         return int(getattr(self, "_simulation_mode_depth", 0) or 0) > 0
 
-    def _count_model_command_reroll_applied(self) -> int:
-        """Число записей command_reroll стороны model в журнале stratagem_used."""
-        used = getattr(self, "stratagem_used", None) or []
-        return sum(
-            1 for r in used
-            if len(r) > 1 and str(r[0]) == "model" and str(r[1]) == "command_reroll"
-        )
-
-    def _command_reroll_wasted_penalty(self, applied_step: int, fired_step: int) -> float:
-        """Back-compat поле штрафа command_reroll после реактивного гейта."""
-        # Реактивный гейт: CP списывается только на actual reroll провала, waste
-        # структурно невозможен. Функция/поле сохранены для back-compat, всегда 0.0.
-        return 0.0
-
     @contextmanager
     def simulation_mode(self):
         self._simulation_mode_depth = int(getattr(self, "_simulation_mode_depth", 0) or 0) + 1
@@ -8087,8 +8073,6 @@ class Warhammer40kEnv(gym.Env):
     def step(self, action):
         self._invalidate_target_cache("model_step_start")
         reward = 0
-        _cr_fired_at_start = int(getattr(self, "_cmd_reroll_fired", 0) or 0)
-        _cr_applied_at_start = self._count_model_command_reroll_applied()
         res = 0
         secondary_interval = max(1, int(os.getenv("REWARD_SECONDARY_INTERVAL", "1")))
         run_secondary_checks = secondary_interval <= 1 or ((self.iter + 1) % secondary_interval == 0)
@@ -8169,15 +8153,6 @@ class Warhammer40kEnv(gym.Env):
         reward += fight_delta
         if fight_delta != 0:
             self._log_reward(f"Reward (шаг): бой delta={fight_delta:+.3f}")
-        _cr_applied_step = self._count_model_command_reroll_applied() - _cr_applied_at_start
-        _cr_fired_step = int(getattr(self, "_cmd_reroll_fired", 0) or 0) - _cr_fired_at_start
-        _cr_waste_penalty = self._command_reroll_wasted_penalty(_cr_applied_step, _cr_fired_step)
-        if _cr_waste_penalty > 0:
-            reward -= _cr_waste_penalty
-            _cr_wasted_n = max(0, _cr_applied_step - _cr_fired_step)
-            self._log_reward(
-                f"Reward (шаг): command_reroll впустую×{_cr_wasted_n} penalty=-{_cr_waste_penalty:.3f}"
-            )
         game_over, end_reason, winner = apply_end_of_battle(self, log_fn=self._log)
         self.enemyStrat["overwatch"] = -1
         self.enemyStrat["smokescreen"] = -1
@@ -8577,9 +8552,6 @@ class Warhammer40kEnv(gym.Env):
             self.last_end_reason = ""
             self.last_winner = None
         info = self.get_info()
-        # Back-compat поле reward/info: после реактивного гейта CP за armed-not-fired
-        # не списывается, поэтому penalty всегда 0.0.
-        info["command_reroll_wasted_penalty"] = float(_cr_waste_penalty)
         return self._get_observation(), reward, self.game_over, res, info
 
     def player(self):
