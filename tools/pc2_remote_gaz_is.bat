@@ -365,7 +365,10 @@ echo         Сначала запустите train на ПК1, затем эт
 echo.
 start "40kAI GAZ IS" cmd /k ""%~f0" serve"
 echo [WAIT] Ждём готовности IS ^(%GAZ_REMOTE_DIST_ACTORS_DELAY_SEC% с^)...
-timeout /t %GAZ_REMOTE_DIST_ACTORS_DELAY_SEC% /nobreak >nul
+REM timeout падает при запуске из GUI (stdin перенаправлён): "Input redirection is not supported".
+REM ping -n N даёт ~N-1 c паузы и не требует консольного stdin.
+set /a "_IS_WAIT_PINGS=%GAZ_REMOTE_DIST_ACTORS_DELAY_SEC%+1"
+ping -n %_IS_WAIT_PINGS% 127.0.0.1 >nul 2>&1
 call :run_actors_foreground
 set "EC=%ERRORLEVEL%"
 echo.

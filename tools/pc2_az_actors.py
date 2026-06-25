@@ -17,11 +17,11 @@ if str(_REPO_ROOT) not in sys.path:
 
 from core.engine.agent_registry import make_env_contract, resolve_latest_opponent_agent_id  # noqa: E402
 from core.models.az_rollout_sink import (  # noqa: E402
+    apply_az_dist_worker_env,
     az_dist_stop_flag_path,
     az_dist_stop_requested,
     build_az_dist_worker_payloads,
     build_gaz_dist_worker_payloads,
-    apply_az_dist_worker_env,
     normalize_az_dist_hyperparams,
     read_az_dist_train_context,
     wait_az_dist_train_context,
@@ -76,12 +76,22 @@ def wait_for_pc1_live(
     if total_wait_sec <= 0:
         return True
     deadline = now() + float(total_wait_sec)
+    # Залежавшийся stop.flag прошлого прогона не должен мгновенно глушить ожидание ПК1:
+    # если флаг есть уже на входе в гейт — считаем его stale (свежий train на ПК1 его очистит
+    # при старте) и игнорируем. Учитываем только stop, который ПОЯВИТСЯ во время ожидания
+    # (живой stop текущего прогона). Иначе ПК2, запущенный раньше ПК1, выходит впустую.
+    stale_stop_at_entry = bool(should_stop is not None and should_stop())
+    if stale_stop_at_entry:
+        log(
+            "[AZ][DIST][PC2] на старте найден stop.flag прошлого прогона — игнорирую как stale, жду ПК1. "
+            "Свежий train на ПК1 очистит флаг; чтобы не ждать — удалите stop.flag вручную."
+        )
     while True:
-        if should_stop is not None and should_stop():
-            log("[AZ][DIST][PC2] stop запрошен — актёры не запускаем (ПК1 не нужен).")
-            return False
         if reachable(host, port):
             return True
+        if should_stop is not None and not stale_stop_at_entry and should_stop():
+            log("[AZ][DIST][PC2] stop запрошен — актёры не запускаем (ПК1 не нужен).")
+            return False
         if now() >= deadline:
             log(
                 f"[AZ][DIST][PC2] ПК1 {host}:{port} не появился за {int(total_wait_sec)}с — "
