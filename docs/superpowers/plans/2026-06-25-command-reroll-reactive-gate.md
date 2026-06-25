@@ -38,6 +38,13 @@
 **Acceptance (тесты):** apply→CP списан 1 раз+реролл+fired; pass→CP не списан, реролла нет; нет броска до конца фазы→CP не списан; нет CP на apply→не реролит (не в минус); один armed=один реролл; legacy→реролл+CP на consume.
 **GPT: это самая крупная задача — разбей на несколько под-задач (shooting hit/wound отдельно от прочих фаз; ctx-сборка; pay-on-apply; legacy-путь), каждая с TDD + прогоном tests/engine/phases.**
 
+**Уточнение архитектора 2026-06-25 (обязательно для реализации Task 3):**
+- `make_reaction_value_policy` / net-value для `command_reroll` **не подключать**: reroll одного проваленного hit/wound уже +EV; per-die value-gate — overkill.
+- Реактивное решение для attack-rolls = детерминированное «reroll только фактически проваленной/eligible кости».
+- CP списывать не на setup атаки (`_stratagem_effects_for_attacker`), а только в момент фактического reroll failed die через `reroll_decider`; атаки без провала стоят 0 CP, эффект остаётся armed-not-fired.
+- `command_reroll:advance` сделать нелегальной опцией в movement-окне (`option_generator`), не меняя action-контракт: advance не имеет pass/fail-критерия, полноценная value-фича advance — вне scope отдельного redesign.
+- `command_reroll:charge` оплачивать только при фактическом failed charge: первый 2D6 не дотянул до выбранной цели; если первый roll уже успешен — CP не списывать и reroll не применять.
+
 ### Task 4: телеметрия и end-of-phase очистка
 **Цель:** неоплаченные armed-эффекты отбрасываются в конце фазы/хода без потери CP; метрики
 `cmd_reroll_wasted` отражают «armed-not-fired (CP не потрачен)», `fired` = реальные рероллы.
