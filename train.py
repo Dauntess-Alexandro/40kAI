@@ -82,7 +82,7 @@ AGENT_TRAIN_LOG_FILE = str(AGENT_TRAIN_LOG_PATH.relative_to(AGENT_TRAIN_LOG_PATH
 os.environ.setdefault("AGENT_LOG_FILE", AGENT_TRAIN_LOG_FILE)
 
 from core.engine.matchmaker import record_matchup
-from core.models.action_contract import action_sizes_from_env, ordered_action_keys
+from core.models.action_contract import action_sizes_from_env, action_tensor_to_dict, ordered_action_keys
 from core.models.alphazero_ids import (
     VALID_TRAIN_ALGOS,
     az_mcts_mode_for,
@@ -5415,14 +5415,13 @@ def _actor_learner_actor_entry(
                 ep_enemy_hp_start = 0.0
             while not done:
                 step_idx += 1
-                shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
                 decay_steps = max(1.0, float(EPS_DECAY))
                 progress = min(float(steps_done) / decay_steps, 1.0)
                 eps_threshold = EPS_START + (EPS_END - EPS_START) * progress
                 action_t = select_action_with_epsilon(
-                    env, obs, cpu_net, eps_threshold, len(model), shoot_mask=shoot_mask
+                    env, obs, cpu_net, eps_threshold, len(model)
                 )
-                action_dict = convertToDict(action_t)
+                action_dict = action_tensor_to_dict(action_t, len_model=len(model))
 
                 # --- episode action analytics (cheap) ---
                 try:
@@ -5441,11 +5440,15 @@ def _actor_learner_actor_entry(
                         action_head_skip["charge"] += 1
 
                     valid_shoot_indices = []
-                    if shoot_mask is not None:
-                        try:
-                            valid_shoot_indices = [j for j, allowed in enumerate(shoot_mask) if bool(allowed)]
-                        except Exception:
-                            valid_shoot_indices = []
+                    try:
+                        legal_for_analytics = unwrap_env(env).get_legal_action_masks_by_head(side="model")
+                        for key in ordered_action_keys(len(model)):
+                            if key.startswith("shoot_num_"):
+                                mask_arr = np.asarray(legal_for_analytics.get(key, []), dtype=np.bool_)
+                                if bool(mask_arr.any()):
+                                    valid_shoot_indices.append(key)
+                    except Exception:
+                        valid_shoot_indices = []
                     if len(valid_shoot_indices) == 0:
                         shoot_windows_without_targets += 1
                         action_head_skip["shoot"] += 1
@@ -5830,23 +5833,16 @@ def _actor_learner_actor_entry_ppo(
                         def _ppo_opp_policy_fn(obs_opp, env=env, net=opponent_net, lm=len(model), n_actions=n_actions):
                             obs_np_local = to_np_state(obs_opp)
                             obs_t_local = torch.tensor(obs_np_local, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
-                            shoot_mask_local = build_shoot_action_mask(env, log_fn=None, debug=False)
-                            masks_local = []
-                            for head_idx, head_size in enumerate(n_actions):
-                                if head_idx == 2 and shoot_mask_local is not None:
-                                    mask_arr = np.asarray(shoot_mask_local, dtype=np.bool_).reshape(-1)
-                                    if mask_arr.size == int(head_size) and bool(mask_arr.any()):
-                                        masks_local.append(mask_arr)
-                                        continue
-                                masks_local.append(np.ones(int(head_size), dtype=np.bool_))
-                            masks_batch_local = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_local]
+                            masks_cpu_local = build_action_masks_by_head(
+                                env, int(lm), log_fn=None, debug=False, side="enemy"
+                            )
+                            masks_batch_local = [
+                                m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu_local
+                            ]
                             with torch.no_grad():
                                 act_t, _logp_t, _val_t = net.act(obs_t_local, masks_by_head=masks_batch_local, deterministic=True)
                             act_np = act_t.squeeze(0).detach().cpu().numpy()
-                            act_dict = convertToDict(torch.tensor([act_np], device="cpu"))
-                            for i_u in range(int(lm)):
-                                act_dict[f"move_num_{i_u}"] = int(act_np[6 + i_u])
-                            return act_dict
+                            return action_tensor_to_dict(torch.tensor([act_np], device="cpu"), len_model=int(lm))
 
                         env_unwrapped.enemyTurn(trunc=trunc, policy_fn=_ppo_opp_policy_fn)
                     else:
@@ -5858,25 +5854,16 @@ def _actor_learner_actor_entry_ppo(
                     obs_np = to_np_state(obs)
                     obs_t = torch.tensor(obs_np, dtype=torch.float32, device=torch.device("cpu")).unsqueeze(0)
 
-                    # маски: strict для shoot, остальные all_true
-                    shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False)
-                    masks_cpu = []
-                    for head_idx, head_size in enumerate(n_actions):
-                        if head_idx == 2 and shoot_mask is not None:
-                            mask_arr = np.asarray(shoot_mask, dtype=np.bool_).reshape(-1)
-                            if mask_arr.size == int(head_size) and bool(mask_arr.any()):
-                                masks_cpu.append(mask_arr)
-                                continue
-                        masks_cpu.append(np.ones(int(head_size), dtype=np.bool_))
-                    masks_batch = [torch.tensor(m, dtype=torch.bool, device=torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
+                    masks_cpu = build_action_masks_by_head(
+                        env, len(model), log_fn=None, debug=False, side="model"
+                    )
+                    masks_batch = [m.to(torch.device("cpu")).unsqueeze(0) for m in masks_cpu]
 
                     with torch.no_grad():
                         action_t, logprob_t, value_t = cpu_net.act(obs_t, masks_by_head=masks_batch, deterministic=False)
                     action_np = action_t.squeeze(0).detach().cpu().numpy()
 
-                    action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-                    for i_u in range(len(model)):
-                        action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
+                    action_dict = action_tensor_to_dict(torch.tensor([action_np], device="cpu"), len_model=len(model))
 
                     next_obs, reward, _done, res, info2 = env.step(action_dict)
                     done = _done

@@ -517,7 +517,6 @@ def optimize_model(
     non_final_mask = _to_device_batch(torch.as_tensor([s is not None for s in batch.next_state], dtype=torch.bool))
 
     non_final_next_states = None
-    non_final_next_shoot_masks = None
     if non_final_mask.any():
         non_final_next_states = _to_device_batch(
             torch.cat(
@@ -525,9 +524,6 @@ def optimize_model(
                 dim=0,
             )
         )
-        non_final_next_shoot_masks = [
-            m for m, s in zip(batch.next_shoot_mask, batch.next_state) if s is not None
-        ]
 
     def _gather_selected_q(head_outputs, actions):
         arr_local = []
@@ -535,28 +531,11 @@ def optimize_model(
             arr_local.append(head.gather(1, actions[:, head_idx].unsqueeze(1)))
         return torch.cat(arr_local, dim=1)
 
-    def _build_shoot_mask(mask_source, width):
-        if mask_source is None:
-            return None
-        mask_list = []
-        for m in mask_source:
-            if m is None:
-                mask_list.append(torch.ones(width, device=dev, dtype=torch.bool))
-            else:
-                mask_list.append(torch.as_tensor(m, dtype=torch.bool, device=dev))
-        return torch.stack(mask_list, dim=0)
-
-    def _select_next_actions_from_q(q_heads, shoot_masks):
-        acts = [h.argmax(1) for h in q_heads]
-        if shoot_masks is not None and len(q_heads) > 2:
-            shoot_mask = _build_shoot_mask(shoot_masks, q_heads[2].shape[1])
-            if shoot_mask is not None and shoot_mask.shape == q_heads[2].shape:
-                valid_any = shoot_mask.any(dim=1)
-                masked_shoot = q_heads[2].clone()
-                masked_shoot[~shoot_mask] = -1e9
-                masked_shoot[~valid_any] = q_heads[2][~valid_any]
-                acts[2] = masked_shoot.argmax(1)
-        return acts
+    def _select_next_actions_from_q(q_heads):
+        # Replay stores only tensors, not env snapshots, so legacy next_shoot_mask/q_heads[2]
+        # masking cannot express the current B2 per-head contract safely. Online action
+        # selection applies legal masks by ordered_action_keys; TD targets stay unmasked.
+        return [h.argmax(1) for h in q_heads]
 
     forward_start = perf_counter()
     if hasattr(policy_net, "reset_noise"):
@@ -588,10 +567,10 @@ def optimize_model(
                 if non_final_next_states is not None:
                     if double_dqn_enabled:
                         policy_next_q = policy_net(non_final_next_states)
-                        next_actions = _select_next_actions_from_q(policy_next_q, non_final_next_shoot_masks)
+                        next_actions = _select_next_actions_from_q(policy_next_q)
                     else:
                         target_next_q = target_net(non_final_next_states)
-                        next_actions = _select_next_actions_from_q(target_next_q, non_final_next_shoot_masks)
+                        next_actions = _select_next_actions_from_q(target_next_q)
                     target_next_quantiles = target_net.iqn(
                         non_final_next_states, num_quantiles=iqn_n_tgt, return_taus=False
                     )
@@ -716,12 +695,12 @@ def optimize_model(
             if non_final_next_states is not None:
                 if double_dqn_enabled:
                     policy_next_q = policy_net(non_final_next_states)
-                    next_actions = _select_next_actions_from_q(policy_next_q, non_final_next_shoot_masks)
+                    next_actions = _select_next_actions_from_q(policy_next_q)
                 else:
                     if hasattr(target_net, "reset_noise"):
                         target_net.reset_noise()
                     target_next_q = target_net(non_final_next_states)
-                    next_actions = _select_next_actions_from_q(target_next_q, non_final_next_shoot_masks)
+                    next_actions = _select_next_actions_from_q(target_next_q)
 
                 if hasattr(target_net, "reset_noise"):
                     target_net.reset_noise()
@@ -785,23 +764,11 @@ def optimize_model(
                     target_next = target_net(non_final_next_states)
                     if double_dqn_enabled:
                         policy_next = policy_net(non_final_next_states)
-                        next_actions = _select_next_actions_from_q(policy_next, non_final_next_shoot_masks)
+                        next_actions = _select_next_actions_from_q(policy_next)
                         next_q = [tgt.gather(1, act.unsqueeze(1)).squeeze(1) for tgt, act in zip(target_next, next_actions)]
                         max_per_head = torch.stack(next_q, dim=1)
                     else:
-                        masked_targets = []
-                        for head_idx, head in enumerate(target_next):
-                            if head_idx == 2 and non_final_next_shoot_masks is not None:
-                                shoot_mask = _build_shoot_mask(non_final_next_shoot_masks, head.shape[1])
-                                if shoot_mask is not None and shoot_mask.shape == head.shape:
-                                    valid_any = shoot_mask.any(dim=1)
-                                    masked_head = head.clone()
-                                    masked_head[~shoot_mask] = -1e9
-                                    masked_head[~valid_any] = head[~valid_any]
-                                    masked_targets.append(masked_head.max(1).values)
-                                    continue
-                            masked_targets.append(head.max(1).values)
-                        max_per_head = torch.stack(masked_targets, dim=1)
+                        max_per_head = torch.stack([head.max(1).values for head in target_next], dim=1)
                     next_state_values[non_final_mask] = max_per_head.float()
         gamma_n = GAMMA ** n_step_batch
         expected_state_action_values = reward_batch.unsqueeze(1) + (gamma_n.unsqueeze(1) * next_state_values)

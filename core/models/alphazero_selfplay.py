@@ -14,9 +14,9 @@ from core.engine.phases.replay_meta import (
     snapshot_cp_before,
 )
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
-from core.models.action_contract import ordered_action_keys
+from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.alphazero_replay import AZTransition
-from core.models.utils import convertToDict, unwrap_env
+from core.models.utils import unwrap_env
 from core.telemetry.stratagem_trace import (
     make_stratagem_tracer_for_train,
     stratagem_trace_actor_ok,
@@ -130,7 +130,10 @@ def play_episode_with_mcts(
         if bool(policy_argmax) and not _mcts_uses_joint_best_child(mcts):
             action_list = [int(np.argmax(pi)) for pi in pi_targets]
 
-        action_dict = convertToDict(torch.tensor([action_list], dtype=torch.long))
+        action_dict = action_tensor_to_dict(
+            torch.tensor([action_list], dtype=torch.long),
+            len_model=int(len_model),
+        )
         cp_before = snapshot_cp_before(env_u) if replay_phase_meta_enabled() else None
         phase_at_move = str(getattr(env_u, "phase", "") or "")
         step_no = int(steps) + 1

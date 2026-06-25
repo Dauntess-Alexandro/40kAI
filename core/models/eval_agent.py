@@ -14,15 +14,14 @@ from typing import Any
 import numpy as np
 import torch
 
-from core.models.action_contract import action_tensor_to_dict
+from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.alphazero_ids import (
     is_alphazero_net_algo,
     is_gumbel_az_algo,
 )
 from core.models.utils import (
     build_action_masks_by_head,
-    build_shoot_action_mask,
-    convertToDict,
+    greedy_action_list_from_decision,
     normalize_state_dict,
     sample_action_list_from_space,
     unwrap_env,
@@ -186,28 +185,13 @@ class EvalAgent:
         epsilon = float(getattr(self.cfg, "epsilon", 0.0) or 0.0)
         if epsilon > 0.0 and random.random() < epsilon:
             action_list = sample_action_list_from_space(env, self.len_model, masks_seq=masks_cpu)
-            action_dict = convertToDict(torch.tensor([action_list], device="cpu"))
-            for i_u in range(self.len_model):
-                action_dict[f"move_num_{i_u}"] = int(action_list[6 + i_u])
-            return action_dict, None
+            return action_tensor_to_dict(torch.tensor([action_list], device="cpu"), len_model=self.len_model), None
         with torch.no_grad():
             decision = self.net(obs_t)
-        shoot_mask = build_shoot_action_mask(env, log_fn=None, debug=False, side=side)
-        action = []
-        for head_idx, head in enumerate(decision):
-            head_row = head.squeeze(0)
-            if head_idx == 2 and shoot_mask is not None:
-                mask = torch.as_tensor(shoot_mask, dtype=torch.bool, device=head_row.device)
-                if mask.numel() == head_row.numel() and bool(mask.any()):
-                    masked = head_row.clone()
-                    masked[~mask] = -1e9
-                    action.append(int(masked.argmax().item()))
-                    continue
-            action.append(int(head_row.argmax().item()))
-        action_dict = convertToDict(torch.tensor([action], device="cpu"))
-        for i_u in range(self.len_model):
-            action_dict[f"move_num_{i_u}"] = int(action[6 + i_u])
-        return action_dict, None
+        ordered_keys = ordered_action_keys(self.len_model)
+        legal_by_head = {key: mask for key, mask in zip(ordered_keys, masks_cpu)}
+        action = greedy_action_list_from_decision(decision, ordered_keys, legal_by_head)
+        return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=self.len_model), None
 
     def _select_ppo(self, env, obs_t, masks_cpu, side):
         # PPO→temperature: в stochastic-режиме сэмпл из политики с температурой;
@@ -222,10 +206,7 @@ class EvalAgent:
                 temperature=temperature,
             )
         action_np = action_t.squeeze(0).detach().cpu().numpy().tolist()
-        action_dict = convertToDict(torch.tensor([action_np], device="cpu"))
-        for i_u in range(self.len_model):
-            action_dict[f"move_num_{i_u}"] = int(action_np[6 + i_u])
-        return action_dict, None
+        return action_tensor_to_dict(torch.tensor([action_np], device="cpu"), len_model=self.len_model), None
 
     def _select_az(self, env, obs_np, masks_cpu, side):
         legal = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
@@ -241,12 +222,19 @@ class EvalAgent:
             action = [int(torch.argmax(p.squeeze(0), dim=0).item()) for p in probs]
             return action_tensor_to_dict(torch.tensor([action], device="cpu"), len_model=self.len_model), None
         s = self.search
+        # Важно для честного P1/P2 eval: AZ/GAZ env-search умеет симулировать только
+        # model-half через env.step(action_dict). Когда EvalAgent вызывается из
+        # enemyTurn(policy_fn=...), действие относится к стороне enemy, поэтому env-search
+        # на этом env дал бы семантически неверный rollout за model. Для enemy используем
+        # тот же ordered/masked policy contract, но без env rollout (proxy/root-eval);
+        # GMZ/SMZ ниже не используют env.rollout и потому остаются side-neutral.
+        search_env = env if str(side).strip().lower() == "model" else None
         pi, selected, _v = s.run(
             obs=obs_np,
             legal_masks_by_head=legal,
             temperature=float(self.cfg.search.get("temperature", 0.06)),
-            env=env,
-            len_model=self.len_model,
+            env=search_env,
+            len_model=(self.len_model if search_env is not None else None),
             enemy_policy_fn=None,
         )
         if self.cfg.search.get("joint_best_child") or self.cfg.deterministic is False:
