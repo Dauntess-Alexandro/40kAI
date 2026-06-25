@@ -71,6 +71,7 @@ def test_defender_command_reroll_applies_to_save():
 
     env = build_env()
     env.battle_round = 1
+    env.enemyCP = 1  # CP для legacy pay-on-apply на consume (defender=enemy)
     env.active_stratagem_effects = [
         {
             "side": "enemy",
@@ -80,6 +81,7 @@ def test_defender_command_reroll_applies_to_save():
             "effect_id": "command_reroll",
             "reroll_roll": "save",
             "consumed": False,
+            "paid": False,
         }
     ]
     decider = env._build_reroll_decider("model", 0, "enemy", 0)
@@ -95,6 +97,7 @@ def test_attacker_command_reroll_applies_to_damage_and_attacks():
     for roll in ("damage", "attacks"):
         env = build_env()
         env.battle_round = 1
+        env.modelCP = 1  # CP для legacy pay-on-apply на consume (attacker=model)
         env.active_stratagem_effects = [
             {
                 "side": "model",
@@ -104,6 +107,7 @@ def test_attacker_command_reroll_applies_to_damage_and_attacks():
                 "effect_id": "command_reroll",
                 "reroll_roll": roll,
                 "consumed": False,
+                "paid": False,
             }
         ]
         decider = env._build_reroll_decider("model", 0, "enemy", 0, phase="shooting")

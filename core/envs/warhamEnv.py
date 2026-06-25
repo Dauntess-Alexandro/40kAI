@@ -39,7 +39,7 @@ from core.engine.phases.obs_features import (
     legacy_observation_space_size,
     phase_obs_features_enabled,
 )
-from core.engine.phases.stratagem_engine import apply as _apply_stratagem
+from core.engine.phases.stratagem_engine import apply as _apply_stratagem, charge_cp as _charge_cp
 from core.engine.skills import apply_end_of_command_phase
 from core.engine.state_export import write_state_json
 from project_paths import ARTIFACTS_METRICS_DIR, BOARD_PATH, RUNTIME_STATE_DIR
@@ -2387,6 +2387,30 @@ class Warhammer40kEnv(gym.Env):
         merged.update(dict(extra_effects))
         return merged or None
 
+    def _pay_for_command_reroll_record(self, rec) -> bool:
+        """Legacy pay-on-apply: списать CP для command_reroll на consume (через _charge_cp).
+
+        Контракт (подзадача 3.1, reaction_policy is None):
+        - paid is True или поле отсутствует (legacy-запись до 2.1, CP списан на arm):
+          не списывать повторно, вернуть True (backward compatibility).
+        - paid is False (новая armed-запись от apply после 2.1): списать CP на consume.
+          Если CP недостаточно — вернуть False, rec НЕ менять (не consumed, не paid, CP не в минус).
+          При успехе — rec["paid"]=True, вернуть True.
+
+        Под симуляцией CP списывается (откатывается snapshot/restore вызывающим кодом);
+        _cmd_reroll_fired инкрементируется отдельно в consume-точках (не здесь).
+        """
+        # Backward compatibility: уже оплачено (paid=True) либо legacy-запись без поля paid.
+        if rec.get("paid") is not False:
+            return True
+        # Новая armed-запись (paid=False): списать CP на consume.
+        side = str(rec.get("side", ""))
+        cost = 1  # command_reroll.cp_cost == 1 (registry test гарантирует)
+        if not _charge_cp(self, side, cost):
+            return False
+        rec["paid"] = True
+        return True
+
     def _stratagem_effects_for_attacker(self, side: str, unit_idx: int, phase: str):
         effects: dict = {}
         phase = str(phase)
@@ -2408,6 +2432,9 @@ class Warhammer40kEnv(gym.Env):
                 roll = str(rec.get("reroll_roll", "wound"))
                 key = {"hit": "reroll_hits", "wound": "reroll_wounds"}.get(roll)
                 if key is None:
+                    continue
+                # Legacy pay-on-apply: списать CP на consume. Нет CP — не рероллить.
+                if not self._pay_for_command_reroll_record(rec):
                     continue
                 effects[key] = "one"
                 rec["consumed"] = True
@@ -2444,6 +2471,9 @@ class Warhammer40kEnv(gym.Env):
             else:
                 rec = None
             if rec is None:
+                return False
+            # Legacy pay-on-apply: списать CP на consume. Нет CP — не рероллить.
+            if not self._pay_for_command_reroll_record(rec):
                 return False
             rec["consumed"] = True
             if not self._in_simulation_mode():
@@ -2512,6 +2542,9 @@ class Warhammer40kEnv(gym.Env):
                 and int(rec.get("round", getattr(self, "battle_round", 1)))
                 == int(getattr(self, "battle_round", 1))
             ):
+                # Legacy pay-on-apply: списать CP на consume. Нет CP — не рероллить.
+                if not self._pay_for_command_reroll_record(rec):
+                    return None
                 rec["consumed"] = True
                 if not self._in_simulation_mode():
                     self._cmd_reroll_fired += 1

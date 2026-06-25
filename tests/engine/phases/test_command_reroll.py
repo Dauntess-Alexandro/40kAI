@@ -105,6 +105,7 @@ def test_apply_command_reroll_arm_still_appends_stratagem_used():
 
 def test_fight_effects_for_attacker_returns_reroll_wounds():
     env = build_env()
+    env.modelCP = 1  # CP для legacy pay-on-apply на consume
     env.active_stratagem_effects = [
         {
             "side": "model",
@@ -114,6 +115,7 @@ def test_fight_effects_for_attacker_returns_reroll_wounds():
             "effect_id": "command_reroll",
             "reroll_roll": "wound",
             "consumed": False,
+            "paid": False,
         }
     ]
     eff = env._fight_effects_for_attacker("model", 0)
@@ -122,6 +124,7 @@ def test_fight_effects_for_attacker_returns_reroll_wounds():
 
 def test_fight_effect_consumed_after_first_read():
     env = build_env()
+    env.modelCP = 1  # CP для legacy pay-on-apply на consume
     env.battle_round = 1
     env.active_stratagem_effects = [
         {
@@ -132,6 +135,7 @@ def test_fight_effect_consumed_after_first_read():
             "effect_id": "command_reroll",
             "reroll_roll": "wound",
             "consumed": False,
+            "paid": False,
         }
     ]
     first = env._fight_effects_for_attacker("model", 0)
@@ -164,8 +168,8 @@ def _pick(unit_idx, sid):
 
 
 def test_run_fight_command_reroll_arms_without_cp_charge():
-    """Подзадача 2.1: arm command_reroll в fight НЕ списывает CP (pay-on-apply — отдельная подзадача).
-    Запись в stratagem_used остаётся (action-telemetry); CP переносится на consume-точку."""
+    """Подзадача 3.1: arm command_reroll в fight бесплатен, но consume в fight-резолве
+    списывает CP (legacy pay-on-apply). Запись в stratagem_used остаётся (action-telemetry)."""
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     _engaged(env)
@@ -173,5 +177,6 @@ def test_run_fight_command_reroll_arms_without_cp_charge():
     np.random.seed(7)
     with env.simulation_mode():
         phase_engine.run_fight(env, "model", _pick(0, "command_reroll"))
-    assert env.modelCP == 1  # arm бесплатен — CP не списан (pay-on-apply перенесён)
+    # arm бесплатен, но consume в fight-резолве списал CP (pay-on-apply на consume).
+    assert env.modelCP == 0
     assert ("model", "command_reroll", env.battle_round, "fight", 0) in env.stratagem_used
