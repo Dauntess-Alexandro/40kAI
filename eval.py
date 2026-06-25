@@ -34,7 +34,7 @@ from core.engine.mission import (
 from core.engine.phases.obs_features import phase_obs_features_enabled
 from core.envs.warhamEnv import roll_off_attacker_defender
 from core.models.alphazero_ids import is_alphazero_net_algo, is_az_algo, is_gumbel_az_algo
-from core.models.eval_agent import build_eval_agent, resolve_eval_search_cfg
+from core.models.eval_agent import build_eval_agent, resolve_arch_for_algo, resolve_eval_search_cfg
 from core.models.eval_parallel import EvalWorkerConfig, eval_worker_entry
 from core.models.eval_result import EpisodeResult, WorkerError
 from core.models.opponent_adapter import load_agent_opponent
@@ -485,6 +485,10 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
         target_state=payload.get("target_state") if isinstance(payload, dict) else None,
         agent_id=learner_agent_id,
     )
+    # Арка learner из registry-meta (как в последовательном пути): недефолтные
+    # чекпойнты грузятся 1:1. log_fn=None в субпроцессе допустим — registry-агенты
+    # уже несут корректную arch; size-mismatch всё равно даст понятную RU-ошибку.
+    learner_arch = resolve_arch_for_algo(algo, meta if isinstance(meta, dict) else {})
     learner_agent = build_eval_agent(
         algo=algo,
         policy_state=normalize_state_dict(policy_state),
@@ -492,6 +496,7 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
         len_model=len(model_units),
         cfg=resolve_eval_search_cfg(algo),
         device=device,
+        arch=learner_arch,
     )
 
     opponent_agent = None
@@ -505,6 +510,7 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
             len_model=len(enemy_units),
             cfg=resolve_eval_search_cfg(opp.algo),
             device=device,
+            arch=opp.arch,
         )
 
     _reaction_net_by_side = {
@@ -1597,6 +1603,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     policy_state = None
     learner_algo_override = ""
+    meta = {}
     selected_agent_id = (args.learner_agent_id or "").strip()
     if selected_agent_id:
         try:
@@ -1647,6 +1654,8 @@ def main():
                 len_model=len(enemy_units),
                 cfg=resolve_eval_search_cfg(opp.algo),
                 device=device,
+                arch=opp.arch,
+                log_fn=log,
             )
             log(
                 f"Оппонент через registry: opponent-agent-id={opponent_agent_id}, algo={opp.algo} (deterministic)."
@@ -1695,22 +1704,10 @@ def main():
     # *_OPPONENT_* env (GUI выставляет их всегда) больше НЕ нарушает честный 1:1 —
     # старый WARN был структурно ложным и удалён. Поле cfg.opponent_override_active
     # оставлено для обратной совместимости.
-    # Арку learner-сети резолвим ИЗ payload чекпойнта (как до Task5), чтобы недефолтные
-    # чекпойнты грузились 1:1. Registry-путь без payload → arch=None (env/дефолт-арка).
-    learner_arch = None
-    if isinstance(checkpoint, dict):
-        if algo == "ppo":
-            from core.models.PPO import ppo_arch_from_payload
-
-            learner_arch = ppo_arch_from_payload(checkpoint)
-        elif is_alphazero_net_algo(algo):
-            from core.models.alphazero_model import alphazero_arch_from_payload
-
-            learner_arch = alphazero_arch_from_payload(checkpoint)
-        elif algo == "sampled_muzero":
-            from core.models.sampled_muzero_model import sampled_muzero_arch_from_payload
-
-            learner_arch = sampled_muzero_arch_from_payload(checkpoint)
+    # Арку learner резолвим единым путём: registry → meta, legacy .pth → checkpoint.
+    # Тот же resolve_arch_for_algo, что и для opponent (честный 1:1, вкл. gumbel_muzero).
+    arch_source = meta if selected_agent_id else (checkpoint if isinstance(checkpoint, dict) else {})
+    learner_arch = resolve_arch_for_algo(algo, arch_source)
     learner_agent = build_eval_agent(
         algo=algo,
         policy_state=normalize_state_dict(learner_state),
@@ -1719,6 +1716,7 @@ def main():
         cfg=cfg,
         device=device,
         arch=learner_arch,
+        log_fn=log,
     )
 
     # Симметричный reaction-словарь: обе стороны (model/enemy) одной фабрикой.

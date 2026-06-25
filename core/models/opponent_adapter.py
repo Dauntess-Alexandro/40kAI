@@ -14,6 +14,7 @@ class OpponentSpec:
     algo: str  # "dqn" | "ppo" | "alphazero_tree" | "alphazero_proxy" | "gumbel_muzero" | "sampled_muzero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
+    arch: dict[str, Any] | None = None  # арка сети из registry-meta (resolve_arch_for_algo); None для legacy/обратной совместимости
 
 
 def _parse_contract_sizes(contract: dict[str, Any]) -> tuple[int, list[int]]:
@@ -61,11 +62,18 @@ def load_agent_opponent(*, agent_id: str, expected_contract: dict[str, Any] | No
     if not isinstance(policy_state, dict):
         raise ValueError(f"agent '{agent_id}' policy_state missing or invalid.")
 
+    # Арка сети из registry-meta через единый резолвер (learner и opponent — один путь).
+    # meta без 'arch' → None (legacy-агенты строятся на env-дефолте, симметрично для обеих сторон).
+    from core.models.eval_agent import resolve_arch_for_algo
+
+    arch = resolve_arch_for_algo(str(algo), meta if isinstance(meta, dict) else {})
+
     return OpponentSpec(
         agent_id=str(agent_id),
         algo=str(algo),
         contract=dict(contract or {}),
         policy_state=normalize_state_dict(policy_state),
+        arch=arch,
     )
 
 

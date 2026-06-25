@@ -303,6 +303,56 @@ def _parse_contract_sizes(contract: dict[str, Any]) -> tuple[int, list[int]]:
     return int(n_obs), [int(x) for x in n_actions]
 
 
+def resolve_arch_for_algo(algo: str, payload: dict | None) -> dict | None:
+    """Единый резолв арки сети для eval (learner и opponent — один путь).
+
+    payload — dict с ключом 'arch' (checkpoint .pth ИЛИ registry meta). Для dqn
+    арка инферится из state_dict в build_eval_agent → возвращаем None. Если payload
+    без 'arch' — резолвер вернёт env-дефолты (как и для legacy learner).
+    """
+    a = str(algo or "").strip().lower()
+    if not isinstance(payload, dict) or not payload.get("arch"):
+        return None
+    if a == "ppo":
+        from core.models.PPO import ppo_arch_from_payload
+
+        return ppo_arch_from_payload(payload)
+    if is_alphazero_net_algo(a):
+        from core.models.alphazero_model import alphazero_arch_from_payload
+
+        return alphazero_arch_from_payload(payload)
+    if a == "gumbel_muzero":
+        from core.models.gumbel_muzero_model import gumbel_muzero_arch_from_payload
+
+        return gumbel_muzero_arch_from_payload(payload)
+    if a == "sampled_muzero":
+        from core.models.sampled_muzero_model import sampled_muzero_arch_from_payload
+
+        return sampled_muzero_arch_from_payload(payload)
+    return None  # dqn и прочее
+
+
+def _safe_load(load_fn, net, state, *, algo, log_fn):
+    """Lenient-загрузка (missing/unexpected → WARN), но size-mismatch → понятная RU-ошибка.
+
+    PyTorch load_state_dict(strict=False) пропускает только missing/unexpected; на совпадающих
+    ключах с разным shape он всё равно падает RuntimeError('... size mismatch ...'). Для честного
+    eval не маскируем это мусорной сетью — отдаём явную причину/действие.
+    """
+    try:
+        return load_fn(net, state, log_fn=log_fn)
+    except RuntimeError as exc:
+        if "size mismatch" in str(exc):
+            raise RuntimeError(
+                f"build_eval_agent: арка сети не совпадает с весами агента (algo={algo}). "
+                "Где: core/models/eval_agent.py (_safe_load → load_state_dict). "
+                "Что делать: переобучите/перерегистрируйте агента так, чтобы 'arch' попал в "
+                "registry-meta (train.py save_agent_artifact extra_meta), либо выставьте env-арку "
+                f"под чекпойнт. Детали: {exc}"
+            ) from exc
+        raise
+
+
 def build_eval_agent(
     *,
     algo: str,
@@ -312,6 +362,7 @@ def build_eval_agent(
     cfg: EvalSearchCfg | None = None,
     device=torch.device("cpu"),
     arch: dict | None = None,
+    log_fn=None,
 ) -> EvalAgent:
     """Фабрика EvalAgent: строит net + (опц.) search из контракта и cfg.search.
 
@@ -360,7 +411,7 @@ def build_eval_agent(
         # arch из payload (learner) → недефолтные чекпойнты грузятся 1:1; иначе env-дефолт (opponent).
         ppo_kwargs = dict(arch) if arch else ppo_kwargs_from_env()
         net = make_actor_critic(n_obs, n_actions, **ppo_kwargs).to(device)
-        load_actor_critic_state_dict(net, normalize_state_dict(policy_state))
+        _safe_load(load_actor_critic_state_dict, net, normalize_state_dict(policy_state), algo=algo, log_fn=log_fn)
         net.eval()
         return EvalAgent(
             algo=algo,
@@ -382,8 +433,8 @@ def build_eval_agent(
             net = make_alphazero_net(n_obs, n_actions, **arch).to(device)
         else:
             net = make_alphazero_net(n_obs, n_actions).to(device)
-        # log_fn → расхождения ключей всплывают WARN'ом (нет тихой случайной сети).
-        load_alphazero_state_dict(net, normalize_state_dict(policy_state), log_fn=print if arch else None)
+        # log_fn → расхождения ключей всплывают WARN'ом (нет тихой случайной сети); size-mismatch → понятная RU-ошибка.
+        _safe_load(load_alphazero_state_dict, net, normalize_state_dict(policy_state), algo=algo, log_fn=log_fn)
         net.eval()
         mode = str(search_cfg.get("mode", "mcts")).strip().lower()
         search = None
@@ -419,17 +470,18 @@ def build_eval_agent(
         )
 
     if algo == "gumbel_muzero":
-        from core.models.gumbel_muzero_model import GumbelMuZeroNet
+        from core.models.gumbel_muzero_model import (
+            load_gumbel_muzero_state_dict,
+            make_gumbel_muzero_net,
+        )
         from core.models.gumbel_muzero_search import GumbelMuZeroSearch, GumbelMuZeroSearchConfig
 
-        net = GumbelMuZeroNet(
-            obs_dim=int(n_obs),
-            action_sizes=[int(x) for x in n_actions],
-            latent_dim=int(os.getenv("GMZ_LATENT_DIM", "256")),
-            hidden_dim=int(os.getenv("GMZ_HIDDEN_DIM", "256")),
-            action_embed_dim=int(os.getenv("GMZ_ACTION_EMBED_DIM", "64")),
+        # arch из payload (learner/opponent) → недефолтные чекпойнты грузятся 1:1; иначе env-дефолт.
+        net = make_gumbel_muzero_net(
+            int(n_obs), [int(x) for x in n_actions], **(arch or {})
         ).to(device)
-        net.load_state_dict(normalize_state_dict(policy_state))
+        # Lenient-загрузка вместо strict net.load_state_dict; size-mismatch → понятная RU-ошибка (_safe_load).
+        _safe_load(load_gumbel_muzero_state_dict, net, normalize_state_dict(policy_state), algo=algo, log_fn=log_fn)
         net.eval()
         mode = str(search_cfg.get("mode", "search")).strip().lower()
         search = None
@@ -471,8 +523,8 @@ def build_eval_agent(
                 hidden_dim=int(os.getenv("SMZ_HIDDEN_DIM", "256")),
                 action_embed_dim=int(os.getenv("SMZ_ACTION_EMBED_DIM", "64")),
             ).to(device)
-        # Лениентный загрузчик (strict=False) вместо net.load_state_dict — фикс краха на недефолтной арке.
-        load_sampled_muzero_state_dict(net, normalize_state_dict(policy_state))
+        # Лениентный загрузчик (strict=False) через _safe_load: missing/unexpected → WARN, size-mismatch → RU-ошибка.
+        _safe_load(load_sampled_muzero_state_dict, net, normalize_state_dict(policy_state), algo=algo, log_fn=log_fn)
         net.eval()
         mode = str(search_cfg.get("mode", "search")).strip().lower()
         search = None

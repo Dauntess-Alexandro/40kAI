@@ -5066,6 +5066,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                             optimizer_state_dict=None,
                             extra_meta={
                                 "algo": "ppo",
+                                "arch": _ppo_arch_dict(actor_critic),
                                 "episode": int(episodes_finished),
                                 "mode": "actor_learner",
                                 "num_actors": int(num_actors),
@@ -5255,6 +5256,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
             optimizer_state_dict=optimizer.state_dict(),
             extra_meta={
                 "algo": "ppo",
+                "arch": _ppo_arch_dict(actor_critic),
                 "episode": int(final_cumulative_episode),
                 "mode": "actor_learner",
                 "num_actors": int(num_actors),
@@ -7474,6 +7476,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         optimizer_state_dict=optimizer.state_dict(),
         extra_meta={
             "algo": TRAIN_ALGO,
+            "arch": dict(az_kw),
             "mcts_mode": AZ_MCTS_MODE,
             "episode": int(final_episode),
             "source_model_path": str(last_checkpoint or ""),
@@ -8954,6 +8957,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         optimizer_state_dict=optimizer.state_dict(),
         extra_meta={
             "algo": "gumbel_muzero",
+            "arch": gumbel_muzero_kwargs_from_env(),
             "episode": int(final_episode),
             "source_model_path": str(last_checkpoint or ""),
             "mode": "actor_learner",
@@ -9717,6 +9721,7 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
         optimizer_state_dict=optimizer.state_dict(),
         extra_meta={
             "algo": "sampled_muzero",
+            "arch": sampled_muzero_kwargs_from_env(),
             "episode": int(final_episode),
             "source_model_path": str(last_checkpoint or ""),
             "mode": "actor_learner",
