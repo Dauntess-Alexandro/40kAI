@@ -16,7 +16,10 @@ from core.engine.phases.replay_meta import (
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.alphazero_replay import AZTransition
-from core.models.az_mission_bootstrap import finalize_value_targets
+from core.models.az_mission_bootstrap import (
+    finalize_value_targets,
+    side_mean_objective_distance,
+)
 from core.models.utils import unwrap_env
 from core.telemetry.stratagem_trace import (
     make_stratagem_tracer_for_train,
@@ -92,6 +95,11 @@ def play_episode_with_mcts(
     cum_model_ctrl = 0.0
     cum_enemy_ctrl = 0.0
     obj_samples = 0
+    # Накопительная дистанция до ближайшего объектива (progress-сигнал): нужен там,
+    # где агенты не доходят до точек и control/VP всегда 0.
+    cum_model_dist = 0.0
+    cum_enemy_dist = 0.0
+    dist_samples = 0
 
     apply_first_turn_prepend(
         env_u,
@@ -172,6 +180,20 @@ def play_episode_with_mcts(
                 obj_samples += 1
             except Exception:
                 pass
+            try:
+                objs = getattr(env_u, "coordsOfOM", None)
+                md = side_mean_objective_distance(
+                    getattr(env_u, "unit_coords", None), getattr(env_u, "unit_health", None), objs
+                )
+                ed = side_mean_objective_distance(
+                    getattr(env_u, "enemy_coords", None), getattr(env_u, "enemy_health", None), objs
+                )
+                if md is not None and ed is not None:
+                    cum_model_dist += float(md)
+                    cum_enemy_dist += float(ed)
+                    dist_samples += 1
+            except Exception:
+                pass
         try:
             if strat_tracer is not None:
                 strat_tracer.run_enemy_turn(
@@ -215,6 +237,10 @@ def play_episode_with_mcts(
         last_info["az_cum_model_ctrl"] = float(cum_model_ctrl)
         last_info["az_cum_enemy_ctrl"] = float(cum_enemy_ctrl)
         last_info["az_obj_samples"] = int(obj_samples)
+    if dist_samples > 0:
+        last_info["az_cum_model_dist"] = float(cum_model_dist)
+        last_info["az_cum_enemy_dist"] = float(cum_enemy_dist)
+        last_info["az_dist_samples"] = int(dist_samples)
 
     # Исход → terminal value (+ опц. mission-bootstrap по ничьим) → per-transition
     # таргеты. coef=0 (дефолт) → константа final_value, как было до bootstrap.

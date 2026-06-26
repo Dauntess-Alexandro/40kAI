@@ -15,6 +15,7 @@ from core.models.az_mission_bootstrap import (
     finalize_value_targets,
     mission_progress_signal,
     outcome_kind_from_info,
+    side_mean_objective_distance,
     terminal_outcome_value,
 )
 
@@ -159,6 +160,57 @@ def test_mission_signal_backward_compatible_terminal_only():
     # Старый info без накопительных ключей → используется терминальный снимок.
     info = {"model controlled objectives": [1, 2, 3], "player controlled objectives": [1]}
     assert mission_progress_signal(info) > 0.0
+
+
+# --- distance/progress signal -------------------------------------------------
+
+def test_side_mean_objective_distance_basic():
+    # Юниты на (0,0) и (3,4); объектив в (0,0) → дистанции 0 и 5 → среднее 2.5.
+    d = side_mean_objective_distance([[0, 0], [3, 4]], [1, 1], [[0, 0]])
+    assert abs(d - 2.5) < 1e-6
+
+
+def test_side_mean_objective_distance_filters_dead():
+    # Второй юнит мёртв (health 0) → учитывается только первый (дист 0).
+    d = side_mean_objective_distance([[0, 0], [10, 0]], [1, 0], [[0, 0]])
+    assert d == 0.0
+
+
+def test_side_mean_objective_distance_none_without_data():
+    assert side_mean_objective_distance([], [], [[0, 0]]) is None
+    assert side_mean_objective_distance([[0, 0]], [1], []) is None
+    assert side_mean_objective_distance([[0, 0]], [1], None) is None
+
+
+def test_side_mean_objective_distance_nearest_objective():
+    # Два объектива; берётся ближайший.
+    d = side_mean_objective_distance([[0, 0]], [1], [[10, 0], [1, 0]])
+    assert abs(d - 1.0) < 1e-6
+
+
+def test_mission_signal_positive_when_model_closer_to_objectives():
+    # Контроль точек 0/0 (как в реальном региме), но модель в среднем БЛИЖЕ к точке.
+    info = {
+        "az_cum_model_ctrl": 0.0, "az_cum_enemy_ctrl": 0.0,
+        "az_cum_model_dist": 5.0, "az_cum_enemy_dist": 20.0,  # модель ближе
+        "model health": [10], "player health": [10], "model VP": 0, "player VP": 0,
+    }
+    assert mission_progress_signal(info) > 0.0
+
+
+def test_mission_signal_negative_when_enemy_closer():
+    info = {
+        "az_cum_model_dist": 20.0, "az_cum_enemy_dist": 5.0,  # враг ближе
+        "model health": [10], "player health": [10], "model VP": 0, "player VP": 0,
+    }
+    assert mission_progress_signal(info) < 0.0
+
+
+def test_mission_signal_distance_absent_no_effect():
+    # Без distance-ключей старое поведение: симметрия → 0.
+    info = {"model controlled objectives": [1], "player controlled objectives": [1],
+            "model health": [10], "player health": [10], "model VP": 1, "player VP": 1}
+    assert abs(mission_progress_signal(info)) < 1e-9
 
 
 # --- finalize_value_targets (wiring decision, без env) ------------------------

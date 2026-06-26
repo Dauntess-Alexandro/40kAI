@@ -167,6 +167,23 @@ class TestAzEpisodeMissionFields(unittest.TestCase):
         )
         self.assertIn("obj_cum=18/3", line)
 
+    def test_distance_mean_passthrough(self):
+        from train import _az_episode_mission_fields
+
+        f = _az_episode_mission_fields(
+            {"az_cum_model_dist": 100.0, "az_cum_enemy_dist": 200.0, "az_dist_samples": 10,
+             "model health": [], "player health": []}
+        )
+        self.assertAlmostEqual(f["dist_model_mean"], 10.0)
+        self.assertAlmostEqual(f["dist_enemy_mean"], 20.0)
+
+    def test_dist_field_in_log_line(self):
+        line = format_train_ep_log_line(
+            ep=1, total=100, algo="az", result="draw", end_reason="turn_limit",
+            vp_diff=0, ep_reward=0.0, turns=21, dist_model_mean=10.0, dist_enemy_mean=20.0,
+        )
+        self.assertIn("dist=10.0/20.0", line)
+
 
 class TestAzDetPayloadHpDiff(unittest.TestCase):
     def test_hp_diff_mean_computed_from_rows(self):

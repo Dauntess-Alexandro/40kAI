@@ -25,10 +25,54 @@ from typing import Any
 import numpy as np
 
 # Веса компонент mission-сигнала. Контроль точек доминирует (это и есть «играй
-# миссию»); VP и HP — вторичны. Сумма = 1.0, чтобы сигнал жил в [-1, 1].
-_W_OBJ = 0.6
-_W_HP = 0.2
-_W_VP = 0.2
+# миссию»). objective-control и distance-to-objective — две взаимодополняющие
+# mission-компоненты: когда юниты НА точке — control≈max, dist≈0; когда далеко —
+# control=0, но dist даёт частичный кредит за приближение (нужно там, где агенты
+# вообще не доходят до точек — см. диагностику draw rate). VP/HP — вторичны.
+# Сумма = 1.0, чтобы сигнал жил в [-1, 1].
+_W_OBJ = 0.4
+_W_DIST = 0.4
+_W_HP = 0.1
+_W_VP = 0.1
+
+
+def _euclid(p1: Any, p2: Any) -> float:
+    """Евклидова дистанция (как core.engine.utils.distance), без зависимости от env."""
+    return float(((float(p2[0]) - float(p1[0])) ** 2 + (float(p2[1]) - float(p1[1])) ** 2) ** 0.5)
+
+
+def side_mean_objective_distance(
+    positions: Any, healths: Any, objectives: Any
+) -> float | None:
+    """Среднее по ЖИВЫМ юнитам стороны расстояние до БЛИЖАЙШЕГО объектива.
+
+    None — если данных нет (нет юнитов/объективов): сигнал по дистанции тогда
+    недоступен и просто не учитывается. healths нужны, чтобы не считать мёртвые
+    юниты (их координаты остаются на месте гибели). Если длины не совпадают —
+    фильтр по health не применяется (берём все позиции).
+    """
+    if not positions or objectives is None or len(objectives) == 0:
+        return None
+    use_health = (
+        isinstance(healths, (list, tuple, np.ndarray)) and len(healths) == len(positions)
+    )
+    dists: list[float] = []
+    for i, pos in enumerate(positions):
+        if pos is None:
+            continue
+        if use_health:
+            try:
+                if float(healths[i]) <= 0.0:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        try:
+            dists.append(min(_euclid(pos, obj) for obj in objectives))
+        except (TypeError, ValueError, IndexError):
+            continue
+    if not dists:
+        return None
+    return float(sum(dists) / len(dists))
 
 
 def _sum_hp(raw: Any) -> float:
@@ -86,15 +130,42 @@ def terminal_outcome_value(
     return float(draw)
 
 
+def _distance_share(info: dict) -> float:
+    """Относительная близость к точкам: модель БЛИЖЕ (меньше дист) → положительно.
+
+    Берёт накопительные суммы дистанций за партию (az_cum_model_dist/
+    az_cum_enemy_dist). Нет ключей → 0 (компонента не участвует). Это «progress»-
+    сигнал для региима, где агенты не доходят до точек (control/VP всегда 0):
+    награждает приближение к ближайшему объективу относительно врага.
+    """
+    m_d = info.get("az_cum_model_dist")
+    e_d = info.get("az_cum_enemy_dist")
+    if m_d is None or e_d is None:
+        return 0.0
+    m_d = float(m_d or 0.0)
+    e_d = float(e_d or 0.0)
+    denom = abs(m_d) + abs(e_d)
+    if denom <= 1e-9:
+        return 0.0
+    return float(np.clip((e_d - m_d) / denom, -1.0, 1.0))
+
+
 def mission_progress_signal(
-    info: dict | None, *, w_obj: float = _W_OBJ, w_hp: float = _W_HP, w_vp: float = _W_VP
+    info: dict | None,
+    *,
+    w_obj: float = _W_OBJ,
+    w_dist: float = _W_DIST,
+    w_hp: float = _W_HP,
+    w_vp: float = _W_VP,
 ) -> float:
     """Слабый сигнал «играю ли я миссию», нормированный в [-1, 1].
 
-    Контроль точек берём НАКОПИТЕЛЬНО за партию (az_cum_model_ctrl/
-    az_cum_enemy_ctrl — сумма по ходам), если он есть: терминальный снимок в
-    turn_limit-ничьих почти всегда 0/0 и сигнал умирал. Фолбэк на терминальный
-    снимок — для обратной совместимости (старый info / тесты).
+    Компоненты (относительное доминирование model vs enemy):
+    - контроль точек (накопительно за партию; фолбэк на терминальный снимок);
+    - близость к точкам (distance-progress) — живёт даже когда контроль 0/0;
+    - HP и VP — вторичны.
+    Накопительные ключи (az_cum_*) приоритетны: терминальный obj-снимок в
+    turn_limit-ничьих почти всегда 0/0 и сигнал умирал.
     """
     info = info or {}
     cum_m = info.get("az_cum_model_ctrl")
@@ -111,6 +182,7 @@ def mission_progress_signal(
     e_vp = float(info.get("player VP", 0) or 0)
     s = (
         float(w_obj) * _share(m_obj, e_obj)
+        + float(w_dist) * _distance_share(info)
         + float(w_hp) * _share(m_hp, e_hp)
         + float(w_vp) * _share(m_vp, e_vp)
     )

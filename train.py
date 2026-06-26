@@ -1249,6 +1249,12 @@ def _az_episode_mission_fields(info: dict) -> dict:
     if cm is not None and ce is not None:
         fields["cum_model_ctrl"] = float(cm)
         fields["cum_enemy_ctrl"] = float(ce)
+    dm = info.get("az_cum_model_dist")
+    de = info.get("az_cum_enemy_dist")
+    ds = int(info.get("az_dist_samples", 0) or 0)
+    if dm is not None and de is not None and ds > 0:
+        fields["dist_model_mean"] = float(dm) / ds
+        fields["dist_enemy_mean"] = float(de) / ds
     return fields
 
 
@@ -1271,6 +1277,8 @@ def format_train_ep_log_line(
     outcome_value: float | None = None,
     cum_model_ctrl: float | None = None,
     cum_enemy_ctrl: float | None = None,
+    dist_model_mean: float | None = None,
+    dist_enemy_mean: float | None = None,
 ) -> str:
     """Единая строка итога эпизода для вкладки «Эпизоды» в GUI.
 
@@ -1305,6 +1313,8 @@ def format_train_ep_log_line(
         pieces.append(f"obj={int(model_ctrl_n)}/{int(enemy_ctrl_n)}")
     if cum_model_ctrl is not None and cum_enemy_ctrl is not None:
         pieces.append(f"obj_cum={int(cum_model_ctrl)}/{int(cum_enemy_ctrl)}")
+    if dist_model_mean is not None and dist_enemy_mean is not None:
+        pieces.append(f"dist={float(dist_model_mean):.1f}/{float(dist_enemy_mean):.1f}")
     if hp_diff is not None:
         pieces.append(f"hp_diff={float(hp_diff):+.1f}")
     if outcome_value is not None:
@@ -1337,6 +1347,8 @@ def log_train_episode_line(
     outcome_value = row.get("outcome_value")
     cum_model_ctrl = row.get("cum_model_ctrl")
     cum_enemy_ctrl = row.get("cum_enemy_ctrl")
+    dist_model_mean = row.get("dist_model_mean")
+    dist_enemy_mean = row.get("dist_enemy_mean")
     line = format_train_ep_log_line(
         ep=int(ep if ep is not None else row.get("episode") or 0),
         total=total,
@@ -1355,6 +1367,8 @@ def log_train_episode_line(
         outcome_value=float(outcome_value) if outcome_value is not None else None,
         cum_model_ctrl=float(cum_model_ctrl) if cum_model_ctrl is not None else None,
         cum_enemy_ctrl=float(cum_enemy_ctrl) if cum_enemy_ctrl is not None else None,
+        dist_model_mean=float(dist_model_mean) if dist_model_mean is not None else None,
+        dist_enemy_mean=float(dist_enemy_mean) if dist_enemy_mean is not None else None,
     )
     if TRAIN_LOG_TO_FILE:
         append_agent_log(line)
