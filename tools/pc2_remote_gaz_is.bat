@@ -289,6 +289,15 @@ if /i "%MODE%"=="check" (
   exit /b 0
 )
 
+REM Авто-bootstrap: весов нет, но search_cfg есть -> генерим РАНДОМНЫЕ веса рядом с cfg
+REM (старт без предобучения на ПК1; learner потом синканёт настоящие веса, формы совпадут).
+if not exist "%GAZ_REMOTE_WEIGHTS_PATH%" if "%GAZ_REMOTE_INIT_WEIGHTS%"=="" if exist "%GAZ_REMOTE_SEARCH_CONFIG%" (
+  for %%I in ("%GAZ_REMOTE_SEARCH_CONFIG%") do set "GAZ_REMOTE_WEIGHTS_PATH=%%~dpIlatest_az_gumbel_az_policy.pth"
+  echo [BOOTSTRAP] Весов нет — генерирую рандомные из cfg ^(без предобучения на ПК1^)...
+  python "%TOOLS%\write_az_init_weights.py" --algo gaz --search-cfg "%GAZ_REMOTE_SEARCH_CONFIG%" --out "!GAZ_REMOTE_WEIGHTS_PATH!"
+  if exist "!GAZ_REMOTE_WEIGHTS_PATH!" ( echo [BOOTSTRAP] OK: !GAZ_REMOTE_WEIGHTS_PATH! ) else ( echo [BOOTSTRAP][WARN] не удалось сгенерировать веса — см. вывод выше. )
+)
+
 if not exist "%GAZ_REMOTE_WEIGHTS_PATH%" (
   if "%GAZ_REMOTE_INIT_WEIGHTS%"=="" (
     echo [ОШИБКА] Нет файла весов: %GAZ_REMOTE_WEIGHTS_PATH%

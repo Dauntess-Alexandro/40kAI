@@ -34,7 +34,7 @@ def make_alphazero_net(n_observations: int, n_actions: list[int], **overrides):
     return AlphaZeroPolicyValueNet(n_observations, n_actions, **kwargs)
 
 
-def load_alphazero_state_dict(net: "AlphaZeroPolicyValueNet", state_dict: dict, *, log_fn=None) -> tuple:
+def load_alphazero_state_dict(net: AlphaZeroPolicyValueNet, state_dict: dict, *, log_fn=None) -> tuple:
     """Load weights with strict=False; log legacy-arch mismatch warnings."""
     state = dict(state_dict)
     legacy = any(str(k).startswith("layer1.") for k in state)
@@ -50,6 +50,50 @@ def load_alphazero_state_dict(net: "AlphaZeroPolicyValueNet", state_dict: dict, 
             f"(первые missing: {list(missing)[:3]})"
         )
     return missing, unexpected
+
+
+def write_az_init_weights_from_cfg(search_cfg_path: str, out_path: str, *, device=None) -> str:
+    """Bootstrap: построить AZ-сеть из search_cfg и сохранить СЛУЧАЙНО инициализированные веса.
+
+    Поднимает remote IS на ПК2 без предобучения на ПК1: сервер стартует с рандома, learner
+    потом синканёт настоящие веса (формы совпадают — обе строятся из одного cfg). Формат файла —
+    как у learner/сервера: {"policy_version":0,"optimize_steps":0,"state_dict":...}
+    (сервер читает payload["state_dict"], _poll_weights — policy_version). Возвращает out_path.
+    """
+    import json
+
+    try:
+        with open(search_cfg_path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except OSError as exc:
+        raise OSError(
+            f"write_az_init_weights_from_cfg: не удалось прочитать search_cfg {search_cfg_path}: {exc}. "
+            "Где: bootstrap весов AZ. Что делать: укажи путь к az_remote_search_cfg.json (шара/actor_sync)."
+        ) from exc
+
+    obs_dim = int(payload.get("obs_dim", 0))
+    action_sizes = [int(x) for x in payload.get("action_sizes", [])]
+    if obs_dim <= 0 or not action_sizes:
+        raise ValueError(
+            "write_az_init_weights_from_cfg: пустой search_cfg (obs_dim<=0 или action_sizes=[]). "
+            f"Файл: {search_cfg_path}. Что делать: дождаться публикации az_remote_search_cfg.json "
+            "(GUI ПК1 / ensure_remote_search_cfg)."
+        )
+
+    dev = device or torch.device("cpu")
+    net = make_alphazero_net(
+        n_observations=obs_dim,
+        n_actions=action_sizes,
+        hidden_size=int(payload.get("hidden_size", 256)),
+        num_layers=int(payload.get("num_layers", 2)),
+        n_value_ensemble=int(payload.get("n_value_ensemble", 1)),
+    ).to(dev)
+    net.eval()
+    torch.save(
+        {"policy_version": 0, "optimize_steps": 0, "state_dict": net.state_dict()},
+        out_path,
+    )
+    return out_path
 
 
 def _mask_fill_value(logits: torch.Tensor) -> float:

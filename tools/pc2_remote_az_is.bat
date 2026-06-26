@@ -288,6 +288,15 @@ if /i "%MODE%"=="check" (
   exit /b 0
 )
 
+REM Авто-bootstrap: весов нет, но search_cfg есть -> генерим РАНДОМНЫЕ веса рядом с cfg
+REM (старт без предобучения на ПК1; learner потом синканёт настоящие веса, формы совпадут).
+if not exist "%AZ_REMOTE_WEIGHTS_PATH%" if "%AZ_REMOTE_INIT_WEIGHTS%"=="" if exist "%AZ_REMOTE_SEARCH_CONFIG%" (
+  for %%I in ("%AZ_REMOTE_SEARCH_CONFIG%") do set "AZ_REMOTE_WEIGHTS_PATH=%%~dpIlatest_az_tree_policy.pth"
+  echo [BOOTSTRAP] Весов нет — генерирую рандомные из cfg ^(без предобучения на ПК1^)...
+  python "%TOOLS%\write_az_init_weights.py" --search-cfg "%AZ_REMOTE_SEARCH_CONFIG%" --out "!AZ_REMOTE_WEIGHTS_PATH!"
+  if exist "!AZ_REMOTE_WEIGHTS_PATH!" ( echo [BOOTSTRAP] OK: !AZ_REMOTE_WEIGHTS_PATH! ) else ( echo [BOOTSTRAP][WARN] не удалось сгенерировать веса — см. вывод выше. )
+)
+
 if not exist "%AZ_REMOTE_WEIGHTS_PATH%" (
   if "%AZ_REMOTE_INIT_WEIGHTS%"=="" (
     echo [ОШИБКА] Нет файла весов: %AZ_REMOTE_WEIGHTS_PATH%
