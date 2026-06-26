@@ -1567,6 +1567,17 @@ def _az_det_payload_from_rows(
     enemy_vp_mean = float(sum(float(r.get("player_vp", 0) or 0) for r in rows) / n_eval)
     ep_len_mean = float(sum(float(r.get("ep_len", 0) or 0) for r in rows) / n_eval)
     reward_mean = float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows) / n_eval)
+    # hp_diff из строк (AZ-ряд теперь несёт model_hp_total/enemy_hp_total —
+    # см. _az_episode_mission_fields). kill_diff в info нет → честный 0.0.
+    hp_rows = [
+        r for r in rows
+        if r.get("model_hp_total") is not None and r.get("enemy_hp_total") is not None
+    ]
+    hp_diff_mean = (
+        float(sum(float(r["model_hp_total"]) - float(r["enemy_hp_total"]) for r in hp_rows) / len(hp_rows))
+        if hp_rows
+        else 0.0
+    )
     return {
         "eval_episodes": int(n_eval),
         "win_rate": float(wins / n_eval),
@@ -1577,7 +1588,7 @@ def _az_det_payload_from_rows(
         "vp_diff_mean": vp_diff_mean,
         "model_vp_mean": model_vp_mean,
         "enemy_vp_mean": enemy_vp_mean,
-        "hp_diff_mean": 0.0,
+        "hp_diff_mean": hp_diff_mean,
         "kill_diff_mean": 0.0,
         "reward_mean": reward_mean,
         "ep_len_mean": ep_len_mean,
@@ -6793,7 +6804,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"sync_every_updates={AZ_SYNC_EVERY_UPDATES} updates_per_rollout={AZ_UPDATES_PER_ROLLOUT} "
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
-        f"outcome_only={int(AZ_OUTCOME_ONLY)} mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
+        f"outcome_only={int(AZ_OUTCOME_ONLY)} mission_bootstrap_coef={AZ_MISSION_BOOTSTRAP_COEF:.3f} "
+        f"mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
         f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} window_nodes={int(AZ_MCTS_WINDOW_NODES)} "
         f"joint_best_child={int(AZ_MCTS_JOINT_BEST_CHILD)} phase_obs_features={int(AZ_PHASE_OBS_FEATURES)} "
         f"reaction_value_policy={int(AZ_REACTION_VALUE_POLICY)} "

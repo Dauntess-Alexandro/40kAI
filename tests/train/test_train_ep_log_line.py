@@ -151,6 +151,30 @@ class TestAzEpisodeMissionFields(unittest.TestCase):
         self.assertEqual(f["enemy_ctrl_n"], 0)
 
 
+class TestAzDetPayloadHpDiff(unittest.TestCase):
+    def test_hp_diff_mean_computed_from_rows(self):
+        from train import _az_det_payload_from_rows
+
+        rows = [
+            {"result": "win", "end_reason": "wipeout_enemy", "model_hp_total": 20.0, "enemy_hp_total": 0.0},
+            {"result": "loss", "end_reason": "wipeout_model", "model_hp_total": 0.0, "enemy_hp_total": 10.0},
+        ]
+        p = _az_det_payload_from_rows(
+            rows, episode_idx=2, train_loss=1.0, train_algo="alphazero_tree", mcts_mode="tree"
+        )
+        # (20-0 + 0-10)/2 = +5.0
+        self.assertEqual(p["hp_diff_mean"], 5.0)
+
+    def test_hp_diff_mean_zero_when_rows_lack_hp(self):
+        from train import _az_det_payload_from_rows
+
+        rows = [{"result": "draw", "end_reason": "turn_limit"}]
+        p = _az_det_payload_from_rows(
+            rows, episode_idx=1, train_loss=1.0, train_algo="alphazero_tree", mcts_mode="tree"
+        )
+        self.assertEqual(p["hp_diff_mean"], 0.0)
+
+
 class TestTrainEpLineEmitted(unittest.TestCase):
     def test_all_algo_paths_use_helper(self):
         src = open("train.py", encoding="utf-8").read()
