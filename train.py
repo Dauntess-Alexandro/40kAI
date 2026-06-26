@@ -6709,7 +6709,17 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         n_actions=n_actions,
         mission_name=mission_name,
         ruleset_version=learner_identity.ruleset_version,
-        extras={"actor_learner": 1, "train_algo": TRAIN_ALGO, "mcts_mode": AZ_MCTS_MODE, "num_actors": int(AZ_NUM_ACTORS)},
+        extras={
+            "actor_learner": 1,
+            "train_algo": TRAIN_ALGO,
+            "mcts_mode": AZ_MCTS_MODE,
+            "num_actors": int(AZ_NUM_ACTORS),
+            # Пишем РЕАЛЬНО использованные значения (резолв GAZ_*→AZ_*→секция), чтобы
+            # контракт совпал с обучением. Иначе авто-резолв по env мог разойтись —
+            # напр. у GAZ при значении из секции. Eval берёт reaction/phase из контракта.
+            "reaction_value_policy": int(bool(AZ_REACTION_VALUE_POLICY)),
+            "phase_obs_features": int(bool(AZ_PHASE_OBS_FEATURES)),
+        },
     )
 
     try:

@@ -27,7 +27,7 @@ def _env_bool(name: str, default: str = "0") -> bool:
 # Каждый алго включает value-gate реакций своим env-флагом {TAG}_REACTION_VALUE_POLICY
 # (см. core/models/*: GMZ/SMZ/AZ/GAZ/DQN/PPO). Контракт обязан резолвить флаг ПО АЛГО,
 # иначе хардкод AZ молча пишет 0 для GMZ/SMZ-агентов, и eval отключает их умные реакции
-# (тот же класс, что algo-allowlist). gumbel_az едет на AZ-инфре → AZ-флаг.
+# (тот же класс, что algo-allowlist).
 _REACTION_FLAG_TAG_BY_ALGO = {
     "dqn": "DQN",
     "ppo": "PPO",
@@ -37,13 +37,30 @@ _REACTION_FLAG_TAG_BY_ALGO = {
     "sampled_muzero": "SMZ",
 }
 
+# Приоритет env-тегов по алго (повторяет runtime-резолв _az_family_env). gumbel_az
+# едет на AZ-инфре, но управляется своим GAZ_*-флагом: runtime берёт GAZ_* → AZ_* →
+# секция. Контракт обязан совпадать, иначе при GAZ_=1/AZ_=0 он писал 0, а сеть
+# обучалась с reaction=1 → eval молча отключал реакции у GAZ-агента.
+_REACTION_FLAG_TAG_PRIORITY_BY_ALGO = {
+    "gumbel_az": ("GAZ", "AZ"),
+}
+
 
 def _reaction_value_policy_for_algo(algo: str | None) -> int:
     """reaction_value_policy для контракта по train_algo (дефолт ON у каждого флага).
 
-    Неизвестный/отсутствующий algo → AZ-флаг (прежнее поведение, back-compat).
+    Резолв повторяет runtime: для gumbel_az — приоритет GAZ_* → AZ_* (как
+    _az_family_env). Неизвестный/отсутствующий algo → AZ-флаг (back-compat).
     """
-    tag = _REACTION_FLAG_TAG_BY_ALGO.get(str(algo or "").strip().lower(), "AZ")
+    a = str(algo or "").strip().lower()
+    priority = _REACTION_FLAG_TAG_PRIORITY_BY_ALGO.get(a)
+    if priority:
+        for tag in priority:
+            raw = os.getenv(f"{tag}_REACTION_VALUE_POLICY")
+            if raw is not None:
+                return int(str(raw).strip().lower() in {"1", "true", "yes", "on"})
+        return 1  # дефолт ON, если ни один env не задан
+    tag = _REACTION_FLAG_TAG_BY_ALGO.get(a, "AZ")
     return int(_env_bool(f"{tag}_REACTION_VALUE_POLICY", "1"))
 
 

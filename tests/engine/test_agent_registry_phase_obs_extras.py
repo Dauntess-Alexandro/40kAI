@@ -152,3 +152,37 @@ def test_contract_reaction_unknown_algo_falls_back_to_az():
             n_observations=41, n_actions=[5, 2], mission_name="only_war",
         )
     assert contract["extras"]["reaction_value_policy"] == 1
+
+
+# --- Регрессия: контракт gumbel_az должен совпадать с runtime-резолвом ---
+# Runtime резолвит reaction по приоритету GAZ_* → AZ_* → секция (_az_family_env).
+# Раньше контракт читал только AZ_*: при GAZ_=1, AZ_=0 контракт писал 0, а сеть
+# обучалась с reaction=1 → eval молча отключал умные реакции у GAZ-агента.
+
+
+def test_contract_reaction_gumbel_az_prefers_gaz_flag_over_az():
+    """gumbel_az: GAZ_REACTION_VALUE_POLICY приоритетнее AZ_ (как в runtime)."""
+    with patch.dict(
+        os.environ,
+        {"GAZ_REACTION_VALUE_POLICY": "1", "AZ_REACTION_VALUE_POLICY": "0"},
+        clear=False,
+    ):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+            extras={"train_algo": "gumbel_az"},
+        )
+    assert contract["extras"]["reaction_value_policy"] == 1
+
+
+def test_contract_reaction_gumbel_az_gaz_off_beats_az_on():
+    """gumbel_az: явный GAZ_=0 побеждает AZ_=1 (GAZ_ приоритетнее)."""
+    with patch.dict(
+        os.environ,
+        {"GAZ_REACTION_VALUE_POLICY": "0", "AZ_REACTION_VALUE_POLICY": "1"},
+        clear=False,
+    ):
+        contract = make_env_contract(
+            n_observations=41, n_actions=[5, 2], mission_name="only_war",
+            extras={"train_algo": "gumbel_az"},
+        )
+    assert contract["extras"]["reaction_value_policy"] == 0
