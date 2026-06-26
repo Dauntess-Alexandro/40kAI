@@ -14,9 +14,9 @@ from collections.abc import Callable
 from typing import Any
 
 
-def dqn_dist_env_contract_extras(*, num_local_actors: int) -> dict[str, int]:
+def dqn_dist_env_contract_extras(*, num_local_actors: int) -> dict[str, int | str]:
     """extras для make_env_contract — одинаковые на ПК1 (learner) и ПК2 (воркеры)."""
-    return {"actor_learner": 1, "num_actors": max(1, int(num_local_actors))}
+    return {"actor_learner": 1, "train_algo": "dqn", "num_actors": max(1, int(num_local_actors))}
 
 
 def resolve_dqn_dist_contract_hash(

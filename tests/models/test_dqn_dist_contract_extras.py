@@ -13,7 +13,21 @@ from core.models.dqn_dist import (
 def test_dqn_dist_extras_match_pc1_pc2_style():
     extras_pc1 = dqn_dist_env_contract_extras(num_local_actors=8)
     extras_pc2 = dqn_dist_env_contract_extras(num_local_actors=8)
-    assert extras_pc1 == extras_pc2 == {"actor_learner": 1, "num_actors": 8}
+    assert extras_pc1 == extras_pc2 == {"actor_learner": 1, "train_algo": "dqn", "num_actors": 8}
+
+
+def test_dqn_dist_extras_make_reaction_policy_use_dqn_flag(monkeypatch):
+    monkeypatch.setenv("DQN_REACTION_VALUE_POLICY", "1")
+    monkeypatch.setenv("AZ_REACTION_VALUE_POLICY", "0")
+    contract = make_env_contract(
+        n_observations=17,
+        n_actions=[5, 2, 2, 2, 5, 2, 24, 24],
+        mission_name="only_war",
+        ruleset_version="only_war_v1",
+        extras=dqn_dist_env_contract_extras(num_local_actors=8),
+    )
+    assert contract["extras"]["train_algo"] == "dqn"
+    assert contract["extras"]["reaction_value_policy"] == 1
 
 
 def test_resolve_contract_hash_prefers_context():

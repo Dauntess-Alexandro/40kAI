@@ -449,6 +449,9 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
         )
 
     _resolve_phase_obs_for_agent(learner_agent_id)
+    opponent_agent_id = str(getattr(cfg, "opponent_agent_id", "") or "").strip()
+    if opponent_agent_id:
+        _log_agent_contract_extras(opponent_agent_id, role="opponent")
     env, model_units, enemy_units, err = _build_env_from_train_roster()
     if env is None:
         raise RuntimeError(
@@ -500,7 +503,6 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
     )
 
     opponent_agent = None
-    opponent_agent_id = str(getattr(cfg, "opponent_agent_id", "") or "").strip()
     if opponent_agent_id:
         opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=eval_contract)
         opponent_agent = build_eval_agent(
@@ -554,6 +556,28 @@ def _load_agent_contract_extras(agent_id: str) -> dict[str, Any] | None:
     except Exception:
         pass
     return None
+
+
+def _log_agent_contract_extras(agent_id: str, *, role: str) -> None:
+    """Диагностический лог extras без изменения env-флагов."""
+    if not str(agent_id or "").strip():
+        return
+    role_label = str(role or "AGENT").strip().upper() or "AGENT"
+    extras = _load_agent_contract_extras(str(agent_id)) or {}
+    if not extras:
+        log(
+            f"[RESOLVE][{role_label}] agent_id={agent_id} contract_extras=missing; "
+            "phase_obs_features/reaction_value_policy не найдены."
+        )
+        return
+    phase = extras.get("phase_obs_features", "-")
+    reaction = extras.get("reaction_value_policy", "-")
+    train_algo = extras.get("train_algo", "-")
+    log(
+        f"[RESOLVE][{role_label}] agent_id={agent_id} "
+        f"phase_obs_features={phase} reaction_value_policy={reaction} "
+        f"train_algo={train_algo} (из контракта агента)"
+    )
 
 
 def _resolve_phase_obs_for_agent(agent_id: str) -> None:
@@ -1568,6 +1592,9 @@ def main():
     selected_agent_id = (args.learner_agent_id or "").strip()
     if selected_agent_id:
         _resolve_phase_obs_for_agent(selected_agent_id)
+    opponent_agent_id = (args.opponent_agent_id or "").strip()
+    if opponent_agent_id:
+        _log_agent_contract_extras(opponent_agent_id, role="opponent")
 
     env, model_units, enemy_units, checkpoint, pickle_path, checkpoint_path = load_latest_model(args.model)
     if env is None:
@@ -1675,7 +1702,6 @@ def main():
     else:
         policy_state = _extract_policy_state_dict(checkpoint)
 
-    opponent_agent_id = (args.opponent_agent_id or "").strip()
     opponent_algo_label = "heuristic"
     opponent_agent = None
     if opponent_agent_id:

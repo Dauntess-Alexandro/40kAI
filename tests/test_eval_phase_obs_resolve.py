@@ -98,6 +98,27 @@ class TestResolvePhaseObsForAgent:
         assert os.environ["PHASE_OBS_FEATURES"] == "0"
         assert os.environ["AZ_REACTION_VALUE_POLICY"] == "0"
 
+    def test_log_opponent_contract_extras(self, monkeypatch):
+        """Opponent extras должны быть видны в eval-логе, но не менять env-флаги learner."""
+        import eval as eval_mod
+
+        logs: list[str] = []
+        monkeypatch.setattr(
+            eval_mod,
+            "_load_agent_contract_extras",
+            lambda _aid: {"phase_obs_features": 1, "reaction_value_policy": 1, "train_algo": "ppo"},
+        )
+        monkeypatch.setattr(eval_mod, "log", logs.append)
+
+        eval_mod._log_agent_contract_extras("opp-agent", role="opponent")
+
+        assert logs
+        assert "[RESOLVE][OPPONENT]" in logs[0]
+        assert "agent_id=opp-agent" in logs[0]
+        assert "phase_obs_features=1" in logs[0]
+        assert "reaction_value_policy=1" in logs[0]
+        assert "train_algo=ppo" in logs[0]
+
     def test_no_contract_extras_falls_back_to_hyperparams(self, monkeypatch, tmp_path):
         """Нет extras → берём из hyperparams.json."""
         from eval import _resolve_phase_obs_for_agent
