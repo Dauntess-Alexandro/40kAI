@@ -24,6 +24,7 @@ from core.models.az_rollout_sink import (  # noqa: E402
     build_gaz_dist_worker_payloads,
     normalize_az_dist_hyperparams,
     read_az_dist_train_context,
+    reconcile_dist_opponent,
     wait_az_dist_train_context,
 )
 
@@ -301,6 +302,9 @@ def _worker_main(worker_id: int) -> None:
 
 
 def main() -> int:
+    # Явный OPPONENT_AGENT_ID (конфиг/ENV) фиксируем ДО того, как ниже выставим его из контекста —
+    # иначе reconcile не отличит «задано пользователем» от «взято из (возможно stale) контекста».
+    explicit_opp = str(os.getenv("OPPONENT_AGENT_ID", "") or "").strip()
     wait_sec = max(0.0, _env_float("AZ_DIST_WAIT_CONTEXT_SEC", 0.0))
     dist_ctx = wait_az_dist_train_context(
         wait_sec=wait_sec,
@@ -372,6 +376,21 @@ def main() -> int:
     ):
         print(f"[{_tag}][DIST][PC2] ПК1 не обнаружен — актёры не запущены (без спама).", flush=True)
         return 0
+
+    # ПК1 жив → он уже записал СВЕЖИЙ контекст (train.py пишет az_dist_train_context.json ДО
+    # открытия приёмника). Лечим возможный stale-оппонент: ПК2 мог стартовать раньше ПК1 и
+    # прочитать оппонента прошлого прогона. Перечитываем и согласуем (см. reconcile_dist_opponent).
+    opp_id, opp_warn = reconcile_dist_opponent(
+        opp_id, read_az_dist_train_context(), explicit_opp=explicit_opp
+    )
+    if opp_warn:
+        print(f"[{_tag}][DIST][PC2][WARN] {opp_warn}", flush=True)
+    if opp_id:
+        os.environ["OPPONENT_AGENT_ID"] = opp_id
+    print(
+        f"[{_tag}][DIST][PC2] оппонент подтверждён после подъёма ПК1: {opp_id or '(эвристика)'}",
+        flush=True,
+    )
 
     print(
         f"[{_tag}][DIST][PC2] spawning workers={num_workers} id_base={worker_id_base} "

@@ -40,6 +40,14 @@ def _bool_env(name: str, default: str) -> bool:
     return str(os.getenv(name, default)).strip().lower() in _TRUTHY
 
 
+def _clamped_float(value: Any, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = float(default)
+    return max(-1.0, min(1.0, float(parsed)))
+
+
 @dataclass
 class EvalSearchCfg:
     algo: str
@@ -57,6 +65,11 @@ def resolve_eval_search_cfg(algo: str) -> EvalSearchCfg:
     search: dict[str, Any] = {}
 
     if is_alphazero_net_algo(algo):
+        terminal_values = {
+            "terminal_value_win": _clamped_float(os.getenv("AZ_OUTCOME_VALUE_WIN", "1.0"), 1.0),
+            "terminal_value_loss": _clamped_float(os.getenv("AZ_OUTCOME_VALUE_LOSS", "-1.0"), -1.0),
+            "terminal_value_draw": _clamped_float(os.getenv("AZ_OUTCOME_VALUE_DRAW", "0.0"), 0.0),
+        }
         if is_gumbel_az_algo(algo):
             search.update(
                 mode=str(os.getenv("GAZ_EVAL_MODE", "gumbel")).strip().lower(),
@@ -64,6 +77,7 @@ def resolve_eval_search_cfg(algo: str) -> EvalSearchCfg:
                 num_considered_actions=max(2, int(os.getenv("GAZ_EVAL_NUM_CONSIDERED", "8"))),
                 joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
                 temperature=float(os.getenv("GAZ_EVAL_TEMPERATURE", "0.05")),
+                **terminal_values,
             )
         else:
             search.update(
@@ -79,6 +93,7 @@ def resolve_eval_search_cfg(algo: str) -> EvalSearchCfg:
                 window_nodes=_bool_env("AZ_EVAL_MCTS_WINDOW_NODES", os.getenv("MCTS_WINDOW_NODES", "0")),
                 joint_best_child=_bool_env("AZ_EVAL_MCTS_JOINT_BEST_CHILD", os.getenv("AZ_MCTS_JOINT_BEST_CHILD", "0")),
                 temperature=float(os.getenv("AZ_EVAL_MCTS_TEMPERATURE", "0.06")),
+                **terminal_values,
             )
     elif algo == "gumbel_muzero":
         search.update(
@@ -291,6 +306,27 @@ def _parse_contract_sizes(contract: dict[str, Any]) -> tuple[int, list[int]]:
     return int(n_obs), [int(x) for x in n_actions]
 
 
+def _apply_az_terminal_metadata(search_cfg: dict[str, Any], metadata: dict[str, Any] | None) -> dict[str, Any]:
+    out = dict(search_cfg or {})
+    meta = metadata if isinstance(metadata, dict) else {}
+    pairs = (
+        ("terminal_value_win", "outcome_value_win", "AZ_OUTCOME_VALUE_WIN", 1.0),
+        ("terminal_value_loss", "outcome_value_loss", "AZ_OUTCOME_VALUE_LOSS", -1.0),
+        ("terminal_value_draw", "outcome_value_draw", "AZ_OUTCOME_VALUE_DRAW", 0.0),
+    )
+    for terminal_key, outcome_key, env_key, default in pairs:
+        if os.getenv(env_key) is not None:
+            out[terminal_key] = _clamped_float(os.getenv(env_key), default)
+            continue
+        if outcome_key in meta:
+            out[terminal_key] = _clamped_float(meta.get(outcome_key), default)
+        elif terminal_key in meta:
+            out[terminal_key] = _clamped_float(meta.get(terminal_key), default)
+        else:
+            out[terminal_key] = _clamped_float(out.get(terminal_key, default), default)
+    return out
+
+
 def resolve_arch_for_algo(algo: str, payload: dict | None) -> dict | None:
     """Единый резолв арки сети для eval (learner и opponent — один путь).
 
@@ -350,6 +386,7 @@ def build_eval_agent(
     cfg: EvalSearchCfg | None = None,
     device=torch.device("cpu"),
     arch: dict | None = None,
+    metadata: dict | None = None,
     log_fn=None,
 ) -> EvalAgent:
     """Фабрика EvalAgent: строит net + (опц.) search из контракта и cfg.search.
@@ -375,6 +412,9 @@ def build_eval_agent(
             f"obs={contract.get('obs_space_signature')!r}, act={contract.get('action_space_signature')!r}"
         )
     search_cfg = dict(cfg.search or {})
+    if is_alphazero_net_algo(algo):
+        search_cfg = _apply_az_terminal_metadata(search_cfg, metadata)
+        cfg.search = dict(search_cfg)
 
     if algo == "dqn":
         from core.models.DQN import infer_dqn_arch_from_state_dict, make_dqn
@@ -433,6 +473,9 @@ def build_eval_agent(
                     num_simulations=max(1, int(search_cfg.get("num_simulations", 32))),
                     num_considered_actions=max(2, int(search_cfg.get("num_considered_actions", 8))),
                     joint_action=bool(search_cfg.get("joint_action", True)),
+                    terminal_value_win=float(search_cfg.get("terminal_value_win", 1.0)),
+                    terminal_value_loss=float(search_cfg.get("terminal_value_loss", -1.0)),
+                    terminal_value_draw=float(search_cfg.get("terminal_value_draw", 0.0)),
                     device=device,
                 )
             # mode != gumbel → greedy (search=None)
@@ -446,6 +489,9 @@ def build_eval_agent(
                 max_depth=max(1, int(search_cfg.get("max_depth", 1))),
                 mode=az_mcts_mode_from_payload(algo),
                 root_dirichlet_only=True,
+                terminal_value_win=float(search_cfg.get("terminal_value_win", 1.0)),
+                terminal_value_loss=float(search_cfg.get("terminal_value_loss", -1.0)),
+                terminal_value_draw=float(search_cfg.get("terminal_value_draw", 0.0)),
             )
             search = AlphaZeroFactorizedMCTS(net, config=mcts_cfg, device=device)
         return EvalAgent(

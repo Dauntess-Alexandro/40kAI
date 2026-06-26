@@ -25,6 +25,9 @@ class GumbelAZSearchConfig:
     simulate_enemy: bool = True
     joint_action: bool = False     # координатный режим: следующие головы видят выбор предыдущих
     mode: str = "gumbel"
+    terminal_value_win: float = 1.0
+    terminal_value_loss: float = -1.0
+    terminal_value_draw: float = 0.0
 
 
 def sequential_halving_keep_schedule(m: int) -> list[int]:
@@ -42,15 +45,24 @@ def _sigma(q: np.ndarray, *, c_visit: float, value_scale: float, max_visit: floa
     return (float(c_visit) + float(max_visit)) * float(value_scale) * np.asarray(q, dtype=np.float32)
 
 
-def _terminal_value_from_info(info: dict[str, Any]) -> float | None:
+def _terminal_value_from_info(
+    info: dict[str, Any],
+    *,
+    value_win: float = 1.0,
+    value_loss: float = -1.0,
+    value_draw: float = 0.0,
+) -> float | None:
     winner = str((info or {}).get("winner", "") or "").strip().lower()
     end_reason = str((info or {}).get("end reason", "") or "").strip().lower()
+    value_win = float(np.clip(float(value_win), -1.0, 1.0))
+    value_loss = float(np.clip(float(value_loss), -1.0, 1.0))
+    value_draw = float(np.clip(float(value_draw), -1.0, 1.0))
     if winner in {"model", "learner", "ai"} or end_reason == "wipeout_enemy":
-        return 1.0
+        return value_win
     if winner in {"enemy", "player", "opponent"} or end_reason == "wipeout_model":
-        return -1.0
+        return value_loss
     if str(end_reason).startswith("turn_limit"):
-        return 0.0
+        return value_draw
     return None
 
 
@@ -178,7 +190,12 @@ class GumbelAlphaZeroSearch:
                     env_u.enemyTurn(trunc=False, policy_fn=enemy_policy_fn)
                     done = bool(getattr(env_u, "game_over", False))
                     info = env_u.get_info()
-                term = _terminal_value_from_info(info or {})
+                term = _terminal_value_from_info(
+                    info or {},
+                    value_win=float(getattr(self.cfg, "terminal_value_win", 1.0)),
+                    value_loss=float(getattr(self.cfg, "terminal_value_loss", -1.0)),
+                    value_draw=float(getattr(self.cfg, "terminal_value_draw", 0.0)),
+                )
                 leaf["obs"] = np.asarray(next_obs, dtype=np.float32)
                 if term is not None or bool(done or trunc):
                     leaf["terminal_value"] = float(term if term is not None else 0.0)
@@ -381,7 +398,10 @@ class GumbelAlphaZeroSearch:
 
 def build_gumbel_inference_search(net, *, num_simulations: int, num_considered_actions: int,
                                   joint_action: bool = False, value_scale: float = 0.1,
-                                  c_visit: float = 50.0, device=None, evaluator=None):
+                                  c_visit: float = 50.0, device=None, evaluator=None,
+                                  terminal_value_win: float = 1.0,
+                                  terminal_value_loss: float = -1.0,
+                                  terminal_value_draw: float = 0.0):
     """Фабрика Gumbel-поиска для инференса (eval/play/Viewer).
 
     depth-1, simulate_enemy=False (лист = оценка сети после хода модели, без тяжёлой
@@ -397,6 +417,9 @@ def build_gumbel_inference_search(net, *, num_simulations: int, num_considered_a
         temperature_opening_moves=0,
         simulate_enemy=False,
         joint_action=bool(joint_action),
+        terminal_value_win=float(terminal_value_win),
+        terminal_value_loss=float(terminal_value_loss),
+        terminal_value_draw=float(terminal_value_draw),
     )
     return GumbelAlphaZeroSearch(net, config=cfg, device=device, evaluator=evaluator)
 

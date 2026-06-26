@@ -86,6 +86,35 @@ def n_actions_from_env(env, model_len: int) -> list[int]:
     return action_sizes_from_env(env, int(model_len))
 
 
+def _clamped_value(value, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = float(default)
+    return max(-1.0, min(1.0, parsed))
+
+
+def _az_terminal_values_from_checkpoint(checkpoint: dict | None) -> tuple[float, float, float]:
+    payload = checkpoint if isinstance(checkpoint, dict) else {}
+    meta = payload.get("_viewer_meta") if isinstance(payload.get("_viewer_meta"), dict) else {}
+
+    def _pick(env_key: str, terminal_key: str, outcome_key: str, default: float) -> float:
+        if os.getenv(env_key) is not None:
+            return _clamped_value(os.getenv(env_key), default)
+        for source in (payload, meta):
+            if terminal_key in source:
+                return _clamped_value(source.get(terminal_key), default)
+            if outcome_key in source:
+                return _clamped_value(source.get(outcome_key), default)
+        return _clamped_value(default, default)
+
+    return (
+        _pick("AZ_OUTCOME_VALUE_WIN", "terminal_value_win", "outcome_value_win", 1.0),
+        _pick("AZ_OUTCOME_VALUE_LOSS", "terminal_value_loss", "outcome_value_loss", -1.0),
+        _pick("AZ_OUTCOME_VALUE_DRAW", "terminal_value_draw", "outcome_value_draw", 0.0),
+    )
+
+
 def _build_units_from_runtime_config(b_len: int, b_hei: int):
     """Fallback roster loader for Viewer when no pickle exists."""
     enemy = []
@@ -332,6 +361,7 @@ class GameController:
                 checkpoint["_viewer_bootstrap_pickle"] = "-"
                 checkpoint["_viewer_bootstrap_checkpoint"] = "-"
                 self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
+                checkpoint["_viewer_meta"] = dict(meta)
                 return env, model, enemy, checkpoint
 
             paired_models.sort(key=lambda item: item[0])
@@ -483,6 +513,7 @@ class GameController:
                     "_viewer_bootstrap_checkpoint": checkpoint_path,
                 }
             self._io.log(f"[LEAGUE] Viewer использует agent-id={agent_id_override}")
+            checkpoint["_viewer_meta"] = dict(meta)
         elif isinstance(checkpoint, dict):
             checkpoint["_viewer_agent_id"] = ""
             checkpoint["_viewer_model_source"] = "pickle_checkpoint"
@@ -590,6 +621,11 @@ class GameController:
             self._io.log(f"[MODEL] n_actions (из env): {n_actions}")
 
             algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
+            az_terminal_values = (
+                _az_terminal_values_from_checkpoint(checkpoint if isinstance(checkpoint, dict) else None)
+                if is_alphazero_net_algo(algo)
+                else (1.0, -1.0, 0.0)
+            )
             if is_gumbel_az_algo(algo):
                 gaz_joint = str(os.getenv("GAZ_JOINT_ACTION", "0")).strip() == "1"
                 gaz_tail = f", sims={int(os.getenv('GAZ_PLAY_SIMS', '32'))}" if gaz_play_mode == "gumbel" else ""
@@ -744,6 +780,9 @@ class GameController:
                                 num_simulations=max(1, int(os.getenv("GAZ_PLAY_SIMS", "32"))),
                                 num_considered_actions=max(2, int(os.getenv("GAZ_PLAY_NUM_CONSIDERED", "8"))),
                                 joint_action=str(os.getenv("GAZ_JOINT_ACTION", "1")).strip() == "1",
+                                terminal_value_win=float(az_terminal_values[0]),
+                                terminal_value_loss=float(az_terminal_values[1]),
+                                terminal_value_draw=float(az_terminal_values[2]),
                                 device=state_tensor.device,
                             )
                             _pi, selected, _value = search.run(
@@ -768,6 +807,9 @@ class GameController:
                                     top_k_per_head=max(1, int(os.getenv("AZ_PLAY_MCTS_TOP_K_PER_HEAD", "8"))),
                                     max_depth=max(1, int(os.getenv("AZ_PLAY_MCTS_MAX_DEPTH", "1"))),
                                     mode=az_mcts_mode,
+                                    terminal_value_win=float(az_terminal_values[0]),
+                                    terminal_value_loss=float(az_terminal_values[1]),
+                                    terminal_value_draw=float(az_terminal_values[2]),
                                 ),
                                 device=state_tensor.device,
                             )

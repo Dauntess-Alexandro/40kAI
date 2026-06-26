@@ -500,6 +500,7 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
         cfg=resolve_eval_search_cfg(algo),
         device=device,
         arch=learner_arch,
+        metadata=meta if isinstance(meta, dict) else {},
     )
 
     opponent_agent = None
@@ -517,6 +518,7 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
             cfg=resolve_eval_search_cfg(opp.algo),
             device=device,
             arch=opp.arch,
+            metadata=opp.metadata,
         )
 
     _reaction_net_by_side = {
@@ -1720,6 +1722,7 @@ def main():
                 cfg=resolve_eval_search_cfg(opp.algo),
                 device=device,
                 arch=opp.arch,
+                metadata=opp.metadata,
                 log_fn=log,
             )
             log(
@@ -1781,6 +1784,7 @@ def main():
         cfg=cfg,
         device=device,
         arch=learner_arch,
+        metadata=arch_source if isinstance(arch_source, dict) else {},
         log_fn=log,
     )
 

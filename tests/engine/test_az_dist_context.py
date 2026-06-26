@@ -17,6 +17,7 @@ from core.models.az_rollout_sink import (
     normalize_az_dist_hyperparams,
     pack_az_dist_hyperparams,
     read_az_dist_train_context,
+    reconcile_dist_opponent,
     write_az_dist_train_context,
 )
 
@@ -138,6 +139,44 @@ def test_remap_models_path_pc1_to_smb(tmp_path, monkeypatch):
     assert _remap_models_path(pc1_path) == str(policy)
     assert agents_meta_root() == str(smb / "agents")
     assert models_dir() == str(smb)
+
+
+def test_reconcile_opponent_stale_to_fresh_warns():
+    # ПК2 стартовал раньше ПК1 и прочитал оппонента прошлого прогона (PPO) → берём свежего (DQN) + WARN.
+    opp, warn = reconcile_dist_opponent(
+        "P2_Necrons_only_war_v2_final_ep3000_20260626_110232",
+        {"opponent_agent_id": "P1_Necrons_only_war_v2_final_ep1000_20260626_105022"},
+        explicit_opp="",
+    )
+    assert opp == "P1_Necrons_only_war_v2_final_ep1000_20260626_105022"
+    assert warn is not None
+    assert "ep3000" in warn and "ep1000" in warn
+
+
+def test_reconcile_opponent_same_no_warn():
+    opp, warn = reconcile_dist_opponent("agent_x", {"opponent_agent_id": "agent_x"}, explicit_opp="")
+    assert opp == "agent_x"
+    assert warn is None
+
+
+def test_reconcile_opponent_explicit_wins_and_warns_on_diff():
+    # Явный OPPONENT_AGENT_ID (конфиг) приоритетнее контекста, но при расхождении предупреждаем.
+    opp, warn = reconcile_dist_opponent("agent_x", {"opponent_agent_id": "agent_y"}, explicit_opp="agent_x")
+    assert opp == "agent_x"
+    assert warn is not None
+
+
+def test_reconcile_opponent_explicit_match_no_warn():
+    opp, warn = reconcile_dist_opponent("agent_x", {"opponent_agent_id": "agent_x"}, explicit_opp="agent_x")
+    assert opp == "agent_x"
+    assert warn is None
+
+
+def test_reconcile_opponent_empty_fresh_keeps_initial():
+    # Контекст без оппонента (эвристика/пусто) → оставляем то, что уже резолвили, без WARN.
+    opp, warn = reconcile_dist_opponent("agent_x", {}, explicit_opp="")
+    assert opp == "agent_x"
+    assert warn is None
 
 
 def test_write_az_remote_search_cfg_payload(tmp_path, monkeypatch):

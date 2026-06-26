@@ -1,6 +1,6 @@
 import pytest
 
-from core.models.eval_agent import EvalSearchCfg, resolve_eval_search_cfg
+from core.models.eval_agent import EvalSearchCfg, _apply_az_terminal_metadata, resolve_eval_search_cfg
 
 
 def test_cfg_defaults_deterministic(monkeypatch):
@@ -17,6 +17,20 @@ def test_cfg_reads_unified_az_temperature(monkeypatch):
     monkeypatch.setenv("AZ_EVAL_MCTS_TEMPERATURE", "0.20")
     cfg = resolve_eval_search_cfg("alphazero_tree")
     assert abs(cfg.search["temperature"] - 0.20) < 1e-9
+
+
+def test_cfg_az_terminal_draw_from_metadata(monkeypatch):
+    monkeypatch.delenv("AZ_OUTCOME_VALUE_DRAW", raising=False)
+    cfg = resolve_eval_search_cfg("alphazero_tree")
+    merged = _apply_az_terminal_metadata(cfg.search, {"outcome_value_draw": -0.7})
+    assert merged["terminal_value_draw"] == -0.7
+
+
+def test_cfg_az_terminal_draw_env_overrides_metadata(monkeypatch):
+    monkeypatch.setenv("AZ_OUTCOME_VALUE_DRAW", "-0.4")
+    cfg = resolve_eval_search_cfg("alphazero_tree")
+    merged = _apply_az_terminal_metadata(cfg.search, {"outcome_value_draw": -0.7})
+    assert merged["terminal_value_draw"] == -0.4
 
 
 def test_cfg_opponent_override_warns(monkeypatch):

@@ -14,6 +14,7 @@ class OpponentSpec:
     algo: str  # "dqn" | "ppo" | "alphazero_tree" | "alphazero_proxy" | "gumbel_muzero" | "sampled_muzero"
     contract: dict[str, Any]
     policy_state: dict[str, Any]
+    metadata: dict[str, Any] | None = None
     arch: dict[str, Any] | None = None  # арка сети из registry-meta (resolve_arch_for_algo); None для legacy/обратной совместимости
 
 
@@ -73,6 +74,7 @@ def load_agent_opponent(*, agent_id: str, expected_contract: dict[str, Any] | No
         algo=str(algo),
         contract=dict(contract or {}),
         policy_state=normalize_state_dict(policy_state),
+        metadata=dict(meta) if isinstance(meta, dict) else {},
         arch=arch,
     )
 
@@ -101,5 +103,6 @@ def build_policy_fn(
         contract=opponent.contract,
         len_model=int(len_model),
         cfg=cfg,
+        metadata=opponent.metadata,
     )
     return agent.as_policy_fn(env, "enemy")

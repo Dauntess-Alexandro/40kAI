@@ -54,6 +54,9 @@ class MCTSConfig:
     window_nodes: bool = False
     # Part B/B5: execute coherent joint action from the most visited option child.
     joint_action_from_best_child: bool = False
+    terminal_value_win: float = 1.0
+    terminal_value_loss: float = -1.0
+    terminal_value_draw: float = 0.0
 
 
 @dataclass
@@ -296,12 +299,15 @@ class AlphaZeroFactorizedMCTS:
     def _terminal_value_from_info(self, info: dict[str, Any]) -> float | None:
         winner = str((info or {}).get("winner", "") or "").strip().lower()
         end_reason = str((info or {}).get("end reason", "") or "").strip().lower()
+        value_win = float(np.clip(float(getattr(self.cfg, "terminal_value_win", 1.0)), -1.0, 1.0))
+        value_loss = float(np.clip(float(getattr(self.cfg, "terminal_value_loss", -1.0)), -1.0, 1.0))
+        value_draw = float(np.clip(float(getattr(self.cfg, "terminal_value_draw", 0.0)), -1.0, 1.0))
         if winner in {"model", "learner", "ai"} or end_reason == "wipeout_enemy":
-            return 1.0
+            return value_win
         if winner in {"enemy", "player", "opponent"} or end_reason == "wipeout_model":
-            return -1.0
+            return value_loss
         if str(end_reason).startswith("turn_limit"):
-            return 0.0
+            return value_draw
         return None
 
     def _apply_root_dirichlet(

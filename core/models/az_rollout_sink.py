@@ -125,6 +125,43 @@ def read_az_dist_train_context() -> dict[str, Any]:
         return {}
 
 
+def reconcile_dist_opponent(
+    initial_opp: str,
+    fresh_ctx: dict[str, Any] | None,
+    *,
+    explicit_opp: str = "",
+) -> tuple[str, str | None]:
+    """Согласовать оппонента ПК2 со СВЕЖИМ контекстом ПК1; вернуть (opponent_id, warn|None).
+
+    Зачем: ПК2 мог стартовать раньше, чем ПК1 перепишет az_dist_train_context.json, и
+    прочитать оппонента ПРОШЛОГО прогона (stale). Эту функцию вызываем уже ПОСЛЕ
+    wait_for_pc1_live (ПК1 точно записал свежий контекст) — перечитываем и при смене берём
+    свежего + текст предупреждения (тихий рассинхрон self-play больше не проходит незаметно).
+
+    Приоритет: явный OPPONENT_AGENT_ID (конфиг/ENV) важнее контекста, но при расхождении тоже
+    вернём warn. Пустой свежий оппонент (нет поля) → оставляем initial без warn.
+    """
+    explicit = str(explicit_opp or "").strip()
+    fresh = str((fresh_ctx or {}).get("opponent_agent_id", "") or "").strip()
+    if explicit:
+        if fresh and fresh != explicit:
+            return explicit, (
+                f"OPPONENT_AGENT_ID задан явно ('{explicit}'), но контекст ПК1 указывает "
+                f"'{fresh}' — использую явный (контекст проигнорирован). Где: "
+                f"pc2_az_actors после wait_for_pc1_live."
+            )
+        return explicit, None
+    initial = str(initial_opp or "").strip()
+    if fresh and fresh != initial:
+        return fresh, (
+            f"оппонент в контексте ПК1 сменился после старта ПК2: было '{initial or '-'}' "
+            f"→ стало '{fresh}'. Беру свежего. Причина: ПК2 стартовал раньше, чем ПК1 "
+            f"переписал az_dist_train_context.json (рассинхрон self-play). "
+            f"Где: pc2_az_actors после wait_for_pc1_live."
+        )
+    return (initial or fresh), None
+
+
 # Поля alphazero_tree, которые ПК1 пишет в SMB, а dist-акторы ПК2 подставляют в MCTS.
 AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
     "mcts_simulations",
@@ -279,6 +316,9 @@ def build_az_dist_worker_payloads(
             "mcts_joint_action_from_best_child",
             bool(d.get("joint_action_from_best_child", False)),
         ),
+        "terminal_value_win": float(_hp_pick(hp, "outcome_value_win", d.get("outcome_value_win", 1.0))),
+        "terminal_value_loss": float(_hp_pick(hp, "outcome_value_loss", d.get("outcome_value_loss", -1.0))),
+        "terminal_value_draw": float(_hp_pick(hp, "outcome_value_draw", d.get("outcome_value_draw", -0.25))),
     }
     sp_payload = {
         "temperature_opening_moves": int(
@@ -339,6 +379,9 @@ def build_gaz_dist_worker_payloads(
         "batch_eval_size": int(_hp_pick(hp, "batch_eval_size", d.get("batch_eval_size", 16))),
         "simulate_enemy": _hp_bool(hp, "simulate_enemy", bool(d.get("simulate_enemy", False))),
         "joint_action": _hp_bool(hp, "joint_action", bool(d.get("joint_action", False))),
+        "terminal_value_win": float(_hp_pick(hp, "outcome_value_win", d.get("outcome_value_win", 1.0))),
+        "terminal_value_loss": float(_hp_pick(hp, "outcome_value_loss", d.get("outcome_value_loss", -1.0))),
+        "terminal_value_draw": float(_hp_pick(hp, "outcome_value_draw", d.get("outcome_value_draw", -0.25))),
     }
     sp_payload = {
         "temperature_opening_moves": int(

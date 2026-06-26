@@ -2714,6 +2714,9 @@ def _az_mcts_config(*, progress: float = 0.0, move_count: int = 0) -> MCTSConfig
         candidate_mode=str(AZ_MCTS_CANDIDATE_MODE),
         window_nodes=bool(AZ_MCTS_WINDOW_NODES),
         joint_action_from_best_child=bool(AZ_MCTS_JOINT_BEST_CHILD),
+        terminal_value_win=float(AZ_OUTCOME_VALUE_WIN),
+        terminal_value_loss=float(AZ_OUTCOME_VALUE_LOSS),
+        terminal_value_draw=float(AZ_OUTCOME_VALUE_DRAW),
     )
 
 
@@ -2741,6 +2744,9 @@ def _az_honest_eval_mcts_config(*, mcts_mode: str) -> MCTSConfig:
         candidate_mode=str(AZ_MCTS_CANDIDATE_MODE),
         window_nodes=bool(AZ_MCTS_WINDOW_NODES),
         joint_action_from_best_child=bool(AZ_MCTS_JOINT_BEST_CHILD),
+        terminal_value_win=float(AZ_OUTCOME_VALUE_WIN),
+        terminal_value_loss=float(AZ_OUTCOME_VALUE_LOSS),
+        terminal_value_draw=float(AZ_OUTCOME_VALUE_DRAW),
     )
 
 
@@ -2774,6 +2780,9 @@ def _gaz_cfg_payload() -> dict:
         "joint_action": GAZ_JOINT_ACTION,
         "eval_cache_size": GAZ_EVAL_CACHE_SIZE,
         "batch_eval_size": GAZ_BATCH_EVAL_SIZE,
+        "terminal_value_win": float(AZ_OUTCOME_VALUE_WIN),
+        "terminal_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+        "terminal_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
     }
 
 
@@ -2799,6 +2808,9 @@ def _build_az_search(net, payload: dict, device, *, evaluator=None):
                 batch_eval_size=int(payload.get("batch_eval_size", GAZ_BATCH_EVAL_SIZE)),
                 simulate_enemy=bool(payload.get("simulate_enemy", GAZ_SIMULATE_ENEMY)),
                 joint_action=bool(payload.get("joint_action", GAZ_JOINT_ACTION)),
+                terminal_value_win=float(payload.get("terminal_value_win", AZ_OUTCOME_VALUE_WIN)),
+                terminal_value_loss=float(payload.get("terminal_value_loss", AZ_OUTCOME_VALUE_LOSS)),
+                terminal_value_draw=float(payload.get("terminal_value_draw", AZ_OUTCOME_VALUE_DRAW)),
             ),
             device=device,
             evaluator=evaluator,
@@ -2830,6 +2842,9 @@ def _build_az_search(net, payload: dict, device, *, evaluator=None):
             joint_action_from_best_child=bool(
                 payload.get("joint_action_from_best_child", AZ_MCTS_JOINT_BEST_CHILD)
             ),
+            terminal_value_win=float(payload.get("terminal_value_win", AZ_OUTCOME_VALUE_WIN)),
+            terminal_value_loss=float(payload.get("terminal_value_loss", AZ_OUTCOME_VALUE_LOSS)),
+            terminal_value_draw=float(payload.get("terminal_value_draw", AZ_OUTCOME_VALUE_DRAW)),
         ),
         device=device,
         evaluator=evaluator,
@@ -3698,6 +3713,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     algo=str(checkpoint_algo),
                     contract=dict(env_contract),
                     policy_state=policy_state,
+                    metadata=dict(checkpoint) if isinstance(checkpoint, dict) else {},
                 )
             else:
                 if not OPPONENT_AGENT_ID:
@@ -4777,6 +4793,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         algo=str(checkpoint_meta_algo or "ppo"),
                         contract=dict(env_contract),
                         policy_state=dict(opponent_state_dict_cpu),
+                        metadata=dict(checkpoint) if isinstance(checkpoint, dict) else {},
                     )
             else:
                 if not OPPONENT_AGENT_ID:
@@ -6754,6 +6771,10 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "env_contract": env_contract,
             "num_actors": int(AZ_NUM_ACTORS),
             "arch": dict(az_kw),
+            "outcome_only": bool(AZ_OUTCOME_ONLY),
+            "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+            "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+            "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
         }
         if az_lr_scheduler is not None:
             payload["lr_scheduler"] = az_lr_scheduler.state_dict()
@@ -6793,6 +6814,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "candidate_mode": AZ_MCTS_CANDIDATE_MODE,
             "window_nodes": AZ_MCTS_WINDOW_NODES,
             "joint_action_from_best_child": AZ_MCTS_JOINT_BEST_CHILD,
+            "terminal_value_win": float(AZ_OUTCOME_VALUE_WIN),
+            "terminal_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+            "terminal_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
         }
     _sp_cfg_payload = {
         "temperature_opening_moves": AZ_TEMP_OPENING_MOVES,
@@ -6822,7 +6846,9 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             log_fn=append_agent_log,
             ep_marker_fn=lambda n: print(f"[TRAIN][DIST][PC2] pc2_ep_accepted={n}", flush=True),
         )
-        rollout_receiver.start()
+        # ВНИМАНИЕ: receiver.start() перенесён НИЖЕ — после записи az_dist_train_context.json.
+        # Инвариант для ПК2: «порт приёмника открыт ⇒ свежий контекст уже на шаре», иначе ПК2,
+        # стартовавший раньше, мог прочитать оппонента прошлого прогона (тихий рассинхрон self-play).
         try:
             _dist_shared_hp = {
                 "temperature_opening_moves": int(AZ_TEMP_OPENING_MOVES),
@@ -6920,6 +6946,13 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 f"[AZ][DIST][CONTEXT][WARN] Не удалось записать контекст для PC2: {exc}. "
                 "Где: write_az_dist_train_context. Что делать: проверьте SMB actor_sync."
             )
+        # Контекст и search_cfg записаны → ТОЛЬКО ТЕПЕРЬ открываем приёмник. Порядок
+        # context→receiver даёт ПК2 инвариант: порт :AZ_DIST_ROLLOUT_PORT отвечает ⇒ свежий
+        # az_dist_train_context.json уже на шаре (нет гонки со stale-оппонентом прошлого прогона).
+        rollout_receiver.start()
+        append_agent_log(
+            f"[{_AZ_LOG_TAG}][DIST][RECEIVER] start (после записи контекста: порядок context→receiver)"
+        )
 
     if remaining_episodes > 0:
         if AZ_INFERENCE_SERVER_ENABLED:
@@ -7470,6 +7503,10 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "mode": "actor_learner",
             "num_actors": int(AZ_NUM_ACTORS),
             "policy_version": int(policy_version),
+            "outcome_only": bool(AZ_OUTCOME_ONLY),
+            "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+            "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+            "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
         },
     )
     az_done_msg = (
@@ -8520,6 +8557,10 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             "env_contract": env_contract,
             "num_actors": int(GMZ_NUM_ACTORS),
             "arch": gumbel_muzero_kwargs_from_env(),
+            "outcome_only": bool(GMZ_OUTCOME_ONLY),
+            "outcome_value_win": float(GMZ_OUTCOME_VALUE_WIN),
+            "outcome_value_loss": float(GMZ_OUTCOME_VALUE_LOSS),
+            "outcome_value_draw": float(GMZ_OUTCOME_VALUE_DRAW),
         }
         if gmz_scheduler is not None:
             payload["lr_scheduler"] = gmz_scheduler.state_dict()
@@ -8950,6 +8991,10 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             "mode": "actor_learner",
             "num_actors": int(GMZ_NUM_ACTORS),
             "policy_version": int(policy_version),
+            "outcome_only": bool(GMZ_OUTCOME_ONLY),
+            "outcome_value_win": float(GMZ_OUTCOME_VALUE_WIN),
+            "outcome_value_loss": float(GMZ_OUTCOME_VALUE_LOSS),
+            "outcome_value_draw": float(GMZ_OUTCOME_VALUE_DRAW),
         },
     )
     append_agent_log(
@@ -9285,6 +9330,10 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
             "env_contract": env_contract,
             "num_actors": int(SMZ_NUM_ACTORS),
             "arch": sampled_muzero_kwargs_from_env(),
+            "outcome_only": bool(SMZ_OUTCOME_ONLY),
+            "outcome_value_win": float(SMZ_OUTCOME_VALUE_WIN),
+            "outcome_value_loss": float(SMZ_OUTCOME_VALUE_LOSS),
+            "outcome_value_draw": float(SMZ_OUTCOME_VALUE_DRAW),
         }
         if smz_scheduler is not None:
             payload["lr_scheduler"] = smz_scheduler.state_dict()
@@ -9714,6 +9763,10 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
             "mode": "actor_learner",
             "num_actors": int(SMZ_NUM_ACTORS),
             "policy_version": int(policy_version),
+            "outcome_only": bool(SMZ_OUTCOME_ONLY),
+            "outcome_value_win": float(SMZ_OUTCOME_VALUE_WIN),
+            "outcome_value_loss": float(SMZ_OUTCOME_VALUE_LOSS),
+            "outcome_value_draw": float(SMZ_OUTCOME_VALUE_DRAW),
         },
     )
     append_agent_log(
