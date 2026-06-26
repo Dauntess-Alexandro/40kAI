@@ -642,15 +642,13 @@ def select_action_with_epsilon(
     side = str(side or "model").strip().lower()
     if side not in {"model", "enemy"}:
         side = "model"
-    if masks_seq is None:
-        try:
-            masks_seq = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False, side=side)
-        except Exception:
-            masks_seq = None
     if epsilon <= 0:
         with torch.no_grad():
             decision = policy_net(state)
             ordered_keys = ordered_action_keys(int(len_model))
+            # Маски стороны берём ровно один раз: greedy-путь применяет их по ключу
+            # головы (legal_by_head). Отдельный build_action_masks_by_head здесь не нужен —
+            # он лишь дублировал бы запрос env.get_legal_action_masks_by_head(side=...).
             legal_by_head = None
             env_u = unwrap_env(env)
             if hasattr(env_u, "get_legal_action_masks_by_head"):
@@ -677,6 +675,13 @@ def select_action_with_epsilon(
                 action.append(int(head.argmax().item()))
             return torch.tensor([action], device="cpu")
 
+    # random/epsilon-путь: легальные маски стороны нужны, чтобы сэмпл попадал только
+    # в легальные действия. Строим их здесь (greedy-ветка выше уже вышла со своим legal_by_head).
+    if masks_seq is None:
+        try:
+            masks_seq = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False, side=side)
+        except Exception:
+            masks_seq = None
     action_list = sample_action_list_from_space(env, int(len_model), masks_seq=masks_seq)
     return torch.tensor([action_list], device="cpu")
 

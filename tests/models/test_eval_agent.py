@@ -175,23 +175,29 @@ class _FixedPPO(torch.nn.Module):
 
 
 def test_eval_agent_dqn_and_ppo_do_not_overwrite_move_num_from_legacy_offsets(monkeypatch):
+    from core.models.utils import build_action_masks_by_head
+
     env = build_env()
     env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
     lm = len(env.model)
+    assert lm >= 1
     keys = ordered_action_keys(lm)
-    assert lm >= 4
+
+    # Легальные маски стороны model — чтобы desired-индекс для каждой головы был
+    # ГАРАНТИРОВАННО легальным (иначе masked argmax выберет другой индекс и тест
+    # станет хрупким на разном числе юнитов). move_num_i берём как ПОСЛЕДНИЙ легальный
+    # индекс, shoot/charge/прочие — как первый (0): так move_num отличается от того,
+    # что лежит на legacy-смещении 6+i (shoot_num при lm=4 / charge_num при lm=2).
+    legal_masks = build_action_masks_by_head(env, lm, side="model")
+    legal_by_key = {k: legal_masks[i] for i, k in enumerate(keys)}
 
     desired = [0 for _ in keys]
     values = []
     for idx, key in enumerate(keys):
-        size = env.action_space.spaces[key].n
-        # Для move_num_i выбираем 7+i, для shoot_num_i (= legacy 6+i при n=4) — 0.
-        if key.startswith("move_num_"):
-            choice = min(7 + int(key.rsplit("_", 1)[1]), size - 1)
-        elif key.startswith("shoot_num_"):
-            choice = 0
-        else:
-            choice = 0
+        size = int(env.action_space.spaces[key].n)
+        mask = legal_by_key.get(key)
+        legal_idxs = [j for j in range(size) if (mask is None or bool(mask[j]))] or [0]
+        choice = legal_idxs[-1] if key.startswith("move_num_") else legal_idxs[0]
         desired[idx] = choice
         vals = [-100.0] * size
         vals[choice] = 100.0
@@ -206,7 +212,7 @@ def test_eval_agent_dqn_and_ppo_do_not_overwrite_move_num_from_legacy_offsets(mo
     ppo_agent.device = torch.device("cpu")
     ppo_action, _ = ppo_agent.select_action(env, "model")
 
-    for i in range(4):
+    for i in range(lm):
         expected = desired[keys.index(f"move_num_{i}")]
         assert dqn_action[f"move_num_{i}"] == expected
         assert ppo_action[f"move_num_{i}"] == expected

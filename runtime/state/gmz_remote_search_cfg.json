@@ -32,7 +32,7 @@
   "prior_weight": 0.25,
   "batch_recurrent": 1,
   "tree_reuse": 1,
-  "_generated_utc": "2026-06-25T09:57:45Z",
+  "_generated_utc": "2026-06-25T16:13:06Z",
   "_sources": [
     "train.py:auto"
   ],
