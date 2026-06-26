@@ -148,7 +148,7 @@ def test_select_action_greedy_format_and_legality(tmp_path, monkeypatch):
 
     original_build = eval_module.build_action_masks_by_head
 
-    def mock_build_masks(env, len_model, log_fn=None, debug=False):
+    def mock_build_masks(env, len_model, log_fn=None, debug=False, side="model"):
         return [torch.ones(s, dtype=torch.bool) for s in N_ACTIONS]
 
     monkeypatch.setattr(eval_module, "build_action_masks_by_head", mock_build_masks)

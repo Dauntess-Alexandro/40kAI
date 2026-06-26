@@ -626,9 +626,27 @@ def _reapply_resolved_phase_obs() -> None:
         os.environ[key] = value
 
 
-def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, action_masks=None, shoot_mask=None):
+def select_action_with_epsilon(
+    env,
+    state,
+    policy_net,
+    epsilon,
+    len_model,
+    action_masks=None,
+    shoot_mask=None,
+    *,
+    side: str = "model",
+):
     masks_seq = action_masks
     # shoot_mask: legacy, игнорируется (B2 per-unit через action_masks / env masks)
+    side = str(side or "model").strip().lower()
+    if side not in {"model", "enemy"}:
+        side = "model"
+    if masks_seq is None:
+        try:
+            masks_seq = build_action_masks_by_head(env, int(len_model), log_fn=None, debug=False, side=side)
+        except Exception:
+            masks_seq = None
     if epsilon <= 0:
         with torch.no_grad():
             decision = policy_net(state)
@@ -637,7 +655,7 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, actio
             env_u = unwrap_env(env)
             if hasattr(env_u, "get_legal_action_masks_by_head"):
                 try:
-                    legal_by_head = env_u.get_legal_action_masks_by_head(side="model")
+                    legal_by_head = env_u.get_legal_action_masks_by_head(side=side)
                 except Exception:
                     legal_by_head = None
             action = []
@@ -663,12 +681,15 @@ def select_action_with_epsilon(env, state, policy_net, epsilon, len_model, actio
     return torch.tensor([action_list], device="cpu")
 
 
-def select_action_with_epsilon_sampled_muzero(env, state, policy_net, epsilon, len_model):
-    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False)
+def select_action_with_epsilon_sampled_muzero(env, state, policy_net, epsilon, len_model, *, side: str = "model"):
+    side = str(side or "model").strip().lower()
+    if side not in {"model", "enemy"}:
+        side = "model"
+    masks_cpu = build_action_masks_by_head(env, len_model, log_fn=None, debug=False, side=side)
     legal_masks = [m.detach().cpu().numpy().astype(bool) for m in masks_cpu]
     obs_np = state.squeeze(0).detach().cpu().numpy()
     if epsilon > 0 and random.random() < float(epsilon):
-        action_list = sample_action_list_from_space(env, int(len_model))
+        action_list = sample_action_list_from_space(env, int(len_model), masks_seq=masks_cpu)
         return torch.tensor([action_list], device="cpu")
     smz_eval_mode = str(os.getenv("SMZ_EVAL_MODE", os.getenv("SMZ_OPPONENT_MODE", "search"))).strip().lower() or "search"
     if smz_eval_mode not in {"search", "greedy"}:
@@ -800,11 +821,11 @@ def run_episode(
         vals = [_safe_int(action_dict.get(f"{prefix}_{i}", default), default) for i in range(int(n_units))]
         return max(vals) if vals else int(default)
 
-    def _head_masks_summary() -> str:
+    def _head_masks_summary(*, side: str = "model", n_units: int | None = None) -> str:
         try:
-            n_units = int(len(model_units))
-            keys = ordered_action_keys(n_units)
-            masks = build_action_masks_by_head(env, n_units, log_fn=None, debug=False)
+            units_n = int(len(model_units) if n_units is None else n_units)
+            keys = ordered_action_keys(units_n)
+            masks = build_action_masks_by_head(env, units_n, log_fn=None, debug=False, side=side)
             parts = []
             for i, key in enumerate(keys):
                 if i >= len(masks):
@@ -818,12 +839,12 @@ def run_episode(
         except Exception:
             return "masks=unavailable"
 
-    def _head_masks_counts() -> dict[str, tuple[int, int]]:
-        n_units = int(len(model_units))
-        keys = ordered_action_keys(n_units)
+    def _head_masks_counts(*, side: str = "model", n_units: int | None = None) -> dict[str, tuple[int, int]]:
+        units_n = int(len(model_units) if n_units is None else n_units)
+        keys = ordered_action_keys(units_n)
         out: dict[str, tuple[int, int]] = {}
         try:
-            masks = build_action_masks_by_head(env, n_units, log_fn=None, debug=False)
+            masks = build_action_masks_by_head(env, units_n, log_fn=None, debug=False, side=side)
             for idx, key in enumerate(keys):
                 if idx >= len(masks):
                     continue
@@ -832,10 +853,10 @@ def run_episode(
                 total = int(len(m_np))
                 valid = int(sum(1 for x in m_np if bool(x)))
                 out[key] = (valid, total)
-            shoot_v = max((out.get(f"shoot_num_{i}", (0, 0))[0] for i in range(n_units)), default=0)
-            shoot_t = max((out.get(f"shoot_num_{i}", (0, 0))[1] for i in range(n_units)), default=0)
-            charge_v = max((out.get(f"charge_num_{i}", (0, 0))[0] for i in range(n_units)), default=0)
-            charge_t = max((out.get(f"charge_num_{i}", (0, 0))[1] for i in range(n_units)), default=0)
+            shoot_v = max((out.get(f"shoot_num_{i}", (0, 0))[0] for i in range(units_n)), default=0)
+            shoot_t = max((out.get(f"shoot_num_{i}", (0, 0))[1] for i in range(units_n)), default=0)
+            charge_v = max((out.get(f"charge_num_{i}", (0, 0))[0] for i in range(units_n)), default=0)
+            charge_t = max((out.get(f"charge_num_{i}", (0, 0))[1] for i in range(units_n)), default=0)
             out["shoot"] = (int(shoot_v), int(shoot_t))
             out["charge"] = (int(charge_v), int(charge_t))
         except Exception:
@@ -943,11 +964,13 @@ def run_episode(
         action_dict: dict,
         masks_counts: dict[str, tuple[int, int]] | None = None,
         shoot_targets: int | None = None,
+        n_units: int | None = None,
     ) -> None:
+        units_n = int(len(model_units) if n_units is None else n_units)
         move = _safe_int(action_dict.get("move", 4), 4)
         attack = _safe_int(action_dict.get("attack", 0), 0)
-        shoot = _aggregate_per_unit_max(action_dict, "shoot_num", len(model_units), default=-1)
-        charge = _aggregate_per_unit_max(action_dict, "charge_num", len(model_units), default=0)
+        shoot = _aggregate_per_unit_max(action_dict, "shoot_num", units_n, default=-1)
+        charge = _aggregate_per_unit_max(action_dict, "charge_num", units_n, default=0)
 
         mv_valid, mv_total = _mask_tuple(masks_counts, "move")
         at_valid, at_total = _mask_tuple(masks_counts, "attack")
@@ -1036,12 +1059,14 @@ def run_episode(
                             enemy_attempt_specs.extend(attempt_specs)
                             _record_stratagem_attempt_metrics(ep_metrics, attempt_specs, env_side="enemy")
                             if trace_enabled and trace_style == "warhammer":
+                                enemy_masks_counts = _head_masks_counts(side="enemy", n_units=len(enemy_units))
                                 _emit_wh40k_phase_report(
                                     side_label=opponent_side,
                                     step_no=step_no,
                                     action_dict=action,
-                                    masks_counts=None,
+                                    masks_counts=enemy_masks_counts,
                                     shoot_targets=None,
+                                    n_units=len(enemy_units),
                                 )
                         return action
                     except Exception as exc:
@@ -1081,7 +1106,7 @@ def run_episode(
             nonlocal done, info, episode_len, total_reward
             # Действие фазы — единый путь через агента; fight-стратагемы через голову strat_fight.
             action_dict, _plan = learner_agent.select_action(env_unwrapped, "model")
-            masks_counts = _head_masks_counts()
+            masks_counts = _head_masks_counts(side="model", n_units=len(model_units))
             n_units = int(len(model_units))
             move = _safe_int(action_dict.get("move", 4), 4)
             attack = _safe_int(action_dict.get("attack", 0), 0)
@@ -1118,7 +1143,7 @@ def run_episode(
             if trace_enabled:
                 _trace(
                     f"[TRACE][MODEL_ACTION_HUMAN] step={step_no} {_human_action(action_dict)} "
-                    f"masks=({_head_masks_summary()})"
+                    f"masks=({_head_masks_summary(side='model', n_units=len(model_units))})"
                 )
             if trace_enabled and trace_style == "warhammer":
                 _trace(
@@ -1131,6 +1156,7 @@ def run_episode(
                     action_dict=action_dict,
                     masks_counts=masks_counts,
                     shoot_targets=int(shoot_targets),
+                    n_units=len(model_units),
                 )
             model_attempt_specs = log_stratagem_attempts(
                 _trace,

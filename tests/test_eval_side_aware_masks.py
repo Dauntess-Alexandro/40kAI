@@ -125,3 +125,81 @@ def test_eval_agent_select_action_uses_side_masks():
         f"EvalAgent.select_action не передал side='enemy' в build_action_masks_by_head. "
         f"Вызовы: {called_sides}"
     )
+
+
+def test_eval_legacy_dqn_helper_uses_requested_side_masks():
+    """Legacy eval helper не должен хардкодить side='model' при greedy DQN."""
+    import torch
+    from eval import select_action_with_epsilon
+
+    class _Policy(torch.nn.Module):
+        def forward(self, state):
+            return [
+                torch.tensor([[10.0, 1.0]], dtype=torch.float32),
+                torch.tensor([[0.0]], dtype=torch.float32),
+            ]
+
+    class _Env:
+        class _ActionSpace:
+            def sample(self):
+                return {"move": 0, "attack": 0}
+
+        action_space = _ActionSpace()
+
+        def __init__(self):
+            self.called_sides: list[str] = []
+
+        def get_legal_action_masks_by_head(self, side="model"):
+            self.called_sides.append(str(side))
+            return {
+                "move": [False, True],
+                "attack": [True],
+            }
+
+    env = _Env()
+    action = select_action_with_epsilon(
+        env,
+        torch.zeros((1, 3), dtype=torch.float32),
+        _Policy(),
+        epsilon=0.0,
+        len_model=0,
+        side="enemy",
+    )
+
+    assert env.called_sides == ["enemy"]
+    assert action.tolist() == [[1, 0]]
+
+
+def test_eval_sampled_muzero_helper_uses_requested_side_for_masks(monkeypatch):
+    """SMZ eval helper должен передавать side дальше и в epsilon path сэмплить по этим masks."""
+    import torch
+    import eval as eval_module
+
+    called_sides: list[str] = []
+    sampled_masks = []
+
+    def _mock_build_masks(env, len_model, log_fn=None, debug=False, side="model"):
+        called_sides.append(str(side))
+        return [
+            torch.tensor([False, True], dtype=torch.bool),
+            torch.tensor([True], dtype=torch.bool),
+        ]
+
+    def _mock_sample_action_list_from_space(env, len_model, *, masks_seq=None, legal_by_head=None):
+        sampled_masks.extend(list(masks_seq or []))
+        return [1, 0]
+
+    monkeypatch.setattr(eval_module, "build_action_masks_by_head", _mock_build_masks)
+    monkeypatch.setattr(eval_module, "sample_action_list_from_space", _mock_sample_action_list_from_space)
+    action = eval_module.select_action_with_epsilon_sampled_muzero(
+        env=object(),
+        state=torch.zeros((1, 3), dtype=torch.float32),
+        policy_net=object(),
+        epsilon=1.0,
+        len_model=0,
+        side="enemy",
+    )
+
+    assert called_sides == ["enemy"]
+    assert len(sampled_masks) == 2
+    assert action.tolist() == [[1, 0]]
