@@ -10,9 +10,9 @@ import os
 # Шэйпинг наград (победа / victory points)
 # =========================================
 # Бонус за победу в матче (начисляется в конце эпизода).
-WIN_BONUS = 3.0
+WIN_BONUS = 2.5
 # Штраф за поражение в матче (начисляется в конце эпизода).
-LOSS_PENALTY = 2.0
+LOSS_PENALTY = 2.5
 
 # С какого боевого раунда начинать начислять VP по миссии Only War.
 VP_START_SCORING_ROUND = 1
@@ -34,7 +34,7 @@ VP_DIFF_REWARD_SCALE = 0.14
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
 VP_DIFF_PENALTY_SCALE = 0.14
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 3.2
+TURN_LIMIT_DRAW_PENALTY = 2.0
 # Доп. масштаб бонуса за победу по VP на turn_limit.
 TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 1.2
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
