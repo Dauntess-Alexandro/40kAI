@@ -17,6 +17,7 @@ from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.alphazero_replay import AZTransition
 from core.models.az_mission_bootstrap import (
+    build_reward_shaped_value_targets,
     finalize_value_targets,
     side_mean_objective_distance,
 )
@@ -62,6 +63,7 @@ def play_episode_with_mcts(
     outcome_value_loss: float = -1.0,
     outcome_value_draw: float = -0.25,
     mission_bootstrap_coef: float = 0.0,
+    reward_shaping_weight: float = 0.0,
     policy_version: int = 0,
     actor_idx: int = -1,
     heartbeat_moves: int = 5,
@@ -100,6 +102,10 @@ def play_episode_with_mcts(
     cum_model_dist = 0.0
     cum_enemy_dist = 0.0
     dist_samples = 0
+    # Per-step дистанция модели до ближайшего объектива (для dense-shaping value-
+    # таргета): shaping-награда = сокращение дистанции (приблизился = +). НЕ боевой
+    # reward — чтобы не поощрять «сидеть и стрелять» (это и есть причина ничьих).
+    model_dist_seq: list[float | None] = []
 
     apply_first_turn_prepend(
         env_u,
@@ -216,6 +222,16 @@ def play_episode_with_mcts(
             pass
         done = bool(done or trunc)
         records.append((obs_np, pi_targets, phase_meta))
+        try:
+            model_dist_seq.append(
+                side_mean_objective_distance(
+                    getattr(env_u, "unit_coords", None),
+                    getattr(env_u, "unit_health", None),
+                    getattr(env_u, "coordsOfOM", None),
+                )
+            )
+        except Exception:
+            model_dist_seq.append(None)
         if not outcome_only:
             final_value = float(np.tanh(float(reward)))
         state = next_state
@@ -255,6 +271,32 @@ def play_episode_with_mcts(
         draw=outcome_value_draw,
         coef=float(mission_bootstrap_coef),
     )
+
+    # Dense per-step shaping (relaxed outcome_only): value-таргет = outcome +
+    # weight·tanh(дисконт. отдача progress-наград). Progress-награда шага = насколько
+    # модель ПРИБЛИЗИЛАСЬ к точке (dist_t - dist_{t+1}); сидеть/стрелять = 0 (не
+    # поощряем ничью). Сильнее эпизодного bootstrap — градиент «иди на точку» каждый шаг.
+    if float(reward_shaping_weight) > 0.0 and bool(outcome_only) and len(model_dist_seq) >= 2:
+        progress_rewards: list[float] = []
+        for i in range(len(model_dist_seq)):
+            d_now = model_dist_seq[i]
+            d_next = model_dist_seq[i + 1] if i + 1 < len(model_dist_seq) else None
+            if d_now is not None and d_next is not None:
+                progress_rewards.append(float(d_now) - float(d_next))  # приблизился → +
+            else:
+                progress_rewards.append(0.0)
+        if any(abs(r) > 1e-9 for r in progress_rewards):
+            value_targets = build_reward_shaped_value_targets(
+                rewards=progress_rewards,
+                outcome_value=float(final_value),
+                weight=float(reward_shaping_weight),
+            )
+
+    # Разброс value-таргетов в лог: если shaping работает, они различаются (не все
+    # равны outcome). vt=min/max в [TRAIN][EP] показывает, что градиент реально есть.
+    if value_targets:
+        last_info["az_vt_min"] = float(min(value_targets))
+        last_info["az_vt_max"] = float(max(value_targets))
 
     faction = str(getattr(env_u, "model_faction", "") or getattr(env_u, "model", "") or "")
     if hasattr(faction, "__class__") and not isinstance(faction, str):

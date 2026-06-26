@@ -225,6 +225,43 @@ def build_value_targets(
     return targets
 
 
+# Внутренние константы dense-shaping: discount будущей награды и масштаб tanh.
+# scale подобран так, чтобы типичный per-step env-reward (~0.1–0.8 × десятки шагов)
+# не упирался мгновенно в ±1, но и не был незаметным.
+_SHAPE_DISCOUNT = 0.99
+_SHAPE_SCALE = 0.1
+
+
+def build_reward_shaped_value_targets(
+    *,
+    rewards: list[float],
+    outcome_value: float,
+    weight: float,
+    discount: float = _SHAPE_DISCOUNT,
+    scale: float = _SHAPE_SCALE,
+) -> list[float]:
+    """Per-state value-targets = outcome + weight·tanh(scale·G_i) (relaxed outcome_only).
+
+    G_i = Σ_{t>=i} discount^(t-i)·rewards[t] — дисконтированная будущая отдача из
+    per-step наград движка (включают objective-progress/proximity из reward_config).
+    Это плотный per-step сигнал «играй миссию»: состояния, из которых модель идёт к
+    точке, ценятся выше. Исход доминирует — shaping ограничен tanh и весом, клип [-1,1].
+
+    weight<=0 → константа outcome_value (как чистый outcome_only, поведение не меняется).
+    """
+    n = len(rewards)
+    base = [float(outcome_value)] * n
+    if float(weight) <= 0.0 or n == 0:
+        return base
+    targets = [0.0] * n
+    g = 0.0
+    for i in range(n - 1, -1, -1):
+        g = float(rewards[i]) + float(discount) * g
+        shaped = float(np.tanh(float(scale) * g))
+        targets[i] = float(np.clip(float(outcome_value) + float(weight) * shaped, -1.0, 1.0))
+    return targets
+
+
 def finalize_value_targets(
     *,
     n_transitions: int,

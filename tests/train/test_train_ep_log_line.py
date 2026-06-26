@@ -184,6 +184,20 @@ class TestAzEpisodeMissionFields(unittest.TestCase):
         )
         self.assertIn("dist=10.0/20.0", line)
 
+    def test_vt_spread_passthrough_and_log(self):
+        from train import _az_episode_mission_fields
+
+        f = _az_episode_mission_fields(
+            {"az_vt_min": -0.70, "az_vt_max": -0.52, "model health": [], "player health": []}
+        )
+        self.assertEqual(f["vt_min"], -0.70)
+        self.assertEqual(f["vt_max"], -0.52)
+        line = format_train_ep_log_line(
+            ep=1, total=100, algo="az", result="draw", end_reason="turn_limit",
+            vp_diff=0, ep_reward=0.0, turns=21, vt_min=-0.70, vt_max=-0.52,
+        )
+        self.assertIn("vt=-0.700/-0.520", line)
+
 
 class TestAzDetPayloadHpDiff(unittest.TestCase):
     def test_hp_diff_mean_computed_from_rows(self):

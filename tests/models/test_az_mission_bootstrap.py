@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from core.models.az_mission_bootstrap import (
+    build_reward_shaped_value_targets,
     build_value_targets,
     finalize_value_targets,
     mission_progress_signal,
@@ -252,3 +253,53 @@ def test_finalize_non_outcome_only_keeps_constant_raw_value():
     assert kind == ""
     assert final_value == 0.42
     assert targets == [0.42, 0.42, 0.42]            # shaped-путь не трогаем
+
+
+# --- dense reward shaping (relaxed outcome_only) ------------------------------
+
+def test_reward_shaping_weight_zero_returns_pure_outcome():
+    t = build_reward_shaped_value_targets(
+        rewards=[0.5, 0.3, 0.1], outcome_value=DRAW, weight=0.0,
+    )
+    assert t == [DRAW, DRAW, DRAW]
+
+
+def test_reward_shaping_positive_rewards_raise_value():
+    # Положительные per-step награды (прогресс к точке) → таргеты выше чистой ничьи.
+    t = build_reward_shaped_value_targets(
+        rewards=[0.4, 0.4, 0.4], outcome_value=DRAW, weight=0.3,
+    )
+    assert all(v > DRAW for v in t)
+    # ранние состояния «видят» больше будущей награды → не ниже поздних
+    assert t[0] >= t[-1] - 1e-9
+
+
+def test_reward_shaping_negative_rewards_lower_value():
+    t = build_reward_shaped_value_targets(
+        rewards=[-0.4, -0.4, -0.4], outcome_value=DRAW, weight=0.3,
+    )
+    assert all(v < DRAW for v in t)
+
+
+def test_reward_shaping_stays_bounded_and_outcome_dominant():
+    # Огромные награды, но shaping ограничен tanh*weight → не флипает исход.
+    t = build_reward_shaped_value_targets(
+        rewards=[100.0] * 10, outcome_value=DRAW, weight=0.3,
+    )
+    for v in t:
+        assert -1.0 <= v <= 1.0
+        # ничья остаётся ничьёй: не дотягивает до полноценной победы
+        assert v < WIN
+
+
+def test_reward_shaping_win_outcome_with_shaping_stays_near_win():
+    # При победе shaping не должен опускать значение далеко от +1.
+    t = build_reward_shaped_value_targets(
+        rewards=[0.1, 0.1], outcome_value=WIN, weight=0.3,
+    )
+    assert all(v <= WIN for v in t)
+    assert all(v > 0.5 for v in t)
+
+
+def test_reward_shaping_empty_rewards():
+    assert build_reward_shaped_value_targets(rewards=[], outcome_value=DRAW, weight=0.3) == []

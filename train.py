@@ -1255,6 +1255,11 @@ def _az_episode_mission_fields(info: dict) -> dict:
     if dm is not None and de is not None and ds > 0:
         fields["dist_model_mean"] = float(dm) / ds
         fields["dist_enemy_mean"] = float(de) / ds
+    vmin = info.get("az_vt_min")
+    vmax = info.get("az_vt_max")
+    if vmin is not None and vmax is not None:
+        fields["vt_min"] = float(vmin)
+        fields["vt_max"] = float(vmax)
     return fields
 
 
@@ -1279,6 +1284,8 @@ def format_train_ep_log_line(
     cum_enemy_ctrl: float | None = None,
     dist_model_mean: float | None = None,
     dist_enemy_mean: float | None = None,
+    vt_min: float | None = None,
+    vt_max: float | None = None,
 ) -> str:
     """Единая строка итога эпизода для вкладки «Эпизоды» в GUI.
 
@@ -1315,6 +1322,8 @@ def format_train_ep_log_line(
         pieces.append(f"obj_cum={int(cum_model_ctrl)}/{int(cum_enemy_ctrl)}")
     if dist_model_mean is not None and dist_enemy_mean is not None:
         pieces.append(f"dist={float(dist_model_mean):.1f}/{float(dist_enemy_mean):.1f}")
+    if vt_min is not None and vt_max is not None:
+        pieces.append(f"vt={float(vt_min):.3f}/{float(vt_max):.3f}")
     if hp_diff is not None:
         pieces.append(f"hp_diff={float(hp_diff):+.1f}")
     if outcome_value is not None:
@@ -1349,6 +1358,8 @@ def log_train_episode_line(
     cum_enemy_ctrl = row.get("cum_enemy_ctrl")
     dist_model_mean = row.get("dist_model_mean")
     dist_enemy_mean = row.get("dist_enemy_mean")
+    vt_min = row.get("vt_min")
+    vt_max = row.get("vt_max")
     line = format_train_ep_log_line(
         ep=int(ep if ep is not None else row.get("episode") or 0),
         total=total,
@@ -1369,6 +1380,8 @@ def log_train_episode_line(
         cum_enemy_ctrl=float(cum_enemy_ctrl) if cum_enemy_ctrl is not None else None,
         dist_model_mean=float(dist_model_mean) if dist_model_mean is not None else None,
         dist_enemy_mean=float(dist_enemy_mean) if dist_enemy_mean is not None else None,
+        vt_min=float(vt_min) if vt_min is not None else None,
+        vt_max=float(vt_max) if vt_max is not None else None,
     )
     if TRAIN_LOG_TO_FILE:
         append_agent_log(line)
@@ -2624,6 +2637,19 @@ AZ_MISSION_BOOTSTRAP_COEF = float(
     )
 )
 AZ_MISSION_BOOTSTRAP_COEF = max(0.0, min(1.0, AZ_MISSION_BOOTSTRAP_COEF))
+
+# Dense reward-shaping (AZ/GAZ): при relaxed outcome_only value-таргет = outcome +
+# вес·tanh(дисконт. отдача per-step env-наград, вкл. objective-progress/proximity из
+# reward_config). На порядок сильнее эпизодного bootstrap — даёт градиент «иди на
+# точку» на каждом шаге. По умолчанию 0.0 (ВЫКЛ). Реком. старт ≈0.3–0.5.
+AZ_REWARD_SHAPING_WEIGHT = float(
+    _az_family_env(
+        "GAZ_REWARD_SHAPING_WEIGHT",
+        "AZ_REWARD_SHAPING_WEIGHT",
+        AZ_CFG.get("reward_shaping_weight", 0.0),
+    )
+)
+AZ_REWARD_SHAPING_WEIGHT = max(0.0, min(1.0, AZ_REWARD_SHAPING_WEIGHT))
 
 
 AZ_INFERENCE_SERVER_REQUESTED = (
@@ -6265,6 +6291,9 @@ def _actor_learner_actor_entry_alphazero(
                 mission_bootstrap_coef=float(
                     outcome_payload.get("mission_bootstrap_coef", AZ_MISSION_BOOTSTRAP_COEF)
                 ),
+                reward_shaping_weight=float(
+                    outcome_payload.get("reward_shaping_weight", AZ_REWARD_SHAPING_WEIGHT)
+                ),
                 policy_version=int(current_policy_version),
                 actor_idx=int(actor_idx),
                 heartbeat_moves=heartbeat_moves,
@@ -6524,6 +6553,9 @@ def _az_env_worker_entry(
                 outcome_value_draw=float(outcome_payload.get("outcome_value_draw", AZ_OUTCOME_VALUE_DRAW)),
                 mission_bootstrap_coef=float(
                     outcome_payload.get("mission_bootstrap_coef", AZ_MISSION_BOOTSTRAP_COEF)
+                ),
+                reward_shaping_weight=float(
+                    outcome_payload.get("reward_shaping_weight", AZ_REWARD_SHAPING_WEIGHT)
                 ),
                 policy_version=int(current_policy_version),
                 actor_idx=int(worker_id),
@@ -6832,6 +6864,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         f"balanced_sampling={int(AZ_BALANCED_OUTCOME_SAMPLING)} "
         f"max_staleness={AZ_MAX_POLICY_STALENESS_UPDATES} replay_min={AZ_REPLAY_MIN_SIZE} "
         f"outcome_only={int(AZ_OUTCOME_ONLY)} mission_bootstrap_coef={AZ_MISSION_BOOTSTRAP_COEF:.3f} "
+        f"reward_shaping_weight={AZ_REWARD_SHAPING_WEIGHT:.3f} "
         f"mcts_mode={AZ_MCTS_MODE} candidate_mode={AZ_MCTS_CANDIDATE_MODE} "
         f"windowed_selfplay={int(AZ_WINDOWED_SELFPLAY)} window_nodes={int(AZ_MCTS_WINDOW_NODES)} "
         f"joint_best_child={int(AZ_MCTS_JOINT_BEST_CHILD)} phase_obs_features={int(AZ_PHASE_OBS_FEATURES)} "
@@ -6951,6 +6984,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         "outcome_value_loss": AZ_OUTCOME_VALUE_LOSS,
         "outcome_value_draw": AZ_OUTCOME_VALUE_DRAW,
         "mission_bootstrap_coef": AZ_MISSION_BOOTSTRAP_COEF,
+        "reward_shaping_weight": AZ_REWARD_SHAPING_WEIGHT,
         "policy_version": int(policy_version),
     }
     _init_weights_cpu = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
@@ -6982,6 +7016,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
                 "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
                 "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
+                "reward_shaping_weight": float(AZ_REWARD_SHAPING_WEIGHT),
                 "actor_batch_send": int(AZ_ACTOR_BATCH_SEND),
                 "inference_timeout": float(AZ_INFERENCE_TIMEOUT),
                 "self_play_enabled": int(SELF_PLAY_ENABLED),
@@ -7632,6 +7667,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
             "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
             "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
+            "reward_shaping_weight": float(AZ_REWARD_SHAPING_WEIGHT),
         },
     )
     az_done_msg = (
