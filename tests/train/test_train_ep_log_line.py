@@ -149,6 +149,23 @@ class TestAzEpisodeMissionFields(unittest.TestCase):
         self.assertNotIn("outcome_value", f)
         self.assertEqual(f["model_ctrl_n"], 0)
         self.assertEqual(f["enemy_ctrl_n"], 0)
+        self.assertNotIn("cum_model_ctrl", f)
+
+    def test_cumulative_objective_passthrough(self):
+        from train import _az_episode_mission_fields
+
+        f = _az_episode_mission_fields(
+            {"az_cum_model_ctrl": 18.0, "az_cum_enemy_ctrl": 3.0, "model health": [], "player health": []}
+        )
+        self.assertEqual(f["cum_model_ctrl"], 18.0)
+        self.assertEqual(f["cum_enemy_ctrl"], 3.0)
+
+    def test_obj_cum_field_in_log_line(self):
+        line = format_train_ep_log_line(
+            ep=1, total=100, algo="az", result="draw", end_reason="turn_limit",
+            vp_diff=0, ep_reward=0.0, turns=21, cum_model_ctrl=18.0, cum_enemy_ctrl=3.0,
+        )
+        self.assertIn("obj_cum=18/3", line)
 
 
 class TestAzDetPayloadHpDiff(unittest.TestCase):

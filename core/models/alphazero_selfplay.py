@@ -87,6 +87,11 @@ def play_episode_with_mcts(
     records: list[tuple[np.ndarray, list[np.ndarray], Any]] = []
     final_value = 0.0
     last_info: dict = {}
+    # Накопительный контроль точек за партию (для mission-bootstrap): терминальный
+    # снимок в turn_limit-ничьих почти всегда 0/0, поэтому копим по ходам.
+    cum_model_ctrl = 0.0
+    cum_enemy_ctrl = 0.0
+    obj_samples = 0
 
     apply_first_turn_prepend(
         env_u,
@@ -159,6 +164,14 @@ def play_episode_with_mcts(
         )
         if isinstance(info, dict):
             last_info = dict(info)
+            try:
+                m_ctrl = info.get("model controlled objectives", []) or []
+                e_ctrl = info.get("player controlled objectives", []) or []
+                cum_model_ctrl += float(len(m_ctrl) if isinstance(m_ctrl, (list, tuple)) else 0)
+                cum_enemy_ctrl += float(len(e_ctrl) if isinstance(e_ctrl, (list, tuple)) else 0)
+                obj_samples += 1
+            except Exception:
+                pass
         try:
             if strat_tracer is not None:
                 strat_tracer.run_enemy_turn(
@@ -195,6 +208,13 @@ def play_episode_with_mcts(
                 last_info = dict(gi)
         except Exception:
             last_info = {}
+
+    # Накопительный контроль точек за партию → mission_progress_signal (приоритетнее
+    # терминального снимка, который в turn_limit почти всегда 0/0). И в лог.
+    if obj_samples > 0:
+        last_info["az_cum_model_ctrl"] = float(cum_model_ctrl)
+        last_info["az_cum_enemy_ctrl"] = float(cum_enemy_ctrl)
+        last_info["az_obj_samples"] = int(obj_samples)
 
     # Исход → terminal value (+ опц. mission-bootstrap по ничьим) → per-transition
     # таргеты. coef=0 (дефолт) → константа final_value, как было до bootstrap.

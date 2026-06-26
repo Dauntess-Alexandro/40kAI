@@ -1244,6 +1244,11 @@ def _az_episode_mission_fields(info: dict) -> dict:
     ov = info.get("az_outcome_value")
     if ov is not None:
         fields["outcome_value"] = float(ov)
+    cm = info.get("az_cum_model_ctrl")
+    ce = info.get("az_cum_enemy_ctrl")
+    if cm is not None and ce is not None:
+        fields["cum_model_ctrl"] = float(cm)
+        fields["cum_enemy_ctrl"] = float(ce)
     return fields
 
 
@@ -1264,6 +1269,8 @@ def format_train_ep_log_line(
     enemy_ctrl_n: int | None = None,
     hp_diff: float | None = None,
     outcome_value: float | None = None,
+    cum_model_ctrl: float | None = None,
+    cum_enemy_ctrl: float | None = None,
 ) -> str:
     """Единая строка итога эпизода для вкладки «Эпизоды» в GUI.
 
@@ -1296,6 +1303,8 @@ def format_train_ep_log_line(
         pieces.append(f"enemy_vp={int(enemy_vp)}")
     if model_ctrl_n is not None and enemy_ctrl_n is not None:
         pieces.append(f"obj={int(model_ctrl_n)}/{int(enemy_ctrl_n)}")
+    if cum_model_ctrl is not None and cum_enemy_ctrl is not None:
+        pieces.append(f"obj_cum={int(cum_model_ctrl)}/{int(cum_enemy_ctrl)}")
     if hp_diff is not None:
         pieces.append(f"hp_diff={float(hp_diff):+.1f}")
     if outcome_value is not None:
@@ -1326,6 +1335,8 @@ def log_train_episode_line(
     eh = row.get("enemy_hp_total")
     hp_diff = (float(mh) - float(eh)) if (mh is not None and eh is not None) else None
     outcome_value = row.get("outcome_value")
+    cum_model_ctrl = row.get("cum_model_ctrl")
+    cum_enemy_ctrl = row.get("cum_enemy_ctrl")
     line = format_train_ep_log_line(
         ep=int(ep if ep is not None else row.get("episode") or 0),
         total=total,
@@ -1342,6 +1353,8 @@ def log_train_episode_line(
         enemy_ctrl_n=int(enemy_ctrl_n) if enemy_ctrl_n is not None else None,
         hp_diff=hp_diff,
         outcome_value=float(outcome_value) if outcome_value is not None else None,
+        cum_model_ctrl=float(cum_model_ctrl) if cum_model_ctrl is not None else None,
+        cum_enemy_ctrl=float(cum_enemy_ctrl) if cum_enemy_ctrl is not None else None,
     )
     if TRAIN_LOG_TO_FILE:
         append_agent_log(line)
@@ -6954,6 +6967,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
                 "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
                 "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+                "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
                 "actor_batch_send": int(AZ_ACTOR_BATCH_SEND),
                 "inference_timeout": float(AZ_INFERENCE_TIMEOUT),
                 "self_play_enabled": int(SELF_PLAY_ENABLED),

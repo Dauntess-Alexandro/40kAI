@@ -89,10 +89,22 @@ def terminal_outcome_value(
 def mission_progress_signal(
     info: dict | None, *, w_obj: float = _W_OBJ, w_hp: float = _W_HP, w_vp: float = _W_VP
 ) -> float:
-    """Слабый сигнал «играю ли я миссию», нормированный в [-1, 1]."""
+    """Слабый сигнал «играю ли я миссию», нормированный в [-1, 1].
+
+    Контроль точек берём НАКОПИТЕЛЬНО за партию (az_cum_model_ctrl/
+    az_cum_enemy_ctrl — сумма по ходам), если он есть: терминальный снимок в
+    turn_limit-ничьих почти всегда 0/0 и сигнал умирал. Фолбэк на терминальный
+    снимок — для обратной совместимости (старый info / тесты).
+    """
     info = info or {}
-    m_obj = len(info.get("model controlled objectives", []) or [])
-    e_obj = len(info.get("player controlled objectives", []) or [])
+    cum_m = info.get("az_cum_model_ctrl")
+    cum_e = info.get("az_cum_enemy_ctrl")
+    if cum_m is not None and cum_e is not None:
+        m_obj = float(cum_m or 0.0)
+        e_obj = float(cum_e or 0.0)
+    else:
+        m_obj = len(info.get("model controlled objectives", []) or [])
+        e_obj = len(info.get("player controlled objectives", []) or [])
     m_hp = _sum_hp(info.get("model health", []))
     e_hp = _sum_hp(info.get("player health", []))
     m_vp = float(info.get("model VP", 0) or 0)

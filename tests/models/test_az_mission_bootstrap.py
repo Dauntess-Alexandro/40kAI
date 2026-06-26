@@ -135,6 +135,32 @@ def test_mission_signal_bounded():
     assert -1.0 <= s <= 1.0
 
 
+def test_mission_signal_prefers_cumulative_objectives_over_terminal():
+    # Терминальный снимок 0/0 (как в turn_limit-ничьих), но накопительно за партию
+    # модель доминировала по контролю точек → сигнал положительный.
+    info = {
+        "model controlled objectives": [], "player controlled objectives": [],  # терминал 0/0
+        "az_cum_model_ctrl": 18.0, "az_cum_enemy_ctrl": 3.0,                     # накопительно
+        "model health": [10], "player health": [10], "model VP": 0, "player VP": 0,
+    }
+    assert mission_progress_signal(info) > 0.0
+
+
+def test_mission_signal_cumulative_zero_falls_back_to_hp():
+    # Накопительный контроль ровно симметричен → объект-компонента 0, остаётся HP.
+    info = {
+        "az_cum_model_ctrl": 5.0, "az_cum_enemy_ctrl": 5.0,
+        "model health": [20], "player health": [5], "model VP": 0, "player VP": 0,
+    }
+    assert mission_progress_signal(info) > 0.0  # за счёт HP-доминирования
+
+
+def test_mission_signal_backward_compatible_terminal_only():
+    # Старый info без накопительных ключей → используется терминальный снимок.
+    info = {"model controlled objectives": [1, 2, 3], "player controlled objectives": [1]}
+    assert mission_progress_signal(info) > 0.0
+
+
 # --- finalize_value_targets (wiring decision, без env) ------------------------
 
 def test_finalize_outcome_only_win_sets_pure_value_and_info():
