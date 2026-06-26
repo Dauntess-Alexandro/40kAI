@@ -507,7 +507,11 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
             algo=opp.algo,
             policy_state=opp.policy_state,
             contract=opp.contract,
-            len_model=len(enemy_units),
+            # len_model = число per-unit голов action space (= len(model)), а НЕ len(enemy).
+            # Action space и сеть оппонента (из contract) размерены по model; оппонент ходит
+            # за enemy через тот же model-space контракт. При len(enemy)>len(model) построение
+            # масок упадёт KeyError move_num_{i}. Совпадает с train (build_policy_fn → len(model)).
+            len_model=len(model_units),
             cfg=resolve_eval_search_cfg(opp.algo),
             device=device,
             arch=opp.arch,
@@ -1682,7 +1686,11 @@ def main():
                 algo=opp.algo,
                 policy_state=opp.policy_state,
                 contract=opp.contract,
-                len_model=len(enemy_units),
+                # len_model = число per-unit голов action space (= len(model)), а НЕ len(enemy).
+                # Action space и сеть оппонента (из contract) размерены по model; оппонент ходит
+                # за enemy через тот же model-space контракт. При len(enemy)>len(model) построение
+                # масок упадёт KeyError move_num_{i}. Совпадает с train (build_policy_fn → len(model)).
+                len_model=len(model_units),
                 cfg=resolve_eval_search_cfg(opp.algo),
                 device=device,
                 arch=opp.arch,

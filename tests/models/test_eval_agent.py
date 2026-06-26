@@ -337,3 +337,64 @@ def test_no_legacy_convert_to_dict_in_az_gmz_smz_selfplay_paths():
         text = open(path, encoding="utf-8").read()
         assert "convertToDict(" not in text, path
         assert "action_tensor_to_dict" in text or path.endswith("sampled_muzero_selfplay.py")
+
+
+def test_eval_opponent_uses_model_head_count_not_enemy_count_on_asymmetric_roster():
+    """Регрессия: оппонент в eval ходит за enemy через ТОТ ЖЕ action space, который
+    размерен по len(model) (move_num_0..move_num_{len(model)-1}), и его сеть имеет столько
+    же голов (из contract). Значит len_model оппонента обязан быть len(model), а не
+    len(enemy): иначе при асимметричном ростере (enemy>model) построение масок падает
+    KeyError move_num_{i}. Этот инвариант обязаны соблюдать обе ветки eval.py
+    (основная и parallel-worker) при build_eval_agent для оппонента; train (build_policy_fn)
+    уже использует len(model).
+    """
+    import pytest
+
+    from core.envs.warhamEnv import Warhammer40kEnv
+    from tests.engine.phases._helpers import make_unit
+
+    model = [make_unit("M0"), make_unit("M1")]
+    enemy = [make_unit("E0"), make_unit("E1"), make_unit("E2")]
+    env = Warhammer40kEnv(enemy=enemy, model=model, b_len=30, b_hei=30)
+    env.reset(options={"m": env.model, "e": env.enemy, "trunc": True})
+    assert len(env.model) == 2 and len(env.enemy) == 3
+    # action space размерен по model: move_num_2 отсутствует, хотя enemy = 3 юнита.
+    assert "move_num_2" not in env.action_space.spaces
+
+    keys = ordered_action_keys(len(env.model))
+    values = [[1.0] + [0.0] * (env.action_space.spaces[k].n - 1) for k in keys]
+
+    # Правильно: len_model = len(model) → enemy-ход проходит, dict валиден.
+    good = _agent(env, "dqn", _FixedDQN(values), reaction_net=object())
+    good.len_model = len(env.model)
+    good.device = torch.device("cpu")
+    _set_cfg_epsilon(good, 0.0)
+    action, _ = good.select_action(env, "enemy")
+    assert isinstance(action, dict)
+    for i in range(len(env.model)):
+        assert f"move_num_{i}" in action
+
+    # Старое (ошибочное) поведение eval: len_model=len(enemy) → KeyError move_num_2.
+    bad = _agent(env, "dqn", _FixedDQN(values), reaction_net=object())
+    bad.len_model = len(env.enemy)
+    bad.device = torch.device("cpu")
+    _set_cfg_epsilon(bad, 0.0)
+    with pytest.raises(KeyError):
+        bad.select_action(env, "enemy")
+
+
+def _set_cfg_epsilon(agent, value: float) -> None:
+    """Выставить epsilon в cfg агента (greedy-путь для детерминизма теста)."""
+    agent.cfg.epsilon = float(value)
+
+
+def test_eval_py_opponent_build_uses_model_len_not_enemy_len():
+    """Guard на call-site eval.py: обе ветки (основная и parallel-worker) строят
+    оппонента с len_model=len(model_units), а не len(enemy_units). Инвариант разобран
+    в test_eval_opponent_uses_model_head_count_not_enemy_count_on_asymmetric_roster."""
+    text = open("eval.py", encoding="utf-8").read()
+    assert "len_model=len(enemy_units)" not in text, (
+        "eval.py строит оппонента с len_model=len(enemy_units); должно быть len(model_units): "
+        "action space и сеть оппонента (из contract) размерены по model, иначе KeyError на "
+        "асимметричном ростере и расхождение с train (build_policy_fn → len(model))."
+    )
