@@ -1219,6 +1219,34 @@ def _gmz_episode_result_row(*, info: dict, ep_reward: float, ep_len: int) -> dic
     }
 
 
+def _az_episode_mission_fields(info: dict) -> dict:
+    """Доп. поля итога AZ/GAZ-эпизода для [TRAIN][EP]-лога и оконных метрик.
+
+    Раньше AZ-ряд нёс только VP → в метриках hp_diff/objective были нулями, а в
+    логе нечего было показать про «почему ничья». Достаём из info контроль точек,
+    суммарный HP сторон и чистый outcome value target (см. az_mission_bootstrap).
+    """
+    info = info or {}
+    mh = info.get("model health", [])
+    ph = info.get("player health", [])
+    mh_sum = float(sum(mh)) if isinstance(mh, (list, tuple, np.ndarray)) else float(mh or 0.0)
+    ph_sum = float(sum(ph)) if isinstance(ph, (list, tuple, np.ndarray)) else float(ph or 0.0)
+    m_ctrl = info.get("model controlled objectives", []) or []
+    e_ctrl = info.get("player controlled objectives", []) or []
+    m_ctrl_n = len(m_ctrl) if isinstance(m_ctrl, (list, tuple)) else 0
+    e_ctrl_n = len(e_ctrl) if isinstance(e_ctrl, (list, tuple)) else 0
+    fields = {
+        "model_hp_total": mh_sum,
+        "enemy_hp_total": ph_sum,
+        "model_ctrl_n": int(m_ctrl_n),
+        "enemy_ctrl_n": int(e_ctrl_n),
+    }
+    ov = info.get("az_outcome_value")
+    if ov is not None:
+        fields["outcome_value"] = float(ov)
+    return fields
+
+
 def format_train_ep_log_line(
     *,
     ep: int,
@@ -1230,8 +1258,20 @@ def format_train_ep_log_line(
     vp_diff: int | float = 0,
     ep_reward: float = 0.0,
     turns: int = 0,
+    model_vp: int | None = None,
+    enemy_vp: int | None = None,
+    model_ctrl_n: int | None = None,
+    enemy_ctrl_n: int | None = None,
+    hp_diff: float | None = None,
+    outcome_value: float | None = None,
 ) -> str:
-    """Единая строка итога эпизода для вкладки «Эпизоды» в GUI."""
+    """Единая строка итога эпизода для вкладки «Эпизоды» в GUI.
+
+    Опциональные поля (model_vp/enemy_vp/obj/hp_diff/outcome_v) добавляются
+    только если переданы — чтобы не ломать старый формат и парсер GUI. Нужны,
+    чтобы draw pit (почему ничья) был виден без гадания: см. диагностику
+    draw-rate в LOGS_FOR_AGENTS_TRAIN.md.
+    """
     pieces = ["[TRAIN][EP]"]
     if total is not None and int(total) > 0:
         pieces.append(f"ep={int(ep)}/{int(total)}")
@@ -1250,6 +1290,16 @@ def format_train_ep_log_line(
             f"turns={int(turns)}",
         ]
     )
+    if model_vp is not None:
+        pieces.append(f"model_vp={int(model_vp)}")
+    if enemy_vp is not None:
+        pieces.append(f"enemy_vp={int(enemy_vp)}")
+    if model_ctrl_n is not None and enemy_ctrl_n is not None:
+        pieces.append(f"obj={int(model_ctrl_n)}/{int(enemy_ctrl_n)}")
+    if hp_diff is not None:
+        pieces.append(f"hp_diff={float(hp_diff):+.1f}")
+    if outcome_value is not None:
+        pieces.append(f"outcome_v={float(outcome_value):.3f}")
     return " ".join(pieces)
 
 
@@ -1266,6 +1316,16 @@ def log_train_episode_line(
         return
     actor_raw = actor_idx if actor_idx is not None else row.get("actor_idx")
     actor_out = int(actor_raw) if actor_raw is not None and int(actor_raw) >= 0 else None
+    # Опциональные mission-поля: добавляем в строку только если они есть в row
+    # (есть у AZ/GAZ/DQN-рядов; отсутствие → поле просто не печатается).
+    model_vp = row.get("model_vp")
+    enemy_vp = row.get("player_vp")
+    model_ctrl_n = row.get("model_ctrl_n")
+    enemy_ctrl_n = row.get("enemy_ctrl_n")
+    mh = row.get("model_hp_total")
+    eh = row.get("enemy_hp_total")
+    hp_diff = (float(mh) - float(eh)) if (mh is not None and eh is not None) else None
+    outcome_value = row.get("outcome_value")
     line = format_train_ep_log_line(
         ep=int(ep if ep is not None else row.get("episode") or 0),
         total=total,
@@ -1276,6 +1336,12 @@ def log_train_episode_line(
         vp_diff=int(row.get("vp_diff", 0) or 0),
         ep_reward=float(row.get("ep_reward", 0.0) or 0.0),
         turns=int(row.get("turn", row.get("ep_len", 0)) or 0),
+        model_vp=int(model_vp) if model_vp is not None else None,
+        enemy_vp=int(enemy_vp) if enemy_vp is not None else None,
+        model_ctrl_n=int(model_ctrl_n) if model_ctrl_n is not None else None,
+        enemy_ctrl_n=int(enemy_ctrl_n) if enemy_ctrl_n is not None else None,
+        hp_diff=hp_diff,
+        outcome_value=float(outcome_value) if outcome_value is not None else None,
     )
     if TRAIN_LOG_TO_FILE:
         append_agent_log(line)
@@ -2507,6 +2573,19 @@ _GAZ_ALGO = is_gumbel_az_algo(TRAIN_ALGO)
 
 def _az_family_env(gaz_key: str, az_key: str, default):
     return resolve_az_family_env(gaz_key, az_key, default, is_gumbel=_GAZ_ALGO)
+
+
+# Mission-bootstrap (AZ/GAZ): слабый сигнал «играй миссию» поверх outcome-таргета
+# при outcome_only. По умолчанию 0.0 (ВЫКЛ → поведение бит-в-бит как раньше).
+# Резолв GAZ_* → AZ_* → секция конфига. Рекомендуемое значение для включения ≈0.05–0.1.
+AZ_MISSION_BOOTSTRAP_COEF = float(
+    _az_family_env(
+        "GAZ_MISSION_BOOTSTRAP_COEF",
+        "AZ_MISSION_BOOTSTRAP_COEF",
+        AZ_CFG.get("mission_bootstrap_coef", 0.0),
+    )
+)
+AZ_MISSION_BOOTSTRAP_COEF = max(0.0, min(1.0, AZ_MISSION_BOOTSTRAP_COEF))
 
 
 AZ_INFERENCE_SERVER_REQUESTED = (
@@ -6145,6 +6224,9 @@ def _actor_learner_actor_entry_alphazero(
                 outcome_value_win=float(outcome_payload.get("outcome_value_win", AZ_OUTCOME_VALUE_WIN)),
                 outcome_value_loss=float(outcome_payload.get("outcome_value_loss", AZ_OUTCOME_VALUE_LOSS)),
                 outcome_value_draw=float(outcome_payload.get("outcome_value_draw", AZ_OUTCOME_VALUE_DRAW)),
+                mission_bootstrap_coef=float(
+                    outcome_payload.get("mission_bootstrap_coef", AZ_MISSION_BOOTSTRAP_COEF)
+                ),
                 policy_version=int(current_policy_version),
                 actor_idx=int(actor_idx),
                 heartbeat_moves=heartbeat_moves,
@@ -6187,24 +6269,23 @@ def _actor_learner_actor_entry_alphazero(
                 result = "win"
             elif vp_diff == 0:
                 result = "draw"
-            sink.put(
-                "ep",
-                {
-                    "episode": None,
-                    "actor_idx": int(actor_idx),
-                    "actor_ep": int(ep_idx_1based),
-                    "ep_reward": float(info.get("reward", 0.0) or 0.0),
-                    "ep_len": int(info.get("turn", 0) or 0),
-                    "turn": int(info.get("turn", 0) or 0),
-                    "model_vp": int(model_vp),
-                    "player_vp": int(player_vp),
-                    "vp_diff": int(vp_diff),
-                    "result": str(result),
-                    "end_reason": str(end_reason),
-                    "end_code": int(info.get("res", 0) or 0),
-                    "policy_version": int(current_policy_version),
-                },
-            )
+            ep_payload = {
+                "episode": None,
+                "actor_idx": int(actor_idx),
+                "actor_ep": int(ep_idx_1based),
+                "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                "ep_len": int(info.get("turn", 0) or 0),
+                "turn": int(info.get("turn", 0) or 0),
+                "model_vp": int(model_vp),
+                "player_vp": int(player_vp),
+                "vp_diff": int(vp_diff),
+                "result": str(result),
+                "end_reason": str(end_reason),
+                "end_code": int(info.get("res", 0) or 0),
+                "policy_version": int(current_policy_version),
+            }
+            ep_payload.update(_az_episode_mission_fields(info))
+            sink.put("ep", ep_payload)
 
         if rollout_batch:
             sink.put(
@@ -6403,6 +6484,9 @@ def _az_env_worker_entry(
                 outcome_value_win=float(outcome_payload.get("outcome_value_win", AZ_OUTCOME_VALUE_WIN)),
                 outcome_value_loss=float(outcome_payload.get("outcome_value_loss", AZ_OUTCOME_VALUE_LOSS)),
                 outcome_value_draw=float(outcome_payload.get("outcome_value_draw", AZ_OUTCOME_VALUE_DRAW)),
+                mission_bootstrap_coef=float(
+                    outcome_payload.get("mission_bootstrap_coef", AZ_MISSION_BOOTSTRAP_COEF)
+                ),
                 policy_version=int(current_policy_version),
                 actor_idx=int(worker_id),
                 heartbeat_moves=heartbeat_moves,
@@ -6447,24 +6531,23 @@ def _az_env_worker_entry(
                 result = "win"
             elif vp_diff == 0:
                 result = "draw"
-            sink.put(
-                "ep",
-                {
-                    "episode": None,
-                    "actor_idx": int(worker_id),
-                    "actor_ep": int(ep_idx_1based),
-                    "ep_reward": float(info.get("reward", 0.0) or 0.0),
-                    "ep_len": int(info.get("turn", 0) or 0),
-                    "turn": int(info.get("turn", 0) or 0),
-                    "model_vp": int(model_vp),
-                    "player_vp": int(player_vp),
-                    "vp_diff": int(vp_diff),
-                    "result": str(result),
-                    "end_reason": str(end_reason),
-                    "end_code": int(info.get("res", 0) or 0),
-                    "policy_version": int(current_policy_version),
-                },
-            )
+            ep_payload = {
+                "episode": None,
+                "actor_idx": int(worker_id),
+                "actor_ep": int(ep_idx_1based),
+                "ep_reward": float(info.get("reward", 0.0) or 0.0),
+                "ep_len": int(info.get("turn", 0) or 0),
+                "turn": int(info.get("turn", 0) or 0),
+                "model_vp": int(model_vp),
+                "player_vp": int(player_vp),
+                "vp_diff": int(vp_diff),
+                "result": str(result),
+                "end_reason": str(end_reason),
+                "end_code": int(info.get("res", 0) or 0),
+                "policy_version": int(current_policy_version),
+            }
+            ep_payload.update(_az_episode_mission_fields(info))
+            sink.put("ep", ep_payload)
             if str(rollout_sink_mode or "local").strip().lower() == "local":
                 # Своевременный маркер сбора ПК1 для GUI (аналог pc2_ep_accepted у приёмника).
                 try:
@@ -6828,6 +6911,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
         "outcome_value_win": AZ_OUTCOME_VALUE_WIN,
         "outcome_value_loss": AZ_OUTCOME_VALUE_LOSS,
         "outcome_value_draw": AZ_OUTCOME_VALUE_DRAW,
+        "mission_bootstrap_coef": AZ_MISSION_BOOTSTRAP_COEF,
         "policy_version": int(policy_version),
     }
     _init_weights_cpu = {k: v.detach().cpu() for k, v in normalize_state_dict(az_net.state_dict()).items()}
@@ -7507,6 +7591,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
             "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
             "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+            "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
         },
     )
     az_done_msg = (

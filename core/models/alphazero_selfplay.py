@@ -16,6 +16,7 @@ from core.engine.phases.replay_meta import (
 from core.engine.phases.windowed_selfplay import merge_windowed_meta_into
 from core.models.action_contract import action_tensor_to_dict, ordered_action_keys
 from core.models.alphazero_replay import AZTransition
+from core.models.az_mission_bootstrap import finalize_value_targets
 from core.models.utils import unwrap_env
 from core.telemetry.stratagem_trace import (
     make_stratagem_tracer_for_train,
@@ -57,6 +58,7 @@ def play_episode_with_mcts(
     outcome_value_win: float = 1.0,
     outcome_value_loss: float = -1.0,
     outcome_value_draw: float = -0.25,
+    mission_bootstrap_coef: float = 0.0,
     policy_version: int = 0,
     actor_idx: int = -1,
     heartbeat_moves: int = 5,
@@ -184,34 +186,8 @@ def play_episode_with_mcts(
         state = next_state
         steps += 1
 
-    if outcome_only:
-        outcome_value_win = float(np.clip(float(outcome_value_win), -1.0, 1.0))
-        outcome_value_loss = float(np.clip(float(outcome_value_loss), -1.0, 1.0))
-        outcome_value_draw = float(np.clip(float(outcome_value_draw), -1.0, 1.0))
-        winner = str(last_info.get("winner", "") or "").strip().lower()
-        end_reason = str(last_info.get("end reason", "") or "").strip().lower()
-        if winner in {"model", "learner", "ai"} or end_reason == "wipeout_enemy":
-            final_value = outcome_value_win
-        elif winner in {"enemy", "player", "opponent"} or end_reason == "wipeout_model":
-            final_value = outcome_value_loss
-        else:
-            final_value = outcome_value_draw
-
-    faction = str(getattr(env_u, "model_faction", "") or getattr(env_u, "model", "") or "")
-    if hasattr(faction, "__class__") and not isinstance(faction, str):
-        faction = str(getattr(env_u, "model_faction", "") or "")
-    out: list[AZTransition] = []
-    for s, pi, phase_meta in records:
-        out.append(
-            AZTransition(
-                state=s,
-                policy_targets=pi,
-                value_target=final_value,
-                policy_version=int(policy_version),
-                faction=str(faction),
-                phase_meta=phase_meta,
-            )
-        )
+    # Финальное info нужно ПОЛНЫМ: исход + контроль точек/HP для mission-bootstrap
+    # и для [TRAIN][EP]-лога. Заполняем до расчёта таргетов (раньше — после).
     if not last_info:
         try:
             gi = env_u.get_info()
@@ -219,6 +195,38 @@ def play_episode_with_mcts(
                 last_info = dict(gi)
         except Exception:
             last_info = {}
+
+    # Исход → terminal value (+ опц. mission-bootstrap по ничьим) → per-transition
+    # таргеты. coef=0 (дефолт) → константа final_value, как было до bootstrap.
+    # Сайд-эффект: пишет last_info['az_outcome_value']/['az_outcome_kind'] для лога.
+    value_targets, final_value, _outcome_kind = finalize_value_targets(
+        n_transitions=len(records),
+        last_info=last_info,
+        outcome_only=bool(outcome_only),
+        raw_final_value=float(final_value),
+        win=outcome_value_win,
+        loss=outcome_value_loss,
+        draw=outcome_value_draw,
+        coef=float(mission_bootstrap_coef),
+    )
+
+    faction = str(getattr(env_u, "model_faction", "") or getattr(env_u, "model", "") or "")
+    if hasattr(faction, "__class__") and not isinstance(faction, str):
+        faction = str(getattr(env_u, "model_faction", "") or "")
+    out: list[AZTransition] = []
+    for idx, (s, pi, phase_meta) in enumerate(records):
+        out.append(
+            AZTransition(
+                state=s,
+                policy_targets=pi,
+                value_target=(
+                    float(value_targets[idx]) if idx < len(value_targets) else float(final_value)
+                ),
+                policy_version=int(policy_version),
+                faction=str(faction),
+                phase_meta=phase_meta,
+            )
+        )
     if strat_tracer is not None:
         ep_label = (
             f"actor={int(actor_idx)} steps={int(steps)}"
