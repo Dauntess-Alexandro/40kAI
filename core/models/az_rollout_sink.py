@@ -195,6 +195,7 @@ AZ_DIST_HYPERPARAM_KEYS: tuple[str, ...] = (
     "outcome_value_win",
     "outcome_value_loss",
     "outcome_value_draw",
+    "mission_bootstrap_coef",
     "actor_batch_send",
     "inference_timeout",
     "self_play_enabled",
@@ -336,6 +337,7 @@ def build_az_dist_worker_payloads(
         "outcome_value_win": float(_hp_pick(hp, "outcome_value_win", d.get("outcome_value_win", 1.0))),
         "outcome_value_loss": float(_hp_pick(hp, "outcome_value_loss", d.get("outcome_value_loss", -1.0))),
         "outcome_value_draw": float(_hp_pick(hp, "outcome_value_draw", d.get("outcome_value_draw", -0.25))),
+        "mission_bootstrap_coef": float(_hp_pick(hp, "mission_bootstrap_coef", d.get("mission_bootstrap_coef", 0.0))),
         "policy_version": 0,
     }
     batch_send = int(_hp_pick(hp, "actor_batch_send", d.get("batch_send", 32)))
@@ -399,6 +401,7 @@ def build_gaz_dist_worker_payloads(
         "outcome_value_win": float(_hp_pick(hp, "outcome_value_win", d.get("outcome_value_win", 1.0))),
         "outcome_value_loss": float(_hp_pick(hp, "outcome_value_loss", d.get("outcome_value_loss", -1.0))),
         "outcome_value_draw": float(_hp_pick(hp, "outcome_value_draw", d.get("outcome_value_draw", -0.25))),
+        "mission_bootstrap_coef": float(_hp_pick(hp, "mission_bootstrap_coef", d.get("mission_bootstrap_coef", 0.0))),
         "policy_version": 0,
     }
     batch_send = int(_hp_pick(hp, "actor_batch_send", d.get("batch_send", 32)))

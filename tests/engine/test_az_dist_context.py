@@ -14,6 +14,7 @@ from core.models.az_rollout_sink import (
     apply_az_dist_worker_env,
     az_dist_context_path,
     build_az_dist_worker_payloads,
+    build_gaz_dist_worker_payloads,
     normalize_az_dist_hyperparams,
     pack_az_dist_hyperparams,
     read_az_dist_train_context,
@@ -84,22 +85,63 @@ def test_pack_and_pc2_mcts_payload_prefers_smb_hyperparams():
         "outcome_value_win": 1.0,
         "outcome_value_loss": -1.0,
         "outcome_value_draw": -0.25,
+        "mission_bootstrap_coef": 0.0,
         "batch_send": 32,
         "inference_timeout": 5.0,
         "self_play_enabled": 0,
     }
     smb = pack_az_dist_hyperparams(
-        {"mcts_parallel_sims": 8, "mcts_simulations": 64, "mcts_max_depth": 2, "noise": 999}
+        {
+            "mcts_parallel_sims": 8,
+            "mcts_simulations": 64,
+            "mcts_max_depth": 2,
+            "mission_bootstrap_coef": 0.05,
+            "noise": 999,
+        }
     )
     assert "noise" not in smb
     assert smb["mcts_parallel_sims"] == 8
+    assert smb["mission_bootstrap_coef"] == 0.05
     payloads = build_az_dist_worker_payloads(smb, defaults=defaults)
     assert payloads["mcts"]["parallel_simulations"] == 8
     assert payloads["mcts"]["simulations"] == 64
     assert payloads["mcts"]["max_depth"] == 2
+    assert payloads["outcome"]["mission_bootstrap_coef"] == 0.05
     assert payloads["mcts"]["parallel_simulations"] != defaults["parallel_simulations"]
     empty = normalize_az_dist_hyperparams(None)
     assert empty == {}
+
+
+def test_pc2_gaz_payload_prefers_smb_mission_bootstrap_coef():
+    defaults = {
+        "num_simulations": 32,
+        "num_considered_actions": 8,
+        "max_depth": 1,
+        "value_scale": 0.1,
+        "c_visit": 50.0,
+        "eval_cache_size": 10000,
+        "batch_eval_size": 16,
+        "simulate_enemy": False,
+        "joint_action": False,
+        "temperature_opening_moves": 12,
+        "temperature_opening_value": 0.9,
+        "temperature_late_value": 0.15,
+        "outcome_only": True,
+        "outcome_value_win": 1.0,
+        "outcome_value_loss": -1.0,
+        "outcome_value_draw": -0.7,
+        "mission_bootstrap_coef": 0.0,
+        "batch_send": 32,
+        "inference_timeout": 5.0,
+        "self_play_enabled": 0,
+    }
+    smb = pack_az_dist_hyperparams(
+        {"num_simulations": 48, "joint_action": 1, "mission_bootstrap_coef": 0.075}
+    )
+    payloads = build_gaz_dist_worker_payloads(smb, defaults=defaults)
+    assert payloads["mcts"]["num_simulations"] == 48
+    assert payloads["mcts"]["joint_action"] is True
+    assert payloads["outcome"]["mission_bootstrap_coef"] == 0.075
 
 
 def test_resolve_latest_opponent(tmp_path, monkeypatch):
