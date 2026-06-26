@@ -339,7 +339,10 @@ while isdone == False:
                     ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
                 )
                 opp = load_agent_opponent(agent_id=opponent_agent_id, expected_contract=play_contract)
-                opponent_policy_fn = build_policy_fn(env=env, len_model=len(enemy), opponent=opp, deterministic=True)
+                # len_model=len(model): action space и сеть оппонента размерены по model;
+                # оппонент ходит за enemy через тот же model-space (как в train/eval). len(enemy) →
+                # KeyError move_num_{i} при асимметрии армий (AI-vs-AI Viewer).
+                opponent_policy_fn = build_policy_fn(env=env, len_model=len(model), opponent=opp, deterministic=True)
                 _log(f"[PLAY] opponent-agent-id={opponent_agent_id} algo={opp.algo} (deterministic)")
                 _log(
                     f"[VIEWER][OPPONENT] mode=ai agent_id={opponent_agent_id} "

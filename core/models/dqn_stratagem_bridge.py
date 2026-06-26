@@ -39,7 +39,10 @@ def _masks_for_side(env, side: str, device) -> list:
     """Legal action masks в порядке ordered_action_keys — для masked max-Q."""
     e = unwrap_env(env)
     legal = e.get_legal_action_masks_by_head(side=side)
-    n_units = len(e.unit_data) if side == "model" else len(e.enemy_data)
+    # action_space и сеть размерены по len(model)=len(unit_data); маски enemy идут по тем же
+    # model-space ключам. len(enemy_data) → KeyError move_num_{i} при асимметрии армий.
+    # Тот же инвариант, что в warhamEnv._reaction_net_value.
+    n_units = len(e.unit_data)
     keys = ordered_action_keys(int(n_units))
     return [
         torch.tensor(legal[k], dtype=torch.bool, device=device).unsqueeze(0)

@@ -4393,16 +4393,21 @@ class Warhammer40kEnv(gym.Env):
         obs = torch.tensor(
             np.asarray([self.get_observation_for_side(side)], dtype=np.float32), dtype=torch.float32, device=device
         )
-        if hasattr(net, "infer_with_value"):
-            legal = self.get_legal_action_masks_by_head(side=side)
-            n_units = len(self.unit_data) if side == "model" else len(self.enemy_data)
-            keys = ordered_action_keys(int(n_units))
-            masks_by_head = [
-                torch.tensor(legal[k], dtype=torch.bool, device=device).unsqueeze(0) for k in keys
-            ]
-            _, value = net.infer_with_value(obs, masks_by_head=masks_by_head)
-        else:
-            _, value = net.infer(obs)
+        with torch.no_grad():
+            if hasattr(net, "infer_with_value"):
+                legal = self.get_legal_action_masks_by_head(side=side)
+                # Головы/маски всегда в model-space: action_space и сеть размерены по len(model)
+                # (= len(self.unit_data)). get_legal_action_masks_by_head(side="enemy") отдаёт маски
+                # с семантикой enemy, но ПО ТЕМ ЖЕ ключам action_space. Брать len(enemy_data) →
+                # KeyError move_num_{i} при асимметрии армий; держим len(unit_data) для обеих сторон.
+                n_units = len(self.unit_data)
+                keys = ordered_action_keys(int(n_units))
+                masks_by_head = [
+                    torch.tensor(legal[k], dtype=torch.bool, device=device).unsqueeze(0) for k in keys
+                ]
+                _, value = net.infer_with_value(obs, masks_by_head=masks_by_head)
+            else:
+                _, value = net.infer(obs)
         return float(value.reshape(-1)[0])
 
     def _simulate_reaction_branch(self, ctx, *, apply: bool) -> float:

@@ -1880,9 +1880,9 @@ def main():
         assignment_label: str = "",
     ) -> dict:
         """Прогон N игр одного назначения (learner=model, opponent=enemy). Возвращает агрегированные метрики."""
-        # M1: len_model каждого агента берётся из своей стороны (model/enemy units) и предполагает
-        # зеркальные ростеры. При --swap-sides с асимметричными ростерами граница move-head цикла
-        # (range(len_model)) у сторон может отличаться — учесть при анализе таких прогонов.
+        # M1: оба агента (learner и opponent) строятся с len_model=len(model_units) — это число
+        # per-unit голов action_space; обе стороны ходят через тот же model-space контракт. Поэтому
+        # назначение сторон (включая --swap-sides) корректно и при асимметричных ростерах.
         _opponent_side = "P2" if str(_learner_side).upper() == "P1" else "P1"
         _label = f" [{assignment_label}]" if assignment_label else ""
         acc = new_assignment_accumulator()
