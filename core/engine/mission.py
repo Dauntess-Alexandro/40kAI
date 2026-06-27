@@ -1400,7 +1400,22 @@ def apply_end_of_battle(env, log_fn: Callable[[str], None] | None = None) -> Tup
     if game_over and not env.game_over:
         env.game_over = True
         if log_fn is not None:
-            if reason == "turn_limit":
+            if mission_scoring_mode(env) == "kill_points":
+                # Annihilation / Kill Points: KP уже актуальны после check_end_of_battle.
+                draw_reason = str(getattr(env, "_mission_draw_reason", "") or "")
+                tb = "; tiebreak=destroyed_hp" if draw_reason == "equal_kp_and_hp" else ""
+                if winner is None:
+                    log_fn(
+                        f"[MISSION][Annihilation] {reason} -> draw "
+                        f"reason={draw_reason or 'equal_kp'}{tb} "
+                        f"(KP model={env.modelKP} enemy={env.enemyKP})"
+                    )
+                else:
+                    log_fn(
+                        f"[MISSION][Annihilation] {reason} -> winner={winner} "
+                        f"(KP model={env.modelKP} enemy={env.enemyKP})"
+                    )
+            elif reason == "turn_limit":
                 if winner is None:
                     log_fn(f"Game over: turn_limit -> draw (VP {env.modelVP}-{env.enemyVP})")
                 else:

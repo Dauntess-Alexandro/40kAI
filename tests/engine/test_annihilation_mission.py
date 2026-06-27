@@ -186,3 +186,45 @@ def test_get_info_exposes_kp_and_mission_fields():
     assert info["model_destroyed_units"] == 1
     assert info["player_destroyed_units"] == 1
     assert info["mission_draw_reason"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Task 6: Логирование исходов annihilation (winner/draw + tiebreak)
+# ---------------------------------------------------------------------------
+
+def test_apply_end_of_battle_logs_kp_outcome():
+    env = _ann_env([10, 10], [0, 0, 6])   # model 2 KP -> winner
+    logs = []
+    M.apply_end_of_battle(env, log_fn=logs.append)
+    joined = "\n".join(logs)
+    assert "[MISSION][Annihilation]" in joined
+    assert "winner=model" in joined
+    assert "KP model=2" in joined
+
+
+def test_apply_end_of_battle_logs_draw_reason():
+    env = _ann_env([0, 10], [0, 10])      # по 1 KP, стартовые hp равны -> draw
+    env._start_enemy_unit_wounds = [10, 10]
+    env._start_model_unit_wounds = [10, 10]
+    env.enemy_health = [0, 10]
+    env.unit_health = [0, 10]
+    logs = []
+    M.apply_end_of_battle(env, log_fn=logs.append)
+    joined = "\n".join(logs)
+    assert "draw" in joined and "reason=equal_kp_and_hp" in joined
+
+
+def test_only_war_turn_limit_log():
+    """Regression: Only War лог-формат не должен измениться (без [MISSION][Annihilation])."""
+    env = types.SimpleNamespace(
+        unit_health=[10], enemy_health=[10],
+        modelVP=5, enemyVP=2, battle_round=21,
+        mission_key="only_war", mission_scoring_mode="objective_control",
+        game_over=False,
+    )
+    logs = []
+    M.apply_end_of_battle(env, log_fn=logs.append)
+    joined = "\n".join(logs)
+    assert "Game over: turn_limit (after BR" in joined
+    assert "(VP 5-2)" in joined
+    assert "[MISSION][Annihilation]" not in joined
