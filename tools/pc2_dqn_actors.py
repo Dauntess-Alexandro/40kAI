@@ -25,6 +25,25 @@ from core.models.dqn_dist import (  # noqa: E402
 )
 
 
+def _apply_context_env(ctx: dict | None, *, log=print) -> None:
+    """ПК2: mission/ruleset из DQN train-context надо выставить ДО import train."""
+    src = ctx if isinstance(ctx, dict) else {}
+    mission = str(src.get("mission") or (src.get("roster") or {}).get("mission") or "").strip()
+    if mission:
+        from core.engine.mission import normalize_mission_name
+
+        mission = normalize_mission_name(mission)
+        os.environ["MISSION_NAME"] = mission
+    ruleset = str(src.get("ruleset_version") or "").strip()
+    if not ruleset and mission:
+        ruleset = f"{mission}_v2"
+    if ruleset:
+        os.environ["RULESET_VERSION"] = ruleset
+        os.environ["ENV_RULESET_VERSION"] = ruleset
+    if mission or ruleset:
+        log(f"[DQN][DIST][PC2] context env: mission={mission or '-'} ruleset={ruleset or '-'}")
+
+
 def _env_int(name: str, default: int) -> int:
     try:
         return int(os.getenv(name, str(default)))
@@ -72,6 +91,13 @@ def _worker_main(worker_id: int, ctx_json: str, episodes: int) -> None:
         except Exception:
             pass
 
+    ctx = {}
+    try:
+        ctx = json.loads(ctx_json) if ctx_json else {}
+    except Exception:
+        ctx = {}
+    _apply_context_env(ctx)
+
     import gymnasium as gym
     import numpy as np
     import torch
@@ -79,12 +105,6 @@ def _worker_main(worker_id: int, ctx_json: str, episodes: int) -> None:
     import train as train_mod
     from core.engine.agent_registry import make_env_contract
     from core.models.opponent_adapter import load_agent_opponent
-
-    ctx = {}
-    try:
-        ctx = json.loads(ctx_json) if ctx_json else {}
-    except Exception:
-        ctx = {}
 
     # Арх-параметры сети — из контекста ПК1 (источник правды по форме весов
     # latest_policy.pth). Иначе локальный ensemble_size/hidden/layers ПК2 может

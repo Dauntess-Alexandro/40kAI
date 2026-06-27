@@ -102,6 +102,16 @@ def _resolve_obs_action_sizes(*, actor_sync_dir: str | None, share_only: bool) -
     return _dims_from_roster(actor_sync_dir=actor_sync_dir)
 
 
+def _resolve_mission(*, actor_sync_dir: str | None) -> str:
+    try:
+        from core.engine.mission import normalize_mission_name
+
+        roster = load_roster_for_search(actor_sync_dir=actor_sync_dir)
+        return normalize_mission_name(roster.get("mission", ""))
+    except Exception:
+        return ""
+
+
 def publish_az_remote_search_cfg_from_repo(
     *,
     roster_path: str | Path | None = None,
@@ -133,6 +143,7 @@ def publish_az_remote_search_cfg_from_repo(
         n_value_ensemble=int(az.get("value_ensemble", 1)),
         num_simulations=int(az.get("mcts_simulations", 32)),
         sources=src_list,
+        mission=_resolve_mission(actor_sync_dir=sync_dir or None),
     )
 
 

@@ -163,36 +163,57 @@ def measure_env_dims_from_roster(roster_config: dict, build_units_from_config) -
     b_len = int(roster_config["b_len"])
     b_hei = int(roster_config["b_hei"])
     mission_name = normalize_mission_name(roster_config.get("mission", "only_war"))
+    old_mission = os.environ.get("MISSION_NAME")
+    old_ruleset = os.environ.get("RULESET_VERSION")
+    old_env_ruleset = os.environ.get("ENV_RULESET_VERSION")
+    ruleset_version = str(roster_config.get("ruleset_version") or f"{mission_name}_v2")
+    os.environ["MISSION_NAME"] = mission_name
+    os.environ["RULESET_VERSION"] = ruleset_version
+    os.environ["ENV_RULESET_VERSION"] = ruleset_version
 
-    enemy, model = build_units_from_config(roster_config, b_len, b_hei)
-    from core.envs.warhamEnv import roll_off_attacker_defender
-
-    attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
-    deploy_for_mission(
-        mission_name,
-        model_units=model,
-        enemy_units=enemy,
-        b_len=b_len,
-        b_hei=b_hei,
-        attacker_side=attacker_side,
-        log_fn=None,
-    )
-    post_deploy_setup(log_fn=None)
-    env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
-    env0.attacker_side = attacker_side
-    env0.defender_side = defender_side
-    state0, _ = env0.reset(options={"m": model, "e": enemy, "trunc": True})
-    if isinstance(state0, (dict, collections.OrderedDict)):
-        n_observations = len(list(state0.values()))
-    else:
-        n_observations = int(np.array(state0).shape[0])
-    len_model = int(len(model))
-    n_actions = action_sizes_from_env(env0, len_model)
     try:
-        env0.close()
-    except Exception:
-        pass
-    return int(n_observations), [int(x) for x in n_actions]
+        enemy, model = build_units_from_config(roster_config, b_len, b_hei)
+        from core.envs.warhamEnv import roll_off_attacker_defender
+
+        attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+        deploy_for_mission(
+            mission_name,
+            model_units=model,
+            enemy_units=enemy,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=None,
+        )
+        post_deploy_setup(log_fn=None)
+        env0 = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+        env0.attacker_side = attacker_side
+        env0.defender_side = defender_side
+        state0, _ = env0.reset(options={"m": model, "e": enemy, "trunc": True})
+        if isinstance(state0, (dict, collections.OrderedDict)):
+            n_observations = len(list(state0.values()))
+        else:
+            n_observations = int(np.array(state0).shape[0])
+        len_model = int(len(model))
+        n_actions = action_sizes_from_env(env0, len_model)
+        try:
+            env0.close()
+        except Exception:
+            pass
+        return int(n_observations), [int(x) for x in n_actions]
+    finally:
+        if old_mission is None:
+            os.environ.pop("MISSION_NAME", None)
+        else:
+            os.environ["MISSION_NAME"] = old_mission
+        if old_ruleset is None:
+            os.environ.pop("RULESET_VERSION", None)
+        else:
+            os.environ["RULESET_VERSION"] = old_ruleset
+        if old_env_ruleset is None:
+            os.environ.pop("ENV_RULESET_VERSION", None)
+        else:
+            os.environ["ENV_RULESET_VERSION"] = old_env_ruleset
 
 
 def write_payload_to_targets(payload: dict[str, Any], targets: list[Path]) -> list[str]:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ПК2: убедиться, что search_cfg есть на SMB-шаре (gmz/az/smz)."""
+"""ПК2: убедиться, что search_cfg есть на SMB-шаре (gmz/az/gaz/smz)."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +16,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--algo",
         required=True,
-        choices=("gmz", "az", "smz"),
+        choices=("gmz", "az", "gaz", "smz"),
         help="Алгоритм remote IS",
     )
     parser.add_argument(

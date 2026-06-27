@@ -53,9 +53,54 @@ def test_write_and_read_dist_context(tmp_path, monkeypatch):
     sync = tmp_path / "actor_sync"
     sync.mkdir()
     monkeypatch.setenv("AZ_DIST_STOP_FLAG_PATH", str(sync / "az_dist_stop.flag"))
-    write_az_dist_train_context({"opponent_agent_id": "agent_test", "learner_side": "P1"})
-    assert read_az_dist_train_context()["opponent_agent_id"] == "agent_test"
+    write_az_dist_train_context({
+        "opponent_agent_id": "agent_test",
+        "learner_side": "P1",
+        "mission": "annihilation",
+        "ruleset_version": "annihilation_v2",
+        "roster": {"mission": "annihilation"},
+        "env_contract_hash": "hash_pc1",
+    })
+    ctx = read_az_dist_train_context()
+    assert ctx["opponent_agent_id"] == "agent_test"
+    assert ctx["mission"] == "annihilation"
+    assert ctx["ruleset_version"] == "annihilation_v2"
+    assert ctx["env_contract_hash"] == "hash_pc1"
     assert az_dist_context_path().endswith("az_dist_train_context.json")
+
+
+def test_pc2_az_applies_mission_context_before_train_import(monkeypatch):
+    from tools.pc2_az_actors import _apply_context_env
+
+    monkeypatch.setenv("MISSION_NAME", "only_war")
+    monkeypatch.setenv("RULESET_VERSION", "only_war_v2")
+    monkeypatch.setenv("ENV_RULESET_VERSION", "only_war_v2")
+
+    _apply_context_env(
+        {"mission": "annihilation", "ruleset_version": "annihilation_v2"},
+        log=lambda _msg: None,
+    )
+
+    assert os.environ["MISSION_NAME"] == "annihilation"
+    assert os.environ["RULESET_VERSION"] == "annihilation_v2"
+    assert os.environ["ENV_RULESET_VERSION"] == "annihilation_v2"
+
+
+def test_pc2_dqn_applies_mission_context_before_train_import(monkeypatch):
+    from tools.pc2_dqn_actors import _apply_context_env
+
+    monkeypatch.delenv("MISSION_NAME", raising=False)
+    monkeypatch.delenv("RULESET_VERSION", raising=False)
+    monkeypatch.delenv("ENV_RULESET_VERSION", raising=False)
+
+    _apply_context_env(
+        {"roster": {"mission": "annihilation"}},
+        log=lambda _msg: None,
+    )
+
+    assert os.environ["MISSION_NAME"] == "annihilation"
+    assert os.environ["RULESET_VERSION"] == "annihilation_v2"
+    assert os.environ["ENV_RULESET_VERSION"] == "annihilation_v2"
 
 
 def test_pack_and_pc2_mcts_payload_prefers_smb_hyperparams():

@@ -16,6 +16,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from core.engine.agent_registry import make_env_contract, resolve_latest_opponent_agent_id  # noqa: E402
+from core.engine.mission import normalize_mission_name  # noqa: E402
 from core.models.az_rollout_sink import (  # noqa: E402
     apply_az_dist_worker_env,
     az_dist_stop_flag_path,
@@ -31,6 +32,34 @@ from core.models.az_rollout_sink import (  # noqa: E402
 
 def _is_gumbel_az(algo: str) -> bool:
     return str(algo or "").strip().lower() == "gumbel_az"
+
+
+def _load_context_from_env() -> dict:
+    raw = str(os.getenv("AZ_DIST_CONTEXT_JSON", "") or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def _apply_context_env(ctx: dict | None, *, log=print) -> None:
+    """ПК2: mission/ruleset из SMB-контекста ПК1 нужно выставить ДО import train."""
+    src = ctx if isinstance(ctx, dict) else {}
+    mission = str(src.get("mission") or (src.get("roster") or {}).get("mission") or "").strip()
+    if mission:
+        mission = normalize_mission_name(mission)
+        os.environ["MISSION_NAME"] = mission
+    ruleset = str(src.get("ruleset_version") or "").strip()
+    if not ruleset and mission:
+        ruleset = f"{mission}_v2"
+    if ruleset:
+        os.environ["RULESET_VERSION"] = ruleset
+        os.environ["ENV_RULESET_VERSION"] = ruleset
+    if mission or ruleset:
+        log(f"[AZ][DIST][PC2] context env: mission={mission or '-'} ruleset={ruleset or '-'}")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -232,6 +261,8 @@ def _load_opponent_spec(train_mod, roster_config: dict, b_len: int, b_hei: int):
 
 
 def _worker_main(worker_id: int) -> None:
+    dist_ctx = _load_context_from_env()
+    _apply_context_env(dist_ctx)
     import train as train_mod
 
     hp_pc1: dict = {}
@@ -254,7 +285,16 @@ def _worker_main(worker_id: int) -> None:
     sp_payload = payloads["sp"]
     outcome_payload = payloads["outcome"]
 
-    roster = train_mod._load_roster_config()
+    roster = train_mod._roster_from_context(dist_ctx)
+    if roster is not None:
+        print("[AZ][DIST][PC2] ростер: из контекста ПК1 (SMB)", flush=True)
+    else:
+        roster = train_mod._load_roster_config()
+        print(
+            "[AZ][DIST][PC2][WARN] ростер: локальный runtime/state/data.json "
+            "(в контексте нет снимка — старый ПК1?). Возможен env/contract mismatch.",
+            flush=True,
+        )
     b_len = int(roster["b_len"])
     b_hei = int(roster["b_hei"])
     opponent_spec = _load_opponent_spec(train_mod, roster, b_len, b_hei)
@@ -311,6 +351,7 @@ def main() -> int:
         require_opponent=False,
         require_hyperparams=False,
     )
+    _apply_context_env(dist_ctx)
     # train_algo из контекста ПК1 → выбор GumbelAlphaZeroSearch (gumbel_az) vs AZ MCTS.
     ctx_algo = str(dist_ctx.get("train_algo", "") or os.getenv("AZ_DIST_TRAIN_ALGO", "")).strip().lower()
     if ctx_algo:
@@ -380,13 +421,20 @@ def main() -> int:
     # ПК1 жив → он уже записал СВЕЖИЙ контекст (train.py пишет az_dist_train_context.json ДО
     # открытия приёмника). Лечим возможный stale-оппонент: ПК2 мог стартовать раньше ПК1 и
     # прочитать оппонента прошлого прогона. Перечитываем и согласуем (см. reconcile_dist_opponent).
+    fresh_ctx = read_az_dist_train_context()
+    _apply_context_env(fresh_ctx)
     opp_id, opp_warn = reconcile_dist_opponent(
-        opp_id, read_az_dist_train_context(), explicit_opp=explicit_opp
+        opp_id, fresh_ctx, explicit_opp=explicit_opp
     )
     if opp_warn:
         print(f"[{_tag}][DIST][PC2][WARN] {opp_warn}", flush=True)
     if opp_id:
         os.environ["OPPONENT_AGENT_ID"] = opp_id
+    ctx_for_workers = fresh_ctx if fresh_ctx else dist_ctx
+    os.environ["AZ_DIST_CONTEXT_JSON"] = json.dumps(ctx_for_workers, ensure_ascii=False)
+    ctx_hash = str((ctx_for_workers or {}).get("env_contract_hash", "") or "").strip()
+    if ctx_hash:
+        os.environ["AZ_DIST_ENV_CONTRACT_HASH"] = ctx_hash
     print(
         f"[{_tag}][DIST][PC2] оппонент подтверждён после подъёма ПК1: {opp_id or '(эвристика)'}",
         flush=True,

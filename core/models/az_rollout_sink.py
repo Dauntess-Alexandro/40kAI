@@ -35,6 +35,7 @@ def write_az_remote_search_cfg(
     num_simulations: int,
     sources: list[str] | None = None,
     filename: str = "az_remote_search_cfg.json",
+    mission: str = "",
 ) -> list[str]:
     """ПК1: записать <filename> (форма сети для IS на ПК2).
 
@@ -55,6 +56,10 @@ def write_az_remote_search_cfg(
         "_generated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "_sources": list(sources or ["train.py:auto"]),
     }
+    if str(mission or "").strip():
+        from core.engine.mission import normalize_mission_name
+
+        cfg["_mission"] = normalize_mission_name(str(mission))
     body = json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
 
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

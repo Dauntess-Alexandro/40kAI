@@ -6717,6 +6717,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             num_simulations=int(GAZ_NUM_SIMS if _gaz_cfg else AZ_MCTS_SIMS),
             sources=["train.py:auto"],
             filename="gaz_remote_search_cfg.json" if _gaz_cfg else "az_remote_search_cfg.json",
+            mission=mission_name,
         )
         append_agent_log(
             f"[{_AZ_LOG_TAG}][REMOTE_IS] search_cfg обновлён (obs={int(n_observations)}): {_az_search_cfg_paths}"
@@ -7057,6 +7058,11 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     "env_contract_hash": str(_az_contract_hash),
                     "self_play_enabled": int(SELF_PLAY_ENABLED),
                     "train_algo": str(TRAIN_ALGO),
+                    "mission": str(mission_name),
+                    "ruleset_version": str(RULESET_VERSION),
+                    "roster": _jsonable_roster(roster_config),
+                    "n_observations": int(n_observations),
+                    "n_actions": list(n_actions),
                     "az_hyperparams": _dist_az_hp,
                 }
             )
@@ -7076,6 +7082,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                     num_simulations=int(GAZ_NUM_SIMS if _gaz_cfg else AZ_MCTS_SIMS),
                     sources=["train.py:auto", f"env_contract_hash={_az_contract_hash}"],
                     filename=_search_cfg_filename,
+                    mission=mission_name,
                 )
                 append_agent_log(
                     f"[{_AZ_LOG_TAG}][DIST][CONTEXT] search_cfg обновлён ({_search_cfg_filename} "
