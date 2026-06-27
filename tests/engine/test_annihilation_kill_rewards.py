@@ -37,3 +37,12 @@ def test_opponent_objective_weights_zeroed_in_annihilation():
 def test_only_war_opponent_objective_weights_intact():
     rc.configure_for_mission("only_war")
     assert rc.ENEMY_HEUR_OBJECTIVE_CONTROL_W == 0.42
+
+
+def test_kill_value_flags_present_both_profiles():
+    rc.configure_for_mission("only_war")
+    assert int(rc.KILL_VALUE_WEIGHT_ENABLED) == 0
+    assert rc.KILL_VALUE_NORM == 8.0
+    rc.configure_for_mission("annihilation")
+    assert int(rc.KILL_VALUE_WEIGHT_ENABLED) == 1
+    assert rc.KILL_VALUE_NORM == 8.0

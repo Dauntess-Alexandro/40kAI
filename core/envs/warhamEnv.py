@@ -3505,6 +3505,16 @@ class Warhammer40kEnv(gym.Env):
         models = float(unit_data.get("#OfModels", 1))
         return max(1.0, wounds * models)
 
+    def _kill_value_factor(self, side: str, unit_idx: int) -> float:
+        """Множитель kill-бонуса по ценности убитого юнита (max_hp/NORM).
+        Включается флагом KILL_VALUE_WEIGHT_ENABLED (annihilation=1, only_war=0).
+        Согласует kill-бонус с destroyed_hp тай-брейком: крупный юнит дороже."""
+        if not int(getattr(reward_cfg, "KILL_VALUE_WEIGHT_ENABLED", 0)):
+            return 1.0
+        norm = max(1.0, float(getattr(reward_cfg, "KILL_VALUE_NORM", 8.0)))
+        max_hp = float(self._unit_max_hp(side, unit_idx))
+        return max(0.3, min(2.5, max_hp / norm))
+
     def _melee_strength_score(self, side: str, idx: int) -> float:
         weapons = self.unit_melee if side == "model" else self.enemy_melee
         data_list = self.unit_data if side == "model" else self.enemy_data
@@ -6354,7 +6364,7 @@ class Warhammer40kEnv(gym.Env):
                             )
                         kill_term = 0.0
                         if modHealth <= 0:
-                            kill_term = reward_cfg.SHOOT_REWARD_KILL_BONUS
+                            kill_term = reward_cfg.SHOOT_REWARD_KILL_BONUS * self._kill_value_factor("enemy", idOfE)
                             reward_delta += kill_term
                             self._log_reward_unit(
                                 "model",
@@ -7535,7 +7545,12 @@ class Warhammer40kEnv(gym.Env):
             damage_term = reward_cfg.MELEE_REWARD_DAMAGE_SCALE * damage_dealt_norm
             taken_term = reward_cfg.MELEE_REWARD_TAKEN_SCALE * damage_taken_norm
             kill_delta = max(0, post_enemy_dead - pre_enemy_dead)
-            kill_term = reward_cfg.MELEE_REWARD_KILL_BONUS * kill_delta
+            # value-weighted: сумма факторов по реально убитым в этом бою юнитам (flat fallback).
+            kill_value_sum = 0.0
+            for enemy_idx, pre_hp in pre_enemy_hp_by_idx.items():
+                if pre_hp > 0 and float(self.enemy_health[enemy_idx]) <= 0:
+                    kill_value_sum += self._kill_value_factor("enemy", enemy_idx)
+            kill_term = reward_cfg.MELEE_REWARD_KILL_BONUS * (kill_value_sum if kill_value_sum > 0 else kill_delta)
 
             objective_damage = 0.0
             objective_kills = 0

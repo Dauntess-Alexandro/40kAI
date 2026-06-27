@@ -255,6 +255,11 @@ MELEE_STRENGTH_SCALE = 0.1
 # Масштаб бонуса за контроль objective через ближний бой (objective-shaping — зануляем).
 MELEE_OBJECTIVE_CONTROL_SCALE = 0.0
 
+# Value-weighted kill: kill-бонус домножается на ценность убитого юнита (max_hp/NORM).
+# annihilation=1 (согласует с destroyed_hp тай-брейком); only_war=0.
+KILL_VALUE_WEIGHT_ENABLED = 1
+KILL_VALUE_NORM = 8.0
+
 # ===========================================
 # Enemy heuristic (профили и matchup-дистанция)
 # ===========================================
