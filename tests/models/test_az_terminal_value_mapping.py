@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from core.models.az_rollout_sink import build_az_dist_worker_payloads, build_gaz_dist_worker_payloads
 from core.models.alphazero_mcts import AlphaZeroFactorizedMCTS, MCTSConfig
 from core.models.gumbel_alphazero_search import _terminal_value_from_info as gaz_terminal_value
@@ -47,3 +50,13 @@ def test_dist_payload_carries_outcome_values_into_search_config():
     assert gaz_payloads["mcts"]["terminal_value_win"] == 0.8
     assert gaz_payloads["mcts"]["terminal_value_loss"] == -0.9
     assert gaz_payloads["mcts"]["terminal_value_draw"] == -0.7
+
+
+def test_search_algorithms_have_negative_draw_outcome_in_hyperparams():
+    hp_path = Path(__file__).resolve().parents[2] / "hyperparams.json"
+    hp = json.loads(hp_path.read_text(encoding="utf-8"))
+
+    for section in ("alphazero_tree", "gumbel_az", "gumbel_muzero", "sampled_muzero"):
+        cfg = hp[section]
+        assert int(cfg["outcome_only"]) == 1
+        assert float(cfg["outcome_value_draw"]) < 0.0

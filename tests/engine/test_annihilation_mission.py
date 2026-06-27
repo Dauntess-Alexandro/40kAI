@@ -1,5 +1,6 @@
 import types
 
+import numpy as np
 import pytest
 
 import reward_config as _rc
@@ -92,18 +93,18 @@ def test_turn_limit_equal_kp_tiebreak_destroyed_hp():
     assert over and winner == "model"     # 7 > 4
 
 
-def test_remaining_hp_tiebreak_breaks_zero_kp_draw():
-    # 0-0 KP (никто не уничтожен полностью), но model нанёс больше урона -> win по remaining_hp
+def test_partial_damage_does_not_break_zero_kp_draw():
+    # 0-0 KP: частичный урон не должен превращаться в win на turn_limit.
     env = _ann_env([10, 10], [10, 10])
     env._start_model_unit_wounds = [10, 10]
     env._start_enemy_unit_wounds = [10, 10]
     env.enemy_health = [3, 10]   # model нанёс 7 урона врагу
     env.unit_health = [8, 10]    # enemy нанёс 2 урона
     over, reason, winner = M.check_end_of_battle(env)
-    assert over and reason == "turn_limit" and winner == "model"
+    assert over and reason == "turn_limit" and winner is None
 
 
-def test_remaining_hp_true_draw_when_equal_damage():
+def test_destroyed_hp_true_draw_when_equal_kp_and_destroyed_hp():
     env = _ann_env([10], [10])
     env._start_model_unit_wounds = [10]
     env._start_enemy_unit_wounds = [10]
@@ -233,6 +234,80 @@ def test_apply_end_of_battle_logs_draw_reason():
     M.apply_end_of_battle(env, log_fn=logs.append)
     joined = "\n".join(logs)
     assert "draw" in joined and "reason=equal_kp_and_hp" in joined
+
+
+def test_step_applies_annihilation_turn_limit_draw_penalty():
+    from core.envs.warhamEnv import Warhammer40kEnv
+
+    env = object.__new__(Warhammer40kEnv)
+    logs = []
+    env.unit_health = [10.0]
+    env.enemy_health = [10.0]
+    env._start_model_unit_wounds = [10.0]
+    env._start_enemy_unit_wounds = [10.0]
+    env._mission_destroyed_enemy_units = set()
+    env._mission_destroyed_model_units = set()
+    env._mission_draw_reason = ""
+    env.modelKP = env.enemyKP = 0
+    env.modelVP = env.enemyVP = 0
+    env.battle_round = 9
+    env.game_over = False
+    env.mission_key = "annihilation"
+    env.mission_scoring_mode = "kill_points"
+    env.model_obj_oc = np.array([], dtype=int)
+    env.enemy_obj_oc = np.array([], dtype=int)
+    env.coordsOfOM = []
+    env._prev_vp_diff = 0
+    env._last_action_signature = None
+    env._action_repeat_streak = 0
+    env.iter = 0
+    env.model_hp_max_total = 10.0
+    env.last_end_reason = ""
+    env.last_winner = None
+    env.enemyStrat = {"overwatch": 0, "smokescreen": 0}
+
+    env._log = logs.append
+    env._log_reward = logs.append
+    env._invalidate_target_cache = lambda _reason: None
+    env.refresh_objective_control = lambda: None
+    env._min_model_obj_distance = lambda: None
+    env._terrain_potential_snapshot = lambda _dists: {
+        "phi": 0.0,
+        "cover_score": 0.0,
+        "threat_score": 0.0,
+        "guard_score": 0.0,
+        "threat_count_total": 0,
+        "exposed_units": 0,
+        "cover_units": 0,
+    }
+    env.get_legal_action_masks_by_head = lambda side="model": {
+        "move": np.array([True]),
+        "shoot_num_0": np.array([True]),
+    }
+    env._action_signature = lambda _action: ("noop",)
+    env._use_windowed_selfplay_for_step = lambda _action: False
+    env.command_phase = lambda side, action=None: ([False], 0.0)
+    env.movement_phase = lambda side, action=None, battle_shock=None: ([False], 0.0, {"moved_any": False})
+    env.shooting_phase = lambda side, advanced_flags=None, action=None: 0.0
+    env.charge_phase = lambda side, advanced_flags=None, action=None: 0.0
+    env.fight_phase = lambda side, action=None: 0.0
+    env._advance_turn_order = lambda: None
+    env._get_observation = lambda: np.zeros(1, dtype=np.float32)
+    env.get_info = lambda: {
+        "winner": env.last_winner,
+        "end reason": env.last_end_reason,
+        "model health": list(env.unit_health),
+        "player health": list(env.enemy_health),
+    }
+
+    _obs, reward, done, res, info = env.step({})
+
+    assert done is True
+    assert res == 4
+    assert info["winner"] is None
+    assert info["end reason"] == "turn_limit"
+    assert reward == pytest.approx(-float(_rc.TURN_LIMIT_DRAW_PENALTY))
+    assert any("Reward (turn_limit draw)" in line for line in logs)
 
 
 def test_max_battle_rounds_per_mission():

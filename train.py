@@ -665,6 +665,16 @@ def maybe_clip_reward(value: float, enabled: bool, lo=None, hi=None):
     return clipped, clipped != float(value)
 
 
+def _turn_limit_draw_penalty_from_info(info: dict | None) -> float:
+    if not isinstance(info, dict):
+        return 0.0
+    end_reason = str(info.get("end reason", "") or "").strip()
+    winner = str(info.get("winner", "") or "").strip().lower()
+    if end_reason != "turn_limit" or winner in {"model", "enemy", "learner", "player", "opponent", "ai"}:
+        return 0.0
+    return max(0.0, float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0)))
+
+
 def format_clip_reward_effective(raw_value: str, enabled: bool, lo=None, hi=None) -> str:
     raw = str(raw_value).strip() or "off"
     if not enabled or lo is None or hi is None:
@@ -5779,6 +5789,35 @@ def _actor_learner_actor_entry(
                     done = True
                     if hasattr(env_unwrapped, "get_info"):
                         last_info = env_unwrapped.get_info() or last_info
+                    draw_penalty = _turn_limit_draw_penalty_from_info(last_info)
+                    reward_delta, _ = maybe_clip_reward(
+                        -draw_penalty,
+                        bool(clip_reward_enabled),
+                        float(clip_reward_min),
+                        float(clip_reward_max),
+                    )
+                    if int(ep_len) > 0:
+                        if draw_penalty > 0:
+                            ep_reward -= float(draw_penalty)
+                        if n_step_buf:
+                            s0, a0, r0, _ns0, _dd0 = n_step_buf.pop()
+                            n_step_buf.append((s0, a0, float(r0) + float(reward_delta), None, True))
+                        elif buf:
+                            s0, a0, r0, _ns0, _done0, n0 = buf[-1]
+                            buf[-1] = (s0, a0, float(r0) + float(reward_delta), None, True, n0)
+
+                if done:
+                    while n_step_buf:
+                        reward_sum = 0.0
+                        n_count = 0
+                        for idx, (_s, _a, rr, _ns, dd) in enumerate(n_step_buf):
+                            reward_sum += (GAMMA ** idx) * float(rr)
+                            n_count += 1
+                            if dd:
+                                break
+                        head_s, head_a, _, _, _ = n_step_buf[0]
+                        buf.append((head_s, head_a, reward_sum, None, True, n_count))
+                        n_step_buf.popleft()
 
             # Эпизод завершён: отправляем компактную строку метрик (как в обычном режиме)
             try:
@@ -6084,6 +6123,19 @@ def _actor_learner_actor_entry_ppo(
                     done = True
                     if hasattr(env_unwrapped, "get_info"):
                         last_info = env_unwrapped.get_info() or last_info
+                    draw_penalty = _turn_limit_draw_penalty_from_info(last_info)
+                    reward_delta, _ = maybe_clip_reward(
+                        -draw_penalty,
+                        bool(clip_reward_enabled),
+                        float(clip_reward_min),
+                        float(clip_reward_max),
+                    )
+                    if int(ep_len) > 0:
+                        if draw_penalty > 0:
+                            ep_reward -= float(draw_penalty)
+                        if steps_buf:
+                            steps_buf[-1]["reward"] = float(steps_buf[-1].get("reward", 0.0) or 0.0) + float(reward_delta)
+                            steps_buf[-1]["done"] = True
 
             # flush remaining steps at episode end
             if steps_buf:

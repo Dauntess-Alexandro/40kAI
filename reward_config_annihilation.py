@@ -32,7 +32,9 @@ VP_DIFF_REWARD_SCALE = 0.0
 # Масштаб штрафа за ухудшение разницы VP (vp_diff < 0).
 VP_DIFF_PENALTY_SCALE = 0.0
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
-TURN_LIMIT_DRAW_PENALTY = 0.0
+# Для DQN/PPO применяется как env-reward в terminal step; AZ/GAZ/GMZ/SMZ
+# дополнительно используют outcome_value_draw из hyperparams.
+TURN_LIMIT_DRAW_PENALTY = 1.0
 # Доп. масштаб бонуса за победу по VP на turn_limit.
 TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.0
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
@@ -358,8 +360,9 @@ ENEMY_HEUR_LATE_MODE_MULT = 0.99
 # ==========================================
 ANNIHILATION_KP_PER_UNIT = 1
 # Тай-брейк при равных KP: "none" | "destroyed_hp" | "remaining_hp".
-# remaining_hp = по суммарному нанесённому урону (частичный учитывается) -> бьёт 0-0 KP ничьи.
-ANNIHILATION_TIEBREAK_MODE = "remaining_hp"
+# destroyed_hp учитывает только полностью уничтоженные юниты, чтобы +1 HP
+# на turn_limit не превращался в полноценную победу.
+ANNIHILATION_TIEBREAK_MODE = "destroyed_hp"
 # Запас под VP-margin режим (0 = строгое равенство KP -> тай-брейк).
 ANNIHILATION_DRAW_MARGIN = 0
 

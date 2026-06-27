@@ -8387,6 +8387,14 @@ class Warhammer40kEnv(gym.Env):
             res = 4
             self.last_end_reason = end_reason
             self.last_winner = winner
+            if winner is None and end_reason == "turn_limit" and not uses_objectives:
+                draw_penalty = float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))
+                if draw_penalty > 0:
+                    reward -= draw_penalty
+                    self._log_reward(
+                        "Reward (turn_limit draw): "
+                        f"mission={getattr(self, 'mission_key', '')}, penalty=-{draw_penalty:.3f}"
+                    )
             if winner == "model":
                 reward += reward_cfg.WIN_BONUS
                 self._log_reward(f"Reward (победа): bonus=+{reward_cfg.WIN_BONUS:.3f}")

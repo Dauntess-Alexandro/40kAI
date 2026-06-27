@@ -25,8 +25,8 @@ def test_switch_to_annihilation_zeroes_objective_shaping():
     assert rc.KILL_ON_OBJECTIVE_BONUS == 0
     assert rc.MISSION_NO_CONTEST_PENALTY == 0
     assert rc.VP_DIFF_REWARD_SCALE == 0
-    assert rc.TURN_LIMIT_DRAW_PENALTY == 0
-    assert rc.ANNIHILATION_TIEBREAK_MODE == "remaining_hp"
+    assert rc.TURN_LIMIT_DRAW_PENALTY > 0
+    assert rc.ANNIHILATION_TIEBREAK_MODE == "destroyed_hp"
 
 
 def test_combat_shaping_present_in_annihilation():
