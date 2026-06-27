@@ -12,7 +12,7 @@ class TestTerrainFeatures(unittest.TestCase):
 
     def test_deploy_validation_rejects_terrain_cells(self):
         source = Path("core/engine/mission.py").read_text(encoding="utf-8")
-        self.assertIn("terrain_cells: Iterable[Tuple[int, int]] | None = None", source)
+        self.assertIn("terrain_cells: Iterable[tuple[int, int]] | None = None", source)
         self.assertIn('return False, "terrain_no_deploy"', source)
 
     def test_env_uses_terrain_for_los_and_cell_checks(self):

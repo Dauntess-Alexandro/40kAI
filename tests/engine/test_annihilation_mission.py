@@ -214,6 +214,32 @@ def test_apply_end_of_battle_logs_draw_reason():
     assert "draw" in joined and "reason=equal_kp_and_hp" in joined
 
 
+def test_max_battle_rounds_per_mission():
+    assert M.mission_max_battle_rounds("annihilation") == 8
+    assert M.mission_max_battle_rounds("only_war") == 20
+
+
+def test_annihilation_turn_limit_at_round_9():
+    env = _ann_env([10, 10], [0, 0, 6], battle_round=9)   # 9 > 8 -> turn_limit
+    over, reason, winner = M.check_end_of_battle(env)
+    assert over and reason == "turn_limit"
+
+
+def test_annihilation_not_over_at_round_8():
+    env = _ann_env([10, 10], [6, 6], battle_round=8)      # 8 не > 8, обе стороны живы
+    over, reason, winner = M.check_end_of_battle(env)
+    assert not over
+
+
+def test_only_war_continues_at_round_9():
+    env = types.SimpleNamespace(unit_health=[10], enemy_health=[10],
+                                modelVP=0, enemyVP=0, battle_round=9,
+                                mission_key="only_war", mission_scoring_mode="objective_control",
+                                game_over=False)
+    over, reason, winner = M.check_end_of_battle(env)
+    assert not over   # 9 <= 20, Only War продолжается
+
+
 def test_only_war_turn_limit_log():
     """Regression: Only War лог-формат не должен измениться (без [MISSION][Annihilation])."""
     env = types.SimpleNamespace(

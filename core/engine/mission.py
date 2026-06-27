@@ -8,15 +8,15 @@ Only War-specific logic is centralized here:
 """
 from __future__ import annotations
 
-import random
 import os
-from typing import Callable, Iterable, List, Optional, Sequence, Tuple
+import random
+from collections.abc import Callable, Iterable, Sequence
 
 import numpy as np
-import reward_config as reward_cfg
 
-from core.engine.logging_utils import format_unit
+import reward_config as reward_cfg
 from core.engine.game_io import get_active_io
+from core.engine.logging_utils import format_unit
 
 MISSION_ONLY_WAR = "only_war"
 MISSION_TRAINING_GROUNDS = "training_grounds"
@@ -205,6 +205,7 @@ MISSION_REGISTRY: dict[str, dict] = {
         "terrain_generator": only_war_terrain_features,
         "uses_objectives": True,
         "scoring_mode": "objective_control",
+        "max_battle_rounds": 20,
     },
     # Тренировочный профиль с теми же размерами/целями, но отдельным ключом миссии.
     # Нужен чтобы легко подключать другой террейн, не ломая базовый Only War.
@@ -216,6 +217,7 @@ MISSION_REGISTRY: dict[str, dict] = {
         "terrain_generator": only_war_terrain_features,
         "uses_objectives": True,
         "scoring_mode": "objective_control",
+        "max_battle_rounds": 20,
     },
     # Annihilation / Kill Points: победа по уничтоженным юнитам врага, без захвата точек.
     # Держит фантомную нескорящую центральную точку, чтобы obs остался как у Only War.
@@ -228,6 +230,9 @@ MISSION_REGISTRY: dict[str, dict] = {
         "terrain_generator": only_war_terrain_features,
         "uses_objectives": False,
         "scoring_mode": "kill_points",
+        # По правилам матч 40k = 5 раундов (5-ред. Annihilation 5-7). Ставим 8 как компромисс:
+        # ближе к канону и быстрее партии; решительность даёт KP-margin, а не длина.
+        "max_battle_rounds": 8,
     },
 }
 
@@ -253,6 +258,12 @@ def mission_scoring_mode(value_or_env) -> str:
     return str(mission_def.get("scoring_mode") or "objective_control")
 
 
+def mission_max_battle_rounds(value_or_env) -> int:
+    """Лимит батлраундов миссии (turn_limit). Per-mission, дефолт MAX_BATTLE_ROUNDS."""
+    mission_def = MISSION_REGISTRY.get(_mission_key_from(value_or_env), MISSION_REGISTRY[MISSION_ONLY_WAR])
+    return int(mission_def.get("max_battle_rounds", MAX_BATTLE_ROUNDS))
+
+
 def mission_uses_objectives(value_or_env) -> bool:
     mission_def = MISSION_REGISTRY.get(_mission_key_from(value_or_env), MISSION_REGISTRY[MISSION_ONLY_WAR])
     return bool(mission_def.get("uses_objectives", True))
@@ -262,7 +273,7 @@ def is_annihilation_mission(value_or_env) -> bool:
     return _mission_key_from(value_or_env) == MISSION_ANNIHILATION
 
 
-def recompute_kill_points(env, log_fn: Optional[callable] = None) -> None:
+def recompute_kill_points(env, log_fn: callable | None = None) -> None:
     """KP = число полностью уничтоженных вражеских юнитов. Пересчёт из состояния (идемпотентно).
 
     Источник истины — текущее состояние здоровья (env.enemy_health/env.unit_health),
@@ -304,7 +315,7 @@ def _destroyed_hp(env, side: str) -> int:
     raise ValueError(f"Unknown side: {side}")
 
 
-def _resolve_kill_points_winner(env) -> Tuple[str | None, str]:
+def _resolve_kill_points_winner(env) -> tuple[str | None, str]:
     """Определяет победителя по Kill Points с тай-брейком.
 
     Возвращает (winner, reason):
@@ -345,7 +356,7 @@ def mission_display_name(value: str | None) -> str:
     return str(mission_def.get("display_name") or MISSION_NAME)
 
 
-def board_dims_for_mission(value: str | None) -> Tuple[int, int]:
+def board_dims_for_mission(value: str | None) -> tuple[int, int]:
     """Returns env grid dims as (rows=b_len, cols=b_hei)."""
     mission_def = _mission_def(value)
     board_dims_fn = mission_def.get("board_dims")
@@ -425,9 +436,9 @@ def is_in_deploy_zone(side: str, coord: Sequence[int], b_len: int, b_hei: int) -
     return x <= depth - 1
 
 
-def _zone_coords(side: str, b_len: int, b_hei: int) -> List[Tuple[int, int]]:
+def _zone_coords(side: str, b_len: int, b_hei: int) -> list[tuple[int, int]]:
     depth = deploy_depth(b_hei)
-    coords: List[Tuple[int, int]] = []
+    coords: list[tuple[int, int]] = []
     if side == "enemy":
         x_min = max(0, b_hei - depth)
         x_max = b_hei - 1
@@ -440,7 +451,7 @@ def _zone_coords(side: str, b_len: int, b_hei: int) -> List[Tuple[int, int]]:
     return coords
 
 
-def _zone_bounds_for_side(side: str, b_hei: int) -> Tuple[int, int]:
+def _zone_bounds_for_side(side: str, b_hei: int) -> tuple[int, int]:
     depth = deploy_depth(b_hei)
     if side == "enemy":
         return max(0, b_hei - depth), b_hei - 1
@@ -451,7 +462,7 @@ def _coord_to_flat(coord: Sequence[int], b_hei: int) -> int:
     return int(coord[0]) * int(b_hei) + int(coord[1])
 
 
-def _flat_to_coord(flat_idx: int, b_len: int, b_hei: int) -> Tuple[int, int]:
+def _flat_to_coord(flat_idx: int, b_len: int, b_hei: int) -> tuple[int, int]:
     total = max(1, int(b_len) * int(b_hei))
     idx = int(flat_idx) % total
     row = idx // int(b_hei)
@@ -463,13 +474,13 @@ def _valid_deploy_cells(
     side: str,
     b_len: int,
     b_hei: int,
-    occupied: Iterable[Tuple[int, int]],
+    occupied: Iterable[tuple[int, int]],
     *,
-    model_offsets: Iterable[Tuple[int, int]] | None = None,
-    occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
-    terrain_cells: Iterable[Tuple[int, int]] | None = None,
-) -> List[Tuple[int, int]]:
-    valid: List[Tuple[int, int]] = []
+    model_offsets: Iterable[tuple[int, int]] | None = None,
+    occupied_model_cells: Iterable[tuple[int, int]] | None = None,
+    terrain_cells: Iterable[tuple[int, int]] | None = None,
+) -> list[tuple[int, int]]:
+    valid: list[tuple[int, int]] = []
     for row, col in _zone_coords(side, b_len, b_hei):
         ok, _ = validate_deploy_coord(
             side,
@@ -486,7 +497,7 @@ def _valid_deploy_cells(
     return valid
 
 
-def _unit_cells_from_anchor(anchor: Sequence[int], offsets: Iterable[Tuple[int, int]] | None) -> List[Tuple[int, int]]:
+def _unit_cells_from_anchor(anchor: Sequence[int], offsets: Iterable[tuple[int, int]] | None) -> list[tuple[int, int]]:
     row = int(anchor[0])
     col = int(anchor[1])
     data = list(offsets or [(0, 0)])
@@ -500,13 +511,13 @@ def _deployment_global_score(
     placed_side_units: Sequence[dict],
     *,
     cfg: dict,
-    terrain_cells: Iterable[Tuple[int, int]] | None = None,
-) -> Tuple[float, dict]:
+    terrain_cells: Iterable[tuple[int, int]] | None = None,
+) -> tuple[float, dict]:
     if not placed_side_units:
         return 0.0, {"forward": 0.0, "spread": 0.0, "edge": 0.0, "cover": 0.0}
 
-    units_cells: List[List[Tuple[int, int]]] = []
-    centroids: List[Tuple[float, float]] = []
+    units_cells: list[list[tuple[int, int]]] = []
+    centroids: list[tuple[float, float]] = []
     for item in placed_side_units:
         anchor = item.get("anchor", (0, 0))
         offsets = item.get("offsets", [(0, 0)])
@@ -532,7 +543,7 @@ def _deployment_global_score(
     if len(centroids) <= 1:
         spread_score = 1.0
     else:
-        deficits: List[float] = []
+        deficits: list[float] = []
         for i in range(len(centroids)):
             for j in range(i + 1, len(centroids)):
                 dist = abs(float(centroids[i][0]) - float(centroids[j][0]))
@@ -540,7 +551,7 @@ def _deployment_global_score(
         spread_score = max(0.0, 1.0 - (sum(deficits) / max(1, len(deficits))))
 
     edge_margin_thr = max(0.5, float(os.getenv("DEPLOYMENT_RL_EDGE_MARGIN_TARGET", str(getattr(reward_cfg, "DEPLOYMENT_RL_EDGE_MARGIN_TARGET", 2.0))) or str(getattr(reward_cfg, "DEPLOYMENT_RL_EDGE_MARGIN_TARGET", 2.0))))
-    edge_vals: List[float] = []
+    edge_vals: list[float] = []
     for cells in units_cells:
         min_margin = min(
             min(r, c, max(0, b_len - 1 - r), max(0, b_hei - 1 - c))
@@ -627,16 +638,16 @@ def _choose_rl_deploy_coord(
     side: str,
     b_len: int,
     b_hei: int,
-    occupied: Iterable[Tuple[int, int]],
+    occupied: Iterable[tuple[int, int]],
     *,
-    model_offsets: Iterable[Tuple[int, int]] | None = None,
-    occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
+    model_offsets: Iterable[tuple[int, int]] | None = None,
+    occupied_model_cells: Iterable[tuple[int, int]] | None = None,
     placed_side_units: Sequence[dict] | None = None,
-    terrain_cells: Iterable[Tuple[int, int]] | None = None,
+    terrain_cells: Iterable[tuple[int, int]] | None = None,
     rng: random.Random | None = None,
-    log_fn: Optional[callable] = None,
+    log_fn: callable | None = None,
     unit_label: str = "",
-) -> Tuple[Tuple[int, int], dict]:
+) -> tuple[tuple[int, int], dict]:
     valid_cells = _valid_deploy_cells(
         side,
         b_len,
@@ -777,14 +788,14 @@ def get_random_free_deploy_coord(
     side: str,
     b_len: int,
     b_hei: int,
-    occupied: Iterable[Tuple[int, int]],
+    occupied: Iterable[tuple[int, int]],
     *,
     rng: random.Random | None = None,
     strategy: str = "random",
     unit_idx: int | None = None,
     total_units: int | None = None,
-    log_fn: Optional[callable] = None,
-) -> Tuple[int, int]:
+    log_fn: callable | None = None,
+) -> tuple[int, int]:
     occupied_set = set((int(row), int(col)) for row, col in occupied)
     choices = [c for c in _zone_coords(side, b_len, b_hei) if c not in occupied_set]
     if not choices:
@@ -806,7 +817,7 @@ def get_random_free_deploy_coord(
 
     jitter_rows = [0, -1, 1, -2, 2, -3, 3]
     jitter_cols = [0, -1, 1, -2, 2]
-    template_candidates: list[Tuple[int, int]] = []
+    template_candidates: list[tuple[int, int]] = []
     for dr in jitter_rows:
         for dc in jitter_cols:
             cand = (int(target_row + dr), int(x_center + dc))
@@ -836,12 +847,12 @@ def validate_deploy_coord(
     coord: Sequence[int],
     b_len: int,
     b_hei: int,
-    occupied: Iterable[Tuple[int, int]],
+    occupied: Iterable[tuple[int, int]],
     *,
-    model_offsets: Iterable[Tuple[int, int]] | None = None,
-    occupied_model_cells: Iterable[Tuple[int, int]] | None = None,
-    terrain_cells: Iterable[Tuple[int, int]] | None = None,
-) -> Tuple[bool, str]:
+    model_offsets: Iterable[tuple[int, int]] | None = None,
+    occupied_model_cells: Iterable[tuple[int, int]] | None = None,
+    terrain_cells: Iterable[tuple[int, int]] | None = None,
+) -> tuple[bool, str]:
     if not _in_bounds(coord, b_len, b_hei):
         return False, "out_of_bounds"
     if not is_in_deploy_zone(side, coord, b_len, b_hei):
@@ -878,7 +889,7 @@ def _resolve_deploy_rng(seed: int | None) -> random.Random | None:
     return random.Random(int(seed))
 
 
-def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tuple[int, int], unit=None):
+def _log_deploy(log_fn: callable | None, side: str, unit_idx: int, coord: tuple[int, int], unit=None):
     if log_fn is None:
         return
     unit_id = (11 + unit_idx) if side == "enemy" else (21 + unit_idx)
@@ -893,8 +904,8 @@ def _log_deploy(log_fn: Optional[callable], side: str, unit_idx: int, coord: Tup
     log_fn(f"[DEPLOY][{side.upper()}] {unit_label} -> ({coord[0]},{coord[1]})")
 
 
-def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
-    def _fallback_offsets_from_unit_size() -> List[Tuple[int, int]]:
+def _collect_model_offsets(unit) -> list[tuple[int, int]]:
+    def _fallback_offsets_from_unit_size() -> list[tuple[int, int]]:
         count = 1
         unit_data = getattr(unit, "unit_data", None)
         if isinstance(unit_data, dict):
@@ -904,7 +915,7 @@ def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
                 count = 1
         # Keep formation offsets in sync with warhamEnv._formation_offsets,
         # so deploy preview matches final formation after env.reset().
-        formation_offsets: List[Tuple[int, int]] = [
+        formation_offsets: list[tuple[int, int]] = [
             (0, 0),
             (0, 1), (0, -1), (1, 0), (-1, 0),
             (1, 1), (1, -1), (-1, 1), (-1, -1),
@@ -925,7 +936,7 @@ def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
     anchor = getattr(unit, "unit_coords", [0, 0])
     base_row = int(anchor[0])
     base_col = int(anchor[1])
-    result: List[Tuple[int, int]] = []
+    result: list[tuple[int, int]] = []
     for model in models:
         if not isinstance(model, dict) or not model.get("alive", True):
             continue
@@ -944,7 +955,7 @@ def _collect_model_offsets(unit) -> List[Tuple[int, int]]:
     return result
 
 
-def _add_unit_model_cells(occupied_model_cells: set[Tuple[int, int]], anchor: Tuple[int, int], offsets: Iterable[Tuple[int, int]]) -> None:
+def _add_unit_model_cells(occupied_model_cells: set[tuple[int, int]], anchor: tuple[int, int], offsets: Iterable[tuple[int, int]]) -> None:
     for dr, dc in offsets:
         occupied_model_cells.add((int(anchor[0]) + int(dr), int(anchor[1]) + int(dc)))
 
@@ -959,7 +970,7 @@ def deploy_only_war(
     b_len: int,
     b_hei: int,
     attacker_side: str,
-    log_fn: Optional[callable] = None,
+    log_fn: callable | None = None,
     deployment_seed: int | None = None,
     deployment_strategy: str | None = None,
     deployment_mode: str | None = None,
@@ -1005,8 +1016,8 @@ def deploy_only_war(
         )
         log_fn(f"[DEPLOY] Order: {attacker_side} first, alternating")
 
-    occupied: set[Tuple[int, int]] = set()
-    occupied_model_cells: set[Tuple[int, int]] = set()
+    occupied: set[tuple[int, int]] = set()
+    occupied_model_cells: set[tuple[int, int]] = set()
     if terrain_features is None:
         terrain_features = terrain_features_for_mission(MISSION_ONLY_WAR, b_len, b_hei)
     terrain_cells = terrain_cells_from_features(terrain_features)
@@ -1187,7 +1198,7 @@ def deploy_only_war(
             unit.unit_coords = [coord[0], coord[1]]
         facing = _facing_for_deploy_zone(zone_side)
         try:
-            setattr(unit, "facing", facing)
+            unit.facing = facing
         except Exception:
             pass
         if isinstance(getattr(unit, "unit_data", None), dict):
@@ -1232,7 +1243,7 @@ def deploy_only_war(
     return rl_summary if mode == "rl_phase" else None
 
 
-def post_deploy_setup(log_fn: Optional[callable] = None) -> None:
+def post_deploy_setup(log_fn: callable | None = None) -> None:
     if log_fn is not None:
         log_fn("[MISSION Only War] Post-deploy: currently no post-deploy units supported")
 
@@ -1244,7 +1255,7 @@ def deploy_for_mission(
     b_len: int,
     b_hei: int,
     attacker_side: str,
-    log_fn: Optional[callable] = None,
+    log_fn: callable | None = None,
     deployment_seed: int | None = None,
     deployment_strategy: str | None = None,
     deployment_mode: str | None = None,
@@ -1277,7 +1288,7 @@ def deploy_for_mission(
     )
 
 
-def controlled_objectives(env, side: str) -> Tuple[int, List[int]]:
+def controlled_objectives(env, side: str) -> tuple[int, list[int]]:
     if side not in ("model", "enemy"):
         raise ValueError(f"Unknown side: {side}")
 
@@ -1363,7 +1374,7 @@ def score_end_of_command_phase(env, side: str, log_fn: Callable[[str], None] | N
     return gained
 
 
-def check_end_of_battle(env) -> Tuple[bool, str, str | None]:
+def check_end_of_battle(env) -> tuple[bool, str, str | None]:
     model_wiped = sum(env.unit_health) <= 0
     enemy_wiped = sum(env.enemy_health) <= 0
     kill_points = mission_scoring_mode(env) == "kill_points"
@@ -1379,7 +1390,7 @@ def check_end_of_battle(env) -> Tuple[bool, str, str | None]:
     if enemy_wiped:
         return True, "wipeout_enemy", "model"
 
-    if env.battle_round > MAX_BATTLE_ROUNDS:
+    if env.battle_round > mission_max_battle_rounds(env):
         if kill_points:
             winner, reason = _resolve_kill_points_winner(env)
             env._mission_draw_reason = reason if winner is None else ""
@@ -1395,7 +1406,7 @@ def check_end_of_battle(env) -> Tuple[bool, str, str | None]:
     return False, "", None
 
 
-def apply_end_of_battle(env, log_fn: Callable[[str], None] | None = None) -> Tuple[bool, str, str | None]:
+def apply_end_of_battle(env, log_fn: Callable[[str], None] | None = None) -> tuple[bool, str, str | None]:
     game_over, reason, winner = check_end_of_battle(env)
     if game_over and not env.game_over:
         env.game_over = True
@@ -1420,7 +1431,7 @@ def apply_end_of_battle(env, log_fn: Callable[[str], None] | None = None) -> Tup
                     log_fn(f"Game over: turn_limit -> draw (VP {env.modelVP}-{env.enemyVP})")
                 else:
                     log_fn(
-                        f"Game over: turn_limit (after BR{MAX_BATTLE_ROUNDS}) -> winner={winner} "
+                        f"Game over: turn_limit (after BR{mission_max_battle_rounds(env)}) -> winner={winner} "
                         f"(VP {env.modelVP}-{env.enemyVP})"
                     )
             else:
