@@ -20,20 +20,19 @@
     4,
     2
   ],
-  "latent_dim": 256,
-  "hidden_dim": 256,
-  "num_layers": 2,
-  "action_embed_dim": 64,
-  "num_samples": 24,
+  "latent_dim": 32,
+  "hidden_dim": 32,
+  "num_layers": 1,
+  "action_embed_dim": 8,
+  "num_samples": 4,
   "discount": 0.997,
   "temperature": 0.15,
   "sample_temperature": 1.0,
   "prior_weight": 0.0,
   "dedup": 1,
-  "_generated_utc": "2026-06-24T16:20:35Z",
+  "_generated_utc": "2026-06-27T16:15:43Z",
   "_sources": [
-    "test",
-    "algo=smz"
+    "train.py:auto"
   ],
-  "_mission": "only_war"
+  "_mission": "annihilation"
 }

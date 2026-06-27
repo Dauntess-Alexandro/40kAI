@@ -14,7 +14,7 @@ class EvalWorkerConfig:
     opponent_agent_id: str = ""
     learner_side: str = "P1"
     mission_name: str = "only_war"
-    ruleset_version: str = "only_war_v2"
+    ruleset_version: str = ""
     model_path: str = ""
     base_seed: int = 0
     trace_enabled: bool = True

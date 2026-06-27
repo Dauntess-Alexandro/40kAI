@@ -24,10 +24,10 @@ from core.engine.event_bus import get_event_bus, get_event_recorder
 from core.engine.game_io import DICE_CANCEL_TOKEN, get_active_io
 from core.engine.logging_utils import format_unit
 from core.engine.mission import (
-    MISSION_NAME,
     apply_end_of_battle,
     apply_mission_layout,
     controlled_objectives,
+    mission_display_name,
     mission_uses_objectives,
     score_end_of_command_phase,
     terrain_cells_from_features,
@@ -1111,7 +1111,7 @@ class Warhammer40kEnv(gym.Env):
         self._fight_env_logged = False
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
-        self.mission_name = MISSION_NAME
+        self.mission_name = mission_display_name(getattr(self, "mission_key", os.getenv("MISSION_NAME")))
         # Применяем ВЫБРАННУЮ миссию (env MISSION_NAME), а не дефолт only_war.
         # Это chokepoint: board/objectives/scoring/лимит раундов/reward-профиль миссии.
         apply_mission_layout(self, os.getenv("MISSION_NAME"))
@@ -7776,7 +7776,7 @@ class Warhammer40kEnv(gym.Env):
         self.phase = "command"
         self.numTurns = self.battle_round
         self._round_banner_shown = False
-        self.mission_name = MISSION_NAME
+        self.mission_name = mission_display_name(getattr(self, "mission_key", os.getenv("MISSION_NAME")))
         self.modelUpdates = ""
         self._prev_vp_diff = 0
         self._vp_stall_steps = 0

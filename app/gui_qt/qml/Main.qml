@@ -5898,6 +5898,12 @@ ApplicationWindow {
                                     font.bold: true
                                 }
                                 Text {
+                                    text: controller.evalMissionText
+                                    wrapMode: Text.WordWrap
+                                    color: root.uiTextMain
+                                    font.bold: true
+                                }
+                                Text {
                                     text: controller.evalLaunchStatusText
                                     wrapMode: Text.WordWrap
                                     color: controller.evalLaunchReady ? "#2d7d33" : "#b24a00"

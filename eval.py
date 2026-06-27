@@ -134,6 +134,24 @@ def _env_int(name: str, default: int) -> int:
         return int(default)
 
 
+def _resolve_ruleset_version(mission_name: str | None = None, explicit: str | None = None) -> str:
+    """Ruleset eval должен совпадать с train: по умолчанию берём ruleset выбранной миссии."""
+    raw = str(explicit if explicit is not None else os.getenv("RULESET_VERSION", "")).strip()
+    if raw:
+        return raw
+    mission = normalize_mission_name(mission_name or os.getenv("MISSION_NAME"))
+    return f"{mission}_v2"
+
+
+def _resolve_env_mission_name(env_unwrapped: Any | None, fallback: str | None = None) -> str:
+    """Вернуть канонический ключ миссии; display-name env не является стабильным ключом."""
+    if env_unwrapped is not None:
+        mission_key = str(getattr(env_unwrapped, "mission_key", "") or "").strip()
+        if mission_key:
+            return normalize_mission_name(mission_key)
+    return normalize_mission_name(fallback or os.getenv("MISSION_NAME") or getattr(env_unwrapped, "mission_name", None))
+
+
 def _strat_metric_prefix(env_side: str) -> str:
     return "m_" if str(env_side) == "model" else "o_"
 
@@ -462,13 +480,16 @@ def _build_eval_runtime_for_worker(cfg: EvalWorkerConfig) -> dict[str, Any]:
 
     env_unwrapped = unwrap_env(env)
     state, _info = env.reset(options={"m": model_units, "e": enemy_units, "Type": "big", "trunc": True})
-    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    mission_name = _resolve_env_mission_name(env_unwrapped)
     n_actions = n_actions_from_env(env, len(model_units))
     eval_contract = make_env_contract(
         n_observations=len(state),
         n_actions=n_actions,
         mission_name=mission_name,
-        ruleset_version=str(getattr(cfg, "ruleset_version", "") or os.getenv("RULESET_VERSION", "only_war_v2")),
+        ruleset_version=_resolve_ruleset_version(
+            mission_name,
+            explicit=str(getattr(cfg, "ruleset_version", "") or ""),
+        ),
     )
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -789,7 +810,7 @@ def run_episode(
         log_fn=None,
     )
 
-    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    mission_name = _resolve_env_mission_name(env_unwrapped)
     deploy_for_mission(
         mission_name,
         model_units=model_units,
@@ -1637,7 +1658,7 @@ def main():
         log_fn=None,
     )
     env_unwrapped = unwrap_env(env)
-    mission_name = normalize_mission_name(getattr(env_unwrapped, "mission_name", None))
+    mission_name = _resolve_env_mission_name(env_unwrapped)
     deploy_for_mission(
         mission_name,
         model_units=model_units,
@@ -1664,11 +1685,14 @@ def main():
     # B3-full: стратагемы через net-value lookahead (env AZ_REACTION_VALUE_POLICY, дефолт 1 для AZ; 0 = legacy).
     _reaction_vp_on = str(os.getenv("AZ_REACTION_VALUE_POLICY", "1")).strip().lower() in ("1", "true", "yes", "on")
     log(f"[EVAL][AZ][CONFIG] reaction_value_policy={int(_reaction_vp_on)}")
+    eval_ruleset_version = _resolve_ruleset_version(mission_name)
+    os.environ["RULESET_VERSION"] = eval_ruleset_version
+    log(f"[EVAL][CONFIG] mission={mission_name} ruleset_version={eval_ruleset_version}")
     eval_contract = make_env_contract(
         n_observations=n_observations,
         n_actions=n_actions,
         mission_name=mission_name,
-        ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
+        ruleset_version=eval_ruleset_version,
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -2012,7 +2036,7 @@ def main():
                 opponent_agent_id=str(opponent_agent_id or ""),
                 learner_side=str(_learner_side),
                 mission_name=str(mission_name),
-                ruleset_version=str(os.getenv("RULESET_VERSION", "only_war_v2")),
+                ruleset_version=eval_ruleset_version,
                 model_path=str(args.model or ""),
                 base_seed=int(base_seed),
                 trace_enabled=str(os.getenv("EVAL_ACTION_TRACE", "1")).strip() == "1",

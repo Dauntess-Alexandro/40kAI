@@ -33,14 +33,18 @@ def _make_env(monkeypatch, mission_name):
 def test_env_applies_annihilation_from_mission_name(monkeypatch):
     env = _make_env(monkeypatch, "annihilation")
     assert env.mission_key == "annihilation"
+    assert env.mission_name == M.MISSION_NAME_ANNIHILATION
     assert env.mission_scoring_mode == "kill_points"
     assert M.mission_max_battle_rounds(env) == 8          # лимит миссии, не глобальные 20
     assert rc.active_profile_name() == "annihilation"     # reward-профиль миссии активен
+    env.reset(options={"m": env.model, "e": env.enemy, "Type": "big", "trunc": True})
+    assert env.mission_name == M.MISSION_NAME_ANNIHILATION
 
 
 def test_env_defaults_to_only_war_without_mission_name(monkeypatch):
     env = _make_env(monkeypatch, None)
     assert env.mission_key == "only_war"
+    assert env.mission_name == M.MISSION_NAME
     assert env.mission_scoring_mode == "objective_control"
     assert M.mission_max_battle_rounds(env) == 20
     assert rc.active_profile_name() == "only_war"

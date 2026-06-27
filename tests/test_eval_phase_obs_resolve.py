@@ -197,6 +197,48 @@ class TestResolvePhaseObsForAgent:
         assert os.environ["AZ_REACTION_VALUE_POLICY"] == "0"
 
 
+class TestResolveRulesetVersion:
+    def test_defaults_to_selected_mission(self, monkeypatch):
+        from eval import _resolve_ruleset_version
+
+        monkeypatch.delenv("RULESET_VERSION", raising=False)
+        monkeypatch.setenv("MISSION_NAME", "annihilation")
+
+        assert _resolve_ruleset_version(None) == "annihilation_v2"
+        assert _resolve_ruleset_version("annihilation") == "annihilation_v2"
+
+    def test_explicit_env_has_priority(self, monkeypatch):
+        from eval import _resolve_ruleset_version
+
+        monkeypatch.setenv("MISSION_NAME", "annihilation")
+        monkeypatch.setenv("RULESET_VERSION", "custom_ruleset_v9")
+
+        assert _resolve_ruleset_version("annihilation") == "custom_ruleset_v9"
+
+
+class TestResolveEnvMissionName:
+    def test_prefers_canonical_mission_key(self, monkeypatch):
+        from eval import _resolve_env_mission_name
+
+        class Env:
+            mission_key = "annihilation"
+            mission_name = "Annihilation / Kill Points"
+
+        monkeypatch.setenv("MISSION_NAME", "only_war")
+
+        assert _resolve_env_mission_name(Env()) == "annihilation"
+
+    def test_uses_env_fallback_when_key_missing(self, monkeypatch):
+        from eval import _resolve_env_mission_name
+
+        class Env:
+            mission_name = "Only War"
+
+        monkeypatch.setenv("MISSION_NAME", "annihilation")
+
+        assert _resolve_env_mission_name(Env()) == "annihilation"
+
+
 class TestReapplyResolvedPhaseObs:
     """Регресс: резолвленное значение должно пережить клоббер от `from train import`.
 

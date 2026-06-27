@@ -99,6 +99,7 @@ from app.gui_qt.sampled_muzero_hyperparams_defaults import (
     SMZ_PROFILE_DETECT_ORDER,
     SMZ_PROFILE_PRESETS,
 )
+from core.engine.mission import normalize_mission_name
 from core.models.alphazero_ids import is_az_algo, is_gumbel_az_algo
 from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
 from project_paths import (
@@ -421,6 +422,7 @@ class GUIController(QtCore.QObject):
         self._eval_p1_icon_text = "AI"
         self._eval_p2_icon_text = "HR"
         self._eval_scenario_text = "Сценарий: выберите политики P1/P2."
+        self._eval_mission_text = "Миссия eval: —"
         self._eval_launch_ready = False
         self._eval_launch_status_text = "Нужно выбрать хотя бы одного агента."
         self._eval_mini_summary = "Игр: 50 • deterministic • epsilon=0"
@@ -1719,6 +1721,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, notify=evalSetupChanged)
     def evalScenarioText(self) -> str:
         return self._eval_scenario_text
+
+    @QtCore.Property(str, notify=evalSetupChanged)
+    def evalMissionText(self) -> str:
+        return self._eval_mission_text
 
     @QtCore.Property(bool, notify=evalSetupChanged)
     def evalLaunchReady(self) -> bool:
@@ -3654,6 +3660,52 @@ class GUIController(QtCore.QObject):
         }
         return labels.get(source, source)
 
+    def _mission_from_ruleset_version(self, ruleset_version: str) -> str:
+        text = str(ruleset_version or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if not text:
+            return normalize_mission_name(None)
+        for mission in getattr(self, "_mission_options", ["only_war", "annihilation"]):
+            key = str(mission or "").strip().lower()
+            if text == key or text.startswith(f"{key}_") or key in text:
+                return normalize_mission_name(key)
+        return normalize_mission_name(None)
+
+    def _read_agent_contract_fields(self, root: str, meta_payload: dict) -> tuple[str, str]:
+        paths = meta_payload.get("paths") if isinstance(meta_payload, dict) else None
+        contract_path = ""
+        if isinstance(paths, dict):
+            contract_path = str(paths.get("contract") or "").strip()
+        if not contract_path:
+            contract_path = os.path.join(root, "env_contract.json")
+        elif not os.path.isabs(contract_path):
+            root_candidate = os.path.join(root, contract_path)
+            repo_candidate = os.path.join(self._repo_root, contract_path)
+            contract_path = root_candidate if os.path.exists(root_candidate) else repo_candidate
+
+        contract_payload: dict = {}
+        try:
+            with open(contract_path, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            if isinstance(loaded, dict):
+                contract_payload = loaded
+        except (OSError, json.JSONDecodeError):
+            contract_payload = {}
+
+        ruleset_version = str(
+            contract_payload.get("ruleset_version")
+            or meta_payload.get("ruleset_version")
+            or ""
+        ).strip()
+        mission_raw = str(
+            contract_payload.get("mission_name")
+            or meta_payload.get("mission_name")
+            or ""
+        ).strip()
+        mission_name = normalize_mission_name(mission_raw) if mission_raw else self._mission_from_ruleset_version(ruleset_version)
+        if not ruleset_version:
+            ruleset_version = f"{mission_name}_v2"
+        return mission_name, ruleset_version
+
     def _collect_registered_agents_meta(self) -> list[dict[str, str]]:
         agents_root = os.path.join(str(ARTIFACTS_MODELS_DIR), "agents")
         if not os.path.isdir(agents_root):
@@ -3686,6 +3738,7 @@ class GUIController(QtCore.QObject):
                     algo = "unknown"
             if not agent_id or side not in {"P1", "P2"}:
                 continue
+            mission_name, ruleset_version = self._read_agent_contract_fields(root, payload)
             records.append(
                 {
                     "agent_id": agent_id,
@@ -3693,6 +3746,8 @@ class GUIController(QtCore.QObject):
                     "faction": faction or "Unknown",
                     "created_at": created_at,
                     "algo": algo,
+                    "mission_name": mission_name,
+                    "ruleset_version": ruleset_version,
                 }
             )
         records.sort(key=lambda item: (item.get("created_at", ""), item["agent_id"]), reverse=True)
@@ -3722,6 +3777,8 @@ class GUIController(QtCore.QObject):
                 "side": str(rec.get("side", "")).strip().upper(),
                 "faction": str(rec.get("faction", "Unknown")).strip() or "Unknown",
                 "algo": str(rec.get("algo", "unknown")).strip().lower() or "unknown",
+                "mission_name": normalize_mission_name(str(rec.get("mission_name", "")).strip()),
+                "ruleset_version": str(rec.get("ruleset_version", "")).strip(),
             }
             for rec in records
         }
@@ -3768,11 +3825,69 @@ class GUIController(QtCore.QObject):
         agent_id = str(rec.get("agent_id", "")).strip()
         return f"{faction} {algo} ({self._extract_epoch_tag(agent_id)})"
 
+    def _format_eval_mission_label(self, mission_name: str) -> str:
+        mission = normalize_mission_name(mission_name)
+        return mission.upper().replace("_", " ")
+
+    def _eval_agent_meta(self, agent_id: str) -> dict[str, str]:
+        return dict(self._eval_agent_meta_by_id.get(str(agent_id or "").strip(), {}))
+
+    def _eval_agent_mission(self, agent_id: str) -> str:
+        rec = self._eval_agent_meta(agent_id)
+        if not rec:
+            return ""
+        return normalize_mission_name(str(rec.get("mission_name", "")).strip())
+
+    def _eval_agent_ruleset(self, agent_id: str) -> str:
+        rec = self._eval_agent_meta(agent_id)
+        ruleset = str(rec.get("ruleset_version", "")).strip()
+        if ruleset:
+            return ruleset
+        mission = self._eval_agent_mission(agent_id) or normalize_mission_name(None)
+        return f"{mission}_v2"
+
+    def _eval_effective_mission_config(self) -> dict[str, str]:
+        p1_mode = str(self._eval_p1_policy).strip().lower()
+        p2_mode = str(self._eval_p2_policy).strip().lower()
+        p1_agent = str(self._eval_selected_p1_agent_id).strip()
+        p2_agent = str(self._eval_selected_p2_agent_id).strip()
+
+        source_side = ""
+        source_agent = ""
+        if p1_mode == "agent" and p1_agent:
+            source_side = "P1"
+            source_agent = p1_agent
+        elif p2_mode == "agent" and p2_agent:
+            source_side = "P2"
+            source_agent = p2_agent
+
+        mission_name = self._eval_agent_mission(source_agent) if source_agent else ""
+        ruleset_version = self._eval_agent_ruleset(source_agent) if source_agent else ""
+        other_side = "P2" if source_side == "P1" else ("P1" if source_side == "P2" else "")
+        other_agent = p2_agent if other_side == "P2" else (p1_agent if other_side == "P1" else "")
+        other_mission = self._eval_agent_mission(other_agent) if other_agent else ""
+        mismatch_side = ""
+        if mission_name and other_mission and mission_name != other_mission:
+            mismatch_side = other_side
+
+        return {
+            "mission_name": mission_name,
+            "mission_label": self._format_eval_mission_label(mission_name) if mission_name else "—",
+            "ruleset_version": ruleset_version,
+            "source_side": source_side,
+            "source_agent_id": source_agent,
+            "other_side": other_side,
+            "other_mission_name": other_mission,
+            "other_mission_label": self._format_eval_mission_label(other_mission) if other_mission else "—",
+            "mismatch_side": mismatch_side,
+        }
+
     def _format_eval_agent_option_label(self, rec: dict[str, str]) -> str:
         side = str(rec.get("side", "")).strip().upper() or "P?"
         agent_id = str(rec.get("agent_id", "")).strip()
+        mission = self._format_eval_mission_label(str(rec.get("mission_name", "")).strip())
         suffix = agent_id[-6:] if len(agent_id) >= 6 else agent_id
-        return f"{self._friendly_agent_name(rec)} [{side}] · {suffix}"
+        return f"{self._friendly_agent_name(rec)} [{side}] · {mission} · {suffix}"
 
     def _eval_side_presentation(self, side: str, mode: str, agent_id: str) -> dict[str, object]:
         normalized_side = str(side or "").strip().upper()
@@ -3803,13 +3918,14 @@ class GUIController(QtCore.QObject):
         friendly = self._friendly_agent_name(rec)
         algo = str(rec.get("algo", "unknown")).strip().upper() or "UNKNOWN"
         faction = str(rec.get("faction", "Unknown")).strip() or "Unknown"
+        mission = self._format_eval_mission_label(str(rec.get("mission_name", "")).strip())
         return {
             "title": f"{normalized_side}: {friendly}",
             "algo": algo,
             "faction": faction,
             "full_id": str(rec.get("agent_id", "")).strip(),
             "icon": "AI",
-            "badges": [algo, faction, normalized_side],
+            "badges": [algo, faction, normalized_side, f"MISSION: {mission}"],
             "short": algo,
             "subtitle": "Нейросетевой агент из registry.",
         }
@@ -3831,6 +3947,23 @@ class GUIController(QtCore.QObject):
         self._eval_p1_icon_text = str(p1.get("icon", "AI"))
         self._eval_p2_icon_text = str(p2.get("icon", "AI"))
 
+        mission_cfg = self._eval_effective_mission_config()
+        mission_label = str(mission_cfg.get("mission_label", "—"))
+        source_side = str(mission_cfg.get("source_side", ""))
+        mismatch_side = str(mission_cfg.get("mismatch_side", ""))
+        other_label = str(mission_cfg.get("other_mission_label", "—"))
+        if source_side:
+            self._eval_mission_text = f"Миссия eval: {mission_label} (источник: {source_side} agent)."
+            if mismatch_side:
+                self._eval_mission_text += f" Несовместимо: {mismatch_side}={other_label}."
+            mission_badge = f"MISSION: {mission_label}"
+            if not any(str(badge).upper().startswith("MISSION:") for badge in self._eval_p1_badges):
+                self._eval_p1_badges.append(mission_badge)
+            if not any(str(badge).upper().startswith("MISSION:") for badge in self._eval_p2_badges):
+                self._eval_p2_badges.append(mission_badge)
+        else:
+            self._eval_mission_text = "Миссия eval: — (выберите агента)."
+
         ok_cfg, _, err = self._build_eval_launch_config()
         self._eval_launch_ready = bool(ok_cfg)
         self._eval_launch_status_text = "Готово к запуску." if ok_cfg else err
@@ -3846,12 +3979,14 @@ class GUIController(QtCore.QObject):
 
         self._eval_mini_summary = (
             f"Игр: {self._eval_games} • deterministic • epsilon=0 • "
+            f"mission={mission_label.lower().replace(' ', '_')} • "
             "AZ/GMZ/SMZ/GAZ: MCTS/Search по умолчанию"
         )
         self._eval_matchup_text = (
             f"{self._eval_p1_display_name}\n"
             f"{self._eval_p2_display_name}\n"
             f"{self._eval_scenario_text}\n"
+            f"{self._eval_mission_text}\n"
             f"Статус: {self._eval_launch_status_text}"
         )
 
@@ -3868,6 +4003,33 @@ class GUIController(QtCore.QObject):
             return False, {}, "Нужно выбрать агента для P1."
         if p2_mode == "agent" and not p2_agent:
             return False, {}, "Нужно выбрать агента для P2."
+        if p1_mode == "agent" and p1_agent not in self._eval_agent_meta_by_id:
+            return False, {}, "Выбранный агент P1 не найден в registry. Что сделать дальше: обновите список агентов или выберите другой P1."
+        if p2_mode == "agent" and p2_agent not in self._eval_agent_meta_by_id:
+            return False, {}, "Выбранный агент P2 не найден в registry. Что сделать дальше: обновите список агентов или выберите другой P2."
+
+        mission_cfg = self._eval_effective_mission_config()
+        mission_name = str(mission_cfg.get("mission_name", "")).strip()
+        ruleset_version = str(mission_cfg.get("ruleset_version", "")).strip()
+        mismatch_side = str(mission_cfg.get("mismatch_side", "")).strip()
+        if mismatch_side:
+            source_side = str(mission_cfg.get("source_side", "")).strip() or "источник"
+            mission_label = str(mission_cfg.get("mission_label", "—"))
+            other_label = str(mission_cfg.get("other_mission_label", "—"))
+            return (
+                False,
+                {},
+                f"Несовместимые миссии eval: {source_side}={mission_label}, {mismatch_side}={other_label}. "
+                "Где: gui_qt/main.py (_build_eval_launch_config). "
+                f"Что сделать дальше: выберите агента {mismatch_side} с mission={mission_name} или смените {source_side}.",
+            )
+        if not mission_name:
+            return (
+                False,
+                {},
+                "Не удалось определить миссию eval. Где: gui_qt/main.py (_build_eval_launch_config). "
+                "Что сделать дальше: выберите агента из registry с env_contract.json.",
+            )
 
         if p1_mode == "agent":
             learner_side = "P1"
@@ -3882,6 +4044,8 @@ class GUIController(QtCore.QObject):
             "learner_side": learner_side,
             "learner_agent_id": learner_agent_id,
             "opponent_agent_id": opponent_agent_id,
+            "mission_name": mission_name,
+            "ruleset_version": ruleset_version or f"{mission_name}_v2",
         }
         return True, launch, ""
 
@@ -5660,6 +5824,8 @@ class GUIController(QtCore.QObject):
         learner_agent_id = str(cfg.get("learner_agent_id", "")).strip()
         opponent_agent_id = str(cfg.get("opponent_agent_id", "")).strip()
         learner_side = str(cfg.get("learner_side", "P1")).strip().upper() or "P1"
+        eval_mission_name = normalize_mission_name(str(cfg.get("mission_name", "")).strip())
+        eval_ruleset_version = str(cfg.get("ruleset_version", "")).strip() or f"{eval_mission_name}_v2"
         opponent_side = "P2" if learner_side == "P1" else "P1"
         self._ensure_eval_inference_defaults()
         learner_algo = self._eval_side_algo_key(learner_side)
@@ -5701,7 +5867,8 @@ class GUIController(QtCore.QObject):
         env.insert("EVAL_ACTION_TRACE", "1" if self._eval_action_trace else "0")
         env.insert("EVAL_WORKERS", str(self._eval_workers))
         env.insert("PYTHONPATH", self._pythonpath_with_core())
-        env.insert("MISSION_NAME", self._selected_mission)
+        env.insert("MISSION_NAME", eval_mission_name)
+        env.insert("RULESET_VERSION", eval_ruleset_version)
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         if self._deployment_mode == "manual_player":
             self._emit_log(
@@ -5880,6 +6047,7 @@ class GUIController(QtCore.QObject):
         mode_tail = (", " + ", ".join(mode_parts)) if mode_parts else ""
         eval_start_msg = (
             f"Старт оценки: игр={self._eval_games}, workers={self._eval_workers}, learner_side={learner_side}, "
+            f"mission={eval_mission_name}, ruleset={eval_ruleset_version}, "
             f"learner_agent_id={learner_agent_id or '-'}, opponent_agent_id={opponent_agent_id or 'heuristic'}, "
             f"модель={os.path.basename(model_path) if model_path != 'None' else 'registry/roster'}"
             f"{mode_tail}, exploration=off."

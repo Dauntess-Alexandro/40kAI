@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40kAI - макеты миссии в eval</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1120;
+      --panel: #111a2b;
+      --panel-2: #1a2639;
+      --panel-3: #0f1725;
+      --line: #26344d;
+      --line-soft: #34425a;
+      --text: #dce4f2;
+      --muted: #8f9bb1;
+      --blue: #2f6ed8;
+      --blue-soft: #18304f;
+      --red: #cf3f3f;
+      --red-soft: #3a1f25;
+      --gold: #c89428;
+      --gold-soft: #322817;
+      --green: #3fa66b;
+      --green-soft: #163023;
+      --violet: #8c6ee8;
+      --shadow: 0 18px 60px rgba(0, 0, 0, .38);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", Inter, Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    body {
+      background:
+        linear-gradient(180deg, rgba(32, 47, 73, .55), transparent 280px),
+        var(--bg);
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(11, 17, 32, .96);
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar-title {
+      min-width: 230px;
+    }
+
+    .topbar-title strong {
+      display: block;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .topbar-title span {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tabs button {
+      min-height: 34px;
+      border: 1px solid var(--line-soft);
+      background: #121d30;
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 0 13px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .tabs button:hover {
+      color: var(--text);
+      border-color: #53647f;
+    }
+
+    .tabs button.active {
+      color: #ffe2a2;
+      border-color: var(--gold);
+      background: #201b12;
+    }
+
+    .page {
+      width: min(1540px, calc(100vw - 28px));
+      margin: 18px auto 44px;
+    }
+
+    .mockup {
+      display: none;
+    }
+
+    .mockup.active {
+      display: block;
+    }
+
+    .app-shell {
+      border: 1px solid var(--line);
+      background: rgba(13, 20, 36, .92);
+      box-shadow: var(--shadow);
+      padding: 10px;
+    }
+
+    .eval-header {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto auto auto auto;
+      align-items: center;
+      gap: 18px;
+      min-height: 70px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: #121b2d;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+    }
+
+    .eval-title {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .eval-title h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.1;
+    }
+
+    .mini {
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 12px;
+    }
+
+    .status-pill {
+      display: inline-grid;
+      place-items: center;
+      min-width: 88px;
+      min-height: 28px;
+      border: 1px solid var(--gold);
+      background: var(--gold-soft);
+      color: #f4c868;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .field-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .field {
+      min-width: 76px;
+      min-height: 28px;
+      border: 1px solid var(--line-soft);
+      background: #202b3c;
+      color: var(--text);
+      padding: 5px 9px;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-weight: 500;
+    }
+
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #6f7785;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .check-box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--gold);
+      background: var(--gold-soft);
+    }
+
+    .section {
+      margin-top: 16px;
+    }
+
+    .section > .label {
+      margin: 0 0 8px;
+      color: #b8c3d4;
+      font-size: 13px;
+    }
+
+    .match-head {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      padding: 16px 14px;
+    }
+
+    .match-head h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .match-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 13px;
+    }
+
+    .subline {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .agent-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .agent-card {
+      min-height: 198px;
+      padding: 10px;
+      border: 1px solid;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+    }
+
+    .agent-card.p1 {
+      border-color: var(--blue);
+      background: #14243a;
+    }
+
+    .agent-card.p2 {
+      border-color: var(--red);
+      background: #341f25;
+    }
+
+    .agent-card.warn {
+      border-color: var(--gold);
+      background: #2d2417;
+    }
+
+    .agent-card.error {
+      border-color: var(--red);
+      background: #351b1f;
+    }
+
+    .agent-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .hex {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      color: #dbe8ff;
+      font-size: 10px;
+      font-weight: 900;
+      clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    }
+
+    .p1 .hex { background: var(--blue); }
+    .p2 .hex { background: var(--red); }
+    .agent-card.warn .hex { background: var(--gold); color: #19130a; }
+
+    .side-name {
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    .p1 .side-name { color: #5b95ff; }
+    .p2 .side-name { color: #ff7777; }
+    .agent-card.warn .side-name { color: #f2c76f; }
+
+    .select {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 30px;
+      margin-top: 6px;
+      padding: 0 10px;
+      border: 1px solid #304057;
+      background: #0e1622;
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 12px;
+    }
+
+    .select .arrow {
+      color: #6f819a;
+      font-size: 11px;
+    }
+
+    .agent-name {
+      margin: 9px 0 0;
+      color: var(--text);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-weight: 800;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .badge {
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #52617a;
+      background: #1f2d42;
+      color: #b6c5dc;
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .badge.blue {
+      border-color: var(--blue);
+      background: var(--blue-soft);
+      color: #9fc2ff;
+    }
+
+    .badge.red {
+      border-color: var(--red);
+      background: #4a282c;
+      color: #ffb6b6;
+    }
+
+    .badge.gold {
+      border-color: var(--gold);
+      background: var(--gold-soft);
+      color: #f4cd78;
+    }
+
+    .badge.green {
+      border-color: var(--green);
+      background: var(--green-soft);
+      color: #8be3ae;
+    }
+
+    .badge.dim {
+      opacity: .58;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .small-field {
+      min-width: 64px;
+      min-height: 26px;
+      border: 1px solid #34445c;
+      background: #202a3b;
+      color: #aeb9ca;
+      padding: 5px 8px;
+      font-family: Consolas, "Cascadia Mono", monospace;
+    }
+
+    .mission-bar {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      margin-top: 12px;
+      padding: 9px 12px;
+      border: 1px solid;
+      background: #121b2c;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+    }
+
+    .mission-bar.ok {
+      border-color: var(--green);
+      background: #10251c;
+    }
+
+    .mission-bar.warn {
+      border-color: var(--gold);
+      background: #2a2114;
+    }
+
+    .mission-bar.error {
+      border-color: var(--red);
+      background: #331b20;
+    }
+
+    .mission-title {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .mission-title b {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .mission-title strong {
+      color: #f2c76f;
+      font-size: 20px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .mission-note {
+      min-width: 0;
+      color: #b9c3d3;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mission-state {
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.06);
+      padding: 5px 9px;
+      color: #dfe8f6;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .live-panel {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      padding: 12px;
+    }
+
+    .live-caption {
+      text-align: center;
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .live-title {
+      margin-top: 7px;
+      text-align: center;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .track {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      height: 22px;
+      margin-top: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #1b2431;
+      border: 1px solid #2d3d55;
+    }
+
+    .track .left {
+      background: linear-gradient(90deg, #1f4ea8, #6fb2ff);
+    }
+
+    .track .right {
+      background: linear-gradient(90deg, #f07b80, #b91d1d);
+    }
+
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      font-size: 12px;
+    }
+
+    .actions-panel {
+      margin-top: 14px;
+      border: 1px solid #172339;
+      background: #0d1423;
+    }
+
+    .actions-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 36px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #172339;
+      background: #1b2638;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .actions-buttons {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 10px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      min-height: 32px;
+      border: 1px solid var(--gold);
+      background: transparent;
+      color: #d5b15a;
+      padding: 0 14px;
+      font-weight: 900;
+      font-size: 12px;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+    }
+
+    .btn.primary {
+      background: #b8871d;
+      color: #1d1609;
+    }
+
+    .btn.disabled {
+      opacity: .42;
+    }
+
+    .config {
+      margin-top: 14px;
+      border: 1px solid #111b2d;
+      background: #0d1423;
+      padding: 10px;
+    }
+
+    .config p {
+      margin: 4px 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .config p strong {
+      color: var(--text);
+    }
+
+    .config .good { color: #62d38d; font-weight: 900; }
+    .config .bad { color: #f27b62; font-weight: 900; }
+    .config .warn-text { color: #f0b64a; font-weight: 900; }
+
+    .analytics {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .metric {
+      min-height: 96px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 12px;
+    }
+
+    .metric b {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 24px;
+    }
+
+    .metric.red {
+      border-color: #75333b;
+      background: #2c1a20;
+    }
+
+    .metric.gold {
+      border-color: #775d2a;
+    }
+
+    .lock-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 210px minmax(0, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+      align-items: stretch;
+    }
+
+    .lock-center {
+      border: 1px solid var(--gold);
+      background: #221b11;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: stretch;
+      padding: 12px;
+      text-align: center;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+    }
+
+    .lock-center.error {
+      border-color: var(--red);
+      background: #341b20;
+    }
+
+    .lock-center small {
+      color: var(--muted);
+      font-weight: 900;
+    }
+
+    .lock-center strong {
+      margin-top: 8px;
+      color: #f4cd78;
+      font-size: 19px;
+      line-height: 1.05;
+    }
+
+    .lock-center.error strong {
+      color: #ff8f8f;
+    }
+
+    .lock-center span {
+      margin-top: 10px;
+      color: #c6d1e1;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      margin-top: 8px;
+      border: 1px solid var(--gold);
+      background: #241c11;
+      padding: 6px 8px;
+      color: #f1ca74;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .dropdown-list {
+      margin-top: 8px;
+      border: 1px solid #3c4b62;
+      background: #0c1421;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, .34);
+    }
+
+    .drop-option {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 42px;
+      padding: 7px 9px;
+      border-bottom: 1px solid #1f2b3e;
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .drop-option:last-child {
+      border-bottom: 0;
+    }
+
+    .drop-option.active {
+      background: #172943;
+    }
+
+    .drop-option.disabled {
+      opacity: .42;
+      background: #171923;
+    }
+
+    .drop-option span {
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Mono", monospace;
+    }
+
+    .compare-strip {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 10px;
+      margin-top: 12px;
+      align-items: center;
+    }
+
+    .compare-box {
+      border: 1px solid var(--line);
+      background: #111a2a;
+      padding: 10px;
+      min-height: 72px;
+    }
+
+    .compare-box b {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .compare-box strong {
+      display: block;
+      margin-top: 6px;
+      font-family: Consolas, "Cascadia Mono", monospace;
+    }
+
+    .compare-eq {
+      min-width: 88px;
+      text-align: center;
+      border: 1px solid var(--green);
+      background: var(--green-soft);
+      color: #8be3ae;
+      padding: 7px;
+      font-weight: 900;
+    }
+
+    .design-note {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border: 1px dashed #40516b;
+      background: #0d1524;
+      color: #aab7ca;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1050px) {
+      .eval-header {
+        grid-template-columns: 1fr 1fr;
+      }
+      .agent-grid,
+      .lock-layout,
+      .analytics {
+        grid-template-columns: 1fr;
+      }
+      .lock-center {
+        min-height: 120px;
+      }
+      .compare-strip {
+        grid-template-columns: 1fr;
+      }
+      .compare-eq {
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .topbar-title {
+        min-width: 0;
+      }
+      .page {
+        width: calc(100vw - 16px);
+        margin-top: 8px;
+      }
+      .eval-header {
+        grid-template-columns: 1fr;
+      }
+      .mission-bar {
+        grid-template-columns: 1fr;
+      }
+      .mission-title {
+        flex-wrap: wrap;
+      }
+      .mission-note {
+        white-space: normal;
+      }
+      .actions-buttons {
+        flex-direction: column;
+      }
+      .button-row {
+        flex-wrap: wrap;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-title">
+      <strong>Eval mission UI</strong>
+      <span>Визуальные варианты для выбора миссии серии по агенту</span>
+    </div>
+    <nav class="tabs" aria-label="Варианты макета">
+      <button class="active" data-tab="v1">1. Строка миссии</button>
+      <button data-tab="v2">2. Замок между агентами</button>
+      <button data-tab="v3">3. В конфигурации</button>
+      <button data-tab="v4">4. Фильтр второго агента</button>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="mockup active" id="v1">
+      <div class="app-shell">
+        <div class="eval-header">
+          <div class="eval-title">
+            <h1>ОЦЕНКА: P1 VS P2</h1>
+            <div class="mini">ИГР: 50 • DETERMINISTIC • EPSILON=0 • MISSION=ANNIHILATION</div>
+          </div>
+          <div class="status-pill">RUNNING</div>
+          <div class="field-row">Игр:<div class="field">50</div></div>
+          <div class="field-row">Воркеры:<div class="field">1</div></div>
+          <div class="check"><span class="check-box"></span> ДЕТАЛЬНЫЙ ЛОГ</div>
+        </div>
+
+        <div class="section">
+          <p class="label">Сетап матча</p>
+          <div class="match-head">
+            <h2>PPO VS DQN</h2>
+            <p>NECRONS VS NECRONS</p>
+          </div>
+
+          <div class="mission-bar ok">
+            <div class="mission-title">
+              <b>МИССИЯ СЕРИИ</b>
+              <strong>ANNIHILATION</strong>
+            </div>
+            <div class="mission-note">Источник: P1 agent contract. P2 должен быть обучен под ту же миссию.</div>
+            <div class="mission-state">OK</div>
+          </div>
+
+          <div class="subline">deterministic, epsilon=0</div>
+          <div class="agent-grid">
+            <article class="agent-card p1">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P1</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span>Necrons PPO (ep2000) [P1] · 190557</span><span class="arrow">▼</span></div>
+              <div class="agent-name">P1: Necrons PPO (ep2000)</div>
+              <div class="badges">
+                <span class="badge blue">PPO</span>
+                <span class="badge blue">NECRONS</span>
+                <span class="badge blue">P1</span>
+                <span class="badge gold">MISSION: ANNIHILATION</span>
+              </div>
+              <div class="control-row">
+                COPY ID <span>Режим:</span><div class="small-field">Greedy</div>
+                <span>Темп.:</span><div class="small-field">1.00</div>
+                <span>Sims:</span><div class="small-field">32</div>
+              </div>
+            </article>
+
+            <article class="agent-card p2">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P2</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span>Necrons DQN (ep1000) [P2] · 191227</span><span class="arrow">▼</span></div>
+              <div class="agent-name">P2: Necrons DQN (ep1000)</div>
+              <div class="badges">
+                <span class="badge red">DQN</span>
+                <span class="badge red">NECRONS</span>
+                <span class="badge red">P2</span>
+                <span class="badge gold">MISSION: ANNIHILATION</span>
+              </div>
+              <div class="control-row">
+                COPY ID <span>Режим:</span><div class="small-field">Greedy</div>
+                <span>Epsilon:</span><div class="small-field">0.10</div>
+                <span>Sims:</span><div class="small-field">32</div>
+              </div>
+            </article>
+          </div>
+
+          <div class="live-panel">
+            <div class="live-caption">LIVE DUEL</div>
+            <div class="live-title">Ожидание первой игры</div>
+            <div class="track"><div class="left"></div><div class="right"></div></div>
+            <div class="score-row"><span>P1 50%</span><span>P2 50%</span></div>
+          </div>
+        </div>
+
+        <div class="actions-panel">
+          <div class="actions-status">
+            <span>Статус: RUNNING • Прогресс: После 0/50 игр • Done/Total: 0/50 • Лидер: none</span>
+            <span>MISSION: ANNIHILATION</span>
+          </div>
+          <div class="actions-buttons">
+            <div class="button-row"><button class="btn primary">АКТИВИРОВАТЬ ОЦЕНКУ</button><button class="btn">ОСТАНОВИТЬ</button></div>
+            <div class="button-row"><button class="btn">ОБНОВИТЬ</button><button class="btn">ОЧИСТИТЬ</button><button class="btn">ДЕТАЛИ</button></div>
+          </div>
+        </div>
+
+        <div class="config">
+          <p><strong>Сценарий:</strong> честный AI vs AI.</p>
+          <p><span class="good">Миссия eval: ANNIHILATION</span> — взята из P1 agent contract.</p>
+          <p>Игр: 50 • deterministic • epsilon=0 • AZ/GMZ/SMZ/GAZ: MCTS/Search по умолчанию</p>
+        </div>
+
+        <div class="analytics">
+          <div class="metric"><b>Matchup Edge</b><strong>—</strong></div>
+          <div class="metric gold"><b>Надежность</b><strong>Низкая</strong></div>
+          <div class="metric red"><b>Итоговый счет</b><strong>P1 0 • P2 0 • D 0</strong></div>
+        </div>
+      </div>
+
+      <p class="design-note">Вариант 1: основная строка миссии сразу под заголовком матча. Самый понятный вариант: пользователь видит, какая миссия реально уйдет в eval.py.</p>
+    </section>
+
+    <section class="mockup" id="v2">
+      <div class="app-shell">
+        <div class="eval-header">
+          <div class="eval-title">
+            <h1>ОЦЕНКА: P1 VS P2</h1>
+            <div class="mini">ИГР: 50 • DETERMINISTIC • EPSILON=0 • MISSION MISMATCH</div>
+          </div>
+          <div class="status-pill">IDLE</div>
+          <div class="field-row">Игр:<div class="field">50</div></div>
+          <div class="field-row">Воркеры:<div class="field">1</div></div>
+          <div class="check"><span class="check-box"></span> ДЕТАЛЬНЫЙ ЛОГ</div>
+        </div>
+
+        <div class="section">
+          <p class="label">Сетап матча</p>
+          <div class="match-head">
+            <h2>PPO VS DQN</h2>
+            <p>NECRONS VS NECRONS</p>
+          </div>
+
+          <div class="lock-layout">
+            <article class="agent-card p1">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P1</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span>Necrons PPO (ep2000) [P1] · 190557</span><span class="arrow">▼</span></div>
+              <div class="agent-name">P1: Necrons PPO (ep2000)</div>
+              <div class="badges">
+                <span class="badge blue">PPO</span>
+                <span class="badge blue">NECRONS</span>
+                <span class="badge gold">MISSION: ANNIHILATION</span>
+              </div>
+              <div class="control-row"><span>Режим:</span><div class="small-field">Greedy</div><span>Темп.:</span><div class="small-field">1.00</div></div>
+            </article>
+
+            <div class="lock-center error">
+              <small>MISSION LOCK</small>
+              <strong>НЕСОВМЕСТИМО</strong>
+              <span>P1 требует ANNIHILATION, но выбранный P2 обучен под ONLY WAR.</span>
+            </div>
+
+            <article class="agent-card error">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P2</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span>Necrons DQN (ep900) [P2] · 184003</span><span class="arrow">▼</span></div>
+              <div class="agent-name">P2: Necrons DQN (ep900)</div>
+              <div class="badges">
+                <span class="badge red">DQN</span>
+                <span class="badge red">NECRONS</span>
+                <span class="badge red">P2</span>
+                <span class="badge gold">MISSION: ONLY WAR</span>
+              </div>
+              <div class="control-row"><span>Режим:</span><div class="small-field">Greedy</div><span>Epsilon:</span><div class="small-field">0.10</div></div>
+            </article>
+          </div>
+
+          <div class="mission-bar error">
+            <div class="mission-title">
+              <b>ЗАПУСК ЗАБЛОКИРОВАН</b>
+              <strong>MISSION MISMATCH</strong>
+            </div>
+            <div class="mission-note">Что сделать дальше: выберите P2-агента с mission=annihilation или смените P1.</div>
+            <div class="mission-state">BLOCKED</div>
+          </div>
+        </div>
+
+        <div class="actions-panel">
+          <div class="actions-status">
+            <span>Статус: IDLE • Прогресс: После 0/50 игр • Done/Total: 0/50</span>
+            <span>Запуск невозможен</span>
+          </div>
+          <div class="actions-buttons">
+            <div class="button-row"><button class="btn primary disabled">АКТИВИРОВАТЬ ОЦЕНКУ</button><button class="btn">ОСТАНОВИТЬ</button></div>
+            <div class="button-row"><button class="btn">ОБНОВИТЬ</button><button class="btn">ДЕТАЛИ</button></div>
+          </div>
+        </div>
+
+        <div class="config">
+          <p><strong>Сценарий:</strong> честный AI vs AI.</p>
+          <p><span class="bad">Нужно выбрать P2-агента под ANNIHILATION.</span></p>
+          <p>Где: eval setup. Что сделать дальше: открыть список P2 и выбрать совместимого агента.</p>
+        </div>
+      </div>
+
+      <p class="design-note">Вариант 2: миссионный “замок” между карточками. Хорошо объясняет связь P1 -> P2, особенно в ошибке mismatch.</p>
+    </section>
+
+    <section class="mockup" id="v3">
+      <div class="app-shell">
+        <div class="eval-header">
+          <div class="eval-title">
+            <h1>ОЦЕНКА: P1 VS P2</h1>
+            <div class="mini">ИГР: 50 • DETERMINISTIC • EPSILON=0 • AZ/GMZ/SMZ/GAZ: SEARCH ПО УМОЛЧАНИЮ</div>
+          </div>
+          <div class="status-pill">IDLE</div>
+          <div class="field-row">Игр:<div class="field">50</div></div>
+          <div class="field-row">Воркеры:<div class="field">1</div></div>
+          <div class="check"><span class="check-box"></span> ДЕТАЛЬНЫЙ ЛОГ</div>
+        </div>
+
+        <div class="section">
+          <p class="label">Сетап матча</p>
+          <div class="match-head">
+            <h2>PPO VS АГЕНТ</h2>
+            <p>NECRONS VS NECRONS</p>
+          </div>
+          <div class="subline">deterministic, epsilon=0</div>
+
+          <div class="agent-grid">
+            <article class="agent-card p1">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P1</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span>Necrons PPO (ep2000) [P1] · 190557</span><span class="arrow">▼</span></div>
+              <div class="agent-name">P1: Necrons PPO (ep2000)</div>
+              <div class="badges">
+                <span class="badge blue">PPO</span>
+                <span class="badge blue">NECRONS</span>
+                <span class="badge blue">P1</span>
+              </div>
+              <div class="control-row"><span>Миссия:</span><div class="small-field">annihilation</div><span>Режим:</span><div class="small-field">Greedy</div></div>
+            </article>
+
+            <article class="agent-card warn">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P2</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span></span><span class="arrow">▼</span></div>
+              <div class="agent-name">P2: Агент не выбран</div>
+              <div class="badges">
+                <span class="badge gold">AGENT</span>
+                <span class="badge gold">UNKNOWN</span>
+                <span class="badge gold">P2</span>
+              </div>
+              <div class="control-row"><span>Миссия:</span><div class="small-field">ожидает P2</div><span>Режим:</span><div class="small-field">Greedy</div></div>
+            </article>
+          </div>
+
+          <div class="live-panel">
+            <div class="live-caption">LIVE DUEL</div>
+            <div class="live-title">Ожидание первой игры</div>
+            <div class="track"><div class="left"></div><div class="right"></div></div>
+            <div class="score-row"><span>P1 50%</span><span>P2 50%</span></div>
+          </div>
+        </div>
+
+        <div class="actions-panel">
+          <div class="actions-status">
+            <span>Статус: IDLE • Прогресс: После 0/50 игр • Done/Total: 0/50</span>
+            <span>P2 не выбран</span>
+          </div>
+          <div class="actions-buttons">
+            <div class="button-row"><button class="btn primary disabled">АКТИВИРОВАТЬ ОЦЕНКУ</button><button class="btn">ОСТАНОВИТЬ</button></div>
+            <div class="button-row"><button class="btn">ОБНОВИТЬ</button><button class="btn">ОЧИСТИТЬ</button><button class="btn">ДЕТАЛИ</button></div>
+          </div>
+        </div>
+
+        <div class="config">
+          <p><strong>Сценарий:</strong> честный AI vs AI.</p>
+          <p><span class="warn-text">Миссия eval: ANNIHILATION</span> — выбрана из P1: Necrons PPO (ep2000).</p>
+          <p><span class="warn-text">Нужно выбрать P2-агента с миссией ANNIHILATION.</span></p>
+          <p>Игр: 50 • deterministic • epsilon=0 • AZ/GMZ/SMZ/GAZ: MCTS/Search по умолчанию</p>
+        </div>
+
+        <div class="analytics">
+          <div class="metric"><b>Matchup Edge</b><strong>—</strong></div>
+          <div class="metric gold"><b>Надежность</b><strong>Нет серии</strong></div>
+          <div class="metric red"><b>Итоговый счет</b><strong>P1 0 • P2 0 • D 0</strong></div>
+        </div>
+      </div>
+
+      <p class="design-note">Вариант 3: почти не меняет верхний сетап, вся миссионная логика живет в “Конфигурации матча”. Самый дешевый, но менее заметный.</p>
+    </section>
+
+    <section class="mockup" id="v4">
+      <div class="app-shell">
+        <div class="eval-header">
+          <div class="eval-title">
+            <h1>ОЦЕНКА: P1 VS P2</h1>
+            <div class="mini">ИГР: 50 • DETERMINISTIC • EPSILON=0 • MISSION=ANNIHILATION</div>
+          </div>
+          <div class="status-pill">IDLE</div>
+          <div class="field-row">Игр:<div class="field">50</div></div>
+          <div class="field-row">Воркеры:<div class="field">1</div></div>
+          <div class="check"><span class="check-box"></span> ДЕТАЛЬНЫЙ ЛОГ</div>
+        </div>
+
+        <div class="section">
+          <p class="label">Сетап матча</p>
+          <div class="match-head">
+            <h2>PPO VS DQN</h2>
+            <p>NECRONS VS NECRONS</p>
+          </div>
+
+          <div class="mission-bar ok">
+            <div class="mission-title">
+              <b>МИССИЯ СЕРИИ</b>
+              <strong>ANNIHILATION</strong>
+            </div>
+            <div class="mission-note">Список P2 показывает только совместимых агентов; неподходящие видны как заблокированные.</div>
+            <div class="mission-state">FILTER</div>
+          </div>
+
+          <div class="agent-grid">
+            <article class="agent-card p1">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P1</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="select"><span>Necrons PPO (ep2000) [P1] · 190557</span><span class="arrow">▼</span></div>
+              <div class="agent-name">P1: Necrons PPO (ep2000)</div>
+              <div class="badges">
+                <span class="badge blue">PPO</span>
+                <span class="badge blue">NECRONS</span>
+                <span class="badge gold">MISSION: ANNIHILATION</span>
+              </div>
+              <div class="control-row"><span>Режим:</span><div class="small-field">Greedy</div><span>Темп.:</span><div class="small-field">1.00</div></div>
+            </article>
+
+            <article class="agent-card p2">
+              <div class="agent-top"><div class="hex">AI</div><div class="side-name">P2</div></div>
+              <div class="select"><span>АГЕНТ</span><span class="arrow">▼</span></div>
+              <div class="filter-row">Фильтр: MISSION = ANNIHILATION</div>
+              <div class="dropdown-list">
+                <div class="drop-option active">
+                  <div><strong>Necrons DQN (ep1000) [P2]</strong><br><span>annihilation_v2 · 191227</span></div>
+                  <span class="badge green">OK</span>
+                </div>
+                <div class="drop-option">
+                  <div><strong>Necrons GAZ (ep800) [P2]</strong><br><span>annihilation_v2 · 183810</span></div>
+                  <span class="badge green">OK</span>
+                </div>
+                <div class="drop-option disabled">
+                  <div><strong>Necrons DQN (ep900) [P2]</strong><br><span>only_war_v2 · скрыт по фильтру</span></div>
+                  <span class="badge dim">LOCK</span>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="compare-strip">
+            <div class="compare-box"><b>P1 contract</b><strong>mission_name=annihilation<br>ruleset=annihilation_v2</strong></div>
+            <div class="compare-eq">MATCH</div>
+            <div class="compare-box"><b>P2 contract</b><strong>mission_name=annihilation<br>ruleset=annihilation_v2</strong></div>
+          </div>
+        </div>
+
+        <div class="actions-panel">
+          <div class="actions-status">
+            <span>Статус: IDLE • Прогресс: После 0/50 игр • Done/Total: 0/50</span>
+            <span>Готово к запуску</span>
+          </div>
+          <div class="actions-buttons">
+            <div class="button-row"><button class="btn primary">АКТИВИРОВАТЬ ОЦЕНКУ</button><button class="btn">ОСТАНОВИТЬ</button></div>
+            <div class="button-row"><button class="btn">ОБНОВИТЬ</button><button class="btn">ОЧИСТИТЬ</button><button class="btn">ДЕТАЛИ</button></div>
+          </div>
+        </div>
+
+        <div class="config">
+          <p><strong>Сценарий:</strong> честный AI vs AI.</p>
+          <p><span class="good">Миссия eval: ANNIHILATION.</span> P2 выбран из совместимых агентов.</p>
+          <p>Игр: 50 • deterministic • epsilon=0 • AZ/GMZ/SMZ/GAZ: MCTS/Search по умолчанию</p>
+        </div>
+      </div>
+
+      <p class="design-note">Вариант 4: миссия становится фильтром второго dropdown. Удобно, когда агентов много; меньше ошибок при выборе.</p>
+    </section>
+  </main>
+
+  <script>
+    const buttons = Array.from(document.querySelectorAll(".tabs button"));
+    const panels = Array.from(document.querySelectorAll(".mockup"));
+
+    function activate(id) {
+      buttons.forEach((button) => button.classList.toggle("active", button.dataset.tab === id));
+      panels.forEach((panel) => panel.classList.toggle("active", panel.id === id));
+      if (location.hash !== "#" + id) {
+        history.replaceState(null, "", "#" + id);
+      }
+    }
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => activate(button.dataset.tab));
+    });
+
+    const initial = location.hash.replace("#", "");
+    if (initial && document.getElementById(initial)) {
+      activate(initial);
+    }
+  </script>
+</body>
+</html>
