@@ -35,6 +35,7 @@ from core.engine.io_profiler import get_io_profiler
 from core.engine.mission import (
     board_dims_for_mission,
     deploy_for_mission,
+    mission_uses_objectives,
     normalize_mission_name,
     post_deploy_setup,
 )
@@ -4100,7 +4101,13 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     ep_rows: list[dict] = []
     randNum = random.randint(1000000, 9999999)
     loss_trace: list[float] = []
-    adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
+    # adaptive_turn_limit крутит objective-анти-draw knobs (MISSION_NO_CONTEST/OC_MARGIN) —
+    # только для objective-миссий. В annihilation (kill_points) turn_limit нормален, эти knobs
+    # занулены в профиле и не должны воскрешаться курсом.
+    adaptive_tl_curriculum = (
+        os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
+        and mission_uses_objectives(os.getenv("MISSION_NAME"))
+    )
     tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.72"))
     tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.58"))
     tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.01"))
@@ -5055,7 +5062,13 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     ep_rows: list[dict] = []
     train_t0_summary = time.perf_counter()
     last_update_metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0, "clip_fraction": 0.0}
-    adaptive_tl_curriculum = os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
+    # adaptive_turn_limit крутит objective-анти-draw knobs (MISSION_NO_CONTEST/OC_MARGIN) —
+    # только для objective-миссий. В annihilation (kill_points) turn_limit нормален, эти knobs
+    # занулены в профиле и не должны воскрешаться курсом.
+    adaptive_tl_curriculum = (
+        os.getenv("ADAPTIVE_TURN_LIMIT_CURRICULUM", "1").strip() == "1"
+        and mission_uses_objectives(os.getenv("MISSION_NAME"))
+    )
     tl_curriculum_hi = float(os.getenv("ADAPTIVE_TL_RATE_HIGH", "0.72"))
     tl_curriculum_lo = float(os.getenv("ADAPTIVE_TL_RATE_LOW", "0.58"))
     tl_penalty_step = float(os.getenv("ADAPTIVE_NO_CONTEST_STEP", "0.01"))
