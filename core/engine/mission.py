@@ -384,6 +384,10 @@ def terrain_features_for_mission(value: str | None, b_len: int, b_hei: int) -> l
 def apply_mission_layout(env, mission_name: str | None = None) -> None:
     """Apply selected mission board/objectives on env (backward-compatible)."""
     mission = normalize_mission_name(mission_name)
+    # Единый chokepoint: train/eval/play/воркеры активируют reward-профиль миссии.
+    # reward_cfg уже импортирован модулем сверху (import reward_config as reward_cfg);
+    # module-access обязателен — `from reward_config import NAME` не видит смену профиля.
+    reward_cfg.configure_for_mission(mission)
     b_len, b_hei = board_dims_for_mission(mission)
     env.b_len = b_len
     env.b_hei = b_hei

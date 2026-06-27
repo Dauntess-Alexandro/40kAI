@@ -36,9 +36,19 @@ def test_mission_flag_helpers():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def _ann_profile():
+def _ann_profile(request):
     # Тай-брейк читает reward_config.ANNIHILATION_TIEBREAK_MODE — ключ есть только в
-    # annihilation-профиле. Активируем его на время тестов файла, сбрасываем после.
+    # annihilation-профиле. Активируем его на время scoring/win-тестов, сбрасываем после.
+    # Layout/info-тесты (Task 5) управляют профилем сами через apply_mission_layout —
+    # autouse их не трогает, иначе only_war-проверки маскировались бы annihilation-сетапом.
+    _layout_or_info = (
+        request.node.name.startswith("test_apply_layout")
+        or request.node.name.startswith("test_get_info")
+    )
+    if _layout_or_info:
+        yield
+        _rc.configure_for_mission("only_war")
+        return
     _rc.configure_for_mission("annihilation")
     yield
     _rc.configure_for_mission("only_war")
@@ -95,3 +105,84 @@ def test_only_war_turn_limit_unchanged():
                                 game_over=False)
     over, reason, winner = M.check_end_of_battle(env)
     assert over and reason == "turn_limit" and winner == "model"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: Env wiring — reward-профиль в apply_mission_layout + info-поля
+# ---------------------------------------------------------------------------
+
+def test_apply_layout_sets_reward_profile():
+    env = types.SimpleNamespace()   # apply_mission_layout только выставляет атрибуты
+    try:
+        M.apply_mission_layout(env, "annihilation")
+        assert env.mission_key == "annihilation"
+        assert env.mission_scoring_mode == "kill_points"
+        assert env.mission_uses_objectives is False
+        assert len(env.coordsOfOM) == 1            # фантом-точка
+        assert _rc.active_profile_name() == "annihilation"
+        assert _rc.VP_OBJECTIVE_HOLD_REWARD == 0    # objective-shaping нейтрализован профилем
+    finally:
+        _rc.configure_for_mission("only_war")
+
+
+def test_apply_layout_only_war_keeps_objective_profile():
+    env = types.SimpleNamespace()
+    try:
+        M.apply_mission_layout(env, "only_war")
+        assert _rc.active_profile_name() == "only_war"
+        assert _rc.VP_OBJECTIVE_HOLD_REWARD != 0
+    finally:
+        _rc.configure_for_mission("only_war")
+
+
+def test_apply_layout_training_grounds_uses_only_war_profile():
+    env = types.SimpleNamespace()
+    try:
+        M.apply_mission_layout(env, "training_grounds")
+        assert env.mission_key == "training_grounds"
+        assert _rc.active_profile_name() == "only_war"
+        assert _rc.VP_OBJECTIVE_HOLD_REWARD != 0
+    finally:
+        _rc.configure_for_mission("only_war")
+
+
+def test_get_info_exposes_kp_and_mission_fields():
+    """get_info() возвращает KP/mission-поля без полного init env."""
+    from core.envs.warhamEnv import Warhammer40kEnv
+
+    env = object.__new__(Warhammer40kEnv)
+    env.unit_health = [10, 0]
+    env.enemy_health = [6, 0]
+    env.modelKP = 1
+    env.enemyKP = 1
+    env.modelCP = 0
+    env.enemyCP = 0
+    env.unitInAttack = [[0, 0], [0, 0]]
+    env.modelVP = 1
+    env.enemyVP = 1
+    env.mission_name = "Annihilation / Kill Points"
+    env.mission_key = "annihilation"
+    env.mission_scoring_mode = "kill_points"
+    env.numTurns = 5
+    env.battle_round = 3
+    env.active_side = "model"
+    env.phase = "command"
+    env.game_over = False
+    env._last_movement_meta = {}
+    env.model_obj_oc = []
+    env.enemy_obj_oc = []
+    env._mission_destroyed_enemy_units = {1}
+    env._mission_destroyed_model_units = {1}
+    env._mission_draw_reason = ""
+    # monkeypatch: не нужен реальный pool моделей
+    env._alive_models_from_pool = lambda side, i: 1
+
+    info = env.get_info()
+
+    assert info["mission_key"] == "annihilation"
+    assert info["mission_scoring_mode"] == "kill_points"
+    assert info["model_kill_points"] == 1
+    assert info["player_kill_points"] == 1
+    assert info["model_destroyed_units"] == 1
+    assert info["player_destroyed_units"] == 1
+    assert info["mission_draw_reason"] == ""

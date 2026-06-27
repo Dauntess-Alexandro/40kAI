@@ -28,6 +28,7 @@ from core.engine.mission import (
     apply_end_of_battle,
     apply_mission_layout,
     controlled_objectives,
+    mission_uses_objectives,
     score_end_of_command_phase,
     terrain_cells_from_features,
 )
@@ -1499,6 +1500,15 @@ class Warhammer40kEnv(gym.Env):
             "model controlled objectives": model_ctrl,
             "player controlled objectives": enemy_ctrl,
             "movement_meta": dict(getattr(self, "_last_movement_meta", {}) or {}),
+            # Annihilation / Kill Points (Task 5): mission-метаданные + KP-поля.
+            # getattr-дефолты — обратная совместимость со старыми env без mission_key.
+            "mission_key": getattr(self, "mission_key", "only_war"),
+            "mission_scoring_mode": getattr(self, "mission_scoring_mode", "objective_control"),
+            "model_kill_points": int(getattr(self, "modelKP", 0)),
+            "player_kill_points": int(getattr(self, "enemyKP", 0)),
+            "model_destroyed_units": len(getattr(self, "_mission_destroyed_enemy_units", set())),
+            "player_destroyed_units": len(getattr(self, "_mission_destroyed_model_units", set())),
+            "mission_draw_reason": str(getattr(self, "_mission_draw_reason", "")),
         }
 
 
@@ -5371,6 +5381,10 @@ class Warhammer40kEnv(gym.Env):
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] movement phase active ({action_mode})")
         if side == "model":
+            # Task 5: objective-shaping (hold/proximity/penalty) только для миссий с точками.
+            # Annihilation держит фантом-точку в coordsOfOM, но scoring_mode=kill_points ->
+            # uses_objectives=False -> objective-награды не начисляются и не логируются.
+            uses_objectives = mission_uses_objectives(self)
             advanced_flags = [False] * len(self.unit_health)
             self.model_used_advance = [False] * len(self.unit_health)
             self.model_advance_roll = [None] * len(self.unit_health)
@@ -5446,7 +5460,7 @@ class Warhammer40kEnv(gym.Env):
                         movement_meta["moved_units"] += 1
                         movement_meta["moved_any"] = True
 
-                    if str(move_mode) == "stay":
+                    if str(move_mode) == "stay" and uses_objectives:
                         nearest_obj_idx = None
                         nearest_obj_dist = None
                         for j, obj in enumerate(self.coordsOfOM):
@@ -5552,17 +5566,18 @@ class Warhammer40kEnv(gym.Env):
                             manual=os.getenv("MANUAL_DICE", "0") == "1",
                         )
 
-                    for j in range(len(self.coordsOfOM)):
-                        if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
-                            reward_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
-                            objective_proximity_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
-                            self._log_reward_unit(
-                                "model",
-                                modelName,
-                                i,
-                                "Reward (VP/объекты): "
-                                f"proximity=+{reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD:.3f} (obj={j})",
-                            )
+                    if uses_objectives:
+                        for j in range(len(self.coordsOfOM)):
+                            if distance(self.coordsOfOM[j], self.unit_coords[i]) <= 5:
+                                reward_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
+                                objective_proximity_delta += reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD
+                                self._log_reward_unit(
+                                    "model",
+                                    modelName,
+                                    i,
+                                    "Reward (VP/объекты): "
+                                    f"proximity=+{reward_cfg.VP_OBJECTIVE_PROXIMITY_REWARD:.3f} (obj={j})",
+                                )
 
                 elif self.unitInAttack[i][0] == 1 and self.unit_health[i] > 0:
                     idOfE = self.unitInAttack[i][1]
@@ -6232,6 +6247,9 @@ class Warhammer40kEnv(gym.Env):
             action_mode = "policy_action" if action is not None and not manual else "heuristic_auto"
             self._append_agent_log(f"[ENEMY][HEUR] shooting phase active ({action_mode})")
         if side == "model":
+            # Task 5: objective-only бонусы (target-on-obj quality, damage/kill-on-obj) —
+            # только для миссий с точками. Combat-shaping (damage/kill/overkill) остаётся.
+            uses_objectives = mission_uses_objectives(self)
             reward_delta = 0
             for i in range(len(self.unit_health)):
                 modelName = i + 21
@@ -6358,7 +6376,9 @@ class Warhammer40kEnv(gym.Env):
                                 f"overkill_penalty=-{overkill_penalty:.3f} (overkill={overkill:.2f})",
                             )
                         quality_term = 0.0
-                        target_on_objective = self._is_position_near_objective(self.enemy_coords[idOfE])
+                        target_on_objective = (
+                            uses_objectives and self._is_position_near_objective(self.enemy_coords[idOfE])
+                        )
                         if damage_dealt > 0:
                             if target_max_hp > 0 and target_hp_prev / target_max_hp <= 0.3:
                                 quality_term += reward_cfg.SHOOT_REWARD_TARGET_LOW_HP
@@ -7452,6 +7472,9 @@ class Warhammer40kEnv(gym.Env):
         pre_obj_controlled = None
         advantage_term = 0.0
         strength_term = 0.0
+        # Task 5: objective-only melee-бонусы (damage/kill-on-obj, OC-control) —
+        # только для миссий с точками. Combat-shaping (damage/kill/taken) остаётся.
+        uses_objectives = mission_uses_objectives(self)
         if side == "model":
             engaged_model = [i for i in range(len(self.unit_health)) if self.unit_health[i] > 0 and self.unitInAttack[i][0] == 1]
             engaged_enemy = [i for i in range(len(self.enemy_health)) if self.enemy_health[i] > 0 and self.enemyInAttack[i][0] == 1]
@@ -7516,20 +7539,30 @@ class Warhammer40kEnv(gym.Env):
 
             objective_damage = 0.0
             objective_kills = 0
-            for enemy_idx, pre_hp in pre_enemy_hp_by_idx.items():
-                if not pre_enemy_on_obj.get(enemy_idx, False):
-                    continue
-                post_hp = float(self.enemy_health[enemy_idx])
-                objective_damage += max(0.0, pre_hp - post_hp)
-                if pre_hp > 0 and post_hp <= 0:
-                    objective_kills += 1
-            objective_damage_term = reward_cfg.DAMAGE_ON_OBJECTIVE_SCALE * objective_damage
-            objective_kill_term = reward_cfg.KILL_ON_OBJECTIVE_BONUS * objective_kills
+            objective_damage_term = 0.0
+            objective_kill_term = 0.0
+            obj_term = 0.0
+            if uses_objectives:
+                for enemy_idx, pre_hp in pre_enemy_hp_by_idx.items():
+                    if not pre_enemy_on_obj.get(enemy_idx, False):
+                        continue
+                    post_hp = float(self.enemy_health[enemy_idx])
+                    objective_damage += max(0.0, pre_hp - post_hp)
+                    if pre_hp > 0 and post_hp <= 0:
+                        objective_kills += 1
+                objective_damage_term = reward_cfg.DAMAGE_ON_OBJECTIVE_SCALE * objective_damage
+                objective_kill_term = reward_cfg.KILL_ON_OBJECTIVE_BONUS * objective_kills
 
-            self.refresh_objective_control()
-            post_obj_controlled, _ = controlled_objectives(self, "model")
-            obj_delta = post_obj_controlled - (pre_obj_controlled or 0)
-            obj_term = reward_cfg.MELEE_OBJECTIVE_CONTROL_SCALE * obj_delta
+                self.refresh_objective_control()
+                post_obj_controlled, _ = controlled_objectives(self, "model")
+                obj_delta = post_obj_controlled - (pre_obj_controlled or 0)
+                obj_term = reward_cfg.MELEE_OBJECTIVE_CONTROL_SCALE * obj_delta
+            else:
+                # Annihilation: refresh_objective_control всё равно нужен для OC-массивов
+                # (используются в post-step shaping-gate и info), но objective-наград нет.
+                self.refresh_objective_control()
+                post_obj_controlled, _ = controlled_objectives(self, "model")
+                obj_delta = post_obj_controlled - (pre_obj_controlled or 0)
 
             if damage_term != 0:
                 reward_delta += damage_term
@@ -8239,6 +8272,10 @@ class Warhammer40kEnv(gym.Env):
         self._invalidate_target_cache("model_step_start")
         reward = 0
         res = 0
+        # Task 5: objective/VP-shaping блоки (VP diff, OC margin, streak, progress,
+        # idle, no-contest, stall) — только для миссий с точками. Combat/terrain/
+        # win-loss/action-repeat shaping остаются активными всегда.
+        uses_objectives = mission_uses_objectives(self)
         secondary_interval = max(1, int(os.getenv("REWARD_SECONDARY_INTERVAL", "1")))
         run_secondary_checks = secondary_interval <= 1 or ((self.iter + 1) % secondary_interval == 0)
         model_hp_start = float(sum(self.unit_health))
@@ -8368,63 +8405,66 @@ class Warhammer40kEnv(gym.Env):
             progress_round_mult = (1.0 - mix) * progress_early_mult + mix * progress_late_mult
             hold_round_mult = (1.0 - mix) * hold_early_mult + mix * hold_late_mult
 
-        vp_reward = reward_cfg.VP_DIFF_REWARD_SCALE * max(vp_delta, 0)
-        vp_penalty = reward_cfg.VP_DIFF_PENALTY_SCALE * max(-vp_delta, 0)
-        if vp_reward != 0 or vp_penalty != 0:
-            reward += vp_reward - vp_penalty
-            self._log_reward(
-                "Reward (VP diff): "
-                f"prev={prev_vp_diff}, curr={curr_vp_diff}, "
-                f"delta={vp_delta}, reward=+{vp_reward:.3f}, penalty=-{vp_penalty:.3f}"
-            )
-        if game_over and end_reason == "turn_limit":
-            vp_margin_cap = max(0.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0)))
-            vp_margin = float(curr_vp_diff)
-            if vp_margin_cap > 0:
-                vp_margin = max(-vp_margin_cap, min(vp_margin_cap, vp_margin))
+        # Task 5: VP/objective-shaping (VP diff, turn_limit endgame, anti-stall) —
+        # только для миссий с точками. Annihilation: KP-источник истины, VP-шэйпинг выключен.
+        if uses_objectives:
+            vp_reward = reward_cfg.VP_DIFF_REWARD_SCALE * max(vp_delta, 0)
+            vp_penalty = reward_cfg.VP_DIFF_PENALTY_SCALE * max(-vp_delta, 0)
+            if vp_reward != 0 or vp_penalty != 0:
+                reward += vp_reward - vp_penalty
+                self._log_reward(
+                    "Reward (VP diff): "
+                    f"prev={prev_vp_diff}, curr={curr_vp_diff}, "
+                    f"delta={vp_delta}, reward=+{vp_reward:.3f}, penalty=-{vp_penalty:.3f}"
+                )
+            if game_over and end_reason == "turn_limit":
+                vp_margin_cap = max(0.0, float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_CLAMP", 3.0)))
+                vp_margin = float(curr_vp_diff)
+                if vp_margin_cap > 0:
+                    vp_margin = max(-vp_margin_cap, min(vp_margin_cap, vp_margin))
 
-            draw_penalty = 0.0
-            if winner is None:
-                draw_penalty = float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))
-                if draw_penalty > 0:
-                    reward -= draw_penalty
+                draw_penalty = 0.0
+                if winner is None:
+                    draw_penalty = float(getattr(reward_cfg, "TURN_LIMIT_DRAW_PENALTY", 0.0))
+                    if draw_penalty > 0:
+                        reward -= draw_penalty
 
-            margin_bonus = 0.0
-            margin_penalty = 0.0
-            if vp_margin > 0:
-                margin_bonus = float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.0)) * vp_margin
-                reward += margin_bonus
-            elif vp_margin < 0:
-                margin_penalty = float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_PENALTY_SCALE", 0.0)) * abs(vp_margin)
-                reward -= margin_penalty
+                margin_bonus = 0.0
+                margin_penalty = 0.0
+                if vp_margin > 0:
+                    margin_bonus = float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_REWARD_SCALE", 0.0)) * vp_margin
+                    reward += margin_bonus
+                elif vp_margin < 0:
+                    margin_penalty = float(getattr(reward_cfg, "TURN_LIMIT_VP_MARGIN_PENALTY_SCALE", 0.0)) * abs(vp_margin)
+                    reward -= margin_penalty
 
-            self._log_reward(
-                "Reward (turn_limit endgame): "
-                f"winner={winner}, vp_diff={curr_vp_diff}, vp_margin_clamped={vp_margin:.3f}, "
-                f"draw_penalty=-{draw_penalty:.3f}, margin_bonus=+{margin_bonus:.3f}, "
-                f"margin_penalty=-{margin_penalty:.3f}"
-            )
-        self._prev_vp_diff = curr_vp_diff
-        if abs(vp_delta) < 1e-9:
-            self._vp_stall_steps = int(getattr(self, "_vp_stall_steps", 0)) + 1
-        else:
-            self._vp_stall_steps = 0
+                self._log_reward(
+                    "Reward (turn_limit endgame): "
+                    f"winner={winner}, vp_diff={curr_vp_diff}, vp_margin_clamped={vp_margin:.3f}, "
+                    f"draw_penalty=-{draw_penalty:.3f}, margin_bonus=+{margin_bonus:.3f}, "
+                    f"margin_penalty=-{margin_penalty:.3f}"
+                )
+            self._prev_vp_diff = curr_vp_diff
+            if abs(vp_delta) < 1e-9:
+                self._vp_stall_steps = int(getattr(self, "_vp_stall_steps", 0)) + 1
+            else:
+                self._vp_stall_steps = 0
 
-        stall_threshold = max(1, int(getattr(reward_cfg, "VP_STALL_STEPS_THRESHOLD", 4)))
-        if self._vp_stall_steps >= stall_threshold:
-            stall_base = float(getattr(reward_cfg, "VP_STALL_PENALTY", 0.10))
-            stall_growth = float(getattr(reward_cfg, "VP_STALL_STEP_GROWTH", 0.15))
-            stall_cap = max(1.0, float(getattr(reward_cfg, "VP_STALL_PENALTY_MAX_MULT", 2.5)))
-            over = max(0, self._vp_stall_steps - stall_threshold)
-            stall_mult = min(stall_cap, 1.0 + stall_growth * over)
-            stall_penalty = stall_base * stall_mult
-            reward -= stall_penalty
-            self._log_reward(
-                "Reward (anti-stall VP): "
-                f"vp_diff={curr_vp_diff:.3f}, stall_steps={self._vp_stall_steps}, "
-                f"threshold={stall_threshold}, penalty=-{stall_penalty:.3f} "
-                f"(base={stall_base:.3f}, mult={stall_mult:.3f})"
-            )
+            stall_threshold = max(1, int(getattr(reward_cfg, "VP_STALL_STEPS_THRESHOLD", 4)))
+            if self._vp_stall_steps >= stall_threshold:
+                stall_base = float(getattr(reward_cfg, "VP_STALL_PENALTY", 0.10))
+                stall_growth = float(getattr(reward_cfg, "VP_STALL_STEP_GROWTH", 0.15))
+                stall_cap = max(1.0, float(getattr(reward_cfg, "VP_STALL_PENALTY_MAX_MULT", 2.5)))
+                over = max(0, self._vp_stall_steps - stall_threshold)
+                stall_mult = min(stall_cap, 1.0 + stall_growth * over)
+                stall_penalty = stall_base * stall_mult
+                reward -= stall_penalty
+                self._log_reward(
+                    "Reward (anti-stall VP): "
+                    f"vp_diff={curr_vp_diff:.3f}, stall_steps={self._vp_stall_steps}, "
+                    f"threshold={stall_threshold}, penalty=-{stall_penalty:.3f} "
+                    f"(base={stall_base:.3f}, mult={stall_mult:.3f})"
+                )
         repeat_threshold = max(2, int(getattr(reward_cfg, "ACTION_REPEAT_STEPS_THRESHOLD", 3)))
         repeat_base = float(getattr(reward_cfg, "ACTION_REPEAT_PENALTY", 0.0))
         repeat_growth = float(getattr(reward_cfg, "ACTION_REPEAT_STEP_GROWTH", 0.2))
@@ -8445,159 +8485,161 @@ class Warhammer40kEnv(gym.Env):
                 f"penalty=-{repeat_penalty:.3f} (base={repeat_base:.3f}, mult={repeat_mult:.3f})"
             )
 
-        oc_margin_delta = float(post_oc_margin - pre_oc_margin)
-        oc_margin_delta_clamp = max(
-            0.0,
-            float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_DELTA_CLAMP", 12.0)),
-        )
-        if oc_margin_delta_clamp > 0:
-            oc_margin_delta = max(-oc_margin_delta_clamp, min(oc_margin_delta_clamp, oc_margin_delta))
-        oc_margin_reward = (
-            float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
-            * oc_margin_delta
-            * hold_round_mult
-        )
-        if oc_margin_reward != 0:
-            reward += oc_margin_reward
-            self._log_reward(
-                "Reward (objective OC margin): "
-                f"pre={pre_oc_margin:.3f}, post={post_oc_margin:.3f}, "
-                f"delta={oc_margin_delta:.3f}, round_mult={hold_round_mult:.3f}, reward={oc_margin_reward:+.3f}"
+        if uses_objectives:
+            oc_margin_delta = float(post_oc_margin - pre_oc_margin)
+            oc_margin_delta_clamp = max(
+                0.0,
+                float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_DELTA_CLAMP", 12.0)),
             )
-
-        streak_bonus = 0.0
-        streak_len = reward_cfg.VP_OBJECTIVE_STREAK_LEN
-        if streak_len > 0:
-            for idx in range(len(self._objective_hold_streaks)):
-                if idx in post_controlled_set:
-                    self._objective_hold_streaks[idx] += 1
-                else:
-                    self._objective_hold_streaks[idx] = 0
-                if self._objective_hold_streaks[idx] >= streak_len:
-                    streak_depth = self._objective_hold_streaks[idx] - streak_len + 1
-                    streak_depth_cap = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_STREAK_LINEAR_CAP", 3.0)))
-                    streak_weight = min(streak_depth_cap, float(streak_depth))
-                    streak_bonus += reward_cfg.VP_OBJECTIVE_STREAK_BONUS * streak_weight * hold_round_mult
-        if streak_bonus != 0:
-            reward += streak_bonus
-            self._log_reward(
-                "Reward (стрик удержания): "
-                f"streaks={self._objective_hold_streaks}, "
-                f"len={streak_len}, bonus=+{streak_bonus:.3f}"
+            if oc_margin_delta_clamp > 0:
+                oc_margin_delta = max(-oc_margin_delta_clamp, min(oc_margin_delta_clamp, oc_margin_delta))
+            oc_margin_reward = (
+                float(getattr(reward_cfg, "VP_OBJECTIVE_OC_MARGIN_SCALE", 0.0))
+                * oc_margin_delta
+                * hold_round_mult
             )
-
-        enemy_hp_end = float(sum(self.enemy_health))
-        enemy_dead_end = sum(1 for hp in self.enemy_health if hp <= 0)
-        damage_dealt = max(0.0, enemy_hp_start - enemy_hp_end)
-        kills_dealt = max(0, enemy_dead_end - enemy_dead_start)
-        vp_changed = (self.modelVP != pre_model_vp) or (self.enemyVP != pre_enemy_vp)
-        control_changed = pre_controlled_set != post_controlled_set
-        near_objective = self._any_model_near_objective() if run_secondary_checks else False
-        min_obj_dist_end = self._min_model_obj_distance() if run_secondary_checks else None
-        moved_closer = False
-        can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
-        if can_measure_move:
-            moved_closer = min_obj_dist_end < min_obj_dist_start
-        if can_measure_move:
-            progress = max(0.0, float(min_obj_dist_start - min_obj_dist_end))
-            if progress > 0:
-                norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
-                progress_norm = progress / norm_base
-                progress_scale = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_SCALE", 0.03))
-                progress_cap = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_CAP", 0.10))
-                progress_bonus = min(progress_cap, progress_scale * progress_norm) * progress_round_mult
-                if progress_bonus > 0:
-                    reward += progress_bonus
-                    self._log_reward(
-                        "Reward (progress к objective): "
-                        f"d_before={min_obj_dist_start:.3f}, d_after={min_obj_dist_end:.3f}, "
-                        f"delta={progress:.3f}, norm={progress_norm:.3f}, round_mult={progress_round_mult:.3f}, "
-                        f"bonus=+{progress_bonus:.3f}"
-                    )
-        if run_secondary_checks:
-            idle_conditions_met = (
-                not near_objective
-                and not vp_changed
-                and not control_changed
-                and damage_dealt <= 0
-                and kills_dealt <= 0
-                and (not moved_closer or not can_measure_move)
-            )
-            hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
-            if idle_conditions_met and hold_penalty_applied:
+            if oc_margin_reward != 0:
+                reward += oc_margin_reward
                 self._log_reward(
-                    "Reward (idle вне цели): "
-                    "skip, reason=hold_penalty_already_applied, "
-                    f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
-                    f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
-                    f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
-                    f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
-                    f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
-                )
-            elif idle_conditions_met:
-                reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
-                self._log_reward(
-                    "Reward (idle вне цели): "
-                    f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
-                    f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
-                    f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
-                    f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
-                    f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
+                    "Reward (objective OC margin): "
+                    f"pre={pre_oc_margin:.3f}, post={post_oc_margin:.3f}, "
+                    f"delta={oc_margin_delta:.3f}, round_mult={hold_round_mult:.3f}, reward={oc_margin_reward:+.3f}"
                 )
 
-        # Mission pressure: если после старта скоринга никто не contest'ит objectives,
-        # добавляем небольшой штраф (анти-draw, заставляет играть миссию).
-        try:
-            start_round = int(getattr(reward_cfg, "MISSION_NO_CONTEST_START_ROUND", getattr(reward_cfg, "VP_START_SCORING_ROUND", 2)))
-            penalty = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
-            late_round = int(getattr(reward_cfg, "MISSION_NO_CONTEST_LATE_ROUND", 10))
-            late_mult = float(getattr(reward_cfg, "MISSION_NO_CONTEST_LATE_MULT", 1.0))
-            if penalty > 0 and int(getattr(self, "battle_round", 1)) >= start_round and len(getattr(self, "coordsOfOM", []) or []) > 0:
-                br_now = int(getattr(self, "battle_round", 1))
-                effective_penalty = penalty
-                if br_now >= late_round and late_mult > 0:
-                    effective_penalty *= late_mult
-                # После refresh_objective_control() model_obj_oc/enemy_obj_oc уже актуальны.
-                model_any = int(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int))) > 0)
-                enemy_any = int(np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int))) > 0)
-                if model_any == 0 and enemy_any == 0:
-                    reward -= effective_penalty
-                    self._log_reward(
-                        "Reward (mission pressure): "
-                        f"no_contest_penalty=-{effective_penalty:.3f} "
-                        f"(base={penalty:.3f}, BR={br_now}, start={start_round}, late_round={late_round}, late_mult={late_mult:.3f})"
-                    )
-        except Exception:
-            pass
+            streak_bonus = 0.0
+            streak_len = reward_cfg.VP_OBJECTIVE_STREAK_LEN
+            if streak_len > 0:
+                for idx in range(len(self._objective_hold_streaks)):
+                    if idx in post_controlled_set:
+                        self._objective_hold_streaks[idx] += 1
+                    else:
+                        self._objective_hold_streaks[idx] = 0
+                    if self._objective_hold_streaks[idx] >= streak_len:
+                        streak_depth = self._objective_hold_streaks[idx] - streak_len + 1
+                        streak_depth_cap = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_STREAK_LINEAR_CAP", 3.0)))
+                        streak_weight = min(streak_depth_cap, float(streak_depth))
+                        streak_bonus += reward_cfg.VP_OBJECTIVE_STREAK_BONUS * streak_weight * hold_round_mult
+            if streak_bonus != 0:
+                reward += streak_bonus
+                self._log_reward(
+                    "Reward (стрик удержания): "
+                    f"streaks={self._objective_hold_streaks}, "
+                    f"len={streak_len}, bonus=+{streak_bonus:.3f}"
+                )
 
-        try:
-            start_round_for_dead = int(getattr(reward_cfg, "VP_START_SCORING_ROUND", 1))
-            if br_now >= start_round_for_dead:
-                has_shoot_targets = False
-                for i_unit in range(len(self.unit_health)):
-                    if self.unit_health[i_unit] <= 0:
-                        continue
-                    targets_i = self.get_shoot_targets_for_unit("model", i_unit)
-                    if targets_i:
-                        has_shoot_targets = True
-                        break
-                model_any = int(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int))) > 0)
-                enemy_any = int(np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int))) > 0)
-                if (not has_shoot_targets) and model_any == 0 and enemy_any == 0:
-                    dead_base = float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_PENALTY", 0.0))
-                    dead_round_scale = float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_ROUND_SCALE", 0.0))
-                    dead_cap = max(1.0, float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_MAX_MULT", 2.5)))
-                    dead_mult = min(dead_cap, 1.0 + dead_round_scale * max(0, br_now - start_round_for_dead))
-                    dead_penalty = dead_base * dead_mult
-                    if dead_penalty > 0:
-                        reward -= dead_penalty
+        if uses_objectives:
+            enemy_hp_end = float(sum(self.enemy_health))
+            enemy_dead_end = sum(1 for hp in self.enemy_health if hp <= 0)
+            damage_dealt = max(0.0, enemy_hp_start - enemy_hp_end)
+            kills_dealt = max(0, enemy_dead_end - enemy_dead_start)
+            vp_changed = (self.modelVP != pre_model_vp) or (self.enemyVP != pre_enemy_vp)
+            control_changed = pre_controlled_set != post_controlled_set
+            near_objective = self._any_model_near_objective() if run_secondary_checks else False
+            min_obj_dist_end = self._min_model_obj_distance() if run_secondary_checks else None
+            moved_closer = False
+            can_measure_move = min_obj_dist_start is not None and min_obj_dist_end is not None
+            if can_measure_move:
+                moved_closer = min_obj_dist_end < min_obj_dist_start
+            if can_measure_move:
+                progress = max(0.0, float(min_obj_dist_start - min_obj_dist_end))
+                if progress > 0:
+                    norm_base = max(1.0, float(getattr(reward_cfg, "VP_OBJECTIVE_MISSED_PROGRESS_NORM", 6.0)))
+                    progress_norm = progress / norm_base
+                    progress_scale = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_SCALE", 0.03))
+                    progress_cap = float(getattr(reward_cfg, "OBJECTIVE_PROGRESS_STEP_CAP", 0.10))
+                    progress_bonus = min(progress_cap, progress_scale * progress_norm) * progress_round_mult
+                    if progress_bonus > 0:
+                        reward += progress_bonus
                         self._log_reward(
-                            "Reward (dead-window no-target/no-contest): "
-                            f"BR={br_now}, has_targets=0, model_any={model_any}, enemy_any={enemy_any}, "
-                            f"penalty=-{dead_penalty:.3f} (base={dead_base:.3f}, mult={dead_mult:.3f})"
+                            "Reward (progress к objective): "
+                            f"d_before={min_obj_dist_start:.3f}, d_after={min_obj_dist_end:.3f}, "
+                            f"delta={progress:.3f}, norm={progress_norm:.3f}, round_mult={progress_round_mult:.3f}, "
+                            f"bonus=+{progress_bonus:.3f}"
                         )
-        except Exception:
-            pass
+            if run_secondary_checks:
+                idle_conditions_met = (
+                    not near_objective
+                    and not vp_changed
+                    and not control_changed
+                    and damage_dealt <= 0
+                    and kills_dealt <= 0
+                    and (not moved_closer or not can_measure_move)
+                )
+                hold_penalty_applied = bool(movement_meta.get("applied_hold_penalty", False))
+                if idle_conditions_met and hold_penalty_applied:
+                    self._log_reward(
+                        "Reward (idle вне цели): "
+                        "skip, reason=hold_penalty_already_applied, "
+                        f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                        f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                        f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                        f"min_dist={min_obj_dist_start}->{min_obj_dist_end}, "
+                        f"hold_penalty_events={movement_meta.get('hold_penalty_events', 0)}"
+                    )
+                elif idle_conditions_met:
+                    reward -= reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY
+                    self._log_reward(
+                        "Reward (idle вне цели): "
+                        f"penalty=-{reward_cfg.IDLE_OUT_OF_OBJECTIVE_PENALTY:.3f}, "
+                        f"near_obj={int(near_objective)}, vp_changed={int(vp_changed)}, "
+                        f"control_changed={int(control_changed)}, damage={damage_dealt:.2f}, "
+                        f"kills={kills_dealt}, moved_closer={int(moved_closer)}, "
+                        f"min_dist={min_obj_dist_start}->{min_obj_dist_end}"
+                    )
+
+            # Mission pressure: если после старта скоринга никто не contest'ит objectives,
+            # добавляем небольшой штраф (анти-draw, заставляет играть миссию).
+            try:
+                start_round = int(getattr(reward_cfg, "MISSION_NO_CONTEST_START_ROUND", getattr(reward_cfg, "VP_START_SCORING_ROUND", 2)))
+                penalty = float(getattr(reward_cfg, "MISSION_NO_CONTEST_PENALTY", 0.0))
+                late_round = int(getattr(reward_cfg, "MISSION_NO_CONTEST_LATE_ROUND", 10))
+                late_mult = float(getattr(reward_cfg, "MISSION_NO_CONTEST_LATE_MULT", 1.0))
+                if penalty > 0 and int(getattr(self, "battle_round", 1)) >= start_round and len(getattr(self, "coordsOfOM", []) or []) > 0:
+                    br_now = int(getattr(self, "battle_round", 1))
+                    effective_penalty = penalty
+                    if br_now >= late_round and late_mult > 0:
+                        effective_penalty *= late_mult
+                    # После refresh_objective_control() model_obj_oc/enemy_obj_oc уже актуальны.
+                    model_any = int(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int))) > 0)
+                    enemy_any = int(np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int))) > 0)
+                    if model_any == 0 and enemy_any == 0:
+                        reward -= effective_penalty
+                        self._log_reward(
+                            "Reward (mission pressure): "
+                            f"no_contest_penalty=-{effective_penalty:.3f} "
+                            f"(base={penalty:.3f}, BR={br_now}, start={start_round}, late_round={late_round}, late_mult={late_mult:.3f})"
+                        )
+            except Exception:
+                pass
+
+            try:
+                start_round_for_dead = int(getattr(reward_cfg, "VP_START_SCORING_ROUND", 1))
+                if br_now >= start_round_for_dead:
+                    has_shoot_targets = False
+                    for i_unit in range(len(self.unit_health)):
+                        if self.unit_health[i_unit] <= 0:
+                            continue
+                        targets_i = self.get_shoot_targets_for_unit("model", i_unit)
+                        if targets_i:
+                            has_shoot_targets = True
+                            break
+                    model_any = int(np.sum(getattr(self, "model_obj_oc", np.array([], dtype=int))) > 0)
+                    enemy_any = int(np.sum(getattr(self, "enemy_obj_oc", np.array([], dtype=int))) > 0)
+                    if (not has_shoot_targets) and model_any == 0 and enemy_any == 0:
+                        dead_base = float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_PENALTY", 0.0))
+                        dead_round_scale = float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_ROUND_SCALE", 0.0))
+                        dead_cap = max(1.0, float(getattr(reward_cfg, "NO_TARGET_NO_CONTEST_MAX_MULT", 2.5)))
+                        dead_mult = min(dead_cap, 1.0 + dead_round_scale * max(0, br_now - start_round_for_dead))
+                        dead_penalty = dead_base * dead_mult
+                        if dead_penalty > 0:
+                            reward -= dead_penalty
+                            self._log_reward(
+                                "Reward (dead-window no-target/no-contest): "
+                                f"BR={br_now}, has_targets=0, model_any={model_any}, enemy_any={enemy_any}, "
+                                f"penalty=-{dead_penalty:.3f} (base={dead_base:.3f}, mult={dead_mult:.3f})"
+                            )
+            except Exception:
+                pass
 
         terrain_snapshot_after = self._terrain_potential_snapshot(start_obj_dists)
         terrain_gamma = float(getattr(reward_cfg, "TERRAIN_POTENTIAL_GAMMA", 0.99))
