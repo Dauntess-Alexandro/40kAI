@@ -20,8 +20,10 @@ from core.engine.game_io import get_active_io
 
 MISSION_ONLY_WAR = "only_war"
 MISSION_TRAINING_GROUNDS = "training_grounds"
+MISSION_ANNIHILATION = "annihilation"
 MISSION_NAME = "Only War"
 MISSION_NAME_TRAINING_GROUNDS = "Training Grounds"
+MISSION_NAME_ANNIHILATION = "Annihilation / Kill Points"
 ONLY_WAR_BOARD_WIDTH_INCH = 60
 ONLY_WAR_BOARD_HEIGHT_INCH = 40
 ONLY_WAR_CENTER_OBJECTIVE_ID = 1
@@ -201,6 +203,8 @@ MISSION_REGISTRY: dict[str, dict] = {
         "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
         "objective_coords": _center_objective_coords,
         "terrain_generator": only_war_terrain_features,
+        "uses_objectives": True,
+        "scoring_mode": "objective_control",
     },
     # Тренировочный профиль с теми же размерами/целями, но отдельным ключом миссии.
     # Нужен чтобы легко подключать другой террейн, не ломая базовый Only War.
@@ -210,6 +214,20 @@ MISSION_REGISTRY: dict[str, dict] = {
         "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
         "objective_coords": _center_objective_coords,
         "terrain_generator": only_war_terrain_features,
+        "uses_objectives": True,
+        "scoring_mode": "objective_control",
+    },
+    # Annihilation / Kill Points: победа по уничтоженным юнитам врага, без захвата точек.
+    # Держит фантомную нескорящую центральную точку, чтобы obs остался как у Only War.
+    MISSION_ANNIHILATION: {
+        "aliases": {"annihilation", "kill_points", "killpoints",
+                    "purge_the_enemy", "purge_the_alien"},
+        "display_name": MISSION_NAME_ANNIHILATION,
+        "board_dims": lambda: (int(ONLY_WAR_BOARD_HEIGHT_INCH), int(ONLY_WAR_BOARD_WIDTH_INCH)),
+        "objective_coords": _center_objective_coords,   # ФАНТОМ: нескорящая центральная точка
+        "terrain_generator": only_war_terrain_features,
+        "uses_objectives": False,
+        "scoring_mode": "kill_points",
     },
 }
 
@@ -217,6 +235,31 @@ MISSION_REGISTRY: dict[str, dict] = {
 def _mission_def(value: str | None) -> dict:
     mission_key = normalize_mission_name(value)
     return MISSION_REGISTRY.get(mission_key, MISSION_REGISTRY[MISSION_ONLY_WAR])
+
+
+def _mission_key_from(value_or_env) -> str:
+    """Принимает строку миссии ИЛИ env с атрибутом mission_key."""
+    if hasattr(value_or_env, "mission_key"):
+        return normalize_mission_name(getattr(value_or_env, "mission_key", None))
+    if isinstance(value_or_env, str) or value_or_env is None:
+        return normalize_mission_name(value_or_env)
+    # env без mission_key (старый путь) -> по display-name
+    name = getattr(value_or_env, "mission_name", None)
+    return normalize_mission_name(name)
+
+
+def mission_scoring_mode(value_or_env) -> str:
+    mission_def = MISSION_REGISTRY.get(_mission_key_from(value_or_env), MISSION_REGISTRY[MISSION_ONLY_WAR])
+    return str(mission_def.get("scoring_mode") or "objective_control")
+
+
+def mission_uses_objectives(value_or_env) -> bool:
+    mission_def = MISSION_REGISTRY.get(_mission_key_from(value_or_env), MISSION_REGISTRY[MISSION_ONLY_WAR])
+    return bool(mission_def.get("uses_objectives", True))
+
+
+def is_annihilation_mission(value_or_env) -> bool:
+    return _mission_key_from(value_or_env) == MISSION_ANNIHILATION
 
 
 def normalize_mission_name(value: str | None) -> str:
@@ -281,6 +324,9 @@ def apply_mission_layout(env, mission_name: str | None = None) -> None:
     env.enemy_obj_oc = np.zeros(len(env.coordsOfOM), dtype=int)
     env._objective_hold_streaks = [0] * len(env.coordsOfOM)
     env.mission_name = mission_display_name(mission)
+    env.mission_key = mission
+    env.mission_scoring_mode = mission_scoring_mode(mission)
+    env.mission_uses_objectives = mission_uses_objectives(mission)
     env.terrain_features = terrain_features_for_mission(mission, env.b_len, env.b_hei)
 
 
