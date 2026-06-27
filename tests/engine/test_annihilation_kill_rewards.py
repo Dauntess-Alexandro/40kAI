@@ -22,3 +22,18 @@ def test_only_war_combat_weights_unchanged():
     rc.configure_for_mission("only_war")
     assert rc.SHOOT_REWARD_KILL_BONUS == 0.4   # v2 не затронул Only War
     assert rc.SHOOT_REWARD_DAMAGE_SCALE == 0.6
+
+
+def test_opponent_objective_weights_zeroed_in_annihilation():
+    rc.configure_for_mission("annihilation")
+    assert rc.ENEMY_HEUR_OBJECTIVE_CONTROL_W == 0.0
+    assert rc.ENEMY_HEUR_OBJECTIVE_DIST_W == 0.0
+    assert rc.ENEMY_HEUR_OBJECTIVE_PRESSURE_W == 0.0
+    assert rc.ENEMY_HEUR_SHOOT_OBJECTIVE_W == 0.0
+    assert rc.ENEMY_HEUR_CHARGE_OBJECTIVE_W == 0.0
+    assert int(rc.ENEMY_HEUR_OBJECTIVE_CONTROL_ENABLED) == 0
+
+
+def test_only_war_opponent_objective_weights_intact():
+    rc.configure_for_mission("only_war")
+    assert rc.ENEMY_HEUR_OBJECTIVE_CONTROL_W == 0.42
