@@ -1193,26 +1193,37 @@ def save_actor_det_eval_plot(run_id: str, metrics_dir: str = METRICS_DIR) -> dic
     return _metrics_plot_gui_paths(run_id)
 
 
+def _episode_result(*, winner, end_reason, vp_diff) -> str:
+    """Единая классификация исхода эпизода (win/draw/loss).
+
+    Доверяет авторитетному winner движка (env.last_winner; включает annihilation-тай-брейк
+    remaining_hp/destroyed_hp). При отсутствии winner — фолбэк по end_reason/vp_diff.
+    Убирает дрейф 8 копипастов и делает тай-брейк видимым в метриках/исходе.
+    """
+    w = str(winner or "").strip().lower()
+    if w == "model":
+        return "win"
+    if w == "enemy":
+        return "loss"
+    er = str(end_reason or "")
+    if er == "wipeout_enemy":
+        return "win"
+    if er == "wipeout_model":
+        return "loss"
+    if int(vp_diff) > 0:
+        return "win"
+    if int(vp_diff) < 0:
+        return "loss"
+    return "draw"
+
+
 def _gmz_episode_result_row(*, info: dict, ep_reward: float, ep_len: int) -> dict:
     info = dict(info or {})
     end_reason = str(info.get("end reason", "") or "")
     model_vp = int(info.get("model VP", 0) or 0)
     player_vp = int(info.get("player VP", 0) or 0)
     vp_diff = int(model_vp) - int(player_vp)
-    result = "loss"
-    if end_reason == "wipeout_enemy":
-        result = "win"
-    elif end_reason == "wipeout_model":
-        result = "loss"
-    elif str(end_reason).startswith("turn_limit"):
-        if vp_diff > 0:
-            result = "win"
-        elif vp_diff == 0:
-            result = "draw"
-    elif vp_diff > 0:
-        result = "win"
-    elif vp_diff == 0:
-        result = "draw"
+    result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
     return {
         "ep_reward": float(ep_reward),
         "ep_len": int(ep_len),
@@ -5775,21 +5786,7 @@ def _actor_learner_actor_entry(
                 model_ctrl = list(model_ctrl) if isinstance(model_ctrl, (list, tuple)) else []
                 enemy_ctrl = list(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else []
 
-                result = "loss"
-                if end_reason == "wipeout_enemy":
-                    result = "win"
-                elif end_reason == "wipeout_model":
-                    result = "loss"
-                elif str(end_reason).startswith("turn_limit"):
-                    if vp_diff > 0:
-                        result = "win"
-                    elif vp_diff == 0:
-                        result = "draw"
-                else:
-                    if vp_diff > 0:
-                        result = "win"
-                    elif vp_diff == 0:
-                        result = "draw"
+                result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
                 # Защита от явно подозрительных "побед" (обычно признак сломанного протокола).
                 if result == "win" and end_reason == "wipeout_enemy" and model_vp == 0 and player_vp == 0 and turn <= 0:
@@ -6085,21 +6082,7 @@ def _actor_learner_actor_entry_ppo(
                 vp_diff = int(model_vp) - int(player_vp)
                 turn = int(last_info.get("turn", 0) or 0)
 
-                result = "loss"
-                if end_reason == "wipeout_enemy":
-                    result = "win"
-                elif end_reason == "wipeout_model":
-                    result = "loss"
-                elif str(end_reason).startswith("turn_limit"):
-                    if vp_diff > 0:
-                        result = "win"
-                    elif vp_diff == 0:
-                        result = "draw"
-                else:
-                    if vp_diff > 0:
-                        result = "win"
-                    elif vp_diff == 0:
-                        result = "draw"
+                result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
                 # Стратагемная сводка per-episode для learner-лога
                 from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
@@ -6330,20 +6313,7 @@ def _actor_learner_actor_entry_alphazero(
             model_vp = int(info.get("model VP", 0) or 0)
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
-            result = "loss"
-            if end_reason == "wipeout_enemy":
-                result = "win"
-            elif end_reason == "wipeout_model":
-                result = "loss"
-            elif str(end_reason).startswith("turn_limit"):
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff == 0:
-                    result = "draw"
-            elif vp_diff > 0:
-                result = "win"
-            elif vp_diff == 0:
-                result = "draw"
+            result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
             ep_payload = {
                 "episode": None,
                 "actor_idx": int(actor_idx),
@@ -6598,17 +6568,7 @@ def _az_env_worker_entry(
             model_vp = int(info.get("model VP", 0) or 0)
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
-            result = "loss"
-            if end_reason == "wipeout_enemy":
-                result = "win"
-            elif end_reason == "wipeout_model":
-                result = "loss"
-            elif str(end_reason).startswith("turn_limit"):
-                result = "win" if vp_diff > 0 else ("draw" if vp_diff == 0 else "loss")
-            elif vp_diff > 0:
-                result = "win"
-            elif vp_diff == 0:
-                result = "draw"
+            result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
             ep_payload = {
                 "episode": None,
                 "actor_idx": int(worker_id),
@@ -7906,20 +7866,7 @@ def _gmz_env_worker_entry(
             model_vp = int(info.get("model VP", 0) or 0)
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
-            result = "loss"
-            if end_reason == "wipeout_enemy":
-                result = "win"
-            elif end_reason == "wipeout_model":
-                result = "loss"
-            elif str(end_reason).startswith("turn_limit"):
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff == 0:
-                    result = "draw"
-            elif vp_diff > 0:
-                result = "win"
-            elif vp_diff == 0:
-                result = "draw"
+            result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
             data_q.put(
                 (
                     "ep",
@@ -8125,20 +8072,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
             model_vp = int(info.get("model VP", 0) or 0)
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
-            result = "loss"
-            if end_reason == "wipeout_enemy":
-                result = "win"
-            elif end_reason == "wipeout_model":
-                result = "loss"
-            elif str(end_reason).startswith("turn_limit"):
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff == 0:
-                    result = "draw"
-            elif vp_diff > 0:
-                result = "win"
-            elif vp_diff == 0:
-                result = "draw"
+            result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
             data_q.put(
                 (
                     "ep",
@@ -8334,20 +8268,7 @@ def _actor_learner_actor_entry_sampled_muzero(
             model_vp = int(info.get("model VP", 0) or 0)
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
-            result = "loss"
-            if end_reason == "wipeout_enemy":
-                result = "win"
-            elif end_reason == "wipeout_model":
-                result = "loss"
-            elif str(end_reason).startswith("turn_limit"):
-                if vp_diff > 0:
-                    result = "win"
-                elif vp_diff == 0:
-                    result = "draw"
-            elif vp_diff > 0:
-                result = "win"
-            elif vp_diff == 0:
-                result = "draw"
+            result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
             data_q.put(
                 (
                     "ep",

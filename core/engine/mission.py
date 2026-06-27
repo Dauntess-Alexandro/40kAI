@@ -339,6 +339,16 @@ def _resolve_kill_points_winner(env) -> tuple[str | None, str]:
         if eh > mh:
             return "enemy", "destroyed_hp"
         return None, "equal_kp_and_hp"
+    if mode == "remaining_hp":
+        # При равных KP: победитель = кто нанёс больше суммарного урона
+        # (start_total - remaining). Учитывает ЧАСТИЧНЫЙ урон -> разбивает 0-0 KP ничьи.
+        model_inflicted = int(sum(env._start_enemy_unit_wounds)) - int(sum(max(0, h) for h in env.enemy_health))
+        enemy_inflicted = int(sum(env._start_model_unit_wounds)) - int(sum(max(0, h) for h in env.unit_health))
+        if model_inflicted > enemy_inflicted:
+            return "model", "remaining_hp"
+        if enemy_inflicted > model_inflicted:
+            return "enemy", "remaining_hp"
+        return None, "equal_kp_and_hp"
     return None, "equal_kp"
 
 

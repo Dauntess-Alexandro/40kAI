@@ -92,6 +92,27 @@ def test_turn_limit_equal_kp_tiebreak_destroyed_hp():
     assert over and winner == "model"     # 7 > 4
 
 
+def test_remaining_hp_tiebreak_breaks_zero_kp_draw():
+    # 0-0 KP (никто не уничтожен полностью), но model нанёс больше урона -> win по remaining_hp
+    env = _ann_env([10, 10], [10, 10])
+    env._start_model_unit_wounds = [10, 10]
+    env._start_enemy_unit_wounds = [10, 10]
+    env.enemy_health = [3, 10]   # model нанёс 7 урона врагу
+    env.unit_health = [8, 10]    # enemy нанёс 2 урона
+    over, reason, winner = M.check_end_of_battle(env)
+    assert over and reason == "turn_limit" and winner == "model"
+
+
+def test_remaining_hp_true_draw_when_equal_damage():
+    env = _ann_env([10], [10])
+    env._start_model_unit_wounds = [10]
+    env._start_enemy_unit_wounds = [10]
+    env.enemy_health = [6]   # model нанёс 4
+    env.unit_health = [6]    # enemy нанёс 4
+    over, reason, winner = M.check_end_of_battle(env)
+    assert over and winner is None   # равный урон -> настоящая ничья
+
+
 def test_wipeout_enemy_winner_model():
     env = _ann_env([10], [0, 0], battle_round=3)
     over, reason, winner = M.check_end_of_battle(env)

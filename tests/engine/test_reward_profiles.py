@@ -1,5 +1,7 @@
 import importlib
+
 import pytest
+
 import reward_config as rc
 
 
@@ -24,7 +26,7 @@ def test_switch_to_annihilation_zeroes_objective_shaping():
     assert rc.MISSION_NO_CONTEST_PENALTY == 0
     assert rc.VP_DIFF_REWARD_SCALE == 0
     assert rc.TURN_LIMIT_DRAW_PENALTY == 0
-    assert rc.ANNIHILATION_TIEBREAK_MODE == "destroyed_hp"
+    assert rc.ANNIHILATION_TIEBREAK_MODE == "remaining_hp"
 
 
 def test_combat_shaping_present_in_annihilation():

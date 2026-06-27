@@ -357,8 +357,9 @@ ENEMY_HEUR_LATE_MODE_MULT = 0.99
 # Annihilation / Kill Points (mission-specific)
 # ==========================================
 ANNIHILATION_KP_PER_UNIT = 1
-# Тай-брейк при равных KP: "none" | "destroyed_hp" | "remaining_hp". Дефолт source-sanctioned.
-ANNIHILATION_TIEBREAK_MODE = "destroyed_hp"
+# Тай-брейк при равных KP: "none" | "destroyed_hp" | "remaining_hp".
+# remaining_hp = по суммарному нанесённому урону (частичный учитывается) -> бьёт 0-0 KP ничьи.
+ANNIHILATION_TIEBREAK_MODE = "remaining_hp"
 # Запас под VP-margin режим (0 = строгое равенство KP -> тай-брейк).
 ANNIHILATION_DRAW_MARGIN = 0
 
