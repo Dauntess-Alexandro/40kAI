@@ -1112,7 +1112,9 @@ class Warhammer40kEnv(gym.Env):
         self._phase_event_emitted = False
         self._phase_unit_logged = set()
         self.mission_name = MISSION_NAME
-        apply_mission_layout(self)
+        # Применяем ВЫБРАННУЮ миссию (env MISSION_NAME), а не дефолт only_war.
+        # Это chokepoint: board/objectives/scoring/лимит раундов/reward-профиль миссии.
+        apply_mission_layout(self, os.getenv("MISSION_NAME"))
 
         self._prev_vp_diff = 0
         self._objective_hold_streaks = [0] * len(self.coordsOfOM)
