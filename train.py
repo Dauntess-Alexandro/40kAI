@@ -549,7 +549,10 @@ def _make_train_stratagem_tracer() -> StratagemEpisodeTracer | None:
 
 OPPONENT_POLICY = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
 OPPONENT_AGENT_ID = str(os.getenv("OPPONENT_AGENT_ID", "")).strip()
-RULESET_VERSION = str(os.getenv("RULESET_VERSION", "only_war_v2")).strip() or "only_war_v2"
+# Дефолт ruleset_version отражает ВЫБРАННУЮ миссию (попадает в имя агента),
+# чтобы annihilation-агенты не назывались "only_war". Явный RULESET_VERSION имеет приоритет.
+_RULESET_DEFAULT = f"{normalize_mission_name(os.getenv('MISSION_NAME'))}_v2"
+RULESET_VERSION = str(os.getenv("RULESET_VERSION", _RULESET_DEFAULT)).strip() or _RULESET_DEFAULT
 HEURISTIC_MODE = str(os.getenv("HEURISTIC_MODE", "v2")).strip().lower() or "v2"
 IO_PROFILER = get_io_profiler()
 
