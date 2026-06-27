@@ -304,6 +304,33 @@ def _destroyed_hp(env, side: str) -> int:
     raise ValueError(f"Unknown side: {side}")
 
 
+def _resolve_kill_points_winner(env) -> Tuple[str | None, str]:
+    """Определяет победителя по Kill Points с тай-брейком.
+
+    Возвращает (winner, reason):
+      - winner: "model" | "enemy" | None (ничья);
+      - reason: "kp" | "destroyed_hp" | "equal_kp_and_hp" | "equal_kp".
+
+    Режим тай-брейка читается из активного reward-профиля
+    (reward_cfg.ANNIHILATION_TIEBREAK_MODE) — module access, без from-import.
+    """
+    recompute_kill_points(env)
+    m, e = int(env.modelKP), int(env.enemyKP)
+    if m > e:
+        return "model", "kp"
+    if e > m:
+        return "enemy", "kp"
+    mode = str(getattr(reward_cfg, "ANNIHILATION_TIEBREAK_MODE", "none"))
+    if mode == "destroyed_hp":
+        mh, eh = _destroyed_hp(env, "model"), _destroyed_hp(env, "enemy")
+        if mh > eh:
+            return "model", "destroyed_hp"
+        if eh > mh:
+            return "enemy", "destroyed_hp"
+        return None, "equal_kp_and_hp"
+    return None, "equal_kp"
+
+
 def normalize_mission_name(value: str | None) -> str:
     raw = (value or MISSION_ONLY_WAR).strip().lower().replace("-", "_").replace(" ", "_")
     for mission_key, mission_def in MISSION_REGISTRY.items():
@@ -1271,6 +1298,14 @@ def score_end_of_command_phase(env, side: str, log_fn: Callable[[str], None] | N
     if hasattr(env, "refresh_objective_control"):
         env.refresh_objective_control()
 
+    # Annihilation / Kill Points: objective scoring нейтрализован; KP пересчитывается из состояния.
+    if mission_scoring_mode(env) == "kill_points":
+        recompute_kill_points(env, log_fn=log_fn)
+        if log_fn is not None:
+            log_fn(f"[MISSION][Annihilation] objective scoring skipped (mission=annihilation); "
+                   f"KP model={env.modelKP} enemy={env.enemyKP}")
+        return 0
+
     count_controlled, indices = controlled_objectives(env, side)
 
     if env.battle_round < START_SCORING_ROUND:
@@ -1327,8 +1362,13 @@ def score_end_of_command_phase(env, side: str, log_fn: Callable[[str], None] | N
 def check_end_of_battle(env) -> Tuple[bool, str, str | None]:
     model_wiped = sum(env.unit_health) <= 0
     enemy_wiped = sum(env.enemy_health) <= 0
+    kill_points = mission_scoring_mode(env) == "kill_points"
 
     if model_wiped and enemy_wiped:
+        if kill_points:
+            winner, reason = _resolve_kill_points_winner(env)
+            env._mission_draw_reason = reason if winner is None else ""
+            return True, "wipeout_both", winner
         return True, "wipeout_model", None
     if model_wiped:
         return True, "wipeout_model", "enemy"
@@ -1336,6 +1376,10 @@ def check_end_of_battle(env) -> Tuple[bool, str, str | None]:
         return True, "wipeout_enemy", "model"
 
     if env.battle_round > MAX_BATTLE_ROUNDS:
+        if kill_points:
+            winner, reason = _resolve_kill_points_winner(env)
+            env._mission_draw_reason = reason if winner is None else ""
+            return True, "turn_limit", winner
         if env.modelVP > env.enemyVP:
             winner = "model"
         elif env.enemyVP > env.modelVP:
