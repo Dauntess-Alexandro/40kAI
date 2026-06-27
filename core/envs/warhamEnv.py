@@ -1184,6 +1184,15 @@ class Warhammer40kEnv(gym.Env):
             ),
         )
 
+        # Annihilation Kill Points: снапшот стартовых ран по юнитам + обнуление KP.
+        # Snapshot не зависит от mission key — безопасно для Only War (KP просто не используется).
+        self._start_enemy_unit_wounds = list(self.enemy_health)
+        self._start_model_unit_wounds = list(self.unit_health)
+        self.modelKP = 0
+        self.enemyKP = 0
+        self._mission_destroyed_enemy_units = set()
+        self._mission_destroyed_model_units = set()
+
         self._init_model_state_from_health()
 
         obsSpace = legacy_observation_space_size(len(model), len(enemy), len(self.coordsOfOM))

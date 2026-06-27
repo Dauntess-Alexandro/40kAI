@@ -262,6 +262,48 @@ def is_annihilation_mission(value_or_env) -> bool:
     return _mission_key_from(value_or_env) == MISSION_ANNIHILATION
 
 
+def recompute_kill_points(env, log_fn: Optional[callable] = None) -> None:
+    """KP = число полностью уничтоженных вражеских юнитов. Пересчёт из состояния (идемпотентно).
+
+    Источник истины — текущее состояние здоровья (env.enemy_health/env.unit_health),
+    а не накопление событий: повторный вызов не меняет счёт сверх текущего состояния.
+    VP зеркалит KP только для логов/GUI (N2).
+    """
+    destroyed_enemy = {i for i in range(len(env.enemy_health)) if env.enemy_health[i] <= 0}
+    destroyed_model = {i for i in range(len(env.unit_health)) if env.unit_health[i] <= 0}
+
+    prev_enemy = getattr(env, "_mission_destroyed_enemy_units", set())
+    prev_model = getattr(env, "_mission_destroyed_model_units", set())
+    if log_fn is not None:
+        for i in sorted(destroyed_enemy - prev_enemy):
+            log_fn(f"[MISSION][Annihilation] KP grant -> side=model enemy_unit_idx={i} "
+                   f"KP: {env.modelKP}->{env.modelKP + 1}")
+        for i in sorted(destroyed_model - prev_model):
+            log_fn(f"[MISSION][Annihilation] KP grant -> side=enemy model_unit_idx={i} "
+                   f"KP: {env.enemyKP}->{env.enemyKP + 1}")
+
+    env._mission_destroyed_enemy_units = destroyed_enemy
+    env._mission_destroyed_model_units = destroyed_model
+    env.modelKP = len(destroyed_enemy)
+    env.enemyKP = len(destroyed_model)
+    # N2: VP зеркалит KP только для логов/GUI; источник истины — KP.
+    env.modelVP = env.modelKP
+    env.enemyVP = env.enemyKP
+
+
+def _destroyed_hp(env, side: str) -> int:
+    """Суммарный стартовый HP уничтоженных юнитов (тай-брейк destroyed_hp).
+
+    side == "model" -> стартовый HP уничтоженных enemy units (сколько model снёс).
+    side == "enemy" -> стартовый HP уничтоженных model units (сколько enemy снёс).
+    """
+    if side == "model":
+        return int(sum(env._start_enemy_unit_wounds[i] for i in env._mission_destroyed_enemy_units))
+    if side == "enemy":
+        return int(sum(env._start_model_unit_wounds[i] for i in env._mission_destroyed_model_units))
+    raise ValueError(f"Unknown side: {side}")
+
+
 def normalize_mission_name(value: str | None) -> str:
     raw = (value or MISSION_ONLY_WAR).strip().lower().replace("-", "_").replace(" ", "_")
     for mission_key, mission_def in MISSION_REGISTRY.items():
