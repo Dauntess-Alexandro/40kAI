@@ -11,6 +11,8 @@ from app.viewer.rendering.layer_context import LayerContext
 def paint_objectives_layer(ctx: LayerContext) -> None:
     w = ctx.widget
     painter = ctx.painter
+    if getattr(w, "_mission_uses_objectives", True) is False:
+        return
     for objective in w._objectives:
         painter.setBrush(Theme.brush(objective.color))
         painter.setPen(Theme.pen(Theme.outline, 0.8))

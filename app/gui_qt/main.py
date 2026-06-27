@@ -296,7 +296,7 @@ class GUIController(QtCore.QObject):
         self._az_train_ui_finalized = False
 
         self._num_games = 100
-        self._mission_options = ["only_war"]
+        self._mission_options = ["only_war", "annihilation"]
         self._selected_mission = "only_war"
 
         self._train_total_episodes = 0

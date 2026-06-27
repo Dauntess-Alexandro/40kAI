@@ -696,6 +696,9 @@ def write_state_json(env, path=None):
         "units": units,
         "objectives": objectives,
         "terrain_features": terrain_features,
+        "mission_key": str(getattr(env, "mission_key", "only_war") or "only_war"),
+        "mission_scoring_mode": str(getattr(env, "mission_scoring_mode", "objective_control") or "objective_control"),
+        "mission_uses_objectives": bool(getattr(env, "mission_uses_objectives", True)),
         "attacker_side": getattr(env, "attacker_side", None),
         "defender_side": getattr(env, "defender_side", None),
         "deployment": {

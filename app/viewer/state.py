@@ -19,6 +19,10 @@ def _default_state() -> Dict[str, Any]:
         "terrain_features": [],
         "log_tail": [],
         "viewer": {},
+        # Task 7: флаги миссии для Viewer (по умолчанию Only War — рисует objective).
+        "mission_key": "only_war",
+        "mission_scoring_mode": "objective_control",
+        "mission_uses_objectives": True,
     }
 
 

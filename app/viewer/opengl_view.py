@@ -348,6 +348,8 @@ class OpenGLBoardWidget(QOpenGLWidget):
         self._last_shoot_overlay_cells_debug_sig: Optional[Tuple[object, ...]] = None
         self._show_shoot_range_cells = False
         self._show_objective_radius = True
+        # Task 7: флаг миссии — рисовать ли objective-маркер (False для annihilation).
+        self._mission_uses_objectives = True
 
         self._active_unit_id = None
         self._active_unit_side = None
@@ -625,6 +627,11 @@ class OpenGLBoardWidget(QOpenGLWidget):
     def update_state(self, state: Optional[Dict]) -> None:
         self._state = state or {}
         self._visibility_lists_cache = {}
+        mission_uses_objectives = self._state.get("mission_uses_objectives", True)
+        if isinstance(mission_uses_objectives, str):
+            self._mission_uses_objectives = mission_uses_objectives.strip().lower() not in {"0", "false", "no", "off", ""}
+        else:
+            self._mission_uses_objectives = bool(mission_uses_objectives)
         if not state:
             self.set_error_message(
                 "Состояние игры недоступно. Где: viewer/state.json. "
@@ -808,6 +815,10 @@ class OpenGLBoardWidget(QOpenGLWidget):
 
         self._objectives = []
         self._objective_labels = []
+        if not self._mission_uses_objectives:
+            self.refresh_overlays()
+            self._maybe_follow_ai_camera(vinfo, seq)
+            return
         for objective in (self._state.get("objectives", []) or [])[:1]:
             view_cell = self._state_to_view_cell(objective.get("x"), objective.get("y"))
             if view_cell is None:

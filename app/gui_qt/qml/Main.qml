@@ -1679,7 +1679,9 @@ ApplicationWindow {
                                                 Label {
                                                     Layout.fillWidth: true
                                                     horizontalAlignment: Text.AlignLeft
-                                                    text: "ONLY WAR"
+                                                    text: controller.selectedMission === "annihilation"
+                                                          ? "ANNIHILATION / KILL POINTS"
+                                                          : "ONLY WAR"
                                                     font.family: root.fontUiFamily
                                                     font.pixelSize: root.evalCaptionSize
                                                     color: root.uiTextMain
@@ -1715,7 +1717,9 @@ ApplicationWindow {
                                                 Label {
                                                     Layout.fillWidth: true
                                                     horizontalAlignment: Text.AlignLeft
-                                                    text: "1, центр (30,20)"
+                                                    text: controller.selectedMission === "annihilation"
+                                                          ? "точек нет (Kill Points)"
+                                                          : "1, центр (30,20)"
                                                     font.family: root.fontDataFamily
                                                     font.pixelSize: root.evalCaptionSize
                                                     color: root.uiTextMain
@@ -1752,7 +1756,9 @@ ApplicationWindow {
                                                 Label {
                                                     Layout.fillWidth: true
                                                     horizontalAlignment: Text.AlignLeft
-                                                    text: "roll-off определяет роли"
+                                                    text: controller.selectedMission === "annihilation"
+                                                          ? "победа по уничтоженным юнитам врага"
+                                                          : "roll-off определяет роли"
                                                     wrapMode: Text.Wrap
                                                     font.family: root.fontUiFamily
                                                     font.pixelSize: root.evalCaptionSize

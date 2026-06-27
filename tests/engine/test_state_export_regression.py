@@ -23,6 +23,14 @@ class TestStateExportRegression(unittest.TestCase):
         self.assertIn('"covering_unit_ids": sorted(terrain_cover_map.get(str(feature.get("id") or ""), set()))', source)
         self.assertIn('"cover_source_terrain_id": cover_source_terrain_id', source)
 
+    def test_state_export_contains_mission_flag_fields(self):
+        # Task 7: Viewer получает флаги миссии из state payload, чтобы скрыть
+        # фантомный objective-маркер для annihilation.
+        source = Path("core/engine/state_export.py").read_text(encoding="utf-8")
+        self.assertIn('"mission_key"', source)
+        self.assertIn('"mission_scoring_mode"', source)
+        self.assertIn('"mission_uses_objectives"', source)
+
 
 if __name__ == "__main__":
     unittest.main()

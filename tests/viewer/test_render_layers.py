@@ -122,6 +122,26 @@ class TestRenderLayers(unittest.TestCase):
         corner = img.pixelColor(5, 5)
         self.assertNotEqual((c.red(), c.green(), c.blue()), (corner.red(), corner.green(), corner.blue()))
 
+    def test_objectives_layer_skips_when_mission_has_no_objectives(self) -> None:
+        # Annihilation: фантомная точка не рисуется (mission_uses_objectives=False).
+        stub = _StubBoard()
+        stub._objectives = [
+            SimpleNamespace(
+                center=QtCore.QPointF(100.0, 100.0),
+                radius=20.0,
+                color=QtGui.QColor(200, 50, 50),
+                label="A",
+                owner_color=QtGui.QColor(255, 255, 0),
+                control_radius=35.0,
+            )
+        ]
+        stub._show_objective_radius = False
+        stub._mission_uses_objectives = False
+        img = self._paint_to_image(paint_objectives_layer, stub)
+        # Центр маркера должен остаться пустым (как и весь кадр).
+        self.assertEqual(img.pixelColor(100, 100).alpha(), 0)
+        self.assertEqual(img.pixelColor(5, 5).alpha(), 0)
+
     def test_labels_layer(self) -> None:
         stub = _StubBoard()
         stub._objective_labels = [("Obj1", QtCore.QPointF(120.0, 140.0))]
