@@ -661,6 +661,13 @@ def maybe_clip_reward(value: float, enabled: bool, lo=None, hi=None):
     return clipped, clipped != float(value)
 
 
+def format_clip_reward_effective(raw_value: str, enabled: bool, lo=None, hi=None) -> str:
+    raw = str(raw_value).strip() or "off"
+    if not enabled or lo is None or hi is None:
+        return f"[TRAIN][CONFIG] CLIP_REWARD={raw} effective=disabled"
+    return f"[TRAIN][CONFIG] CLIP_REWARD={raw} effective=[{float(lo):.3f},{float(hi):.3f}]"
+
+
 def _dqn_ctor_kwargs():
     return {
         "dueling": DUELING_ENABLED,
@@ -3528,6 +3535,7 @@ def main():
     # Otherwise they fall back to default response log, and LOGS_FOR_AGENTS_TRAIN.md shows only compact lines.
     set_active_io(ConsoleIO(log_path=str(AGENT_TRAIN_LOG_PATH)))
     clip_reward_enabled, clip_reward_min, clip_reward_max = parse_clip_reward_config(CLIP_REWARD)
+    _log_train(format_clip_reward_effective(CLIP_REWARD, clip_reward_enabled, clip_reward_min, clip_reward_max))
 
     roster_config = _load_roster_config()
     totLifeT = roster_config["totLifeT"]

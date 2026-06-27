@@ -1223,6 +1223,13 @@ def run_episode(
             cp_model_before = cp_for_env_side(env_unwrapped, "model")
             cp_enemy_before = cp_for_env_side(env_unwrapped, "enemy")
             _next_observation, _reward, _done, _, _info = env.step(action_dict)
+            try:
+                movement_meta = (_info or {}).get("movement_meta", {}) if isinstance(_info, dict) else {}
+                if isinstance(movement_meta, dict):
+                    ep_metrics["movement_zero_stay_repaired"] += int(movement_meta.get("zero_stay_repaired", 0) or 0)
+                    ep_metrics["movement_zero_stay_kept"] += int(movement_meta.get("zero_stay_kept", 0) or 0)
+            except Exception:
+                pass
             new_strat_records = log_stratagem_journal_diff(
                 _trace,
                 step_no=step_no,
@@ -2259,6 +2266,14 @@ def main():
         if charge_opt_steps
         else 0.0
     )
+    movement_zero_stay_repaired = int(step_metrics.get("movement_zero_stay_repaired", 0) or 0)
+    movement_zero_stay_kept = int(step_metrics.get("movement_zero_stay_kept", 0) or 0)
+    movement_zero_stay_total = movement_zero_stay_repaired + movement_zero_stay_kept
+    movement_zero_stay_repair_rate = (
+        float(movement_zero_stay_repaired) / float(movement_zero_stay_total)
+        if movement_zero_stay_total
+        else 0.0
+    )
     model_ctrl_zero_rate = (
         float(step_metrics.get("step_result_model_ctrl_zero", 0)) / float(step_result_total)
         if step_result_total
@@ -2302,6 +2317,9 @@ def main():
         f"default_shoot_rate_when_options={default_shoot_rate_when_options:.3f} "
         f"shoot_zero_rate_when_shoot_options={shoot_zero_rate_when_shoot_options:.3f} "
         f"charge_zero_rate_when_charge_options={charge_zero_rate_when_charge_options:.3f} "
+        f"movement_zero_stay_repaired={movement_zero_stay_repaired} "
+        f"movement_zero_stay_kept={movement_zero_stay_kept} "
+        f"movement_zero_stay_repair_rate={movement_zero_stay_repair_rate:.3f} "
         f"model_ctrl_zero_rate={model_ctrl_zero_rate:.3f} "
         f"top1_action_share={top1_action_share:.3f} top5_action_share={top5_action_share:.3f} "
         f"stratagem_attempt_total={int(step_metrics.get('stratagem_attempt_total', 0) or 0)} "

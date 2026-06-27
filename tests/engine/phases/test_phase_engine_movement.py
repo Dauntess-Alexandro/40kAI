@@ -1,6 +1,7 @@
 from core.engine.phases import phase_engine
 from core.engine.phases.option_generator import movement_options_for_unit
 from core.engine.phases.types import ActionKind
+from core.engine.utils import distance
 from tests.engine.phases._helpers import build_env, flat_default_action
 
 
@@ -63,6 +64,56 @@ def test_decide_move_zero_keeps_position():
         coords = list(env.unit_coords[0])
     env.restore_state(snap)
     assert coords == [2, 2]
+
+
+def test_move_head_nonstay_repairs_zero_move_num_toward_objective(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env.unit_health[1] = 0
+    n = len(env.unit_health)
+    action = _move_action(n, {})
+    action["move"] = 0
+    before = min(distance(env.unit_coords[0], obj) for obj in env.coordsOfOM)
+    captured: list[str] = []
+    monkeypatch.setattr(env, "_log", lambda msg: captured.append(str(msg)))
+
+    snap = env.snapshot_state()
+    with env.simulation_mode():
+        _advanced, _reward, meta = env.movement_phase("model", action=action, battle_shock=[False] * n)
+        coords = list(env.unit_coords[0])
+        after = min(distance(env.unit_coords[0], obj) for obj in env.coordsOfOM)
+        info = env.get_info()
+    env.restore_state(snap)
+
+    assert coords != [2, 2]
+    assert after < before
+    assert int(meta["zero_stay_repaired"]) == 1
+    assert int(info["movement_meta"]["zero_stay_repaired"]) == 1
+    assert any("[MOVE][ZERO_STAY]" in msg and "repaired" in msg for msg in captured)
+
+
+def test_move_head_nonstay_keeps_zero_move_num_on_objective(monkeypatch):
+    env = build_env()
+    _setup(env)
+    env.unit_health[1] = 0
+    env.unit_coords[0] = [int(env.coordsOfOM[0][0]), int(env.coordsOfOM[0][1])]
+    n = len(env.unit_health)
+    action = _move_action(n, {})
+    action["move"] = 0
+    captured: list[str] = []
+    monkeypatch.setattr(env, "_log", lambda msg: captured.append(str(msg)))
+
+    snap = env.snapshot_state()
+    with env.simulation_mode():
+        _advanced, _reward, meta = env.movement_phase("model", action=action, battle_shock=[False] * n)
+        coords = list(env.unit_coords[0])
+    env.restore_state(snap)
+
+    assert coords == [int(env.coordsOfOM[0][0]), int(env.coordsOfOM[0][1])]
+    assert int(meta["zero_stay_repaired"]) == 0
+    assert int(meta["zero_stay_kept"]) == 1
+    assert meta["zero_stay_keep_reasons"].get("on_objective") == 1
+    assert any("[MOVE][ZERO_STAY]" in msg and "reason=on_objective" in msg for msg in captured)
 
 
 def _pick_index_for(unit_idx, k):

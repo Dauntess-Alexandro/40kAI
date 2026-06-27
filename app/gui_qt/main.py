@@ -5033,6 +5033,18 @@ class GUIController(QtCore.QObject):
         env.insert("PPO_ENTROPY_TARGET", str(float(hp.get("entropy_target", 0.5))))
         env.insert("PPO_ENTROPY_ADAPT_LR", str(float(hp.get("entropy_adapt_lr", 0.05))))
 
+    @staticmethod
+    def _default_clip_reward_for_algo(algo: str) -> str:
+        normalized = str(algo or "").strip().lower()
+        if normalized in {"dqn", "ppo"}:
+            return "off"
+        return "1"
+
+    def _apply_default_clip_reward_to_env(self, env: QtCore.QProcessEnvironment) -> None:
+        if env.contains("CLIP_REWARD"):
+            return
+        env.insert("CLIP_REWARD", self._default_clip_reward_for_algo(self._training_algo))
+
     def _load_az_hyperparams_section(self, payload: dict, section_key: str, defaults: dict) -> dict:
         raw = payload.get(section_key, {})
         if not isinstance(raw, dict):
@@ -6723,7 +6735,7 @@ class GUIController(QtCore.QObject):
         env.insert("SAVE_EVERY_ALLOW_LOW", "1")
         env.insert("SAVE_EVERY_MIN", "1")
         env.insert("SAVE_EVERY", "50")
-        env.insert("CLIP_REWARD", "1")
+        self._apply_default_clip_reward_to_env(env)
         env.insert("MISSION_NAME", self._selected_mission)
         env.insert("LEARNER_SIDE", self._learner_side)
         env.insert("LEARNER_FACTION", self._learner_faction)

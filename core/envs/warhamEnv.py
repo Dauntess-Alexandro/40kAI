@@ -1121,6 +1121,7 @@ class Warhammer40kEnv(gym.Env):
         self._shoot_target_reject_cache = {}
         self._last_action_signature: tuple[int, int, int, int] | None = None
         self._action_repeat_streak = 0
+        self._last_movement_meta = self._empty_movement_meta()
         self.terrain_features = list(getattr(self, "terrain_features", []) or [])
         self.terrain_opaque_cells: set[tuple[int, int]] = set()
         self.terrain_obscuring_cells: set[tuple[int, int]] = self.get_terrain_obscuring_cells_set()
@@ -1301,7 +1302,7 @@ class Warhammer40kEnv(gym.Env):
             snap[_k] = [[list(pos) for pos in unit_pos] for unit_pos in v] if v is not None else []
 
         # --- dicts of scalars ---
-        for _k in ("modelStrat", "enemyStrat"):
+        for _k in ("modelStrat", "enemyStrat", "_last_movement_meta"):
             v = _ga(_self, _k, None)
             snap[_k] = dict(v) if v is not None else {}
 
@@ -1383,7 +1384,7 @@ class Warhammer40kEnv(gym.Env):
                 setattr(_self, _k, [[list(pos) for pos in unit_pos] for unit_pos in snapshot[_k]])
 
         # --- dicts of scalars ---
-        for _k in ("modelStrat", "enemyStrat"):
+        for _k in ("modelStrat", "enemyStrat", "_last_movement_meta"):
             if _k in snapshot:
                 setattr(_self, _k, dict(snapshot[_k]))
 
@@ -1488,6 +1489,7 @@ class Warhammer40kEnv(gym.Env):
             "winner": getattr(self, "last_winner", None),
             "model controlled objectives": model_ctrl,
             "player controlled objectives": enemy_ctrl,
+            "movement_meta": dict(getattr(self, "_last_movement_meta", {}) or {}),
         }
 
 
@@ -2174,6 +2176,139 @@ class Warhammer40kEnv(gym.Env):
             "move_cells": [(int(x), int(y)) for x, y in move_cells],
             "advance_cells": advance_cells,
         }
+
+    def _empty_movement_meta(self) -> dict:
+        return {
+            "applied_hold_penalty": False,
+            "hold_penalty_events": 0,
+            "moved_units": 0,
+            "moved_any": False,
+            "zero_stay_repaired": 0,
+            "zero_stay_kept": 0,
+            "zero_stay_keep_reasons": {},
+        }
+
+    def _record_zero_stay_keep(self, movement_meta: dict, reason: str) -> None:
+        movement_meta["zero_stay_kept"] = int(movement_meta.get("zero_stay_kept", 0) or 0) + 1
+        reasons = movement_meta.get("zero_stay_keep_reasons")
+        if not isinstance(reasons, dict):
+            reasons = {}
+            movement_meta["zero_stay_keep_reasons"] = reasons
+        reason_key = str(reason or "unknown")
+        reasons[reason_key] = int(reasons.get(reason_key, 0) or 0) + 1
+
+    def _legacy_move_dir_for_cell(self, row: int, col: int, x: int, y: int) -> int:
+        dr = int(y) - int(row)
+        dc = int(x) - int(col)
+        if dr == 0 and dc == 0:
+            return 4
+        if abs(dr) >= abs(dc):
+            return 0 if dr > 0 else 1
+        return 3 if dc > 0 else 2
+
+    def _maybe_repair_zero_stay_move_num(
+        self,
+        side: str,
+        idx: int,
+        *,
+        move_dir: int,
+        want: int,
+        base_m: int,
+        unit_label: str,
+        movement_meta: dict,
+    ) -> int:
+        if int(move_dir) == 4 or int(want) != 0:
+            return int(want)
+
+        if not self._objective_positions_available():
+            self._record_zero_stay_keep(movement_meta, "no_objectives")
+            self._log(
+                f"[MOVE][ZERO_STAY] {unit_label}: move!=stay, move_num_{int(idx)}=0 kept stay, "
+                "reason=no_objectives. Где: warhamEnv._maybe_repair_zero_stay_move_num. "
+                "Что делать дальше: проверьте coordsOfOM/mission layout."
+            )
+            return int(want)
+
+        coords = self.unit_coords if side == "model" else self.enemy_coords
+        row = int(coords[int(idx)][0])
+        col = int(coords[int(idx)][1])
+        if any(distance((row, col), obj) <= 5 for obj in self.coordsOfOM):
+            self._record_zero_stay_keep(movement_meta, "on_objective")
+            self._log(
+                f"[MOVE][ZERO_STAY] {unit_label}: move!=stay, move_num_{int(idx)}=0 kept stay, "
+                "reason=on_objective. Где: warhamEnv._maybe_repair_zero_stay_move_num. "
+                "Что делать дальше: stay легален, юнит уже держит objective."
+            )
+            return int(want)
+
+        overlay = self.get_unit_movement_overlay(side, int(idx))
+        move_cells = list(overlay.get("move_cells") or [])
+        advance_cells = list(overlay.get("advance_cells") or [])
+        if not move_cells and not advance_cells:
+            self._record_zero_stay_keep(movement_meta, "no_reachable")
+            self._log(
+                f"[MOVE][ZERO_STAY] {unit_label}: move!=stay, move_num_{int(idx)}=0 kept stay, "
+                f"reason=no_reachable, budget={int(base_m) + 6}. "
+                "Где: warhamEnv._maybe_repair_zero_stay_move_num. "
+                "Что делать дальше: проверьте movement budget/terrain/blocking."
+            )
+            return int(want)
+
+        spaces_dict = getattr(getattr(self, "action_space", None), "spaces", {})
+        move_space = spaces_dict.get(f"move_num_{int(idx)}")
+        max_choices = int(getattr(move_space, "n", 0) or 0)
+        if max_choices <= 1:
+            self._record_zero_stay_keep(movement_meta, "no_representable_reachable")
+            self._log(
+                f"[MOVE][ZERO_STAY] {unit_label}: move!=stay, move_num_{int(idx)}=0 kept stay, "
+                f"reason=no_representable_reachable, action_space_n={max_choices}. "
+                "Где: warhamEnv._maybe_repair_zero_stay_move_num. "
+                "Что делать дальше: проверьте размер action_space для move_num."
+            )
+            return int(want)
+
+        candidates: list[tuple[int, int, str, int]] = []
+        k = 1
+        for x, y in move_cells:
+            if k < max_choices:
+                candidates.append((int(x), int(y), "normal", int(k)))
+            k += 1
+        for x, y in advance_cells:
+            if k < max_choices:
+                candidates.append((int(x), int(y), "advance", int(k)))
+            k += 1
+
+        if not candidates:
+            self._record_zero_stay_keep(movement_meta, "no_representable_reachable")
+            self._log(
+                f"[MOVE][ZERO_STAY] {unit_label}: move!=stay, move_num_{int(idx)}=0 kept stay, "
+                f"reason=no_representable_reachable, reachable_total={1 + len(move_cells) + len(advance_cells)}, "
+                f"action_space_n={max_choices}. Где: warhamEnv._maybe_repair_zero_stay_move_num. "
+                "Что делать дальше: увеличьте move_num action space или сократите reachable-кандидаты."
+            )
+            return int(want)
+
+        def _score(item: tuple[int, int, str, int]):
+            x, y, mode, reachable_idx = item
+            obj_dist = min(float(distance((int(y), int(x)), obj)) for obj in self.coordsOfOM)
+            reaches_obj = obj_dist <= 5.0
+            matches_dir = self._legacy_move_dir_for_cell(row, col, int(x), int(y)) == int(move_dir)
+            dist = int(self._grid_distance_chebyshev((row, col), (int(y), int(x))))
+            mode_rank = 0 if str(mode) == "normal" else 1
+            return (obj_dist, 0 if reaches_obj else 1, 0 if matches_dir else 1, mode_rank, dist, int(reachable_idx))
+
+        best_x, best_y, best_mode, best_idx = min(candidates, key=_score)
+        old_obj_dist = min(float(distance((row, col), obj)) for obj in self.coordsOfOM)
+        new_obj_dist = min(float(distance((int(best_y), int(best_x)), obj)) for obj in self.coordsOfOM)
+        movement_meta["zero_stay_repaired"] = int(movement_meta.get("zero_stay_repaired", 0) or 0) + 1
+        self._log(
+            f"[MOVE][ZERO_STAY] {unit_label}: move!=stay, move_num_{int(idx)}=0 repaired "
+            f"to reachable_idx={int(best_idx)}, mode={best_mode}, dest=({int(best_x)},{int(best_y)}), "
+            f"obj_dist={old_obj_dist:.3f}->{new_obj_dist:.3f}. "
+            "Где: warhamEnv._maybe_repair_zero_stay_move_num. "
+            "Что делать дальше: это objective-biased repair для противоречивого PPO/DQN movement."
+        )
+        return int(best_idx)
 
     def _pick_destination_from_overlay(
         self,
@@ -5233,12 +5368,8 @@ class Warhammer40kEnv(gym.Env):
             reward_delta = 0
             objective_hold_delta = 0.0
             objective_proximity_delta = 0.0
-            movement_meta = {
-                "applied_hold_penalty": False,
-                "hold_penalty_events": 0,
-                "moved_units": 0,
-                "moved_any": False,
-            }
+            movement_meta = self._empty_movement_meta()
+            self._last_movement_meta = dict(movement_meta)
             for i in range(len(self.unit_health)):
                 modelName = i + 21
                 battleSh = battle_shock[i] if battle_shock else False
@@ -5256,6 +5387,15 @@ class Warhammer40kEnv(gym.Env):
                     movement = 0.0
 
                     unit_label = self._format_unit_label("model", i, unit_id=modelName)
+                    want = self._maybe_repair_zero_stay_move_num(
+                        "model",
+                        i,
+                        move_dir=move_dir,
+                        want=want,
+                        base_m=base_m,
+                        unit_label=unit_label,
+                        movement_meta=movement_meta,
+                    )
                     dest, move_mode, movement, chosen_idx, candidate_count = self._pick_destination_by_reachable_index(
                         "model",
                         i,
@@ -5500,6 +5640,7 @@ class Warhammer40kEnv(gym.Env):
                     f"hold={objective_hold_delta:.3f}, proximity={objective_proximity_delta:.3f}, total={total_obj_delta:.3f}"
                 )
             self._viewer_model_pacing_after_model_phase("movement")
+            self._last_movement_meta = dict(movement_meta)
             self._emit_event(
                 {
                     "side": "enemy",
@@ -5517,6 +5658,7 @@ class Warhammer40kEnv(gym.Env):
             advanced_flags = [False] * len(self.enemy_health)
             self.enemy_used_advance = [False] * len(self.enemy_health)
             self.enemy_advance_roll = [None] * len(self.enemy_health)
+            movement_meta = self._empty_movement_meta()
             move_dir = action.get("move", 4) if isinstance(action, dict) else 4
             attack_choice = action.get("attack", 1) if isinstance(action, dict) else 1
             for i in range(len(self.enemy_health)):
@@ -5534,6 +5676,15 @@ class Warhammer40kEnv(gym.Env):
                     label = "move_num_" + str(i)
                     want = int(action.get(label, 0)) if isinstance(action, dict) else 0
                     unit_label = self._format_unit_label("enemy", i, unit_id=unit_id)
+                    want = self._maybe_repair_zero_stay_move_num(
+                        "enemy",
+                        i,
+                        move_dir=move_dir,
+                        want=want,
+                        base_m=base_m,
+                        unit_label=unit_label,
+                        movement_meta=movement_meta,
+                    )
                     dest, move_mode, movement, chosen_idx, candidate_count = self._pick_destination_by_reachable_index(
                         "enemy",
                         i,
@@ -8123,12 +8274,7 @@ class Warhammer40kEnv(gym.Env):
             advanced_flags = list(turn.advanced_flags)
             movement_meta = turn.info.get("movement_meta")
             if not isinstance(movement_meta, dict):
-                movement_meta = {
-                    "applied_hold_penalty": False,
-                    "hold_penalty_events": 0,
-                    "moved_units": 0,
-                    "moved_any": False,
-                }
+                movement_meta = self._empty_movement_meta()
             movement_delta = float(turn.info.get("movement_reward_delta", 0.0) or 0.0)
             shoot_delta = float(turn.info.get("shooting_reward_delta", 0.0) or 0.0)
             charge_delta = float(turn.info.get("charge_reward_delta", 0.0) or 0.0)
@@ -8141,6 +8287,7 @@ class Warhammer40kEnv(gym.Env):
             shoot_delta = self.shooting_phase("model", advanced_flags=advanced_flags, action=action) or 0
             charge_delta = self.charge_phase("model", advanced_flags=advanced_flags, action=action) or 0
             fight_delta = self.fight_phase("model", action=action) or 0
+        self._last_movement_meta = dict(movement_meta or self._empty_movement_meta())
         reward += delta
         if delta != 0:
             self._log_reward(f"Reward (шаг): командование delta={delta:+.3f}")
