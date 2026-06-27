@@ -81,10 +81,10 @@ SHOOT_REWARD_OVERKILL_PENALTY = 0.2
 SHOOT_REWARD_SKIP_PENALTY = 0.15
 # Доп. бонус за выбор цели с низким HP.
 SHOOT_REWARD_TARGET_LOW_HP = 0.05
-# Доп. бонус за урон/фокус по цели на objective.
-SHOOT_REWARD_TARGET_ON_OBJ = 0.07
-# Доп. бонус за урон/фокус по цели с высоким OC.
-SHOOT_REWARD_TARGET_HIGH_OC = 0.05
+# Доп. бонус за урон/фокус по цели на objective. Annihilation: занулено (точек нет).
+SHOOT_REWARD_TARGET_ON_OBJ = 0.0
+# Доп. бонус за урон/фокус по цели с высоким OC. Annihilation: занулено (OC нерелевантен).
+SHOOT_REWARD_TARGET_HIGH_OC = 0.0
 # Доп. бонус за «правильное» action-решение в стрельбе (если используется).
 SHOOT_REWARD_ACTION_BONUS = 0.0
 
@@ -162,7 +162,8 @@ TERRAIN_POTENTIAL_GAMMA = 0.99
 # Φ(s) = w_cover * cover_score + w_threat * threat_score + w_guard * guard_score
 TERRAIN_POTENTIAL_W_COVER = 0.08
 TERRAIN_POTENTIAL_W_THREAT = 0.10
-TERRAIN_POTENTIAL_W_GUARD = 0.04
+# Guard-score = «охрана objective из cover». Annihilation: занулено (objective-flavored).
+TERRAIN_POTENTIAL_W_GUARD = 0.0
 
 # Cover-score: INFANTRY + within 3" (Chebyshev/grid) от barricade + not fully visible.
 TERRAIN_COVER_RADIUS = 3.0
@@ -174,7 +175,8 @@ TERRAIN_THREAT_COUNT_NORM = 3.0
 
 # Guard-score: слабый сигнал охраны objective из cover.
 TERRAIN_GUARD_RANGE_NORM = 12.0
-TERRAIN_GUARD_PROGRESS_BONUS = 0.20
+# Annihilation: занулено (бонус за objective-progress из guard-позиции).
+TERRAIN_GUARD_PROGRESS_BONUS = 0.0
 
 # Event-бонус за выстрел из cover при не-росте угрозы, 1 раз за ход/юнит.
 TERRAIN_EVENT_SHOT_FROM_COVER_BONUS = 0.03
