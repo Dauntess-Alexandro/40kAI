@@ -7,9 +7,9 @@ import os
 # Шэйпинг наград (победа / victory points)
 # =========================================
 # Бонус за победу в матче (начисляется в конце эпизода).
-WIN_BONUS = 3.0
+WIN_BONUS = 2.0
 # Штраф за поражение в матче (начисляется в конце эпизода).
-LOSS_PENALTY = 3.0
+LOSS_PENALTY = 2.0
 
 # С какого боевого раунда начинать начислять VP по миссии Only War.
 VP_START_SCORING_ROUND = 1
@@ -34,7 +34,7 @@ VP_DIFF_PENALTY_SCALE = 0.0
 # Доп. штраф за ничью на turn_limit (анти "ничейная яма").
 # Для DQN/PPO применяется как env-reward в terminal step; AZ/GAZ/GMZ/SMZ
 # дополнительно используют outcome_value_draw из hyperparams.
-TURN_LIMIT_DRAW_PENALTY = 1.0
+TURN_LIMIT_DRAW_PENALTY = 2.0
 # Доп. масштаб бонуса за победу по VP на turn_limit.
 TURN_LIMIT_VP_MARGIN_REWARD_SCALE = 0.0
 # Доп. масштаб штрафа за проигрыш по VP на turn_limit.
@@ -225,20 +225,20 @@ VP_STALL_PENALTY_MAX_MULT = 2.0
 
 # Anti-loop по повторяющимся action tuples (move/attack/shoot/charge)
 # Штраф включается при длинной серии одинаковых действий.
-ACTION_REPEAT_STEPS_THRESHOLD = 3
-ACTION_REPEAT_PENALTY = 0.04
-ACTION_REPEAT_STEP_GROWTH = 0.20
-ACTION_REPEAT_PENALTY_MAX_MULT = 2.5
+ACTION_REPEAT_STEPS_THRESHOLD = 0
+ACTION_REPEAT_PENALTY = 0
+ACTION_REPEAT_STEP_GROWTH = 0
+ACTION_REPEAT_PENALTY_MAX_MULT = 0
 # 1: применять только если у модели были реальные альтернативы (move>1 или shoot>1)
-ACTION_REPEAT_REQUIRE_OPTIONS = 1
+ACTION_REPEAT_REQUIRE_OPTIONS = 0
 
 # Round-aware scaling: ранняя игра = больше прогресса к objective; поздняя = удержание/deny.
-REWARD_ROUND_EARLY_END = 4
-REWARD_ROUND_LATE_START = 10
-REWARD_PROGRESS_EARLY_MULT = 1.15
-REWARD_PROGRESS_LATE_MULT = 1.00
-REWARD_HOLD_EARLY_MULT = 0.95
-REWARD_HOLD_LATE_MULT = 1.08
+REWARD_ROUND_EARLY_END = 0
+REWARD_ROUND_LATE_START = 0
+REWARD_PROGRESS_EARLY_MULT = 0
+REWARD_PROGRESS_LATE_MULT = 0
+REWARD_HOLD_EARLY_MULT = 0
+REWARD_HOLD_LATE_MULT = 0
 
 
 # =========================
