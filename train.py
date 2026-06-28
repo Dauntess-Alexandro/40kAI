@@ -39,6 +39,7 @@ from core.engine.mission import (
     normalize_mission_name,
     post_deploy_setup,
 )
+from core.engine.opponent_pool import resolve_pool_config
 from core.engine.phases.obs_features import (
     describe_obs_dim_mismatch,
     resolve_phase_obs_features,
@@ -379,6 +380,10 @@ SELF_PLAY_UPDATE_EVERY_MIN = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MIN", "25"))
 SELF_PLAY_UPDATE_EVERY_MAX = int(os.getenv("SELF_PLAY_UPDATE_EVERY_MAX", "150"))
 SELF_PLAY_DRAW_RATE_HIGH = float(os.getenv("SELF_PLAY_DRAW_RATE_HIGH", "0.70"))
 SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
+
+POOL_CONFIG = resolve_pool_config(
+    section=(data.get("opponent_pool") if isinstance(data, dict) else None)
+)
 
 EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
 EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
@@ -5950,6 +5955,46 @@ def _actor_learner_actor_entry_ppo(
         opponent_net.eval()
         opponent_loaded = False
 
+        learner_identity = AgentIdentity(
+            side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+            faction=LEARNER_FACTION,
+            ruleset_version=RULESET_VERSION,
+        ).normalized()
+        env_contract = make_env_contract(
+            n_observations=n_observations,
+            n_actions=n_actions,
+            mission_name=normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME)),
+            ruleset_version=learner_identity.ruleset_version,
+            extras={"actor_learner": 1, "train_algo": "ppo", "num_actors": 1},
+        )
+
+        # --- Opponent Pool (PFSP) ---
+        _pool = None
+        _pool_cache = None
+        if int(SELF_PLAY_ENABLED) == 1 and POOL_CONFIG.enabled:
+            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+
+            _pool = build_pool_for_actor(
+                learner_identity=learner_identity,
+                learner_contract=env_contract,
+                config=POOL_CONFIG,
+                stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(actor_idx)),
+                log_fn=append_agent_log,
+            )
+            if _pool is not None:
+
+                def _ppo_build_opponent(aid, _env=env, _model=model):
+                    spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                    return build_policy_fn(env=_env, len_model=len(_model), opponent=spec, deterministic=True)
+
+                _pool_cache = OpponentRuntimeCache(build_fn=_ppo_build_opponent, maxsize=POOL_CONFIG.pool_size + 1)
+                append_agent_log(
+                    f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
+                    f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                    f"candidates={len(_pool.refresh_candidates())}"
+                )
+
         # ordered_keys локально (для action_dict)
         ordered_keys = ordered_action_keys(len(model))
 
@@ -5957,6 +6002,14 @@ def _actor_learner_actor_entry_ppo(
 
         for _ep in range(int(episodes)):
             ep_idx_1based = int(_ep) + 1
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                _pool_choice = _pool.sample()
+                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
+                append_agent_log(
+                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
+                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
                     if os.path.isfile(sync_path):
@@ -6130,6 +6183,21 @@ def _actor_learner_actor_entry_ppo(
                 turn = int(last_info.get("turn", 0) or 0)
 
                 result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+
+                if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
+                    _pool.record_result(
+                        agent_id=_pool_choice.agent_id,
+                        win=(result == "win"),
+                        draw=(result == "draw"),
+                        vp_diff=float(vp_diff),
+                    )
+                    _pool.stats.save()
+                    append_agent_log(
+                        f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
+                        f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
+                        f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
+                        f"games={_pool.stats.games(_pool_choice.agent_id)}"
+                    )
 
                 # Стратагемная сводка per-episode для learner-лога
                 from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
