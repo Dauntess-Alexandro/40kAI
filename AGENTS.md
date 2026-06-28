@@ -86,6 +86,18 @@
 - **Логи:** `[GAZ][INF_SERVER]`, `[GAZ][ENV_WORKER]`, `[GAZ][REMOTE_IS]`, `[GAZ][REMOTE_CLIENT]`, `[GAZ][DIST]`, `[GAZ][DIST][RECEIVER]`, `[GAZ][DIST][SINK]`, `[GAZ][CONFIG][FALLBACK]`.
 - Отключить: `GAZ_INFERENCE_SERVER=0` / `GAZ_DISTRIBUTED_ACTORS=0` — прежний одиночный CPU-путь.
 
+## Opponent Pool / League (PFSP, self-play)
+- **Цель:** ротация оппонента per-episode из {эвристика-анкер, исторические снапшоты} с приоритетом PFSP, чтобы разбить ничейное зеркальное self-play. **Спека:** `docs/superpowers/specs/2026-06-28-opponent-pool-league-design.md`; **план:** `docs/superpowers/plans/2026-06-28-opponent-pool-league.md`.
+- **Пул по умолчанию ВЫКЛЮЧЕН** (`enabled=false` в hyperparams / `OPPONENT_POOL_ENABLED` не задан): при выключенном пуле путь обучения байт-в-байт как раньше (нулевая регрессия).
+- **Конфиг:** env `OPPONENT_POOL_*` → секция `opponent_pool` в `hyperparams.json` → default. Поля секции: `enabled`, `p_heuristic`, `pool_size`, `strategy` (`pfsp`|`uniform`), `pfsp_power`, `uniform_floor`, `novelty_bonus`, `min_games_for_pfsp`, `ema_alpha`, `seed`.
+- **Env-флаги:** `OPPONENT_POOL_ENABLED`, `OPPONENT_POOL_P_HEURISTIC`, `OPPONENT_POOL_SIZE`, `OPPONENT_POOL_STRATEGY`, `OPPONENT_POOL_PFSP_POWER`, `OPPONENT_POOL_UNIFORM_FLOOR`, `OPPONENT_POOL_NOVELTY_BONUS`, `OPPONENT_POOL_MIN_GAMES`, `OPPONENT_POOL_EMA_ALPHA`, `OPPONENT_POOL_SEED`.
+- **Модули:** общий torch-free слой — `core/engine/opponent_pool.py` (`PoolConfig`, `resolve_pool_config`, `OpponentStatsStore`, `OpponentPool`, `OpponentChoice`); тонкое per-algo потребление — `core/models/opponent_pool_runtime.py` (`OpponentRuntimeCache`, `build_pool_for_actor`, `default_candidate_provider`). Врезка в `train.py` (PPO/DQN/AZ/GMZ/SMZ): при `SELF_PLAY_ENABLED=1` и `POOL_CONFIG.enabled` — сэмпл на эпизод, `record_result` после snapshot-игр.
+- **PFSP-семантика:** `winrate` = winrate **ЛЕРНЕРА** против оппонента; вес `(1 - wr)^pfsp_power`; result: win=1.0, draw=0.5, loss=0.0; до `min_games_for_pfsp` игр winrate=0.5 (нейтрально / novelty).
+- **Stats-файл:** `artifacts/models/opponent_pool_stats.json` (JSON `{opponents: {agent_id: {games, ema_winrate, draws, vp_sum, updated_at}}}`; атомарная запись). На distributed — тот же путь на SMB (`models_dir()`).
+- **GUI:** вкладка «Лига» (`app/gui_qt/qml/components/LeaguePanel.qml`); источник оппонента **«pool»** («Пул / Лига (PFSP)») → env `OPPONENT_POOL_ENABLED=1` + `SELF_PLAY_ENABLED=1` + проброс `OPPONENT_POOL_*` из UI. Allowlist-гейты: «pool» должен быть во всех списках источников оппонента в GUI и train (см. [[algo-allowlist-gates]]).
+- **Логи** (`LOGS_FOR_AGENTS_TRAIN.md`): `[POOL][INIT]` — старт пула актора; `[POOL]` — сэмпл на эпизод (kind/reason/weight); `[POOL][RESULT]` — исход snapshot-игры + EMA winrate; `[POOL][REFRESH]` — фильтр кандидатов (contract/side); `[POOL][WARN]` — fallback (нет совместимых снапшотов → heuristic; stats недоступны → uniform).
+- **Метрика успеха (A/B пул vs зеркало):** draw_rate↓, turn_limit↓ при WR vs эвристики не ниже −5 п.п. Сам A/B-прогон — отдельная исследовательская активность; см. также [[annihilation-training-findings]].
+
 ## Результаты треинровки (общее)
 - **Можно смотреть `artifacts/results/results.txt`** для быстрой сверки итогов train/eval.
 
