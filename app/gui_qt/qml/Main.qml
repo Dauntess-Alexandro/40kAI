@@ -559,6 +559,7 @@ ApplicationWindow {
             TacticalTabButton { text: "Игра" }
             TacticalTabButton { text: "Настройки" }
             TacticalTabButton { text: "Оценка" }
+            TacticalTabButton { text: "Лига" }
         }
 
         StackLayout {
@@ -1902,7 +1903,8 @@ ApplicationWindow {
                                                     model: [
                                                         { value: "heuristic", label: "ЭВРИСТИКА" },
                                                         { value: "latest_snapshot", label: "ПОСЛЕДНИЙ СНАПШОТ" },
-                                                        { value: "specific_agent", label: "КОНКРЕТНЫЙ АГЕНТ" }
+                                                        { value: "specific_agent", label: "КОНКРЕТНЫЙ АГЕНТ" },
+                                                        { value: "pool", label: "ПУЛ / ЛИГА (PFSP)" }
                                                     ]
                                                     textRole: "label"
                                                     valueRole: "value"
@@ -6160,6 +6162,11 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
+
+            LeaguePanel {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
             }
         }
     }
