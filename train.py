@@ -5537,7 +5537,11 @@ def _actor_learner_actor_entry(
         _pool = None
         _pool_cache = None
         if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
-            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+            from core.models.opponent_pool_runtime import (
+                OpponentRuntimeCache,
+                build_pool_for_actor,
+                choose_opponent_policy_fn,
+            )
 
             _pool = build_pool_for_actor(
                 learner_identity=learner_identity,
@@ -5572,11 +5576,9 @@ def _actor_learner_actor_entry(
             ep_idx_1based = int(_ep) + 1
             _pool_choice = None
             if _pool is not None and _pool_cache is not None:
-                _pool_choice = _pool.sample()
-                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
-                append_agent_log(
-                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
-                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                    _pool, _pool_cache, log_fn=append_agent_log,
+                    actor_label=f"actor={int(actor_idx)} ep={ep_idx_1based}",
                 )
             trace_lines: list[str] = []
             round_timeline: list[dict] = []
@@ -5874,6 +5876,13 @@ def _actor_learner_actor_entry(
 
                 result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
+                # Защита от явно подозрительных "побед" (обычно признак сломанного протокола).
+                if result == "win" and end_reason == "wipeout_enemy" and model_vp == 0 and player_vp == 0 and turn <= 0:
+                    end_reason = "suspicious_wipeout_enemy"
+                    result = "draw"
+
+                # PFSP-stats пишем ПОСЛЕ финализации result: suspicious_wipeout мог понизить
+                # win->draw — иначе статистика пула расходится с learner-result (MEDIUM-фикс).
                 if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
                     _pool.record_result(
                         agent_id=_pool_choice.agent_id,
@@ -5888,11 +5897,6 @@ def _actor_learner_actor_entry(
                         f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
                         f"games={_pool.stats.games(_pool_choice.agent_id)}"
                     )
-
-                # Защита от явно подозрительных "побед" (обычно признак сломанного протокола).
-                if result == "win" and end_reason == "wipeout_enemy" and model_vp == 0 and player_vp == 0 and turn <= 0:
-                    end_reason = "suspicious_wipeout_enemy"
-                    result = "draw"
 
                 # Стратагемная сводка per-episode для learner-лога
                 from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
@@ -6034,7 +6038,11 @@ def _actor_learner_actor_entry_ppo(
         _pool = None
         _pool_cache = None
         if int(SELF_PLAY_ENABLED) == 1 and POOL_CONFIG.enabled:
-            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+            from core.models.opponent_pool_runtime import (
+                OpponentRuntimeCache,
+                build_pool_for_actor,
+                choose_opponent_policy_fn,
+            )
 
             _pool = build_pool_for_actor(
                 learner_identity=learner_identity,
@@ -6066,11 +6074,9 @@ def _actor_learner_actor_entry_ppo(
             ep_idx_1based = int(_ep) + 1
             _pool_choice = None
             if _pool is not None and _pool_cache is not None:
-                _pool_choice = _pool.sample()
-                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
-                append_agent_log(
-                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
-                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                    _pool, _pool_cache, log_fn=append_agent_log,
+                    actor_label=f"actor={int(actor_idx)} ep={ep_idx_1based}",
                 )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
@@ -6415,7 +6421,11 @@ def _actor_learner_actor_entry_alphazero(
         _pool = None
         _pool_cache = None
         if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
-            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+            from core.models.opponent_pool_runtime import (
+                OpponentRuntimeCache,
+                build_pool_for_actor,
+                choose_opponent_policy_fn,
+            )
 
             _pool = build_pool_for_actor(
                 learner_identity=learner_identity,
@@ -6455,11 +6465,9 @@ def _actor_learner_actor_entry_alphazero(
             ep_total_label = str(ep_limit) if ep_limit > 0 else "open"
             _pool_choice = None
             if _pool is not None and _pool_cache is not None:
-                _pool_choice = _pool.sample()
-                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
-                append_agent_log(
-                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
-                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                    _pool, _pool_cache, log_fn=append_agent_log,
+                    actor_label=f"actor={int(actor_idx)} ep={ep_idx_1based}",
                 )
             print(
                 f"[{_AZ_LOG_TAG}][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{ep_total_label} starting "
@@ -6764,7 +6772,11 @@ def _az_env_worker_entry(
         _pool = None
         _pool_cache = None
         if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
-            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+            from core.models.opponent_pool_runtime import (
+                OpponentRuntimeCache,
+                build_pool_for_actor,
+                choose_opponent_policy_fn,
+            )
 
             _pool = build_pool_for_actor(
                 learner_identity=learner_identity,
@@ -6812,11 +6824,9 @@ def _az_env_worker_entry(
             ep_idx_1based = int(_ep) + 1
             _pool_choice = None
             if _pool is not None and _pool_cache is not None:
-                _pool_choice = _pool.sample()
-                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
-                append_agent_log(
-                    f"[POOL] worker={int(worker_id)} ep={ep_idx_1based} kind={_pool_choice.kind} "
-                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                    _pool, _pool_cache, log_fn=append_agent_log,
+                    actor_label=f"worker={int(worker_id)} ep={ep_idx_1based}",
                 )
             print(
                 f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{ep_total_label} starting",
@@ -8358,7 +8368,11 @@ def _actor_learner_actor_entry_gumbel_muzero(
         _pool = None
         _pool_cache = None
         if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
-            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+            from core.models.opponent_pool_runtime import (
+                OpponentRuntimeCache,
+                build_pool_for_actor,
+                choose_opponent_policy_fn,
+            )
 
             _pool = build_pool_for_actor(
                 learner_identity=learner_identity,
@@ -8391,11 +8405,9 @@ def _actor_learner_actor_entry_gumbel_muzero(
             ep_idx_1based = int(_ep) + 1
             _pool_choice = None
             if _pool is not None and _pool_cache is not None:
-                _pool_choice = _pool.sample()
-                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
-                append_agent_log(
-                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
-                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                    _pool, _pool_cache, log_fn=append_agent_log,
+                    actor_label=f"actor={int(actor_idx)} ep={ep_idx_1based}",
                 )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
@@ -8622,7 +8634,11 @@ def _actor_learner_actor_entry_sampled_muzero(
         _pool = None
         _pool_cache = None
         if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
-            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+            from core.models.opponent_pool_runtime import (
+                OpponentRuntimeCache,
+                build_pool_for_actor,
+                choose_opponent_policy_fn,
+            )
 
             _pool = build_pool_for_actor(
                 learner_identity=learner_identity,
@@ -8655,11 +8671,9 @@ def _actor_learner_actor_entry_sampled_muzero(
             ep_idx_1based = int(_ep) + 1
             _pool_choice = None
             if _pool is not None and _pool_cache is not None:
-                _pool_choice = _pool.sample()
-                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
-                append_agent_log(
-                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
-                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                    _pool, _pool_cache, log_fn=append_agent_log,
+                    actor_label=f"actor={int(actor_idx)} ep={ep_idx_1based}",
                 )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:

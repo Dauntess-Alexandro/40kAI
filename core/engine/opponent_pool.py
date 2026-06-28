@@ -143,7 +143,7 @@ class OpponentStatsStore:
         os.replace(tmp, self._path)  # атомарная запись (SMB-safe, ср. state_export.py)
 
     @classmethod
-    def load(cls, path: str, *, ema_alpha: float = 0.15) -> "OpponentStatsStore":
+    def load(cls, path: str, *, ema_alpha: float = 0.15) -> OpponentStatsStore:
         store = cls(path, ema_alpha=ema_alpha)
         if path != ":memory:" and os.path.exists(path):
             try:
@@ -180,6 +180,12 @@ class OpponentPool:
 
     def set_candidates(self, ids: list[str]) -> None:
         self._candidates = [str(a) for a in ids if str(a or "").strip()]
+
+    def drop_candidate(self, agent_id: str) -> None:
+        """Убрать кандидата из пула (напр. битый/несовместимый снапшот не смог построиться)."""
+        aid = str(agent_id or "").strip()
+        if aid:
+            self._candidates = [c for c in self._candidates if c != aid]
 
     def _weights(self, ids: list[str]) -> tuple[list[float], list[str]]:
         cfg = self.config

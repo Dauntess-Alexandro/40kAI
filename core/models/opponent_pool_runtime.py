@@ -5,9 +5,14 @@ from collections import OrderedDict
 from collections.abc import Callable
 from typing import Any
 
-from core.engine.opponent_pool import OpponentPool, OpponentStatsStore, PoolConfig
+from core.engine.opponent_pool import OpponentChoice, OpponentPool, OpponentStatsStore, PoolConfig
 
-__all__ = ["OpponentRuntimeCache", "default_candidate_provider", "build_pool_for_actor"]
+__all__ = [
+    "OpponentRuntimeCache",
+    "default_candidate_provider",
+    "build_pool_for_actor",
+    "choose_opponent_policy_fn",
+]
 
 
 class OpponentRuntimeCache:
@@ -16,7 +21,7 @@ class OpponentRuntimeCache:
     def __init__(self, build_fn: Callable[[str], Any], maxsize: int) -> None:
         self._build = build_fn
         self._max = max(1, int(maxsize))
-        self._store: "OrderedDict[str, Any]" = OrderedDict()
+        self._store: OrderedDict[str, Any] = OrderedDict()
 
     def get(self, agent_id: str) -> Any:
         aid = str(agent_id)
@@ -68,3 +73,36 @@ def build_pool_for_actor(*, learner_identity, learner_contract, config: PoolConf
     )
     pool.refresh_candidates()
     return pool
+
+
+def choose_opponent_policy_fn(pool, cache, *, log_fn=None, actor_label=""):
+    """Сэмплит оппонента из пула и строит policy_fn через кэш.
+
+    При сбое построения (битый/несовместимый снапшот) — fallback на эвристику
+    (policy_fn=None) + [POOL][WARN], и кандидат выкидывается из пула, чтобы сбой
+    не повторялся каждый эпизод. Возвращает (choice, policy_fn); policy_fn=None => эвристика.
+    """
+    choice = pool.sample()
+    if choice.kind == "heuristic":
+        if log_fn:
+            log_fn(
+                f"[POOL] {actor_label} kind=heuristic agent=- "
+                f"reason={choice.reason} weight={choice.weight:.3f}"
+            )
+        return choice, None
+    try:
+        policy_fn = cache.get(choice.agent_id)
+    except Exception as exc:
+        if log_fn:
+            log_fn(
+                f"[POOL][WARN] {actor_label} build opponent agent={choice.agent_id} "
+                f"failed: {exc}; fallback heuristic"
+            )
+        pool.drop_candidate(choice.agent_id)
+        return OpponentChoice("heuristic", "", "heuristic_fallback", 0.0), None
+    if log_fn:
+        log_fn(
+            f"[POOL] {actor_label} kind=snapshot agent={choice.agent_id} "
+            f"reason={choice.reason} weight={choice.weight:.3f}"
+        )
+    return choice, policy_fn
