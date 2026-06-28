@@ -227,6 +227,16 @@ class GUIController(QtCore.QObject):
     disableTrainLoggingChanged = QtCore.Signal(bool)
     actionTraceChanged = QtCore.Signal(bool)
     autoClearLogsChanged = QtCore.Signal(bool)
+    poolEnabledChanged = QtCore.Signal(bool)
+    poolPHeuristicChanged = QtCore.Signal(float)
+    poolSizeChanged = QtCore.Signal(int)
+    poolStrategyChanged = QtCore.Signal(str)
+    poolPfspPowerChanged = QtCore.Signal(float)
+    poolUniformFloorChanged = QtCore.Signal(float)
+    poolNoveltyBonusChanged = QtCore.Signal(float)
+    poolMinGamesChanged = QtCore.Signal(int)
+    poolEmaAlphaChanged = QtCore.Signal(float)
+    opponentPoolStateChanged = QtCore.Signal()
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
     deploymentModeChanged = QtCore.Signal(str)
@@ -478,10 +488,20 @@ class GUIController(QtCore.QObject):
         self._opponent_policy = str(os.getenv("OPPONENT_POLICY", "mirror")).strip().lower() or "mirror"
         if self._opponent_policy not in self._opponent_policy_options:
             self._opponent_policy = "mirror"
-        self._opponent_source_options = ["heuristic", "latest_snapshot", "specific_agent"]
+        self._opponent_source_options = ["heuristic", "latest_snapshot", "specific_agent", "pool"]
         self._opponent_source = str(os.getenv("OPPONENT_SOURCE", "heuristic")).strip().lower() or "heuristic"
         if self._opponent_source not in self._opponent_source_options:
             self._opponent_source = "heuristic"
+        self._pool_p_heuristic = 0.3
+        self._pool_size = 8
+        self._pool_strategy = "pfsp"
+        self._pool_pfsp_power = 2.0
+        self._pool_uniform_floor = 0.1
+        self._pool_novelty_bonus = 0.25
+        self._pool_min_games = 3
+        self._pool_ema_alpha = 0.15
+        self._pool_enabled = False
+        self._opponent_pool_state_dict: dict = {"opponents": {}}
         self._specific_opponent_agent_ids: list[str] = []
         self._specific_opponent_agent_labels: list[str] = []
         self._specific_opponent_algo_by_id: dict[str, str] = {}
@@ -1139,7 +1159,7 @@ class GUIController(QtCore.QObject):
         source = str(self._metrics_meta.get("opponent_source", "") or self._opponent_source or "").strip().lower()
         if source in {"heuristic", "heuristic_auto"}:
             return "ЭВРИСТИКА"
-        if source in {"specific_agent", "latest_snapshot", "snapshot_policy_fn", "fixed_checkpoint"}:
+        if source in {"specific_agent", "latest_snapshot", "snapshot_policy_fn", "fixed_checkpoint", "pool"}:
             try:
                 lookup = getattr(self, "_specific_opponent_algo_by_id", {})
                 selected_id = str(self._metrics_meta.get("opponent_id", "") or self._selected_specific_opponent_id or "").strip()
@@ -1851,6 +1871,45 @@ class GUIController(QtCore.QObject):
     def autoClearLogs(self) -> bool:
         return self._auto_clear_logs
 
+    @QtCore.Property(bool, notify=poolEnabledChanged)
+    def poolEnabled(self) -> bool:
+        return self._pool_enabled
+
+    @QtCore.Property(float, notify=poolPHeuristicChanged)
+    def poolPHeuristic(self) -> float:
+        return float(self._pool_p_heuristic)
+
+    @QtCore.Property(int, notify=poolSizeChanged)
+    def poolSize(self) -> int:
+        return int(self._pool_size)
+
+    @QtCore.Property(str, notify=poolStrategyChanged)
+    def poolStrategy(self) -> str:
+        return str(self._pool_strategy)
+
+    @QtCore.Property(float, notify=poolPfspPowerChanged)
+    def poolPfspPower(self) -> float:
+        return float(self._pool_pfsp_power)
+
+    @QtCore.Property(float, notify=poolUniformFloorChanged)
+    def poolUniformFloor(self) -> float:
+        return float(self._pool_uniform_floor)
+
+    @QtCore.Property(float, notify=poolNoveltyBonusChanged)
+    def poolNoveltyBonus(self) -> float:
+        return float(self._pool_novelty_bonus)
+
+    @QtCore.Property(int, notify=poolMinGamesChanged)
+    def poolMinGames(self) -> int:
+        return int(self._pool_min_games)
+
+    @QtCore.Property(float, notify=poolEmaAlphaChanged)
+    def poolEmaAlpha(self) -> float:
+        return float(self._pool_ema_alpha)
+
+    @QtCore.Property("QVariantMap", notify=opponentPoolStateChanged)
+    def opponentPoolState(self) -> dict:
+        return self._opponent_pool_state_dict
 
     @QtCore.Property("QStringList", constant=True)
     def deploymentModeOptions(self):
@@ -3481,7 +3540,7 @@ class GUIController(QtCore.QObject):
     def start_train_8x(self) -> None:
         # Единая кнопка "Тренировка 8х": режим выбирается по источнику оппонента.
         # Эвристика -> обычная тренировка, модель/агент -> self-play.
-        mode = "selfplay" if self._opponent_source in {"latest_snapshot", "specific_agent"} else "train8"
+        mode = "selfplay" if self._opponent_source in {"latest_snapshot", "specific_agent", "pool"} else "train8"
         self._start_training(mode=mode)
 
     @QtCore.Slot()
@@ -3529,6 +3588,89 @@ class GUIController(QtCore.QObject):
         self._auto_clear_logs = flag
         self.autoClearLogsChanged.emit(flag)
 
+    @QtCore.Slot(bool)
+    def set_pool_enabled(self, value: bool) -> None:
+        flag = bool(value)
+        if self._pool_enabled == flag:
+            return
+        self._pool_enabled = flag
+        self.poolEnabledChanged.emit(flag)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(float)
+    def set_pool_p_heuristic(self, value: float) -> None:
+        clamped = 0.0 if float(value) < 0.0 else (1.0 if float(value) > 1.0 else float(value))
+        if self._pool_p_heuristic == clamped:
+            return
+        self._pool_p_heuristic = clamped
+        self.poolPHeuristicChanged.emit(clamped)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(int)
+    def set_pool_size(self, value: int) -> None:
+        size = max(1, int(value))
+        if self._pool_size == size:
+            return
+        self._pool_size = size
+        self.poolSizeChanged.emit(size)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(str)
+    def set_pool_strategy(self, value: str) -> None:
+        strategy = str(value or "").strip().lower()
+        if strategy not in {"pfsp", "uniform"}:
+            strategy = "pfsp"
+        if self._pool_strategy == strategy:
+            return
+        self._pool_strategy = strategy
+        self.poolStrategyChanged.emit(strategy)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(float)
+    def set_pool_pfsp_power(self, value: float) -> None:
+        power = max(0.0, float(value))
+        if self._pool_pfsp_power == power:
+            return
+        self._pool_pfsp_power = power
+        self.poolPfspPowerChanged.emit(power)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(float)
+    def set_pool_uniform_floor(self, value: float) -> None:
+        clamped = 0.0 if float(value) < 0.0 else (1.0 if float(value) > 1.0 else float(value))
+        if self._pool_uniform_floor == clamped:
+            return
+        self._pool_uniform_floor = clamped
+        self.poolUniformFloorChanged.emit(clamped)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(float)
+    def set_pool_novelty_bonus(self, value: float) -> None:
+        bonus = max(0.0, float(value))
+        if self._pool_novelty_bonus == bonus:
+            return
+        self._pool_novelty_bonus = bonus
+        self.poolNoveltyBonusChanged.emit(bonus)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(int)
+    def set_pool_min_games(self, value: int) -> None:
+        games = max(0, int(value))
+        if self._pool_min_games == games:
+            return
+        self._pool_min_games = games
+        self.poolMinGamesChanged.emit(games)
+        self.mark_settings_dirty()
+
+    @QtCore.Slot(float)
+    def set_pool_ema_alpha(self, value: float) -> None:
+        clamped = 0.0 if float(value) < 0.0 else (1.0 if float(value) > 1.0 else float(value))
+        alpha = clamped if clamped > 0.0 else 0.15
+        if self._pool_ema_alpha == alpha:
+            return
+        self._pool_ema_alpha = alpha
+        self.poolEmaAlphaChanged.emit(alpha)
+        self.mark_settings_dirty()
 
     @QtCore.Slot(str)
     def set_deployment_mode(self, value: str) -> None:
@@ -3594,7 +3736,7 @@ class GUIController(QtCore.QObject):
         self._opponent_source = source
         self.opponentSourceChanged.emit(source)
         self._refresh_specific_opponent_options()
-        if source == "latest_snapshot" and self._specific_opponent_agent_ids:
+        if source in {"latest_snapshot", "pool"} and self._specific_opponent_agent_ids:
             latest_id = self._specific_opponent_agent_ids[0]
             if latest_id != self._selected_specific_opponent_id:
                 self._selected_specific_opponent_id = latest_id
@@ -3657,8 +3799,71 @@ class GUIController(QtCore.QObject):
             "heuristic": "Эвристика",
             "latest_snapshot": "Последний снапшот",
             "specific_agent": "Конкретный агент",
+            "pool": "Пул / Лига (PFSP)",
         }
         return labels.get(source, source)
+
+    def _opponent_pool_settings(self) -> dict:
+        return {
+            "p_heuristic": float(self._pool_p_heuristic),
+            "pool_size": int(self._pool_size),
+            "strategy": str(self._pool_strategy),
+            "pfsp_power": float(self._pool_pfsp_power),
+            "uniform_floor": float(self._pool_uniform_floor),
+            "novelty_bonus": float(self._pool_novelty_bonus),
+            "min_games_for_pfsp": int(self._pool_min_games),
+            "ema_alpha": float(self._pool_ema_alpha),
+        }
+
+    def _opponent_pool_state(self) -> dict:
+        path = os.path.join(str(ARTIFACTS_MODELS_DIR), "opponent_pool_stats.json")
+        if not os.path.exists(path):
+            return {"opponents": {}}
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                payload = json.load(handle)
+            return payload if isinstance(payload, dict) else {"opponents": {}}
+        except (OSError, json.JSONDecodeError):
+            return {"opponents": {}}
+
+    def _apply_opponent_pool_hyperparams(self, payload: dict) -> None:
+        section = payload.get("opponent_pool") if isinstance(payload, dict) else None
+        if not isinstance(section, dict):
+            return
+        enabled = bool(section.get("enabled", self._pool_enabled))
+        p_heuristic = float(section.get("p_heuristic", self._pool_p_heuristic))
+        pool_size = max(1, int(section.get("pool_size", self._pool_size)))
+        strategy = str(section.get("strategy", self._pool_strategy) or "pfsp").strip().lower()
+        if strategy not in {"pfsp", "uniform"}:
+            strategy = "pfsp"
+        pfsp_power = max(0.0, float(section.get("pfsp_power", self._pool_pfsp_power)))
+        uniform_floor = float(section.get("uniform_floor", self._pool_uniform_floor))
+        uniform_floor = 0.0 if uniform_floor < 0.0 else (1.0 if uniform_floor > 1.0 else uniform_floor)
+        novelty_bonus = max(0.0, float(section.get("novelty_bonus", self._pool_novelty_bonus)))
+        min_games = max(0, int(section.get("min_games_for_pfsp", self._pool_min_games)))
+        ema_alpha = float(section.get("ema_alpha", self._pool_ema_alpha))
+        ema_alpha = 0.0 if ema_alpha < 0.0 else (1.0 if ema_alpha > 1.0 else ema_alpha)
+        if ema_alpha <= 0.0:
+            ema_alpha = 0.15
+        p_heuristic = 0.0 if p_heuristic < 0.0 else (1.0 if p_heuristic > 1.0 else p_heuristic)
+        self._pool_enabled = enabled
+        self._pool_p_heuristic = p_heuristic
+        self._pool_size = pool_size
+        self._pool_strategy = strategy
+        self._pool_pfsp_power = pfsp_power
+        self._pool_uniform_floor = uniform_floor
+        self._pool_novelty_bonus = novelty_bonus
+        self._pool_min_games = min_games
+        self._pool_ema_alpha = ema_alpha
+        self.poolEnabledChanged.emit(self._pool_enabled)
+        self.poolPHeuristicChanged.emit(self._pool_p_heuristic)
+        self.poolSizeChanged.emit(self._pool_size)
+        self.poolStrategyChanged.emit(self._pool_strategy)
+        self.poolPfspPowerChanged.emit(self._pool_pfsp_power)
+        self.poolUniformFloorChanged.emit(self._pool_uniform_floor)
+        self.poolNoveltyBonusChanged.emit(self._pool_novelty_bonus)
+        self.poolMinGamesChanged.emit(self._pool_min_games)
+        self.poolEmaAlphaChanged.emit(self._pool_ema_alpha)
 
     def _mission_from_ruleset_version(self, ruleset_version: str) -> str:
         text = str(ruleset_version or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -4149,6 +4354,8 @@ class GUIController(QtCore.QObject):
             opp_l = "ЭВРИСТИКА"
         elif src == "latest_snapshot":
             opp_l = "СНАПШОТ"
+        elif src == "pool":
+            opp_l = "ПУЛ PFSP"
         else:
             opp_l = "КОНКР. АГЕНТ"
         return (
@@ -4182,6 +4389,11 @@ class GUIController(QtCore.QObject):
                 suffix = f"последний снапшот, agent_id {self._selected_specific_opponent_id}"
             else:
                 suffix = "последний снапшот"
+        elif self._opponent_source == "pool":
+            if self._selected_specific_opponent_id:
+                suffix = f"пул / лига (PFSP), bootstrap agent_id {self._selected_specific_opponent_id}"
+            else:
+                suffix = "пул / лига (PFSP)"
         else:
             if self._selected_specific_opponent_id:
                 suffix = f"agent_id {self._selected_specific_opponent_id}"
@@ -4205,6 +4417,8 @@ class GUIController(QtCore.QObject):
                 opponent_short = str(opponent_algo).upper()
             else:
                 opponent_short = "Снапшот"
+        elif src == "pool":
+            opponent_short = "Пул PFSP"
         else:
             if self._selected_specific_opponent_id and str(opponent_algo).strip().lower() not in {"", "unknown"}:
                 opponent_short = str(opponent_algo).upper()
@@ -5558,6 +5772,7 @@ class GUIController(QtCore.QObject):
         )
         self._az_tree_hyperparams["mcts_mode"] = "tree"
         self._az_proxy_hyperparams["mcts_mode"] = "proxy"
+        self._apply_opponent_pool_hyperparams(payload)
         self._refresh_training_profile_labels()
         self.trainingHyperparamsChanged.emit()
         return True
@@ -6756,6 +6971,22 @@ class GUIController(QtCore.QObject):
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "snapshot"
             env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
             env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
+        elif selected_opponent_source == "pool":
+            env_overrides["SELF_PLAY_ENABLED"] = "1"
+            env_overrides["SELF_PLAY_OPPONENT_MODE"] = "snapshot"
+            env_overrides["OPPONENT_POOL_ENABLED"] = "1"
+            if self._selected_specific_opponent_id:
+                env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
+            pool_cfg = self._opponent_pool_settings()
+            env_overrides["OPPONENT_POOL_P_HEURISTIC"] = str(pool_cfg["p_heuristic"])
+            env_overrides["OPPONENT_POOL_SIZE"] = str(pool_cfg["pool_size"])
+            env_overrides["OPPONENT_POOL_STRATEGY"] = str(pool_cfg["strategy"])
+            env_overrides["OPPONENT_POOL_PFSP_POWER"] = str(pool_cfg["pfsp_power"])
+            env_overrides["OPPONENT_POOL_UNIFORM_FLOOR"] = str(pool_cfg["uniform_floor"])
+            env_overrides["OPPONENT_POOL_NOVELTY_BONUS"] = str(pool_cfg["novelty_bonus"])
+            env_overrides["OPPONENT_POOL_MIN_GAMES"] = str(pool_cfg["min_games_for_pfsp"])
+            env_overrides["OPPONENT_POOL_EMA_ALPHA"] = str(pool_cfg["ema_alpha"])
+            env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
 
         # PRO actor-learner теперь единственный поддерживаемый training pipeline.
         env_overrides.setdefault("PRO_ACTOR_LEARNER", "1")
@@ -6841,7 +7072,7 @@ class GUIController(QtCore.QObject):
         # Доп. лог матчапа: кто против кого, включая algo (dqn/ppo/heuristic).
         effective_opp_id = str(env_overrides.get("OPPONENT_AGENT_ID", "") or "").strip()
         opp_algo = "heuristic" if selected_opponent_source == "heuristic" else "unknown"
-        if selected_opponent_source in {"latest_snapshot", "specific_agent"} and effective_opp_id:
+        if selected_opponent_source in {"latest_snapshot", "specific_agent", "pool"} and effective_opp_id:
             opp_algo = str(self._specific_opponent_algo_by_id.get(effective_opp_id, "unknown"))
         learner_algo = str(self._training_algo or "dqn").strip().lower()
         self._emit_log(
@@ -8562,35 +8793,28 @@ class GUIController(QtCore.QObject):
         return values
 
     def _league_matchup_summary(self) -> str:
-        path = os.path.join(str(ARTIFACTS_MODELS_DIR), "matchups.json")
-        if not os.path.exists(path):
-            return "League: нет данных матчапов."
-        try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                payload = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            return "League: не удалось прочитать matchups.json."
-        records = payload.get("records", []) if isinstance(payload, dict) else []
-        if not isinstance(records, list) or not records:
-            return "League: матчапы пока не записаны."
-        tail = records[-500:]
-        by_opp: dict[str, dict[str, float]] = {}
-        for rec in tail:
-            if not isinstance(rec, dict):
-                continue
-            opp = str(rec.get("opponent_agent_id", "unknown"))
-            stat = by_opp.setdefault(opp, {"games": 0.0, "wins": 0.0, "draws": 0.0, "vp": 0.0})
-            stat["games"] += 1.0
-            stat["wins"] += float(rec.get("win", 0.0))
-            stat["draws"] += float(rec.get("draw", 0.0))
-            stat["vp"] += float(rec.get("vp_diff", 0.0))
-        ranked = sorted(by_opp.items(), key=lambda kv: kv[1]["games"], reverse=True)[:3]
+        payload = self._opponent_pool_state()
+        opponents = payload.get("opponents", {}) if isinstance(payload, dict) else {}
+        if not isinstance(opponents, dict) or not opponents:
+            return "League: нет данных пула."
+        ranked = sorted(
+            opponents.items(),
+            key=lambda kv: int((kv[1] or {}).get("games", 0) if isinstance(kv[1], dict) else 0),
+            reverse=True,
+        )[:3]
         lines = ["League (top-3 по числу игр):"]
-        for opp, stat in ranked:
-            games = max(1.0, stat["games"])
+        for aid, stat in ranked:
+            if not isinstance(stat, dict):
+                continue
+            games = max(1, int(stat.get("games", 0) or 0))
+            ema_wr = float(stat.get("ema_winrate", 0.5) or 0.5)
+            draws = float(stat.get("draws", 0.0) or 0.0)
+            vp_sum = float(stat.get("vp_sum", 0.0) or 0.0)
             lines.append(
-                f"• {opp}: games={int(stat['games'])}, winrate={stat['wins']/games:.2f}, draw={stat['draws']/games:.2f}, vp={stat['vp']/games:.2f}"
+                f"• {aid}: games={games}, winrate={ema_wr:.2f}, draw≈{draws/games:.2f}, vp={vp_sum/games:.2f}"
             )
+        if len(lines) == 1:
+            return "League: матчапы пула пока не записаны."
         return "\n".join(lines)
 
     def _refresh_metrics_summaries(self) -> None:
@@ -8757,6 +8981,10 @@ class GUIController(QtCore.QObject):
 
         self._metric_summary_texts = summaries
         self._model_state_text = model_state
+        pool_state = self._opponent_pool_state()
+        if pool_state != self._opponent_pool_state_dict:
+            self._opponent_pool_state_dict = pool_state
+            self.opponentPoolStateChanged.emit()
         self.metricsSummaryChanged.emit()
         self._load_latest_heuristic_metrics(run_id=str(run_id))
 
