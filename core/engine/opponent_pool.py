@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-__all__ = ["OpponentStatsStore", "PoolConfig", "resolve_pool_config"]
+__all__ = ["OpponentChoice", "OpponentPool", "OpponentStatsStore", "PoolConfig", "resolve_pool_config"]
 
 
 @dataclass(frozen=True)
@@ -152,3 +153,68 @@ class OpponentStatsStore:
             except (OSError, json.JSONDecodeError):
                 store._data = {}
         return store
+
+
+@dataclass(frozen=True)
+class OpponentChoice:
+    kind: str          # "heuristic" | "snapshot"
+    agent_id: str
+    reason: str        # "heuristic_anchor" | "pfsp" | "uniform_floor" | "novelty"
+    weight: float
+
+
+class OpponentPool:
+    def __init__(self, *, learner_identity, learner_contract, config: PoolConfig,
+                 stats: OpponentStatsStore, rng: random.Random,
+                 candidate_provider: Callable[[], list[dict]] | None = None, log_fn=None) -> None:
+        self.learner_identity = learner_identity
+        self.learner_contract = dict(learner_contract or {})
+        self.config = config
+        self.stats = stats
+        self._rng = rng
+        self._provider = candidate_provider
+        self._log = log_fn
+        self._candidates: list[str] = []
+
+    def set_candidates(self, ids: list[str]) -> None:
+        self._candidates = [str(a) for a in ids if str(a or "").strip()]
+
+    def _weights(self, ids: list[str]) -> tuple[list[float], list[str]]:
+        cfg = self.config
+        base: list[float] = []
+        reasons: list[str] = []
+        if cfg.strategy == "uniform":
+            for _ in ids:
+                base.append(1.0)
+                reasons.append("uniform_floor")
+        else:  # pfsp
+            for aid in ids:
+                if self.stats.games(aid) < cfg.min_games_for_pfsp:
+                    base.append((1.0 - 0.5) ** cfg.pfsp_power + cfg.novelty_bonus)
+                    reasons.append("novelty")
+                else:
+                    wr = self.stats.winrate(aid)
+                    base.append((1.0 - wr) ** cfg.pfsp_power)
+                    reasons.append("pfsp")
+        n = len(ids)
+        total = sum(base) or 1.0
+        floor = cfg.uniform_floor
+        probs = [(1.0 - floor) * (b / total) + floor * (1.0 / n) for b in base]
+        return probs, reasons
+
+    def sample(self) -> OpponentChoice:
+        ids = list(self._candidates)
+        if not ids:
+            return OpponentChoice("heuristic", "", "heuristic_anchor", 1.0)
+        if self._rng.random() < self.config.p_heuristic:
+            return OpponentChoice("heuristic", "", "heuristic_anchor", self.config.p_heuristic)
+        probs, reasons = self._weights(ids)
+        r = self._rng.random()
+        acc = 0.0
+        idx = len(ids) - 1
+        for i, p in enumerate(probs):
+            acc += p
+            if r <= acc:
+                idx = i
+                break
+        return OpponentChoice("snapshot", ids[idx], reasons[idx], probs[idx])
