@@ -368,5 +368,16 @@
         "num_simulations": 32,
         "num_considered_actions": 8,
         "batch_eval_size": 16
+    },
+    "opponent_pool": {
+        "enabled": false,
+        "p_heuristic": 0.3,
+        "pool_size": 8,
+        "strategy": "pfsp",
+        "pfsp_power": 2.0,
+        "uniform_floor": 0.1,
+        "novelty_bonus": 0.25,
+        "min_games_for_pfsp": 3,
+        "ema_alpha": 0.15
     }
 }
