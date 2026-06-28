@@ -54,3 +54,54 @@ def test_novelty_reason_for_unseen():
     choice = pool.sample()
     assert choice.kind == "snapshot"
     assert choice.reason == "novelty"
+
+
+def test_refresh_filters_side_and_contract():
+    learner_contract = {"ruleset_version": "r1", "obs_space_signature": "vec:10",
+                        "action_space_signature": "heads:3,3"}
+    same = dict(learner_contract)
+    bad = dict(learner_contract, obs_space_signature="vec:999")
+    provided = [
+        {"agent_id": "p2_new", "side": "P2", "contract": same, "created_at": "2026-06-28T10:00:00"},
+        {"agent_id": "p2_old", "side": "P2", "contract": same, "created_at": "2026-06-01T10:00:00"},
+        {"agent_id": "p1_self", "side": "P1", "contract": same, "created_at": "2026-06-28T11:00:00"},
+        {"agent_id": "p2_incompat", "side": "P2", "contract": bad, "created_at": "2026-06-28T12:00:00"},
+    ]
+    from core.engine.agent_registry import AgentIdentity
+    pool = OpponentPool(
+        learner_identity=AgentIdentity(side="P1", faction="Necrons"),
+        learner_contract=learner_contract,
+        config=PoolConfig(enabled=True, pool_size=8),
+        stats=OpponentStatsStore(":memory:"), rng=random.Random(0),
+        candidate_provider=lambda: provided,
+    )
+    ids = pool.refresh_candidates()
+    assert ids == ["p2_new", "p2_old"]  # P1 (своя сторона) и несовместимый отфильтрованы; новые первыми
+
+
+def test_refresh_trims_to_pool_size():
+    from core.engine.agent_registry import AgentIdentity
+    c = {"ruleset_version": "r", "obs_space_signature": "vec:1", "action_space_signature": "heads:1"}
+    provided = [{"agent_id": f"p2_{i}", "side": "P2", "contract": c,
+                 "created_at": f"2026-06-{i+1:02d}T00:00:00"} for i in range(10)]
+    pool = OpponentPool(
+        learner_identity=AgentIdentity(side="P1", faction="X"), learner_contract=c,
+        config=PoolConfig(enabled=True, pool_size=3),
+        stats=OpponentStatsStore(":memory:"), rng=random.Random(0),
+        candidate_provider=lambda: provided,
+    )
+    ids = pool.refresh_candidates()
+    assert len(ids) == 3
+    assert ids == ["p2_9", "p2_8", "p2_7"]  # три самых новых
+
+
+def test_record_result_updates_stats():
+    from core.engine.agent_registry import AgentIdentity
+    stats = OpponentStatsStore(":memory:")
+    pool = OpponentPool(
+        learner_identity=AgentIdentity(side="P1", faction="X"), learner_contract={},
+        config=PoolConfig(enabled=True), stats=stats, rng=random.Random(0),
+        candidate_provider=lambda: [],
+    )
+    pool.record_result(agent_id="A", win=True, draw=False, vp_diff=2.0)
+    assert stats.games("A") == 1

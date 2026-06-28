@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from core.engine.agent_registry import compatible_contracts
+
 __all__ = ["OpponentChoice", "OpponentPool", "OpponentStatsStore", "PoolConfig", "resolve_pool_config"]
 
 
@@ -218,3 +220,62 @@ class OpponentPool:
                 idx = i
                 break
         return OpponentChoice("snapshot", ids[idx], reasons[idx], probs[idx])
+
+    def _opponent_side(self) -> str:
+        side = ""
+        if self.learner_identity is not None:
+            side = str(getattr(self.learner_identity, "side", "") or "").upper()
+        return "P1" if side == "P2" else "P2"
+
+    def refresh_candidates(self) -> list[str]:
+        if self._provider is None:
+            return list(self._candidates)
+        opp_side = self._opponent_side()
+        rows = self._provider() or []
+        # сортировка: новые первыми (по created_at, затем agent_id)
+        rows = sorted(rows, key=lambda r: (str(r.get("created_at", "")), str(r.get("agent_id", ""))), reverse=True)
+        out: list[str] = []
+        seen: set[str] = set()
+        filtered_contract = 0
+        for r in rows:
+            aid = str(r.get("agent_id", "") or "").strip()
+            if not aid or aid in seen:
+                continue
+            if str(r.get("side", "")).upper() != opp_side:
+                continue
+            ok, _reason = compatible_contracts(self.learner_contract, r.get("contract", {}) or {})
+            if not ok:
+                filtered_contract += 1
+                continue
+            out.append(aid)
+            seen.add(aid)
+            if len(out) >= self.config.pool_size:
+                break
+        if self._log and filtered_contract:
+            self._log(f"[POOL][REFRESH] filtered_incompatible={filtered_contract} kept={len(out)}")
+        self._candidates = out
+        return list(out)
+
+    def record_result(self, *, agent_id: str, win: bool, draw: bool, vp_diff: float) -> None:
+        if not str(agent_id or "").strip():
+            return
+        self.stats.update(agent_id=agent_id, win=win, draw=draw, vp_diff=vp_diff)
+
+    def state_for_ui(self) -> dict:
+        ids = list(self._candidates)
+        probs, reasons = self._weights(ids) if ids else ([], [])
+        rows = []
+        for i, aid in enumerate(ids):
+            rows.append({
+                "agent_id": aid,
+                "games": self.stats.games(aid),
+                "winrate": round(self.stats.winrate(aid), 4),
+                "prob": round(probs[i], 4) if probs else 0.0,
+                "reason": reasons[i] if reasons else "",
+            })
+        return {
+            "pool_size": len(ids),
+            "strategy": self.config.strategy,
+            "p_heuristic": self.config.p_heuristic,
+            "candidates": rows,
+        }
