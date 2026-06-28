@@ -5521,6 +5521,45 @@ def _actor_learner_actor_entry(
                 f"enemy_policy_mode={'snapshot_policy_fn' if opponent_policy_fn is not None else 'heuristic_auto'}"
             )
 
+        learner_identity = AgentIdentity(
+            side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+            faction=LEARNER_FACTION,
+            ruleset_version=RULESET_VERSION,
+        ).normalized()
+        env_contract = make_env_contract(
+            n_observations=n_observations,
+            n_actions=n_actions,
+            mission_name=mission_name,
+            ruleset_version=learner_identity.ruleset_version,
+            extras={"actor_learner": 1, "train_algo": "dqn", "num_actors": 1},
+        )
+
+        _pool = None
+        _pool_cache = None
+        if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
+            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+
+            _pool = build_pool_for_actor(
+                learner_identity=learner_identity,
+                learner_contract=env_contract,
+                config=POOL_CONFIG,
+                stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(actor_idx)),
+                log_fn=append_agent_log,
+            )
+            if _pool is not None:
+
+                def _dqn_build_opponent(aid, _env=env, _lm=len(model)):
+                    spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                    return build_policy_fn(env=_env, len_model=_lm, opponent=spec, deterministic=True)
+
+                _pool_cache = OpponentRuntimeCache(build_fn=_dqn_build_opponent, maxsize=POOL_CONFIG.pool_size + 1)
+                append_agent_log(
+                    f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
+                    f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                    f"candidates={len(_pool.refresh_candidates())}"
+                )
+
         steps_done = 0
         buf = []
         n_step_buf = collections.deque(maxlen=N_STEP)
@@ -5531,6 +5570,14 @@ def _actor_learner_actor_entry(
                 append_agent_log(f"[DQN][ACTOR] actor={int(actor_idx)} stop.flag — выход")
                 break
             ep_idx_1based = int(_ep) + 1
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                _pool_choice = _pool.sample()
+                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
+                append_agent_log(
+                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
+                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                )
             trace_lines: list[str] = []
             round_timeline: list[dict] = []
             step_idx = 0
@@ -5826,6 +5873,21 @@ def _actor_learner_actor_entry(
                 enemy_ctrl = list(enemy_ctrl) if isinstance(enemy_ctrl, (list, tuple)) else []
 
                 result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+
+                if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
+                    _pool.record_result(
+                        agent_id=_pool_choice.agent_id,
+                        win=(result == "win"),
+                        draw=(result == "draw"),
+                        vp_diff=float(vp_diff),
+                    )
+                    _pool.stats.save()
+                    append_agent_log(
+                        f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
+                        f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
+                        f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
+                        f"games={_pool.stats.games(_pool_choice.agent_id)}"
+                    )
 
                 # Защита от явно подозрительных "побед" (обычно признак сломанного протокола).
                 if result == "win" and end_reason == "wipeout_enemy" and model_vp == 0 and player_vp == 0 and turn <= 0:
@@ -6331,6 +6393,56 @@ def _actor_learner_actor_entry_alphazero(
             except Exception:
                 opponent_policy_fn = None
 
+        learner_identity = AgentIdentity(
+            side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+            faction=LEARNER_FACTION,
+            ruleset_version=RULESET_VERSION,
+        ).normalized()
+        if TRAIN_ALGO == "alphazero_tree":
+            _az_train_algo = "alphazero_tree"
+        elif is_gumbel_az_algo(TRAIN_ALGO):
+            _az_train_algo = str(TRAIN_ALGO)
+        else:
+            _az_train_algo = "alphazero_proxy"
+        env_contract = make_env_contract(
+            n_observations=n_observations,
+            n_actions=n_actions,
+            mission_name=mission_name,
+            ruleset_version=learner_identity.ruleset_version,
+            extras={"actor_learner": 1, "train_algo": _az_train_algo, "num_actors": 1},
+        )
+
+        _pool = None
+        _pool_cache = None
+        if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
+            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+
+            _pool = build_pool_for_actor(
+                learner_identity=learner_identity,
+                learner_contract=env_contract,
+                config=POOL_CONFIG,
+                stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(actor_idx)),
+                log_fn=append_agent_log,
+            )
+            if _pool is not None:
+
+                def _az_build_opponent(aid, _env=env, _lm=len_model):
+                    spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                    return build_policy_fn(
+                        env=_env,
+                        len_model=_lm,
+                        opponent=spec,
+                        deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                    )
+
+                _pool_cache = OpponentRuntimeCache(build_fn=_az_build_opponent, maxsize=POOL_CONFIG.pool_size + 1)
+                append_agent_log(
+                    f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
+                    f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                    f"candidates={len(_pool.refresh_candidates())}"
+                )
+
         rollout_batch: list[dict] = []
         heartbeat_moves = max(1, int(os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5") or 5))
         ep_limit = int(episodes)
@@ -6341,6 +6453,14 @@ def _actor_learner_actor_entry_alphazero(
                 break
             ep_idx_1based = int(_ep) + 1 if ep_limit > 0 else int(_ep) + 1
             ep_total_label = str(ep_limit) if ep_limit > 0 else "open"
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                _pool_choice = _pool.sample()
+                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
+                append_agent_log(
+                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
+                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                )
             print(
                 f"[{_AZ_LOG_TAG}][ACTOR] actor={int(actor_idx)} local_ep={ep_idx_1based}/{ep_total_label} starting "
                 f"mcts_mode={getattr(mcts.cfg, 'mode', 'proxy')} "
@@ -6429,6 +6549,22 @@ def _actor_learner_actor_entry_alphazero(
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+
+            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
+                _pool.record_result(
+                    agent_id=_pool_choice.agent_id,
+                    win=(result == "win"),
+                    draw=(result == "draw"),
+                    vp_diff=float(vp_diff),
+                )
+                _pool.stats.save()
+                append_agent_log(
+                    f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
+                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
+                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
+                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
+                )
+
             ep_payload = {
                 "episode": None,
                 "actor_idx": int(actor_idx),
@@ -6604,6 +6740,60 @@ def _az_env_worker_entry(
             except Exception:
                 opponent_policy_fn = None
 
+        _n_actions = action_sizes_from_env(env, len_model)
+        _n_obs = int(getattr(env.observation_space, "shape", (0,))[0])
+        learner_identity = AgentIdentity(
+            side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+            faction=LEARNER_FACTION,
+            ruleset_version=RULESET_VERSION,
+        ).normalized()
+        if TRAIN_ALGO == "alphazero_tree":
+            _az_train_algo = "alphazero_tree"
+        elif is_gumbel_az_algo(TRAIN_ALGO):
+            _az_train_algo = str(TRAIN_ALGO)
+        else:
+            _az_train_algo = "alphazero_proxy"
+        env_contract = make_env_contract(
+            n_observations=_n_obs,
+            n_actions=_n_actions,
+            mission_name=mission_name,
+            ruleset_version=learner_identity.ruleset_version,
+            extras={"actor_learner": 1, "train_algo": _az_train_algo, "num_actors": 1},
+        )
+
+        _pool = None
+        _pool_cache = None
+        if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
+            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+
+            _pool = build_pool_for_actor(
+                learner_identity=learner_identity,
+                learner_contract=env_contract,
+                config=POOL_CONFIG,
+                stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(worker_id)),
+                log_fn=append_agent_log,
+            )
+            if _pool is not None:
+
+                def _az_worker_build_opponent(aid, _env=env, _lm=len_model):
+                    spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                    return build_policy_fn(
+                        env=_env,
+                        len_model=_lm,
+                        opponent=spec,
+                        deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                    )
+
+                _pool_cache = OpponentRuntimeCache(
+                    build_fn=_az_worker_build_opponent, maxsize=POOL_CONFIG.pool_size + 1
+                )
+                append_agent_log(
+                    f"[POOL][INIT] worker={int(worker_id)} enabled=1 strategy={POOL_CONFIG.strategy} "
+                    f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                    f"candidates={len(_pool.refresh_candidates())}"
+                )
+
         current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
         rollout_batch: list[dict] = []
         heartbeat_moves = max(1, int(os.getenv("AZ_ACTOR_HEARTBEAT_MOVES", "5") or 5))
@@ -6620,6 +6810,14 @@ def _az_env_worker_entry(
                 append_agent_log(f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} stop.flag — выход")
                 break
             ep_idx_1based = int(_ep) + 1
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                _pool_choice = _pool.sample()
+                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
+                append_agent_log(
+                    f"[POOL] worker={int(worker_id)} ep={ep_idx_1based} kind={_pool_choice.kind} "
+                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                )
             print(
                 f"[{_AZ_LOG_TAG}][ENV_WORKER] worker={int(worker_id)} local_ep={ep_idx_1based}/{ep_total_label} starting",
                 flush=True,
@@ -6684,6 +6882,22 @@ def _az_env_worker_entry(
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+
+            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
+                _pool.record_result(
+                    agent_id=_pool_choice.agent_id,
+                    win=(result == "win"),
+                    draw=(result == "draw"),
+                    vp_diff=float(vp_diff),
+                )
+                _pool.stats.save()
+                append_agent_log(
+                    f"[POOL][RESULT] worker={int(worker_id)} agent={_pool_choice.agent_id} "
+                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
+                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
+                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
+                )
+
             ep_payload = {
                 "episode": None,
                 "actor_idx": int(worker_id),
@@ -8128,9 +8342,61 @@ def _actor_learner_actor_entry_gumbel_muzero(
             except Exception:
                 opponent_policy_fn = None
 
+        learner_identity = AgentIdentity(
+            side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+            faction=LEARNER_FACTION,
+            ruleset_version=RULESET_VERSION,
+        ).normalized()
+        env_contract = make_env_contract(
+            n_observations=n_observations,
+            n_actions=n_actions,
+            mission_name=mission_name,
+            ruleset_version=learner_identity.ruleset_version,
+            extras={"actor_learner": 1, "train_algo": "gumbel_muzero", "num_actors": 1},
+        )
+
+        _pool = None
+        _pool_cache = None
+        if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
+            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+
+            _pool = build_pool_for_actor(
+                learner_identity=learner_identity,
+                learner_contract=env_contract,
+                config=POOL_CONFIG,
+                stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(actor_idx)),
+                log_fn=append_agent_log,
+            )
+            if _pool is not None:
+
+                def _gmz_build_opponent(aid, _env=env, _lm=len_model):
+                    spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                    return build_policy_fn(
+                        env=_env,
+                        len_model=_lm,
+                        opponent=spec,
+                        deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                    )
+
+                _pool_cache = OpponentRuntimeCache(build_fn=_gmz_build_opponent, maxsize=POOL_CONFIG.pool_size + 1)
+                append_agent_log(
+                    f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
+                    f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                    f"candidates={len(_pool.refresh_candidates())}"
+                )
+
         rollout_batch: list[dict] = []
         for _ep in range(int(episodes)):
             ep_idx_1based = int(_ep) + 1
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                _pool_choice = _pool.sample()
+                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
+                append_agent_log(
+                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
+                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
                     if os.path.isfile(sync_path):
@@ -8195,6 +8461,22 @@ def _actor_learner_actor_entry_gumbel_muzero(
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+
+            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
+                _pool.record_result(
+                    agent_id=_pool_choice.agent_id,
+                    win=(result == "win"),
+                    draw=(result == "draw"),
+                    vp_diff=float(vp_diff),
+                )
+                _pool.stats.save()
+                append_agent_log(
+                    f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
+                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
+                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
+                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
+                )
+
             data_q.put(
                 (
                     "ep",
@@ -8324,9 +8606,61 @@ def _actor_learner_actor_entry_sampled_muzero(
             except Exception:
                 opponent_policy_fn = None
 
+        learner_identity = AgentIdentity(
+            side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+            faction=LEARNER_FACTION,
+            ruleset_version=RULESET_VERSION,
+        ).normalized()
+        env_contract = make_env_contract(
+            n_observations=n_observations,
+            n_actions=n_actions,
+            mission_name=mission_name,
+            ruleset_version=learner_identity.ruleset_version,
+            extras={"actor_learner": 1, "train_algo": "sampled_muzero", "num_actors": 1},
+        )
+
+        _pool = None
+        _pool_cache = None
+        if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
+            from core.models.opponent_pool_runtime import OpponentRuntimeCache, build_pool_for_actor
+
+            _pool = build_pool_for_actor(
+                learner_identity=learner_identity,
+                learner_contract=env_contract,
+                config=POOL_CONFIG,
+                stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(actor_idx)),
+                log_fn=append_agent_log,
+            )
+            if _pool is not None:
+
+                def _smz_build_opponent(aid, _env=env, _lm=len_model):
+                    spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                    return build_policy_fn(
+                        env=_env,
+                        len_model=_lm,
+                        opponent=spec,
+                        deterministic=bool(AZ_SNAPSHOT_OPP_DETERMINISTIC),
+                    )
+
+                _pool_cache = OpponentRuntimeCache(build_fn=_smz_build_opponent, maxsize=POOL_CONFIG.pool_size + 1)
+                append_agent_log(
+                    f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
+                    f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                    f"candidates={len(_pool.refresh_candidates())}"
+                )
+
         rollout_batch: list[dict] = []
         for _ep in range(int(episodes)):
             ep_idx_1based = int(_ep) + 1
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                _pool_choice = _pool.sample()
+                opponent_policy_fn = None if _pool_choice.kind == "heuristic" else _pool_cache.get(_pool_choice.agent_id)
+                append_agent_log(
+                    f"[POOL] actor={int(actor_idx)} ep={ep_idx_1based} kind={_pool_choice.kind} "
+                    f"agent={_pool_choice.agent_id or '-'} reason={_pool_choice.reason} weight={_pool_choice.weight:.3f}"
+                )
             if sync_enabled and (_ep % sync_check_every_ep == 0):
                 try:
                     if os.path.isfile(sync_path):
@@ -8391,6 +8725,22 @@ def _actor_learner_actor_entry_sampled_muzero(
             player_vp = int(info.get("player VP", 0) or 0)
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+
+            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
+                _pool.record_result(
+                    agent_id=_pool_choice.agent_id,
+                    win=(result == "win"),
+                    draw=(result == "draw"),
+                    vp_diff=float(vp_diff),
+                )
+                _pool.stats.save()
+                append_agent_log(
+                    f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
+                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
+                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
+                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
+                )
+
             data_q.put(
                 (
                     "ep",
