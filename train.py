@@ -466,12 +466,13 @@ for _k in _REWARD_CFG_ENV_KEYS:
     if _v is None:
         continue
     try:
-        _curr = getattr(reward_cfg, _k)
-        if isinstance(_curr, int):
-            setattr(reward_cfg, _k, int(float(_v)))
+        # Применяем во ВСЕ профили: профиль миссии выбирается позже (на reset),
+        # иначе override не доезжает до annihilation (тихо baseline-vs-baseline).
+        _applied = reward_cfg.apply_override_all_profiles(_k, _v)
+        if _applied:
+            print(f"[TRAIN][REWARD_CFG] override {_k}={_applied}")
         else:
-            setattr(reward_cfg, _k, float(_v))
-        print(f"[TRAIN][REWARD_CFG] override {_k}={getattr(reward_cfg, _k)}")
+            print(f"[TRAIN][REWARD_CFG][WARN] override {_k}: ключ отсутствует во всех профилях")
     except Exception:
         print(f"[TRAIN][REWARD_CFG][WARN] invalid override {_k}={_v}")
 
@@ -1428,6 +1429,7 @@ def _train_window_payload_from_rows(
     algo: str,
     training_loss: float | None = None,
     window: int | None = None,
+    opponent_epsilon: float = 0.0,
 ) -> dict:
     """Точка метрик из окна РЕАЛЬНЫХ тренировочных эпизодов (замена DET-eval).
 
@@ -1467,6 +1469,9 @@ def _train_window_payload_from_rows(
         "kill_diff_mean": 0.0,
         "reward_mean": float(sum(float(r.get("ep_reward", 0.0) or 0.0) for r in rows_slice) / n),
         "ep_len_mean": float(sum(float(r.get("ep_len", 0) or 0) for r in rows_slice) / n),
+        # Схема совпадает с _gmz/_az payload: actor-learner DET-eval (DQN/PPO) читает
+        # этот ключ жёстко; без него KeyError → "eval пропущен" в self-play.
+        "opponent_epsilon": float(opponent_epsilon),
         "episode": int(max(int(episode_idx), 1)),
         "algo": str(algo),
         "eval_tag": "train_window",
@@ -4420,6 +4425,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                             episode_idx=int(episodes_finished),
                             algo="dqn",
                             training_loss=float(last_loss) if last_loss is not None else None,
+                            opponent_epsilon=float(opponent_eps),
                         )
                         if adaptive_tl_curriculum:
                             try:
@@ -4489,7 +4495,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                             f"wipeout_model_rate={det_payload['wipeout_model_rate']:.3f} "
                             f"vp_diff_mean={det_payload['vp_diff_mean']:.3f} "
                             f"ep_len_mean={det_payload['ep_len_mean']:.3f} "
-                            f"opp_eps={det_payload['opponent_epsilon']:.3f}"
+                            f"opp_eps={det_payload.get('opponent_epsilon', 0.0):.3f}"
                         )
                         append_agent_log(det_line)
                         if TRAIN_LOG_TO_CONSOLE:

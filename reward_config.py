@@ -37,7 +37,30 @@ _active_name = "only_war"
 _FACADE_OWN = frozenset({
     "_active", "_active_name", "_PROFILES", "_FACADE_OWN",
     "configure_for_mission", "active_profile_name",
+    "apply_override_all_profiles",
 })
+
+
+def apply_override_all_profiles(name, value):
+    """Применить reward-override на ВСЕ профили, где ключ объявлен.
+
+    Нужно для RCFG_ A/B: профиль миссии выбирается позже (на reset через
+    configure_for_mission), поэтому override, применённый только к активному
+    профилю на import, не доезжает до целевого (напр. annihilation). Тип берётся
+    из текущего значения профиля (int → int, иначе float). Возвращает
+    {profile_name: applied_value} по профилям, где ключ реально был."""
+    applied: dict[str, float] = {}
+    for prof_name, prof in (("only_war", _profile_only_war), ("annihilation", _profile_annihilation)):
+        if not hasattr(prof, name):
+            continue
+        curr = getattr(prof, name)
+        if isinstance(curr, int) and not isinstance(curr, bool):
+            cast = int(float(value))
+        else:
+            cast = float(value)
+        setattr(prof, name, cast)
+        applied[prof_name] = cast
+    return applied
 
 
 def configure_for_mission(mission_name):

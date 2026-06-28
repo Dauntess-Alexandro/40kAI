@@ -107,3 +107,21 @@ def test_train_window_payload_respects_window():
     payload = _train_window_payload_from_rows(rows, episode_idx=60, algo="dqn", window=10)
     assert payload["eval_episodes"] == 10
     assert payload["win_rate"] == 1.0
+
+
+def test_train_window_payload_includes_opponent_epsilon():
+    # Регрессия: DQN/PPO actor-learner DET-eval читает payload['opponent_epsilon']
+    # жёстко ([...]); без ключа в схеме это KeyError → "eval пропущен" (eval не идёт
+    # в self-play). Схема должна совпадать с _gmz/_az payload (там ключ уже есть).
+    from train import _train_window_payload_from_rows
+
+    rows = [{"result": "draw", "end_reason": "turn_limit"}]
+    # default: ключ присутствует и равен 0.0
+    payload = _train_window_payload_from_rows(rows, episode_idx=10, algo="dqn")
+    assert "opponent_epsilon" in payload
+    assert payload["opponent_epsilon"] == 0.0
+    # переданное значение прокидывается (для self-play eps>0)
+    payload2 = _train_window_payload_from_rows(
+        rows, episode_idx=10, algo="ppo", opponent_epsilon=0.07
+    )
+    assert payload2["opponent_epsilon"] == 0.07

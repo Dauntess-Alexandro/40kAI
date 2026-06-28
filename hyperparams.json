@@ -361,7 +361,7 @@
         "inference_remote_host": "127.0.0.1",
         "inference_remote_port": 5565,
         "inference_remote_auth_token": "",
-        "distributed_actors_enabled": 1,
+        "distributed_actors_enabled": 0,
         "distributed_actors_port": 5567,
         "distributed_actors_bind_host": "0.0.0.0",
         "distributed_actors_auth_token": "",
