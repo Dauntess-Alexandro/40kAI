@@ -5881,7 +5881,6 @@ class GUIController(QtCore.QObject):
             env.insert("DEPLOYMENT_PLAYER_MANUAL_IN_RL_PHASE", "0")
         env.insert("LEARNER_SIDE", learner_side)
         env.insert("LEARNER_FACTION", self._display_faction_for_side(learner_side))
-        env.insert("LEAGUE_ENABLE", "1")
         az_eval_mode = learner_mode if is_az_algo(learner_algo) and learner_mode in {"greedy", "mcts"} else "mcts"
         az_opponent_mode = "mcts"
         if is_az_algo(opponent_algo) and opponent_mode in {"greedy", "mcts"}:
@@ -6917,7 +6916,6 @@ class GUIController(QtCore.QObject):
             env.insert("VERBOSE_LOGS", "0")
             env.insert("TRAIN_DEBUG", "0")
             env.insert("FIGHT_REPORT", "0")
-        env.insert("LEAGUE_ENABLE", "1")
         env.insert("DEPLOYMENT_MODE", self._deployment_mode)
         env.insert("TRAIN_EPISODES_OVERRIDE", str(int(self._num_games)))
         if self._training_algo == "gumbel_muzero":
