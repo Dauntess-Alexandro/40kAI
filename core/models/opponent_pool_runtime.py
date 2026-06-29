@@ -315,6 +315,10 @@ class OpponentPoolStatsWriter:
         if result not in {"win", "draw", "loss"}:
             result = "draw"
         vp_diff = float(payload.get("vp_diff", 0.0) or 0.0)
+        actor_raw = payload.get("actor_idx", -1)
+        actor_idx = int(actor_raw) if actor_raw is not None else -1
+        actor_ep_raw = payload.get("actor_ep", 0)
+        actor_ep = int(actor_ep_raw) if actor_ep_raw is not None else 0
 
         if kind == "snapshot":
             self.stats.update(
@@ -360,8 +364,8 @@ class OpponentPoolStatsWriter:
             "label": short_agent_label(agent_id) if agent_id else "эвристика",
             "reason": rec["last_reason"],
             "result": result,
-            "actor_idx": int(payload.get("actor_idx", -1) or -1),
-            "actor_ep": int(payload.get("actor_ep", 0) or 0),
+            "actor_idx": actor_idx,
+            "actor_ep": actor_ep,
             "selected_at": now,
         }
         self._save_run_state()
@@ -374,7 +378,7 @@ class OpponentPoolStatsWriter:
                 if kind == "snapshot" else ""
             )
             log_fn(
-                f"[POOL][RESULT] writer=learner actor={int(payload.get('actor_idx', -1) or -1)} "
+                f"[POOL][RESULT] writer=learner actor={actor_idx} "
                 f"kind={kind} agent={agent_id or '-'} result={result} vp={vp_diff:g} "
                 f"run_games={int(rec['games'])} p_episode={float(rec['expected_prob']):.3f}{suffix}"
             )

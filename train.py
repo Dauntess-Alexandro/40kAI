@@ -5604,7 +5604,7 @@ def _actor_learner_actor_entry(
                 append_agent_log(
                     f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
                     f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
-                    f"candidates={len(_pool.refresh_candidates())}"
+                    f"candidates={len(_pool.current_candidates())}"
                 )
 
         steps_done = 0
@@ -6100,7 +6100,7 @@ def _actor_learner_actor_entry_ppo(
                 append_agent_log(
                     f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
                     f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
-                    f"candidates={len(_pool.refresh_candidates())}"
+                    f"candidates={len(_pool.current_candidates())}"
                 )
 
         # ordered_keys локально (для action_dict)
@@ -6483,7 +6483,7 @@ def _actor_learner_actor_entry_alphazero(
                 append_agent_log(
                     f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
                     f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
-                    f"candidates={len(_pool.refresh_candidates())}"
+                    f"candidates={len(_pool.current_candidates())}"
                 )
 
         rollout_batch: list[dict] = []
@@ -6832,7 +6832,7 @@ def _az_env_worker_entry(
                 append_agent_log(
                     f"[POOL][INIT] worker={int(worker_id)} enabled=1 strategy={POOL_CONFIG.strategy} "
                     f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
-                    f"candidates={len(_pool.refresh_candidates())}"
+                    f"candidates={len(_pool.current_candidates())}"
                 )
 
         current_policy_version = int(outcome_payload.get("policy_version", 0) or 0)
@@ -8425,7 +8425,7 @@ def _actor_learner_actor_entry_gumbel_muzero(
                 append_agent_log(
                     f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
                     f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
-                    f"candidates={len(_pool.refresh_candidates())}"
+                    f"candidates={len(_pool.current_candidates())}"
                 )
 
         rollout_batch: list[dict] = []
@@ -8686,7 +8686,7 @@ def _actor_learner_actor_entry_sampled_muzero(
                 append_agent_log(
                     f"[POOL][INIT] actor={int(actor_idx)} enabled=1 strategy={POOL_CONFIG.strategy} "
                     f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
-                    f"candidates={len(_pool.refresh_candidates())}"
+                    f"candidates={len(_pool.current_candidates())}"
                 )
 
         rollout_batch: list[dict] = []

@@ -136,6 +136,27 @@ def test_learner_writer_aggregates_multiple_actor_results(tmp_path):
     assert run["wins"] == 1 and run["draws"] == 1 and run["losses"] == 1
 
 
+def test_learner_writer_preserves_actor_zero_in_log_and_live_state(tmp_path):
+    logs: list[str] = []
+    writer = OpponentPoolStatsWriter(
+        stats_path=str(tmp_path / "stats.json"),
+        run_state_path=str(tmp_path / "run.json"),
+        config=PoolConfig(enabled=True),
+        learner_side="P1",
+        learner_algo="ppo",
+    )
+    writer.handle({
+        "actor_idx": 0,
+        "actor_ep": 1,
+        "kind": "heuristic",
+        "result": "draw",
+        "vp_diff": 0,
+        "prob_episode": 0.3,
+    }, log_fn=logs.append)
+    assert "actor=0" in logs[-1]
+    assert writer.run_state["last_opponent"]["actor_idx"] == 0
+
+
 def test_actor_result_payload_updates_only_local_sampler():
     pool = _pool_with(["A"])
     choice = pool.sample()

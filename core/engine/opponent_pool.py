@@ -244,6 +244,9 @@ class OpponentPool:
         if aid:
             self._candidates = [c for c in self._candidates if c != aid]
 
+    def current_candidates(self) -> list[str]:
+        return list(self._candidates)
+
     def _weights(self, ids: list[str]) -> tuple[list[float], list[str]]:
         cfg = self.config
         base: list[float] = []
