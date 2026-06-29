@@ -140,6 +140,27 @@ class PhoenixNet(nn.Module):
     def online_quantiles(self, obs, num_quantiles=None, taus=None, return_taus=False):
         return self.online.iqn(obs, num_quantiles=num_quantiles, taus=taus, return_taus=return_taus)
 
+    def target_quantiles_from_latent(self, z, num_quantiles=None, taus=None, return_taus=False):
+        batch_size = z.shape[0]
+        n_q = int(num_quantiles or self.target.iqn_num_target_quantiles)
+        if taus is None:
+            taus = self.target._sample_taus(batch_size, n_q, z.device)
+        iqn_feat = self.target._iqn_features(z, taus).reshape(batch_size * n_q, self.hidden_size)
+        all_outputs = []
+        for bundle in self.target.head_bundles:
+            all_outputs.append(bundle.iqn_from_features(iqn_feat, batch_size, n_q, self.action_sizes))
+        if self.target.n_ensemble == 1:
+            outputs = all_outputs[0]
+        else:
+            outputs = []
+            num_heads = len(all_outputs[0])
+            for h in range(num_heads):
+                stacked = torch.stack([all_outputs[e][h] for e in range(self.target.n_ensemble)], dim=0)
+                outputs.append(stacked.mean(dim=0))
+        if return_taus:
+            return outputs, taus
+        return outputs
+
     # --- SPR heads ---
     def project(self, z):
         return self.projector(z)

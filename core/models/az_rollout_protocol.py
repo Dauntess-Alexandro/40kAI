@@ -72,7 +72,7 @@ def validate_wire_message(
     if expected_auth and got_auth != expected_auth:
         raise ValueError("[AZ][DIST] auth_token mismatch")
     kind, payload = parse_wire_message(msg)
-    if expected_contract_hash and kind in ("hello", "rollout", "batch"):
+    if expected_contract_hash and kind in ("hello", "rollout", "batch", "phoenix_batch"):
         got_hash = str(payload.get("env_contract_hash", "") or "")
         if got_hash and got_hash != str(expected_contract_hash):
             raise ValueError(

@@ -135,6 +135,24 @@ from core.models.dqn_dist import (
     wait_dqn_dist_remote_workers,
     write_dqn_dist_train_context,
 )
+from core.models.phoenix_dist import (
+    PHOENIX_DIST_TOPUP_ACTOR_IDX,
+    atomic_save_phoenix_sync,
+    clear_phoenix_dist_stop_flag,
+    compute_phoenix_dist_topup_episodes,
+    pack_phoenix_batch,
+    phoenix_actor_epsilon_floor,
+    phoenix_dist_env_contract_extras,
+    phoenix_dist_stop_requested,
+    phoenix_sync_path,
+    resolve_phoenix_dist_episode_split,
+    split_count_among_workers as split_phoenix_count_among_workers,
+    touch_phoenix_dist_stop_flag,
+    unpack_phoenix_batch,
+    wait_phoenix_dist_train_context,
+    write_phoenix_dist_train_context,
+    PhoenixSequenceAssembler,
+)
 from core.models.gmz_inference_client import GMZInferenceClient
 from core.models.gmz_inference_server import gmz_inference_server_entry
 from core.models.gmz_remote_search_cfg_builder import publish_gmz_remote_search_cfg
@@ -3916,6 +3934,8 @@ def _phoenix_save_checkpoint(
     learner_identity: AgentIdentity,
     checkpoint_dir: str,
     final: bool = False,
+    mode: str = "single_process",
+    num_actors: int = 1,
 ) -> str:
     os.makedirs(checkpoint_dir, exist_ok=True)
     ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode)}.pth")
@@ -3947,7 +3967,8 @@ def _phoenix_save_checkpoint(
                     "algo": "phoenix",
                     "episode": int(episode),
                     "grad_step": int(trainer.grad_step),
-                    "mode": "single_process",
+                    "mode": str(mode),
+                    "num_actors": int(num_actors),
                 },
             )
             append_agent_log(f"[PHOENIX][SAVE] agent_id={agent_id} artifact_dir={artifact_dir}")
@@ -3959,20 +3980,23 @@ def _phoenix_save_checkpoint(
     return ckpt_path
 
 
-def _phoenix_learn_from_buffer(buf, trainer, cfg) -> None:
-    min_replay = int(os.getenv("PHOENIX_MIN_REPLAY", "256"))
-    batch_size = max(1, int(os.getenv("PHOENIX_BATCH", "32")))
+def _phoenix_learn_from_buffer(buf, trainer, cfg, *, max_updates: int | None = None) -> int:
+    min_replay = max(1, int(getattr(cfg, "replay_min_size", 256)))
+    batch_size = max(1, int(getattr(cfg, "batch_size", 32)))
     if len(buf) < min_replay:
-        return
+        return 0
+    updates = max(1, int(max_updates if max_updates is not None else getattr(cfg, "replay_ratio", 1)))
+    learned = 0
     net_was_training = trainer.net.training
     trainer.net.train()
     try:
-        for _ in range(int(cfg.replay_ratio)):
+        for _ in range(updates):
             windows, idx, _weights = buf.sample(batch_size)
             if not windows:
                 break
-            out = trainer.learn_step(windows)
+            out = trainer.learn_step(windows, is_weights=_weights)
             buf.update_priorities(idx, out["td_errors"] + 1e-3)
+            learned += 1
             if trainer.maybe_reset(trainer.grad_step):
                 append_agent_log(
                     f"[PHOENIX][RESET] grad_step={trainer.grad_step} alpha={cfg.shrink_alpha}"
@@ -3980,9 +4004,10 @@ def _phoenix_learn_from_buffer(buf, trainer, cfg) -> None:
     finally:
         if not net_was_training:
             trainer.net.eval()
+    return learned
 
 
-def _main_actor_learner_phoenix(
+def _main_actor_learner_phoenix_single(
     *,
     roster_config,
     totLifeT,
@@ -4145,6 +4170,762 @@ def _main_actor_learner_phoenix(
         env.close()
     except Exception:
         pass
+
+
+def _main_actor_learner_phoenix(
+    *,
+    roster_config,
+    totLifeT,
+    clip_reward_enabled,
+    clip_reward_min,
+    clip_reward_max,
+) -> None:
+    from core.models.phoenix_config import resolve_phoenix_config
+
+    cfg = resolve_phoenix_config(data if isinstance(data, dict) else {}, os.environ)
+    if int(getattr(cfg, "num_actors", 1)) <= 1 and not bool(getattr(cfg, "distributed_actors_enabled", False)):
+        append_agent_log("[PHOENIX][CONFIG] mode=single_process num_actors=1 distributed=0")
+        _main_actor_learner_phoenix_single(
+            roster_config=roster_config,
+            totLifeT=totLifeT,
+            clip_reward_enabled=clip_reward_enabled,
+            clip_reward_min=clip_reward_min,
+            clip_reward_max=clip_reward_max,
+        )
+        return
+    _main_actor_learner_phoenix_distributed(
+        roster_config=roster_config,
+        totLifeT=totLifeT,
+        clip_reward_enabled=clip_reward_enabled,
+        clip_reward_min=clip_reward_min,
+        clip_reward_max=clip_reward_max,
+        cfg=cfg,
+    )
+
+
+def _phoenix_actor_entry(
+    actor_idx: int,
+    episodes: int,
+    roster_config: dict,
+    b_len: int,
+    b_hei: int,
+    n_observations: int,
+    n_actions: list,
+    cfg,
+    init_weights: dict,
+    batch_send: int,
+    clip_reward_min: float,
+    clip_reward_max: float,
+    clip_reward_enabled: bool,
+    data_q,
+    opponent_spec,
+    opponent_eps: float,
+    self_play_enabled: int,
+    env_contract: dict,
+    total_actor_slots: int,
+):
+    """Top-level PHOENIX actor entrypoint for Windows spawn pickling."""
+    try:
+        from core.models.phoenix_model import PhoenixNet
+
+        cpu_net = PhoenixNet(int(n_observations), list(n_actions), cfg).to(torch.device("cpu"))
+        cpu_net.load_state_dict(normalize_state_dict(init_weights), strict=False)
+        cpu_net.eval()
+
+        trunc = True
+        enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+        mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+        env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+
+        sync_enabled = os.getenv("PHOENIX_ACTOR_SYNC_ENABLED", os.getenv("ACTOR_SYNC_ENABLED", "1")) == "1"
+        sync_path = phoenix_sync_path()
+        sync_check_every_ep = max(1, int(os.getenv("PHOENIX_ACTOR_SYNC_CHECK_EVERY_EP", "5")))
+        last_sync_mtime = -1.0
+
+        opponent_policy_fn = None
+        if int(self_play_enabled) == 1 and opponent_spec is not None:
+            try:
+                opponent_policy_fn = build_policy_fn(
+                    env=env,
+                    len_model=len(model),
+                    opponent=opponent_spec,
+                    deterministic=True,
+                )
+            except Exception:
+                opponent_policy_fn = None
+
+        _pool = None
+        _pool_cache = None
+        if int(self_play_enabled) == 1 and POOL_CONFIG.enabled:
+            try:
+                from core.models.opponent_pool_runtime import (
+                    OpponentRuntimeCache,
+                    build_pool_for_actor,
+                    choose_opponent_policy_fn,
+                )
+
+                learner_identity = AgentIdentity(
+                    side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+                    faction=LEARNER_FACTION,
+                    ruleset_version=RULESET_VERSION,
+                ).normalized()
+                _pool = build_pool_for_actor(
+                    learner_identity=learner_identity,
+                    learner_contract=env_contract,
+                    config=POOL_CONFIG,
+                    stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+                    seed=(POOL_CONFIG.seed if POOL_CONFIG.seed is not None else int(actor_idx)),
+                    log_fn=append_agent_log,
+                )
+                if _pool is not None:
+
+                    def _phoenix_build_opponent(aid, _env=env, _lm=len(model)):
+                        spec = load_agent_opponent(agent_id=aid, expected_contract=env_contract)
+                        return build_policy_fn(env=_env, len_model=_lm, opponent=spec, deterministic=True)
+
+                    _pool_cache = OpponentRuntimeCache(build_fn=_phoenix_build_opponent, maxsize=POOL_CONFIG.pool_size + 1)
+                    append_agent_log(
+                        f"[POOL][INIT] actor={int(actor_idx)} algo=phoenix enabled=1 strategy={POOL_CONFIG.strategy} "
+                        f"p_heuristic={POOL_CONFIG.p_heuristic:.2f} pool_size={POOL_CONFIG.pool_size} "
+                        f"candidates={len(_pool.current_candidates())}"
+                    )
+            except Exception as exc:
+                append_agent_log(
+                    "[PHOENIX][WARN] opponent pool для актора не поднялся. "
+                    f"Где: train.py (_phoenix_actor_entry). Что делать: проверьте OPPONENT_POOL_* и registry. exc={exc}"
+                )
+                _pool = None
+                _pool_cache = None
+
+        assembler = PhoenixSequenceAssembler(int(cfg.window_horizon))
+        batch_windows = []
+        batch_metas = []
+        actor_steps = 0
+        eps_floor = phoenix_actor_epsilon_floor(
+            actor_idx=int(actor_idx),
+            total_actors=max(1, int(total_actor_slots)),
+            floor_min=float(getattr(cfg, "actor_eps_floor_min", 0.02)),
+            floor_max=float(getattr(cfg, "actor_eps_floor_max", 0.20)),
+            mode=str(getattr(cfg, "actor_epsilon_mode", "apex")),
+        )
+        dist_stop = bool(getattr(cfg, "distributed_actors_enabled", False))
+        append_agent_log(
+            f"[PHOENIX][DIST][ACTOR] start actor={int(actor_idx)} episodes={int(episodes)} "
+            f"eps_floor={eps_floor:.3f} window={int(cfg.window_horizon)}"
+        )
+
+        def _flush_batch() -> None:
+            nonlocal batch_windows, batch_metas
+            if not batch_windows:
+                return
+            payload = pack_phoenix_batch(
+                batch_windows,
+                worker_id=int(actor_idx),
+                env_contract_hash=str(env_contract.get("contract_hash", "") or ""),
+                source="local",
+                metas=batch_metas,
+            )
+            data_q.put(("phoenix_batch", payload))
+            batch_windows = []
+            batch_metas = []
+
+        for _ep in range(int(episodes)):
+            if dist_stop and phoenix_dist_stop_requested():
+                append_agent_log(f"[PHOENIX][DIST][ACTOR] actor={int(actor_idx)} stop.flag — выход")
+                break
+            if sync_enabled and (_ep % sync_check_every_ep == 0):
+                try:
+                    if os.path.isfile(sync_path):
+                        mtime = os.path.getmtime(sync_path)
+                        if mtime > last_sync_mtime:
+                            payload = torch.load(sync_path, map_location="cpu", weights_only=False)
+                            sd = payload.get("state_dict") if isinstance(payload, dict) else None
+                            if isinstance(sd, dict):
+                                cpu_net.load_state_dict(normalize_state_dict(sd), strict=False)
+                                cpu_net.eval()
+                                last_sync_mtime = float(mtime)
+                                append_agent_log(
+                                    f"[PHOENIX][DIST][ACTOR] weight_sync actor={int(actor_idx)} "
+                                    f"version={payload.get('policy_version', '-')}"
+                                )
+                except Exception as exc:
+                    append_agent_log(
+                        "[PHOENIX][WARN] актор не смог прочитать sync-веса. "
+                        f"Где: train.py (_phoenix_actor_entry). Что делать: проверьте actor_sync. exc={exc}"
+                    )
+
+            ep_idx_1based = int(_ep) + 1
+            assembler.reset_episode(ep_idx_1based)
+            _pool_choice = None
+            if _pool is not None and _pool_cache is not None:
+                try:
+                    _pool_choice, opponent_policy_fn = choose_opponent_policy_fn(
+                        _pool,
+                        _pool_cache,
+                        log_fn=append_agent_log,
+                        actor_label=f"actor={int(actor_idx)} ep={ep_idx_1based}",
+                    )
+                except Exception as exc:
+                    append_agent_log(
+                        "[PHOENIX][WARN] pool-opponent fallback на эвристику. "
+                        f"Где: train.py (_phoenix_actor_entry/choose_opponent_policy_fn). Что делать: проверьте league registry. exc={exc}"
+                    )
+                    opponent_policy_fn = None
+
+            attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+            deploy_for_mission(
+                mission_name,
+                model_units=model,
+                enemy_units=enemy,
+                b_len=b_len,
+                b_hei=b_hei,
+                attacker_side=attacker_side,
+                log_fn=None,
+            )
+            post_deploy_setup(log_fn=None)
+            env.attacker_side = attacker_side
+            env.defender_side = defender_side
+            env_u_for_ft = unwrap_env(env)
+            env_u_for_ft.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
+            obs, _info = env.reset(options={"m": model, "e": enemy, "Type": "small", "trunc": trunc})
+            done = False
+            ep_reward = 0.0
+            ep_len = 0
+            last_info: dict = {}
+            last_res = 0
+
+            while not done:
+                eps_threshold = max(float(compute_epsilon(actor_steps)), float(eps_floor))
+                action_vec, active_mask = _phoenix_select_action(cpu_net, env, obs, eps_threshold, len(model))
+                action_dict = action_tensor_to_dict(torch.tensor([action_vec], dtype=torch.long), len_model=len(model))
+                env_unwrapped = unwrap_env(env)
+
+                def _enemy_half() -> None:
+                    if opponent_policy_fn is not None:
+                        env_unwrapped.enemyTurn(trunc=trunc, policy_fn=opponent_policy_fn)
+                    else:
+                        env_unwrapped.enemyTurn(trunc=trunc)
+
+                def _model_half() -> None:
+                    nonlocal obs, done, ep_reward, ep_len, last_info, last_res, actor_steps
+                    next_obs, reward, done_flag, res, info2 = env.step(action_dict)
+                    last_info = info2 if isinstance(info2, dict) else {}
+                    last_res = res
+                    done_local = bool(done_flag)
+                    r_clipped, _ = maybe_clip_reward(
+                        float(reward),
+                        bool(clip_reward_enabled),
+                        float(clip_reward_min),
+                        float(clip_reward_max),
+                    )
+                    emitted = assembler.append(
+                        to_np_state(obs),
+                        action_vec,
+                        active_mask,
+                        reward=float(r_clipped),
+                        done=done_local,
+                    )
+                    for win, meta in emitted:
+                        batch_windows.append(win)
+                        batch_metas.append(meta)
+                    if len(batch_windows) >= int(batch_send):
+                        _flush_batch()
+                    obs = next_obs
+                    ep_reward += float(r_clipped)
+                    ep_len += 1
+                    actor_steps += 1
+                    done = done_local
+
+                from core.engine.turn_sequencing import run_battle_round
+
+                run_battle_round(env_unwrapped, run_model_half=_model_half, run_enemy_half=_enemy_half)
+                if bool(getattr(env_unwrapped, "game_over", False)) and not done:
+                    done = True
+                    if hasattr(env_unwrapped, "get_info"):
+                        last_info = env_unwrapped.get_info() or last_info
+                    draw_penalty = _turn_limit_draw_penalty_from_info(last_info)
+                    if draw_penalty > 0 and ep_len > 0:
+                        ep_reward -= float(draw_penalty)
+
+            _flush_batch()
+            try:
+                end_reason = str(last_info.get("end reason", "") or "")
+                model_vp = int(last_info.get("model VP", 0) or 0)
+                player_vp = int(last_info.get("player VP", 0) or 0)
+                vp_diff = int(model_vp) - int(player_vp)
+                result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
+                if _pool is not None and _pool_choice is not None:
+                    data_q.put(
+                        (
+                            "pool_result",
+                            build_pool_result_payload(
+                                pool=_pool,
+                                choice=_pool_choice,
+                                result=result,
+                                vp_diff=float(vp_diff),
+                                actor_idx=int(actor_idx),
+                                actor_ep=int(ep_idx_1based),
+                            ),
+                        )
+                    )
+                data_q.put(
+                    (
+                        "ep",
+                        {
+                            "episode": None,
+                            "actor_idx": int(actor_idx),
+                            "actor_ep": int(ep_idx_1based),
+                            "ep_reward": float(ep_reward),
+                            "ep_len": int(ep_len),
+                            "turn": int(last_info.get("turn", 0) or 0),
+                            "model_vp": int(model_vp),
+                            "player_vp": int(player_vp),
+                            "vp_diff": int(vp_diff),
+                            "result": str(result),
+                            "end_reason": str(end_reason),
+                            "end_code": int(last_res),
+                            "battle_round": int(last_info.get("battle round", 0) or 0),
+                        },
+                    )
+                )
+                if int(actor_idx) < 100 or int(actor_idx) == int(PHOENIX_DIST_TOPUP_ACTOR_IDX):
+                    print(f"[TRAIN][DIST][PC1] pc1_ep_collected actor={int(actor_idx)}", flush=True)
+            except Exception as exc:
+                data_q.put(("error", f"phoenix actor[{actor_idx}] ep metrics failed: {exc}"))
+
+        _flush_batch()
+        try:
+            env.close()
+        except Exception:
+            pass
+        data_q.put(("done", int(actor_idx)))
+    except Exception as exc:
+        try:
+            data_q.put(("error", f"phoenix actor[{actor_idx}] {exc}"))
+        except Exception:
+            pass
+
+
+def _main_actor_learner_phoenix_distributed(
+    *,
+    roster_config,
+    totLifeT,
+    clip_reward_enabled,
+    clip_reward_min,
+    clip_reward_max,
+    cfg,
+) -> None:
+    from core.models.phoenix_model import PhoenixNet
+    from core.models.phoenix_replay import SequenceReplayBuffer
+    from core.models.phoenix_trainer import PhoenixTrainer
+
+    num_actors = max(1, int(getattr(cfg, "num_actors", 1)))
+    distributed_enabled = bool(getattr(cfg, "distributed_actors_enabled", False))
+    total_episodes = max(1, int(totLifeT))
+    local_episodes = total_episodes
+    remote_episodes = 0
+    if distributed_enabled:
+        local_episodes, remote_episodes = resolve_phoenix_dist_episode_split(
+            total_episodes=total_episodes,
+            local_fraction=float(getattr(cfg, "distributed_local_episode_fraction", 0.7)),
+        )
+    append_agent_log(
+        f"[PHOENIX][CONFIG] mode=actor_learner num_actors={num_actors} distributed={int(distributed_enabled)} "
+        f"local_ep={local_episodes} pc2_ep={remote_episodes} batch_send={int(cfg.actor_batch_send)} "
+        f"queue_max={int(cfg.actor_queue_max)} replay_ratio={int(cfg.replay_ratio)}"
+    )
+
+    b_len = int(roster_config["b_len"])
+    b_hei = int(roster_config["b_hei"])
+    n_observations, n_actions = _infer_env_shape_from_roster(roster_config)
+    learner_side_cfg = LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1"
+    learner_identity = AgentIdentity(
+        side=learner_side_cfg,
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=learner_identity.ruleset_version,
+        extras=phoenix_dist_env_contract_extras(num_local_actors=num_actors),
+    )
+
+    opponent_spec: OpponentSpec | None = None
+    opponent_eps = float(SELF_PLAY_OPPONENT_EPSILON)
+    if SELF_PLAY_ENABLED and OPPONENT_AGENT_ID:
+        try:
+            opponent_spec = load_agent_opponent(agent_id=OPPONENT_AGENT_ID, expected_contract=env_contract)
+        except Exception as exc:
+            append_agent_log(
+                "[PHOENIX][WARN] self-play opponent не загружен, fallback на эвристику. "
+                f"Где: train.py (_main_actor_learner_phoenix_distributed). Что делать: проверьте OPPONENT_AGENT_ID. exc={exc}"
+            )
+
+    net = PhoenixNet(n_observations, n_actions, cfg).to(str(device))
+    net.eval()
+    trainer = PhoenixTrainer(net, cfg, device=str(device))
+    buf = SequenceReplayBuffer(capacity=int(cfg.replay_capacity), window=int(cfg.window_horizon))
+    init_weights = {k: v.detach().cpu().clone() for k, v in normalize_state_dict(net.state_dict()).items()}
+
+    policy_version = 0
+    last_sync_grad_step = -1
+    sync_path = phoenix_sync_path()
+
+    def _publish_sync(*, force: bool = False) -> None:
+        nonlocal policy_version, last_sync_grad_step
+        if not force and (int(trainer.grad_step) - int(last_sync_grad_step)) < int(cfg.sync_every_updates):
+            return
+        try:
+            policy_version += 1
+            cpu_sd = {k: v.detach().cpu() for k, v in normalize_state_dict(net.state_dict()).items()}
+            atomic_save_phoenix_sync(
+                {
+                    "state_dict": cpu_sd,
+                    "policy_version": int(policy_version),
+                    "grad_step": int(trainer.grad_step),
+                    "reset_interval": int(cfg.reset_interval),
+                },
+                sync_path,
+            )
+            last_sync_grad_step = int(trainer.grad_step)
+        except Exception as exc:
+            append_agent_log(
+                "[PHOENIX][WARN] не удалось записать sync-веса. "
+                f"Где: train.py (_publish_sync). Что делать: проверьте actor_sync/SMB. exc={exc}"
+            )
+
+    _publish_sync(force=True)
+
+    ctx = mp.get_context("spawn")
+    queue_max = max(64, int(cfg.actor_queue_max))
+    if distributed_enabled:
+        queue_max = max(queue_max, 1024)
+    data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
+    pool_stats_writer = _make_opponent_pool_stats_writer(algo="phoenix", roster_config=roster_config)
+    league_writer = _make_league_snapshot_writer(learner_identity=learner_identity, env_contract=env_contract)
+
+    rollout_receiver = None
+    env_contract_hash = str(env_contract.get("contract_hash", "") or "")
+    if distributed_enabled:
+        try:
+            if clear_phoenix_dist_stop_flag():
+                append_agent_log("[PHOENIX][DIST] очищен stop.flag прошлого прогона")
+        except Exception:
+            pass
+        rollout_receiver = RolloutReceiver(
+            data_q,
+            bind_host=str(cfg.distributed_bind_host or "0.0.0.0"),
+            bind_port=int(cfg.distributed_rollout_port),
+            expected_contract_hash=env_contract_hash,
+            auth_token=str(cfg.distributed_auth_token or ""),
+            zmq_hwm=int(cfg.dist_zmq_hwm),
+            log_fn=append_agent_log,
+            bind_retry_sec=float(cfg.distributed_bind_retry_sec),
+            log_prefix="[PHOENIX][DIST]",
+            ep_marker_fn=lambda n: print(f"[TRAIN][DIST][PC2] pc2_ep_accepted={n}", flush=True),
+        )
+        rollout_receiver.start()
+        try:
+            write_phoenix_dist_train_context(
+                {
+                    "env_contract_hash": env_contract_hash,
+                    "env_contract_extras": phoenix_dist_env_contract_extras(num_local_actors=num_actors),
+                    "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                    "learner_side": str(learner_side_cfg),
+                    "n_observations": int(n_observations),
+                    "n_actions": list(n_actions),
+                    "rollout_port": int(cfg.distributed_rollout_port),
+                    "auth_token": str(cfg.distributed_auth_token or ""),
+                    "mission": str(mission_name),
+                    "ruleset_version": str(RULESET_VERSION),
+                    "roster": _jsonable_roster(roster_config),
+                    "local_episode_total": int(local_episodes),
+                    "remote_episode_total": int(remote_episodes),
+                    "num_local_actors": int(num_actors),
+                    "pc2_num_workers": int(cfg.distributed_pc2_num_workers),
+                    "distributed_local_episode_fraction": float(cfg.distributed_local_episode_fraction),
+                    "hidden_size": int(cfg.hidden_size),
+                    "num_layers": int(cfg.num_layers),
+                    "n_ensemble": int(cfg.n_ensemble),
+                    "emb_dim": int(cfg.emb_dim),
+                    "dynamics_type": str(cfg.dynamics_type),
+                    "window_horizon": int(cfg.window_horizon),
+                    "phoenix_config": getattr(cfg, "__dict__", {}),
+                    "zmq_hwm": int(cfg.dist_zmq_hwm),
+                    "sync_weights_name": "latest_phoenix_policy.pth",
+                }
+            )
+        except Exception as exc:
+            append_agent_log(
+                "[PHOENIX][DIST][WARN] не удалось записать train-context. "
+                f"Где: train.py (_main_actor_learner_phoenix_distributed). Что делать: проверьте SMB actor_sync. exc={exc}"
+            )
+        append_agent_log(
+            f"[PHOENIX][DIST] receiver bind=:{int(cfg.distributed_rollout_port)} "
+            f"contract_hash={env_contract_hash or '-'} sync={sync_path}"
+        )
+        if bool(cfg.distributed_wait_pc2):
+            append_agent_log("[TRAIN][PHASE] waiting_pc2")
+            print("[TRAIN][PHASE] waiting_pc2", flush=True)
+            try:
+                wait_dqn_dist_remote_workers(
+                    rollout_receiver,
+                    min_workers=int(cfg.distributed_pc2_num_workers),
+                    timeout_sec=float(cfg.distributed_wait_pc2_timeout_sec),
+                    log_fn=lambda msg: (
+                        append_agent_log(msg.replace("[DQN][DIST]", "[PHOENIX][DIST]")),
+                        print(msg.replace("[DQN][DIST]", "[PHOENIX][DIST]"), flush=True),
+                    ),
+                )
+            except RuntimeError as exc:
+                rollout_receiver.stop()
+                raise RuntimeError(str(exc).replace("DQN", "PHOENIX")) from exc
+
+    local_plan = (
+        split_phoenix_count_among_workers(total=int(local_episodes), num_workers=int(num_actors))
+        if distributed_enabled
+        else split_phoenix_count_among_workers(total=int(total_episodes), num_workers=int(num_actors))
+    )
+    cr_min = 0.0 if clip_reward_min is None else float(clip_reward_min)
+    cr_max = 0.0 if clip_reward_max is None else float(clip_reward_max)
+    total_actor_slots = int(num_actors) + (int(cfg.distributed_pc2_num_workers) if distributed_enabled else 0)
+
+    def _spawn_phoenix_local_actor(actor_idx: int, episodes: int) -> mp.Process:
+        proc = ctx.Process(
+            target=_phoenix_actor_entry,
+            args=(
+                int(actor_idx),
+                int(episodes),
+                roster_config,
+                int(b_len),
+                int(b_hei),
+                int(n_observations),
+                list(n_actions),
+                cfg,
+                init_weights,
+                int(cfg.actor_batch_send),
+                cr_min,
+                cr_max,
+                bool(clip_reward_enabled),
+                data_q,
+                opponent_spec,
+                float(opponent_eps),
+                int(1 if SELF_PLAY_ENABLED else 0),
+                dict(env_contract),
+                int(total_actor_slots),
+            ),
+            daemon=True,
+        )
+        proc.start()
+        return proc
+
+    procs = [_spawn_phoenix_local_actor(i, int(local_plan[i])) for i in range(int(num_actors))]
+    local_done_actor_ids: set[int] = set()
+    done_actors = 0
+    topup_proc: mp.Process | None = None
+    topup_spawned = 0
+    episodes_finished = 0
+    global_windows = 0
+    last_loss = None
+    ep_rows: list[dict] = []
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    checkpoint_dir = os.path.join(MODELS_DIR, "phoenix", f"phoenix-dist-run-{timestamp}")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    pbar = tqdm(total=int(total_episodes), mininterval=ACTOR_PBAR_MININTERVAL, miniters=ACTOR_PBAR_MINITERS)
+    started = time.perf_counter()
+    dist_stop_sent = False
+    dist_draining = False
+    dist_drain_until = 0.0
+
+    def _remote_alive() -> int:
+        if rollout_receiver is None:
+            return 0
+        try:
+            return int(rollout_receiver.active_remote_workers(stale_sec=5.0))
+        except Exception:
+            return 0
+
+    def _maybe_spawn_topup() -> None:
+        nonlocal topup_proc, topup_spawned
+        if not distributed_enabled or episodes_finished >= total_episodes:
+            return
+        if topup_proc is not None and topup_proc.is_alive():
+            return
+        remaining = compute_phoenix_dist_topup_episodes(
+            episodes_finished=int(episodes_finished),
+            total_episodes=int(total_episodes),
+            local_actors_done=int(done_actors),
+            num_local_actors=int(num_actors),
+            remote_alive=int(_remote_alive()),
+            topup_process_alive=bool(topup_proc is not None and topup_proc.is_alive()),
+        )
+        if remaining <= 0:
+            return
+        topup_spawned += 1
+        append_agent_log(
+            f"[PHOENIX][DIST] topup_start remaining={remaining} spawn={topup_spawned} "
+            f"ep_done={episodes_finished}/{total_episodes} remote_alive={_remote_alive()}"
+        )
+        topup_proc = _spawn_phoenix_local_actor(PHOENIX_DIST_TOPUP_ACTOR_IDX, int(remaining))
+        procs.append(topup_proc)
+
+    try:
+        if distributed_enabled:
+            append_agent_log("[TRAIN][PHASE] collecting")
+            print("[TRAIN][PHASE] collecting", flush=True)
+        while True:
+            _maybe_spawn_topup()
+            if not distributed_enabled and done_actors >= num_actors:
+                try:
+                    if data_q.empty():
+                        break
+                except Exception:
+                    break
+            if distributed_enabled and episodes_finished >= total_episodes:
+                if not dist_stop_sent:
+                    dist_stop_sent = True
+                    dist_drain_until = time.monotonic() + float(cfg.distributed_actors_drain_sec)
+                    touch_phoenix_dist_stop_flag()
+                    line = (
+                        f"[PHOENIX][DIST] stop_requested ep_done={episodes_finished}/{total_episodes} "
+                        f"drain_budget={int(round(float(cfg.distributed_actors_drain_sec)))}s"
+                    )
+                    append_agent_log(line)
+                    print(line, flush=True)
+                if not dist_draining:
+                    dist_draining = True
+                    append_agent_log("[TRAIN][PHASE] draining")
+                    print("[TRAIN][PHASE] draining", flush=True)
+                if done_actors >= num_actors and (_remote_alive() == 0 or time.monotonic() >= dist_drain_until):
+                    append_agent_log(
+                        f"[PHOENIX][DIST] drain_done ep_done={episodes_finished}/{total_episodes} "
+                        f"local_done={done_actors}/{num_actors} remote_alive={_remote_alive()}"
+                    )
+                    break
+            try:
+                kind, payload = data_q.get(timeout=1.0)
+            except mp_queue.Empty:
+                _maybe_spawn_topup()
+                if not distributed_enabled and done_actors >= num_actors:
+                    break
+                continue
+
+            if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
+                continue
+            if kind == "error":
+                raise RuntimeError(str(payload))
+            if kind == "done":
+                try:
+                    actor_done_idx = int(payload)
+                except Exception:
+                    actor_done_idx = -1
+                if actor_done_idx == int(PHOENIX_DIST_TOPUP_ACTOR_IDX):
+                    append_agent_log(f"[PHOENIX][DIST] topup_done actor={actor_done_idx}")
+                else:
+                    local_done_actor_ids.add(actor_done_idx)
+                    done_actors = len(local_done_actor_ids)
+                continue
+            if kind == "ep" and isinstance(payload, dict):
+                if distributed_enabled and episodes_finished >= total_episodes:
+                    continue
+                _attach_episode_opponent(pool_stats_writer, payload)
+                payload["episode"] = len(ep_rows) + 1
+                ep_rows.append(payload)
+                episodes_finished = len(ep_rows)
+                if episodes_finished > int(pbar.n):
+                    pbar.update(episodes_finished - int(pbar.n))
+                if (episodes_finished % ACTOR_PROGRESS_STDOUT_EVERY == 0) or episodes_finished >= total_episodes:
+                    print(f"ep={episodes_finished}/{total_episodes}", flush=True)
+                log_train_episode_line(
+                    payload,
+                    ep=int(episodes_finished),
+                    total=int(total_episodes),
+                    algo="phoenix",
+                    actor_idx=int(payload.get("actor_idx", -1) or -1),
+                )
+                if league_writer is not None:
+                    league_writer.maybe_periodic(
+                        int(episodes_finished),
+                        LeagueSnapshotSaveArgs(
+                            policy_state_dict=normalize_state_dict(net.state_dict()),
+                            target_state_dict=None,
+                            optimizer_state_dict=trainer.optimizer.state_dict(),
+                            extra_meta={
+                                "algo": "phoenix",
+                                "mode": "actor_learner",
+                                "num_actors": int(num_actors),
+                                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                            },
+                        ),
+                    )
+                continue
+            if kind != "phoenix_batch":
+                continue
+
+            try:
+                windows, priorities = unpack_phoenix_batch(payload if isinstance(payload, dict) else {})
+                pushed = buf.push_windows(windows, priorities=priorities)
+            except Exception as exc:
+                append_agent_log(
+                    "[PHOENIX][WARN] phoenix_batch отброшен. "
+                    f"Где: train.py (_main_actor_learner_phoenix_distributed). Что делать: проверьте actor protocol. exc={exc}"
+                )
+                continue
+            if pushed <= 0:
+                continue
+            global_windows += int(pushed)
+            updates = max(1, int(cfg.replay_ratio) * int(pushed))
+            before_grad = int(trainer.grad_step)
+            learned = _phoenix_learn_from_buffer(buf, trainer, cfg, max_updates=updates)
+            if learned > 0:
+                last_loss = "updated"
+                if (
+                    int(trainer.grad_step) - int(last_sync_grad_step) >= int(cfg.sync_every_updates)
+                    or (int(cfg.reset_interval) > 0 and before_grad // int(cfg.reset_interval) != int(trainer.grad_step) // int(cfg.reset_interval))
+                ):
+                    _publish_sync(force=True)
+        _publish_sync(force=True)
+    finally:
+        pbar.close()
+        if distributed_enabled:
+            try:
+                if not dist_stop_sent:
+                    touch_phoenix_dist_stop_flag()
+            except Exception:
+                pass
+            if rollout_receiver is not None:
+                try:
+                    rollout_receiver.stop()
+                except Exception:
+                    pass
+        for proc in procs:
+            if proc.is_alive():
+                proc.join(timeout=5.0)
+            if proc.is_alive():
+                proc.terminate()
+
+    elapsed = time.perf_counter() - started
+    append_agent_log(
+        f"[PHOENIX][DIST] done episodes={episodes_finished}/{total_episodes} windows={global_windows} "
+        f"grad_step={trainer.grad_step} replay={len(buf)} elapsed_s={elapsed:.2f} last_loss={last_loss}"
+    )
+    final_ep = max(episodes_finished, total_episodes)
+    _phoenix_save_checkpoint(
+        net=net,
+        trainer=trainer,
+        episode=final_ep,
+        n_observations=n_observations,
+        n_actions=n_actions,
+        env_contract=env_contract,
+        learner_identity=learner_identity,
+        checkpoint_dir=checkpoint_dir,
+        final=True,
+        mode="actor_learner",
+        num_actors=int(num_actors),
+    )
 
 
 def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:

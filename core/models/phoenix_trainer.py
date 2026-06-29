@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
-from core.models.phoenix_loss import spr_consistency_loss, value_expansion_target_masked
+from core.models.phoenix_loss import spr_consistency_loss
+from core.models.utils import quantile_huber_loss
 
 
 def anneal_value(start: float, end: float, step: int, anneal_steps: int) -> float:
@@ -56,7 +56,49 @@ class PhoenixTrainer:
         dones = torch.tensor(np.stack([w.dones for w in windows]), dtype=torch.float32, device=self.device)
         return obs, actions, active, rewards, dones  # [B,H+1,...]
 
-    def learn_step(self, windows) -> dict:
+    def _target_quantiles_for_horizon(self, obs, rewards, dones, h: int, gamma: float, zhat=None):
+        B, span = obs.shape[0], obs.shape[1]
+        h = min(max(1, int(h)), span - 1)
+        gammas = torch.full((B, span), float(gamma), device=self.device)
+        use_latent = bool(getattr(self.cfg, "ve_latent_bootstrap", False)) and zhat is not None and h <= zhat.shape[1]
+        if use_latent:
+            target_q = self.net.target_quantiles_from_latent(
+                zhat[:, h - 1].detach(),
+                num_quantiles=int(self.cfg.iqn_num_target_quantiles),
+            )
+        else:
+            target_q = self.net.target_quantiles(
+                obs[:, h],
+                num_quantiles=int(self.cfg.iqn_num_target_quantiles),
+            )
+        out = []
+        boot_mask = (1.0 - dones[:, h]).to(torch.float32).view(B, 1)
+        for qh in target_q:
+            greedy = qh.mean(dim=2).argmax(dim=1)
+            idx = greedy.view(B, 1, 1).expand(-1, 1, qh.shape[2])
+            boot = qh.gather(1, idx).squeeze(1) * boot_mask
+            acc = torch.zeros_like(boot)
+            discount = torch.ones((B, 1), dtype=torch.float32, device=self.device)
+            for j in range(h):
+                valid = (1.0 - dones[:, j]).to(torch.float32).view(B, 1)
+                acc = acc + discount * rewards[:, j].view(B, 1) * valid
+                discount = discount * gammas[:, j].view(B, 1) * valid
+            out.append(acc + discount * boot)
+        return out
+
+    def _steve_targets(self, obs, rewards, dones, max_h: int, gamma: float, zhat=None):
+        horizons = list(range(1, max(1, int(max_h)) + 1))
+        per_h = [self._target_quantiles_for_horizon(obs, rewards, dones, h, gamma, zhat=zhat) for h in horizons]
+        num_heads = len(per_h[0])
+        out = []
+        for head_idx in range(num_heads):
+            stacked = torch.stack([targets[head_idx] for targets in per_h], dim=0)  # [H,B,Nt]
+            inv_var = 1.0 / (stacked.var(dim=2, unbiased=False).clamp(min=1e-4))  # [H,B]
+            weights = inv_var / inv_var.sum(dim=0, keepdim=True).clamp(min=1e-6)
+            out.append((stacked * weights.unsqueeze(2)).sum(dim=0))
+        return out
+
+    def learn_step(self, windows, is_weights=None) -> dict:
         obs, actions, active, rewards, dones = self._stack_windows(windows)
         B, span = obs.shape[0], obs.shape[1]
         K = min(self.cfg.spr_horizon_K, span - 1)
@@ -75,24 +117,49 @@ class PhoenixTrainer:
             tgt_proj = self.net.target_project(tgt_z.reshape(B * K, -1)).reshape(B, K, -1)
         spr = spr_consistency_loss(pred, tgt_proj, dones[:, 1 : K + 1])
 
-        # --- IQN TD с value-expansion (фикс. h = ve_horizon, ve_steve=False по умолчанию) ---
-        # Волна 1: горизонт h фиксирован на ve_horizon. Аннелинг n-step (current_nstep) и
-        # применение PER IS-весов к лоссу — задачи Волны 2 (см. план Task 8 / спека §4).
+        # --- IQN TD с value-expansion ---
         h = min(self.cfg.ve_horizon, span - 1)
-        # online quantiles на obs[:,0] для выбранных действий первой головы (упрощённо: голова 0)
-        q_online = self.net.online_quantiles(obs[:, 0])  # list per-head [B,A,Nq]
-        # bootstrap: greedy по target-IQN на реальном obs[:,h] (Волна 1: honest n-step; латентный
-        # bootstrap — флаг в Task 8.x), берём среднее по головам от max-Q
+        q_online, taus = self.net.online_quantiles(
+            obs[:, 0],
+            num_quantiles=int(self.cfg.iqn_num_quantiles),
+            return_taus=True,
+        )  # list per-head [B,A,Nq], taus [B,Nq,1]
         with torch.no_grad():
-            tq = self.net.target.q_values(obs[:, h])  # list per-head [B,A]
-            boot = torch.stack([qh.max(dim=1).values for qh in tq], dim=1).mean(dim=1)  # [B]
-        gammas = torch.full((B, span), gamma, device=self.device)
-        # done-маска (спека §7): VE-возврат честно обрезается на границе эпизода в окне.
-        y = value_expansion_target_masked(rewards[:, :h], gammas[:, :h], boot, dones, h=h)  # [B]
-        # текущая оценка V(s0) ≈ mean по головам от mean-quantile max
-        v0 = torch.stack([qh.mean(dim=2).max(dim=1).values for qh in q_online], dim=1).mean(dim=1)
-        td_errors = y.detach() - v0
-        iqn_loss = F.smooth_l1_loss(v0, y.detach())
+            if bool(getattr(self.cfg, "ve_steve", False)):
+                target_by_head = self._steve_targets(obs, rewards, dones, h, gamma, zhat=zhat)
+            else:
+                target_by_head = self._target_quantiles_for_horizon(obs, rewards, dones, h, gamma, zhat=zhat)
+
+        sample_losses = []
+        sample_td = []
+        max_heads = min(len(q_online), actions.shape[2], active.shape[2], len(target_by_head))
+        for head_idx in range(max_heads):
+            qh = q_online[head_idx]
+            act = actions[:, 0, head_idx].clamp(min=0, max=qh.shape[1] - 1)
+            idx = act.view(B, 1, 1).expand(-1, 1, qh.shape[2])
+            pred = qh.gather(1, idx).squeeze(1)
+            per_sample, td = quantile_huber_loss(
+                pred.float(),
+                target_by_head[head_idx].detach().float(),
+                taus.float(),
+                kappa=float(getattr(self.cfg, "iqn_kappa", 1.0)),
+            )
+            mask = active[:, 0, head_idx].to(per_sample.dtype)
+            sample_losses.append(per_sample * mask)
+            sample_td.append(td.detach().abs().mean(dim=(1, 2)) * mask)
+        if not sample_losses:
+            iqn_loss = torch.zeros((), dtype=torch.float32, device=self.device)
+            td_errors = torch.zeros((B,), dtype=torch.float32, device=self.device)
+        else:
+            per_sample_loss = torch.stack(sample_losses, dim=0).sum(dim=0)
+            denom = torch.stack([active[:, 0, h].to(torch.float32) for h in range(max_heads)], dim=0).sum(dim=0).clamp(min=1.0)
+            per_sample_loss = per_sample_loss / denom
+            if is_weights is not None:
+                weights_t = torch.tensor(is_weights, dtype=torch.float32, device=self.device).view(-1)
+                if weights_t.shape[0] == per_sample_loss.shape[0]:
+                    per_sample_loss = per_sample_loss * weights_t
+            iqn_loss = per_sample_loss.mean()
+            td_errors = torch.stack(sample_td, dim=0).sum(dim=0) / denom
 
         loss = iqn_loss + self.cfg.spr_coef * spr
         self.optimizer.zero_grad()

@@ -19,11 +19,35 @@ class PhoenixConfig:
     target_ema_rl: float = 0.005
     target_ema_spr: float = 0.01
     replay_capacity: int = 200000
+    batch_size: int = 32
+    replay_min_size: int = 256
+    # actor-learner / distributed runtime
+    num_actors: int = 1
+    actor_batch_send: int = 32
+    actor_queue_max: int = 256
+    sync_every_updates: int = 200
+    actor_epsilon_mode: str = "apex"
+    actor_eps_floor_min: float = 0.02
+    actor_eps_floor_max: float = 0.20
+    distributed_actors_enabled: bool = False
+    distributed_rollout_port: int = 5562
+    distributed_bind_host: str = "0.0.0.0"
+    distributed_auth_token: str = ""
+    distributed_local_episode_fraction: float = 0.7
+    distributed_pc2_num_workers: int = 8
+    distributed_actors_drain_sec: float = 30.0
+    distributed_wait_pc2: bool = False
+    distributed_wait_pc2_timeout_sec: float = 600.0
+    distributed_bind_retry_sec: float = 25.0
+    dist_zmq_hwm: int = 256
+    dist_max_windows_per_msg: int = 64
     # SPR / value-expansion
     spr_horizon_K: int = 5
     spr_coef: float = 2.0
     ve_horizon: int = 3
     ve_steve: bool = False
+    ve_latent_bootstrap: bool = False
+    iqn_kappa: float = 1.0
     # сеть
     dynamics_type: str = "mlp"
     emb_dim: int = 64
@@ -58,10 +82,18 @@ def resolve_phoenix_config(hp: dict | None, env: Mapping[str, str] | None = None
     env = env if env is not None else {}
     d = PhoenixConfig()
 
-    def pick_int(env_key: str, sec_key: str, default: int) -> int:
-        if env_key in env and str(env[env_key]).strip() != "":
+    def _env_value(*env_keys: str):
+        for env_key in env_keys:
+            if env_key in env and str(env[env_key]).strip() != "":
+                return env[env_key]
+        return None
+
+    def pick_int(env_key: str | tuple[str, ...], sec_key: str, default: int) -> int:
+        keys = (env_key,) if isinstance(env_key, str) else tuple(env_key)
+        raw = _env_value(*keys)
+        if raw is not None:
             try:
-                return int(env[env_key])
+                return int(raw)
             except (TypeError, ValueError):
                 pass
         if sec_key in section:
@@ -71,10 +103,12 @@ def resolve_phoenix_config(hp: dict | None, env: Mapping[str, str] | None = None
                 pass
         return default
 
-    def pick_float(env_key: str, sec_key: str, default: float) -> float:
-        if env_key in env and str(env[env_key]).strip() != "":
+    def pick_float(env_key: str | tuple[str, ...], sec_key: str, default: float) -> float:
+        keys = (env_key,) if isinstance(env_key, str) else tuple(env_key)
+        raw = _env_value(*keys)
+        if raw is not None:
             try:
-                return float(env[env_key])
+                return float(raw)
             except (TypeError, ValueError):
                 pass
         if sec_key in section:
@@ -84,18 +118,24 @@ def resolve_phoenix_config(hp: dict | None, env: Mapping[str, str] | None = None
                 pass
         return default
 
-    def pick_bool(env_key: str, sec_key: str, default: bool) -> bool:
-        if env_key in env:
-            return _as_bool(env[env_key], default)
+    def pick_bool(env_key: str | tuple[str, ...], sec_key: str, default: bool) -> bool:
+        keys = (env_key,) if isinstance(env_key, str) else tuple(env_key)
+        raw = _env_value(*keys)
+        if raw is not None:
+            return _as_bool(raw, default)
         if sec_key in section:
             return _as_bool(section[sec_key], default)
         return default
 
-    def pick_str(env_key: str, sec_key: str, default: str) -> str:
-        if env_key in env and str(env[env_key]).strip() != "":
-            return str(env[env_key]).strip().lower()
+    def pick_str(env_key: str | tuple[str, ...], sec_key: str, default: str, *, lower: bool = True) -> str:
+        keys = (env_key,) if isinstance(env_key, str) else tuple(env_key)
+        raw = _env_value(*keys)
+        if raw is not None:
+            text = str(raw).strip()
+            return text.lower() if lower else text
         if sec_key in section and str(section[sec_key]).strip() != "":
-            return str(section[sec_key]).strip().lower()
+            text = str(section[sec_key]).strip()
+            return text.lower() if lower else text
         return default
 
     return PhoenixConfig(
@@ -110,10 +150,59 @@ def resolve_phoenix_config(hp: dict | None, env: Mapping[str, str] | None = None
         target_ema_rl=pick_float("PHOENIX_TARGET_EMA_RL", "target_ema_rl", d.target_ema_rl),
         target_ema_spr=pick_float("PHOENIX_TARGET_EMA_SPR", "target_ema_spr", d.target_ema_spr),
         replay_capacity=pick_int("PHOENIX_REPLAY_CAPACITY", "replay_capacity", d.replay_capacity),
+        batch_size=pick_int("PHOENIX_BATCH", "batch_size", d.batch_size),
+        replay_min_size=pick_int("PHOENIX_MIN_REPLAY", "replay_min_size", d.replay_min_size),
+        num_actors=pick_int(("PHOENIX_NUM_ACTORS", "NUM_ACTORS"), "num_actors", d.num_actors),
+        actor_batch_send=pick_int("PHOENIX_ACTOR_BATCH_SEND", "actor_batch_send", d.actor_batch_send),
+        actor_queue_max=pick_int("PHOENIX_ACTOR_QUEUE_MAX", "actor_queue_max", d.actor_queue_max),
+        sync_every_updates=pick_int("PHOENIX_SYNC_EVERY_UPDATES", "sync_every_updates", d.sync_every_updates),
+        actor_epsilon_mode=pick_str("PHOENIX_ACTOR_EPS_MODE", "actor_epsilon_mode", d.actor_epsilon_mode),
+        actor_eps_floor_min=pick_float("PHOENIX_ACTOR_EPS_FLOOR_MIN", "actor_eps_floor_min", d.actor_eps_floor_min),
+        actor_eps_floor_max=pick_float("PHOENIX_ACTOR_EPS_FLOOR_MAX", "actor_eps_floor_max", d.actor_eps_floor_max),
+        distributed_actors_enabled=pick_bool(
+            "PHOENIX_DISTRIBUTED_ACTORS", "distributed_actors_enabled", d.distributed_actors_enabled
+        ),
+        distributed_rollout_port=pick_int(
+            "PHOENIX_DIST_ROLLOUT_PORT", "distributed_rollout_port", d.distributed_rollout_port
+        ),
+        distributed_bind_host=pick_str(
+            "PHOENIX_DIST_BIND_HOST", "distributed_bind_host", d.distributed_bind_host, lower=False
+        ),
+        distributed_auth_token=pick_str(
+            "PHOENIX_DIST_AUTH_TOKEN", "distributed_auth_token", d.distributed_auth_token, lower=False
+        ),
+        distributed_local_episode_fraction=pick_float(
+            "PHOENIX_DIST_LOCAL_EPISODE_FRACTION",
+            "distributed_local_episode_fraction",
+            d.distributed_local_episode_fraction,
+        ),
+        distributed_pc2_num_workers=pick_int(
+            "PHOENIX_DIST_PC2_NUM_WORKERS", "distributed_pc2_num_workers", d.distributed_pc2_num_workers
+        ),
+        distributed_actors_drain_sec=pick_float(
+            "PHOENIX_DIST_DRAIN_SEC", "distributed_actors_drain_sec", d.distributed_actors_drain_sec
+        ),
+        distributed_wait_pc2=pick_bool("PHOENIX_DIST_WAIT_PC2", "distributed_wait_pc2", d.distributed_wait_pc2),
+        distributed_wait_pc2_timeout_sec=pick_float(
+            "PHOENIX_DIST_WAIT_PC2_TIMEOUT_SEC",
+            "distributed_wait_pc2_timeout_sec",
+            d.distributed_wait_pc2_timeout_sec,
+        ),
+        distributed_bind_retry_sec=pick_float(
+            "PHOENIX_DIST_BIND_RETRY_SEC", "distributed_bind_retry_sec", d.distributed_bind_retry_sec
+        ),
+        dist_zmq_hwm=pick_int("PHOENIX_DIST_ZMQ_HWM", "dist_zmq_hwm", d.dist_zmq_hwm),
+        dist_max_windows_per_msg=pick_int(
+            "PHOENIX_DIST_MAX_WINDOWS_PER_MSG", "dist_max_windows_per_msg", d.dist_max_windows_per_msg
+        ),
         spr_horizon_K=pick_int("PHOENIX_SPR_HORIZON_K", "spr_horizon_K", d.spr_horizon_K),
         spr_coef=pick_float("PHOENIX_SPR_COEF", "spr_coef", d.spr_coef),
         ve_horizon=pick_int("PHOENIX_VE_HORIZON", "ve_horizon", d.ve_horizon),
         ve_steve=pick_bool("PHOENIX_VE_STEVE", "ve_steve", d.ve_steve),
+        ve_latent_bootstrap=pick_bool(
+            "PHOENIX_VE_LATENT_BOOTSTRAP", "ve_latent_bootstrap", d.ve_latent_bootstrap
+        ),
+        iqn_kappa=pick_float("PHOENIX_IQN_KAPPA", "iqn_kappa", d.iqn_kappa),
         dynamics_type=pick_str("PHOENIX_DYNAMICS_TYPE", "dynamics_type", d.dynamics_type),
         emb_dim=pick_int("PHOENIX_EMB_DIM", "emb_dim", d.emb_dim),
         noisy=pick_bool("PHOENIX_NOISY", "noisy", d.noisy),

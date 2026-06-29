@@ -182,14 +182,14 @@ class RolloutReceiver:
             self._enqueue("error", payload.get("message", payload))
             return
 
-        if kind not in ("rollout", "ep", "batch", "pool_result"):
+        if kind not in ("rollout", "ep", "batch", "phoenix_batch", "pool_result"):
             return
 
         with self._workers_lock:
             self._last_heartbeat[wid] = time.time()
         payload.setdefault("source", "remote")
         self._enqueue(kind, payload)
-        if kind in ("rollout", "batch"):
+        if kind in ("rollout", "batch", "phoenix_batch"):
             self._received_rollouts += 1
         elif kind == "ep":
             self._received_eps += 1

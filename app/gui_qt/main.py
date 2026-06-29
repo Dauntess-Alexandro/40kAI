@@ -20,6 +20,10 @@ _repo_root_str = str(_REPO_ROOT)
 if _repo_root_str not in sys.path:
     sys.path.insert(0, _repo_root_str)
 
+# Windows DLL order: PoolConfig pulls torch through agent_registry. Load it before PySide
+# registers Qt DLL paths, otherwise torch\lib\c10.dll can fail on some setups.
+from core.engine.opponent_pool import PoolConfig
+
 from PySide6 import QtCore, QtGui, QtQml
 from PySide6.QtGui import QIcon
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -94,6 +98,8 @@ from app.gui_qt.remote_is_store import (
 from app.gui_qt.phoenix_hyperparams_defaults import (
     DEFAULT_PHOENIX_HYPERPARAMS,
     PHOENIX_BASIC_KEYS,
+    PHOENIX_DIST_ACTORS_GUI_TOOLTIP,
+    PHOENIX_DIST_WAIT_PC2_GUI_TOOLTIP,
     PHOENIX_FIELD_TOOLTIPS,
     PHOENIX_GROUPS,
     PHOENIX_HYPERPARAM_KEYS,
@@ -108,9 +114,9 @@ from app.gui_qt.sampled_muzero_hyperparams_defaults import (
     SMZ_PROFILE_PRESETS,
 )
 from core.engine.mission import normalize_mission_name
-from core.engine.opponent_pool import PoolConfig
 from core.models.alphazero_ids import is_az_algo, is_gumbel_az_algo
 from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
+from core.models.phoenix_dist import PHOENIX_DIST_TOPUP_ACTOR_IDX, resolve_phoenix_dist_episode_split
 from core.models.opponent_pool_runtime import build_pool_ui_state, parse_pool_log_tail
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
@@ -2143,6 +2149,14 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(str, constant=True)
     def dqnDistWaitPc2Tooltip(self) -> str:
         return DQN_DIST_WAIT_PC2_GUI_TOOLTIP
+
+    @QtCore.Property(str, constant=True)
+    def phoenixDistActorsTooltip(self) -> str:
+        return PHOENIX_DIST_ACTORS_GUI_TOOLTIP
+
+    @QtCore.Property(str, constant=True)
+    def phoenixDistWaitPc2Tooltip(self) -> str:
+        return PHOENIX_DIST_WAIT_PC2_GUI_TOOLTIP
 
     remoteIsChanged = QtCore.Signal()
 
@@ -5469,8 +5483,10 @@ class GUIController(QtCore.QObject):
             else:
                 continue
             try:
-                if key in {"lr_scheduler", "eps_schedule", "dist_type"}:
+                if key in {"lr_scheduler", "eps_schedule", "dist_type", "actor_epsilon_mode", "dynamics_type"}:
                     updated[key] = str(raw_val).strip().lower() or str(default_value)
+                elif key in {"distributed_bind_host", "distributed_auth_token"}:
+                    updated[key] = str(raw_val if raw_val is not None else default_value).strip()
                 elif isinstance(default_value, int):
                     updated[key] = int(raw_val)
                 elif isinstance(default_value, str):
@@ -5876,6 +5892,11 @@ class GUIController(QtCore.QObject):
         replay_ratio = int(payload.get("replay_ratio", 2))
         reset_interval = int(payload.get("reset_interval", 40000))
         replay_capacity = int(payload.get("replay_capacity", 200000))
+        batch_size = int(payload.get("batch_size", 32))
+        replay_min_size = int(payload.get("replay_min_size", 256))
+        num_actors = int(payload.get("num_actors", 1))
+        actor_batch_send = int(payload.get("actor_batch_send", 32))
+        actor_queue_max = int(payload.get("actor_queue_max", 256))
         spr_k = int(payload.get("spr_horizon_K", 5))
         ve_h = int(payload.get("ve_horizon", 3))
         if replay_ratio < 1:
@@ -5884,6 +5905,16 @@ class GUIController(QtCore.QObject):
             return "phoenix.reset_interval должен быть >= 1"
         if replay_capacity < 1024:
             return "phoenix.replay_capacity должен быть >= 1024"
+        if batch_size < 1:
+            return "phoenix.batch_size должен быть >= 1"
+        if replay_min_size < 1:
+            return "phoenix.replay_min_size должен быть >= 1"
+        if num_actors < 1:
+            return "phoenix.num_actors должен быть >= 1"
+        if actor_batch_send < 1:
+            return "phoenix.actor_batch_send должен быть >= 1"
+        if actor_queue_max < 64:
+            return "phoenix.actor_queue_max должен быть >= 64"
         if spr_k < 1:
             return "phoenix.spr_horizon_K должен быть >= 1"
         if ve_h < 0:
@@ -6738,13 +6769,15 @@ class GUIController(QtCore.QObject):
         dqn_hp = self._dqn_hyperparams if isinstance(self._dqn_hyperparams, dict) else {}
         az_hp = self._az_tree_hyperparams if isinstance(self._az_tree_hyperparams, dict) else {}
         gaz_hp = self._gaz_hyperparams if isinstance(self._gaz_hyperparams, dict) else {}
+        phoenix_hp = self._phoenix_hyperparams if isinstance(self._phoenix_hyperparams, dict) else {}
         dqn_enabled = algo == "dqn" and int(dqn_hp.get("distributed_actors_enabled", 0) or 0) == 1
+        phoenix_enabled = algo == "phoenix" and int(phoenix_hp.get("distributed_actors_enabled", 0) or 0) == 1
         az_enabled = algo == "alphazero_tree" and int(az_hp.get("distributed_actors_enabled", 0) or 0) == 1
         # GAZ едет на AZ-инфре → тот же "pool"-режим прогресса ПК1/ПК2.
         gaz_enabled = algo == "gumbel_az" and int(gaz_hp.get("distributed_actors_enabled", 0) or 0) == 1
         # pool_hp: секция, из которой берём num_env_workers для AZ/GAZ-ветки ниже.
         pool_hp = gaz_hp if gaz_enabled else az_hp
-        self._dist_progress_enabled = bool(dqn_enabled or az_enabled or gaz_enabled)
+        self._dist_progress_enabled = bool(dqn_enabled or phoenix_enabled or az_enabled or gaz_enabled)
         if not self._dist_progress_enabled:
             self._dist_progress_mode = ""
             self.distProgressModeChanged.emit("")
@@ -6756,24 +6789,23 @@ class GUIController(QtCore.QObject):
         self._dist_pc1_marker_seen = False
         self._dist_pc2_workers_alive = 0
         self._dist_pc2_wait_left_sec = -1
-        if dqn_enabled:
+        if dqn_enabled or phoenix_enabled:
             self._dist_progress_mode = "quota"
+            quota_hp = phoenix_hp if phoenix_enabled else dqn_hp
             frac = float(
-                dqn_hp.get(
+                quota_hp.get(
                     "distributed_local_episode_fraction",
-                    dqn_hp.get("distributed_local_worker_fraction", 0.7),
+                    quota_hp.get("distributed_local_worker_fraction", 0.7),
                 )
                 or 0.7
             )
-            local_ep, remote_ep = resolve_dqn_dist_episode_split(
-                total_episodes=ep_total,
-                local_fraction=frac,
-            )
+            split_fn = resolve_phoenix_dist_episode_split if phoenix_enabled else resolve_dqn_dist_episode_split
+            local_ep, remote_ep = split_fn(total_episodes=ep_total, local_fraction=frac)
             self._dist_local_ep_total = int(local_ep)
             self._dist_remote_ep_total = int(remote_ep)
             self._dist_pc2_workers_need = max(
                 1,
-                int(dqn_hp.get("distributed_pc2_num_workers", 8) or 8),
+                int(quota_hp.get("distributed_pc2_num_workers", 8) or 8),
             )
         else:
             # AZ/GAZ: общий лимит totLifeT, вклад ПК1/ПК2 динамический (кто быстрее).
@@ -6783,7 +6815,10 @@ class GUIController(QtCore.QObject):
             self._dist_pc2_workers_need = max(1, int(pool_hp.get("num_env_workers", 8) or 8))
         self.distProgressVisibleChanged.emit(True)
         self.distProgressModeChanged.emit(self._dist_progress_mode)
-        if dqn_enabled and int(dqn_hp.get("distributed_wait_pc2", 0) or 0) == 1:
+        if (
+            (dqn_enabled and int(dqn_hp.get("distributed_wait_pc2", 0) or 0) == 1)
+            or (phoenix_enabled and int(phoenix_hp.get("distributed_wait_pc2", 0) or 0) == 1)
+        ):
             self._progress_phase = "waiting_pc2"
             self.progressPhaseChanged.emit("waiting_pc2")
             self._set_progress_detail("Ожидание подключения ПК2")
@@ -6829,7 +6864,7 @@ class GUIController(QtCore.QObject):
         # когда вынул ep из своей очереди (узкое место — обучение), поэтому прогресс ПК2
         # отставал и прыгал в конце. ПК2 теперь из своевременного маркера приёмника
         # pc2_ep_accepted (см. _handle_dqn_dist_progress_line). Из TRACE — только ПК1/topup.
-        if idx < 100 or idx == int(DQN_DIST_TOPUP_ACTOR_IDX):
+        if idx < 100 or idx in {int(DQN_DIST_TOPUP_ACTOR_IDX), int(PHOENIX_DIST_TOPUP_ACTOR_IDX)}:
             self._dist_pc1_ep_done += 1
             self._update_dist_progress_display()
 
@@ -7244,6 +7279,67 @@ class GUIController(QtCore.QObject):
                     f"[GUI] [DQN][DIST] episodes total={_ep_total} local={_local_ep} pc2={_remote_ep} "
                     f"fraction={_dist_frac:.2f} actors_pc1={env_overrides.get('NUM_ACTORS', '8')} "
                     f"actors_pc2={env_overrides.get('DQN_DIST_PC2_NUM_WORKERS', '8')}",
+                    level="INFO",
+                )
+
+        # PHOENIX actor-learner knobs. num_actors=1 + dist off preserves Wave 1 single-process path.
+        if str(self._training_algo).strip().lower() == "phoenix":
+            _phx_hp = self._phoenix_hyperparams if isinstance(self._phoenix_hyperparams, dict) else {}
+            env_overrides["PHOENIX_NUM_ACTORS"] = str(int(_phx_hp.get("num_actors", 1) or 1))
+            env_overrides["NUM_ACTORS"] = env_overrides["PHOENIX_NUM_ACTORS"]
+            env_overrides["PHOENIX_BATCH"] = str(int(_phx_hp.get("batch_size", 32) or 32))
+            env_overrides["PHOENIX_MIN_REPLAY"] = str(int(_phx_hp.get("replay_min_size", 256) or 256))
+            env_overrides["PHOENIX_ACTOR_BATCH_SEND"] = str(int(_phx_hp.get("actor_batch_send", 32) or 32))
+            env_overrides["PHOENIX_ACTOR_QUEUE_MAX"] = str(int(_phx_hp.get("actor_queue_max", 256) or 256))
+            env_overrides["ACTOR_BATCH_SEND"] = env_overrides["PHOENIX_ACTOR_BATCH_SEND"]
+            env_overrides["ACTOR_QUEUE_MAX"] = env_overrides["PHOENIX_ACTOR_QUEUE_MAX"]
+            env_overrides["PHOENIX_SYNC_EVERY_UPDATES"] = str(int(_phx_hp.get("sync_every_updates", 200) or 200))
+            env_overrides["PHOENIX_ACTOR_EPS_MODE"] = str(_phx_hp.get("actor_epsilon_mode", "apex") or "apex")
+            env_overrides["PHOENIX_ACTOR_EPS_FLOOR_MIN"] = str(float(_phx_hp.get("actor_eps_floor_min", 0.02) or 0.02))
+            env_overrides["PHOENIX_ACTOR_EPS_FLOOR_MAX"] = str(float(_phx_hp.get("actor_eps_floor_max", 0.20) or 0.20))
+            if int(_phx_hp.get("distributed_actors_enabled", 0) or 0) == 1:
+                env_overrides["PHOENIX_DISTRIBUTED_ACTORS"] = "1"
+                env_overrides["PHOENIX_ACTOR_QUEUE_MAX"] = str(max(1024, int(env_overrides.get("PHOENIX_ACTOR_QUEUE_MAX", "256"))))
+                env_overrides["ACTOR_QUEUE_MAX"] = env_overrides["PHOENIX_ACTOR_QUEUE_MAX"]
+                env_overrides.setdefault("PHOENIX_DIST_ROLLOUT_PORT", str(_phx_hp.get("distributed_rollout_port", 5562)))
+                env_overrides.setdefault("PHOENIX_DIST_BIND_HOST", str(_phx_hp.get("distributed_bind_host", "0.0.0.0") or "0.0.0.0"))
+                env_overrides.setdefault("PHOENIX_DIST_AUTH_TOKEN", str(_phx_hp.get("distributed_auth_token", "") or ""))
+                _phx_dist_frac = float(_phx_hp.get("distributed_local_episode_fraction", 0.7) or 0.7)
+                env_overrides["PHOENIX_DIST_LOCAL_EPISODE_FRACTION"] = str(_phx_dist_frac)
+                env_overrides.setdefault(
+                    "PHOENIX_DIST_PC2_NUM_WORKERS",
+                    str(_phx_hp.get("distributed_pc2_num_workers", env_overrides.get("PHOENIX_NUM_ACTORS", "8"))),
+                )
+                env_overrides.setdefault(
+                    "PHOENIX_DIST_DRAIN_SEC",
+                    str(_phx_hp.get("distributed_actors_drain_sec", 30.0)),
+                )
+                env_overrides.setdefault(
+                    "PHOENIX_DIST_WAIT_PC2",
+                    str(int(_phx_hp.get("distributed_wait_pc2", 0) or 0)),
+                )
+                env_overrides.setdefault(
+                    "PHOENIX_DIST_WAIT_PC2_TIMEOUT_SEC",
+                    str(_phx_hp.get("distributed_wait_pc2_timeout_sec", 600.0)),
+                )
+                env_overrides.setdefault(
+                    "PHOENIX_DIST_BIND_RETRY_SEC",
+                    str(_phx_hp.get("distributed_bind_retry_sec", 25.0)),
+                )
+                env_overrides.setdefault("PHOENIX_DIST_ZMQ_HWM", str(_phx_hp.get("dist_zmq_hwm", 256)))
+                env_overrides.setdefault(
+                    "PHOENIX_DIST_MAX_WINDOWS_PER_MSG",
+                    str(_phx_hp.get("dist_max_windows_per_msg", 64)),
+                )
+                _ep_total = max(1, int(self._train_total_episodes or 400))
+                _local_ep, _remote_ep = resolve_phoenix_dist_episode_split(
+                    total_episodes=_ep_total,
+                    local_fraction=_phx_dist_frac,
+                )
+                self._emit_log(
+                    f"[GUI] [PHOENIX][DIST] episodes total={_ep_total} local={_local_ep} pc2={_remote_ep} "
+                    f"fraction={_phx_dist_frac:.2f} actors_pc1={env_overrides.get('PHOENIX_NUM_ACTORS', '1')} "
+                    f"actors_pc2={env_overrides.get('PHOENIX_DIST_PC2_NUM_WORKERS', '8')}",
                     level="INFO",
                 )
 

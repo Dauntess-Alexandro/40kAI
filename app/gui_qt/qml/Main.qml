@@ -4647,10 +4647,21 @@ ApplicationWindow {
                                     }
                                     ScrollView {
                                         clip: true
-                                        SectionHyperparamsEditor {
+                                        contentWidth: phoenixHyperparamsColumn.width
+                                        ColumnLayout {
+                                            id: phoenixHyperparamsColumn
                                             width: algoHyperparamsStack.width
-                                            algoSection: "phoenix"
-                                            rootUi: root
+                                            spacing: root.spacingSm
+
+                                            PhoenixDistributedActorsPanel {
+                                                rootUi: root
+                                            }
+
+                                            SectionHyperparamsEditor {
+                                                Layout.fillWidth: true
+                                                algoSection: "phoenix"
+                                                rootUi: root
+                                            }
                                         }
                                     }
                                     ScrollView {

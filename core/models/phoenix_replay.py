@@ -8,6 +8,7 @@ from __future__ import annotations
 import random
 import threading
 from collections import namedtuple
+from typing import Any
 
 import numpy as np
 
@@ -21,8 +22,8 @@ class SequenceReplayBuffer:
         self.span = self.window + 1
         self.alpha = float(alpha)
         self.eps = float(eps)
-        self._steps: list = []               # плоский лог шагов (obs, action, active, reward, done)
-        self._starts: list = [None] * self.capacity  # позиции начала валидных окон
+        self._steps: list = []               # только короткий rolling-tail для legacy push()
+        self._windows: list[SequenceWindow | None] = [None] * self.capacity
         self.size = 0
         self.pos = 0
         self.max_priority = 1.0
@@ -53,7 +54,6 @@ class SequenceReplayBuffer:
 
     def push(self, obs, action, active_mask, reward: float, done: bool):
         with self._lock:
-            start_index = len(self._steps)
             self._steps.append((
                 np.asarray(obs, dtype=np.float32),
                 np.asarray(action, dtype=np.int64),
@@ -61,26 +61,86 @@ class SequenceReplayBuffer:
                 float(reward),
                 bool(done),
             ))
-            # как только накопилось >= span шагов — позиция (start_index - window) стартует валидное окно
-            win_start = start_index - self.window
-            if win_start >= 0:
-                self._register_window(win_start)
+            if len(self._steps) >= self.span:
+                self._register_window(self._materialize_from_steps(self._steps[-self.span:]))
+            # bounded tail: для следующего окна нужен только последний span шагов.
+            if len(self._steps) > self.span:
+                self._steps = self._steps[-self.span:]
 
-    def _register_window(self, win_start: int):
-        self._starts[self.pos] = win_start
-        p_alpha = float(max(self.max_priority, self.eps)) ** self.alpha
+    def push_window(self, window: SequenceWindow | dict[str, Any], priority: float | None = None) -> None:
+        """Добавить уже materialized окно H+1 от actor-process/PC2.
+
+        Actor-side materialization не даёт learner'у случайно склеить шаги разных акторов или
+        разных эпизодов. `done`-tail приходит уже размеченным, здесь только shape/dtype validation.
+        """
+        win = self._coerce_window(window)
+        with self._lock:
+            self._register_window(win, priority=priority)
+
+    def push_windows(self, windows, priorities=None) -> int:
+        count = 0
+        priorities = list(priorities) if priorities is not None else []
+        for i, window in enumerate(windows or []):
+            priority = priorities[i] if i < len(priorities) else None
+            self.push_window(window, priority=priority)
+            count += 1
+        return count
+
+    def _register_window(self, window: SequenceWindow, priority: float | None = None):
+        self._windows[self.pos] = window
+        raw_priority = float(self.max_priority)
+        if priority is not None:
+            try:
+                raw_priority = max(float(priority), self.eps)
+                self.max_priority = max(self.max_priority, raw_priority)
+            except (TypeError, ValueError):
+                pass
+        p_alpha = float(max(raw_priority, self.eps)) ** self.alpha
         self._set_leaf(self.pos, p_alpha)
         if self.size < self.capacity:
             self.size += 1
         self.pos = (self.pos + 1) % self.capacity
 
-    def _materialize(self, win_start: int) -> SequenceWindow:
-        steps = self._steps[win_start: win_start + self.span]
+    def _coerce_window(self, window: SequenceWindow | dict[str, Any]) -> SequenceWindow:
+        if isinstance(window, dict):
+            src = window
+            win = SequenceWindow(
+                src.get("obs"),
+                src.get("actions"),
+                src.get("active_masks"),
+                src.get("rewards"),
+                src.get("dones"),
+            )
+        else:
+            win = window
+        obs = np.asarray(win.obs, dtype=np.float32)
+        actions = np.asarray(win.actions, dtype=np.int64)
+        active = np.asarray(win.active_masks, dtype=bool)
+        rewards = np.asarray(win.rewards, dtype=np.float32)
+        dones = np.asarray(win.dones, dtype=np.float32)
+        if obs.shape[0] != self.span:
+            raise ValueError(
+                f"PHOENIX replay window obs span mismatch: got {obs.shape[0]}, expected {self.span}. "
+                "Где: SequenceReplayBuffer.push_window. Что делать: проверьте spr_horizon_K/ve_horizon у акторов."
+            )
+        if actions.shape[0] != self.span or active.shape[0] != self.span:
+            raise ValueError(
+                "PHOENIX replay window action/mask span mismatch. "
+                "Где: SequenceReplayBuffer.push_window. Что делать: проверьте sequence assembler акторов."
+            )
+        if rewards.shape != (self.span,) or dones.shape != (self.span,):
+            raise ValueError(
+                "PHOENIX replay window rewards/dones shape mismatch. "
+                "Где: SequenceReplayBuffer.push_window. Что делать: отправляйте rewards/dones длиной H+1."
+            )
+        return SequenceWindow(obs, actions, active, rewards, dones)
+
+    def _materialize_from_steps(self, steps) -> SequenceWindow:
         obs = np.stack([s[0] for s in steps])
         actions = np.stack([s[1] for s in steps])
         active = np.stack([s[2] for s in steps])
         rewards = np.asarray([s[3] for s in steps], dtype=np.float32)
-        # done-маска: 1 на шаге терминала и всех последующих
+        # done-маска: terminal transition валиден; 1 ставим только на padding/шаги после терминала.
         dones = np.zeros(self.span, dtype=np.float32)
         terminated = False
         for k, s in enumerate(steps):
@@ -109,7 +169,10 @@ class SequenceReplayBuffer:
                     idx = self.size - 1
                 indices.append(idx)
                 pri.append(float(self.sum_tree[idx + self.tree_size]))
-                samples.append(self._materialize(self._starts[idx]))
+                win = self._windows[idx]
+                if win is None:
+                    continue
+                samples.append(win)
             probs = np.asarray(pri, dtype=np.float32) / total
             probs = np.clip(probs, 1e-12, None)
             weights = (self.size * probs) ** (-beta)
