@@ -1,9 +1,14 @@
 """PHOENIX network: masked action-embed, latent dynamics, encoder+IQN reuse из DQN, BYOL-головы."""
 from __future__ import annotations
 
+import copy
+import re
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from core.models.DQN import DQN
 
 
 class PhoenixActionEmbed(nn.Module):
@@ -60,3 +65,147 @@ class PhoenixDynamics(nn.Module):
             z = self.step(z, a_emb_seq[:, k])
             steps.append(z)
         return torch.stack(steps, dim=1)
+
+
+# --- BYOL projection / prediction heads ---
+
+
+class _Projector(nn.Module):
+    def __init__(self, hidden_size: int, proj_dim: int):
+        super().__init__()
+        self.fc1 = nn.Linear(hidden_size, proj_dim)
+        self.norm = nn.LayerNorm(proj_dim)
+        self.fc2 = nn.Linear(proj_dim, proj_dim)
+
+    def forward(self, x):
+        return self.fc2(F.relu(self.norm(self.fc1(x))))
+
+
+class _Predictor(nn.Module):
+    def __init__(self, proj_dim: int):
+        super().__init__()
+        self.fc = nn.Linear(proj_dim, proj_dim)
+
+    def forward(self, x):
+        return self.fc(x)
+
+
+# --- PhoenixNet: encoder+IQN reuse из DQN, BYOL-головы, EMA-таргет ---
+
+
+class PhoenixNet(nn.Module):
+    def __init__(self, n_observations: int, action_sizes: list[int], cfg):
+        super().__init__()
+        self.action_sizes = list(action_sizes)
+        self.hidden_size = int(cfg.hidden_size)
+        self.num_layers = int(cfg.num_layers)
+        self.emb_dim = int(cfg.emb_dim)
+        proj_dim = self.hidden_size
+
+        dqn_kwargs = dict(
+            dueling=bool(cfg.dueling),
+            noisy=bool(cfg.noisy),
+            distributional="iqn",
+            hidden_size=self.hidden_size,
+            num_layers=self.num_layers,
+            n_ensemble=int(cfg.n_ensemble),
+            iqn_num_quantiles=int(cfg.iqn_num_quantiles),
+            iqn_num_target_quantiles=int(cfg.iqn_num_target_quantiles),
+            iqn_num_tau_samples=int(cfg.iqn_num_tau_samples),
+            iqn_embed_dim=int(cfg.iqn_embed_dim),
+        )
+        self.online = DQN(n_observations, self.action_sizes, **dqn_kwargs)
+        self.target = copy.deepcopy(self.online)
+        for p in self.target.parameters():
+            p.requires_grad_(False)
+
+        self.action_embed = PhoenixActionEmbed(self.action_sizes, self.emb_dim)
+        self.dynamics = PhoenixDynamics(self.hidden_size, self.emb_dim, cfg.dynamics_type)
+        self.projector = _Projector(self.hidden_size, proj_dim)
+        self.predictor = _Predictor(proj_dim)
+        self.target_projector = copy.deepcopy(self.projector)
+        for p in self.target_projector.parameters():
+            p.requires_grad_(False)
+
+    # --- encoder / RL ---
+    def encode(self, obs):
+        return self.online._feature(obs)
+
+    def iqn_q(self, obs):
+        return self.online.q_values(obs)
+
+    def target_quantiles(self, obs, num_quantiles=None, taus=None, return_taus=False):
+        return self.target.iqn(obs, num_quantiles=num_quantiles, taus=taus, return_taus=return_taus)
+
+    def online_quantiles(self, obs, num_quantiles=None, taus=None, return_taus=False):
+        return self.online.iqn(obs, num_quantiles=num_quantiles, taus=taus, return_taus=return_taus)
+
+    # --- SPR heads ---
+    def project(self, z):
+        return self.projector(z)
+
+    def predict(self, p):
+        return self.predictor(p)
+
+    @torch.no_grad()
+    def target_encode(self, obs):
+        return self.target._feature(obs)
+
+    @torch.no_grad()
+    def target_project(self, z):
+        return self.target_projector(z)
+
+    # --- maintenance ---
+    def _encoder_parameters(self):
+        yield from self.online.input_fc.parameters()
+        yield from self.online.input_norm.parameters()
+        yield from self.online.blocks.parameters()
+
+    def update_targets(self, ema_rl: float, ema_spr: float):
+        with torch.no_grad():
+            for po, pt in zip(self.online.parameters(), self.target.parameters()):
+                pt.mul_(1.0 - ema_rl).add_(po, alpha=ema_rl)
+            for po, pt in zip(self.projector.parameters(), self.target_projector.parameters()):
+                pt.mul_(1.0 - ema_spr).add_(po, alpha=ema_spr)
+
+    def reset_heads_and_shrink_encoder(self, alpha: float):
+        with torch.no_grad():
+            # 1) shrink-and-perturb ствола encoder
+            for p in self._encoder_parameters():
+                phi = torch.empty_like(p)
+                if p.dim() >= 2:
+                    nn.init.kaiming_uniform_(phi, a=5**0.5)
+                else:
+                    phi.normal_(0.0, 0.01)
+                p.mul_(alpha).add_(phi, alpha=1.0 - alpha)
+        # 2) полный reset голов и обвязки
+        for module in (self.online.head_bundles, self.projector, self.predictor,
+                       self.dynamics, self.action_embed):
+            for sub in module.modules():
+                if hasattr(sub, "reset_parameters"):
+                    sub.reset_parameters()
+        # 3) ресинк таргетов
+        self.target.load_state_dict(self.online.state_dict())
+        self.target_projector.load_state_dict(self.projector.state_dict())
+
+
+def infer_phoenix_arch_from_state_dict(state_dict) -> dict:
+    """Восстановить арх-параметры PhoenixNet из state_dict (для загрузки чужого чекпойнта)."""
+    keys = list(state_dict.keys())
+    hidden_size = None
+    for k in keys:
+        if k.endswith("online.input_fc.weight") or k.endswith("online.input_fc.weight_mu"):
+            hidden_size = int(state_dict[k].shape[0])
+            break
+    num_layers = len({int(m.group(1)) for k in keys for m in [re.search(r"online\.blocks\.(\d+)\.", k)] if m})
+    emb_dim = None
+    for k in keys:
+        if re.search(r"action_embed\.embeddings\.\d+\.weight$", k):
+            emb_dim = int(state_dict[k].shape[1])
+            break
+    arch = {"num_layers": max(1, num_layers)}
+    if hidden_size:
+        arch["hidden_size"] = hidden_size
+    if emb_dim:
+        arch["emb_dim"] = emb_dim
+    return arch
