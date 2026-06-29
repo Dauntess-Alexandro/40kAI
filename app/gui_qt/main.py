@@ -91,6 +91,13 @@ from app.gui_qt.remote_is_store import (
     remote_is_lan_active,
     save_remote_is,
 )
+from app.gui_qt.phoenix_hyperparams_defaults import (
+    DEFAULT_PHOENIX_HYPERPARAMS,
+    PHOENIX_BASIC_KEYS,
+    PHOENIX_FIELD_TOOLTIPS,
+    PHOENIX_GROUPS,
+    PHOENIX_HYPERPARAM_KEYS,
+)
 from app.gui_qt.sampled_muzero_hyperparams_defaults import (
     DEFAULT_SMZ_HYPERPARAMS,
     SMZ_BASIC_KEYS,
@@ -565,6 +572,8 @@ class GUIController(QtCore.QObject):
         self._smz_profile_presets = dict(SMZ_PROFILE_PRESETS)
         self._smz_hyperparams = dict(self._default_smz_hyperparams)
         self._smz_selected_profile = "balanced"
+        self._default_phoenix_hyperparams: dict[str, int | float | str] = dict(DEFAULT_PHOENIX_HYPERPARAMS)
+        self._phoenix_hyperparams = dict(self._default_phoenix_hyperparams)
         self._settings_dirty = False
         self._settings_save_state = "✓ Сохранено"
         self._training_cuda_available = False
@@ -4667,6 +4676,27 @@ class GUIController(QtCore.QObject):
         self.trainingHyperparamsChanged.emit()
         self.mark_settings_dirty()
 
+    @QtCore.Slot(str, str)
+    def set_phoenix_hyperparam(self, key: str, value: str) -> None:
+        normalized_key = str(key or "").strip()
+        if normalized_key not in self._default_phoenix_hyperparams:
+            return
+        default = self._default_phoenix_hyperparams[normalized_key]
+        current = self._phoenix_hyperparams.get(normalized_key, default)
+        try:
+            parsed = self._coerce_algo_hyperparam(normalized_key, value, default)
+        except (TypeError, ValueError):
+            self._emit_status(
+                f"Некорректное значение PHOENIX-параметра '{normalized_key}' в Настройках. "
+                "Проверьте формат и попробуйте снова."
+            )
+            return
+        if current == parsed:
+            return
+        self._phoenix_hyperparams[normalized_key] = parsed
+        self.trainingHyperparamsChanged.emit()
+        self.mark_settings_dirty()
+
     def _detect_profile(
         self,
         hyperparams: dict[str, int | float | str],
@@ -5070,6 +5100,7 @@ class GUIController(QtCore.QObject):
             "gmz": self._default_gmz_hyperparams,
             "gaz": self._default_gaz_hyperparams,
             "smz": self._default_smz_hyperparams,
+            "phoenix": self._default_phoenix_hyperparams,
         }.get(section, {})
         default = defaults.get(k)
         if default is None:
@@ -5203,6 +5234,11 @@ class GUIController(QtCore.QObject):
             current = self._gaz_hyperparams
             groups = GAZ_GROUPS
             refresh = self._refresh_gaz_profile_label
+        elif section == "phoenix":
+            defaults = self._default_phoenix_hyperparams
+            current = self._phoenix_hyperparams
+            groups = PHOENIX_GROUPS
+            refresh = lambda: None
         else:
             return
 
@@ -5281,6 +5317,14 @@ class GUIController(QtCore.QObject):
     def hpSmzHyperparamKeys(self) -> list:
         return [str(k) for k in SMZ_HYPERPARAM_KEYS]
 
+    @QtCore.Property("QVariantMap", notify=trainingHyperparamsChanged)
+    def hpPhoenixHyperparamsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._phoenix_hyperparams)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpPhoenixHyperparamKeys(self) -> list:
+        return [str(k) for k in PHOENIX_HYPERPARAM_KEYS]
+
     @QtCore.Property("QVariantList", constant=True)
     def hpDqnGroups(self) -> list:
         return self._groups_for_qml(DQN_GROUPS)
@@ -5300,6 +5344,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpGazGroups(self) -> list:
         return self._groups_for_qml(GAZ_GROUPS)
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpPhoenixGroups(self) -> list:
+        return self._groups_for_qml(PHOENIX_GROUPS)
 
     @QtCore.Property("QVariantList", constant=True)
     def hpSmzGroups(self) -> list:
@@ -5334,6 +5382,10 @@ class GUIController(QtCore.QObject):
         return self._az_hyperparams_map_for_qml(self._default_smz_hyperparams)
 
     @QtCore.Property("QVariantMap", constant=True)
+    def hpPhoenixDefaultsMap(self) -> dict:
+        return self._az_hyperparams_map_for_qml(self._default_phoenix_hyperparams)
+
+    @QtCore.Property("QVariantMap", constant=True)
     def hpDqnFieldTooltips(self) -> dict:
         return self._tooltips_for_qml(DQN_FIELD_TOOLTIPS)
 
@@ -5356,6 +5408,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantMap", constant=True)
     def hpSmzFieldTooltips(self) -> dict:
         return self._tooltips_for_qml(SMZ_FIELD_TOOLTIPS)
+
+    @QtCore.Property("QVariantMap", constant=True)
+    def hpPhoenixFieldTooltips(self) -> dict:
+        return self._tooltips_for_qml(PHOENIX_FIELD_TOOLTIPS)
 
     @QtCore.Property("QVariantList", constant=True)
     def hpDqnBasicKeys(self) -> list:
@@ -5384,6 +5440,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property("QVariantList", constant=True)
     def hpSmzBasicKeys(self) -> list:
         return [str(k) for k in SMZ_BASIC_KEYS]
+
+    @QtCore.Property("QVariantList", constant=True)
+    def hpPhoenixBasicKeys(self) -> list:
+        return [str(k) for k in PHOENIX_BASIC_KEYS]
 
     def _load_algo_hyperparams_section(
         self,
@@ -5511,7 +5571,7 @@ class GUIController(QtCore.QObject):
     @staticmethod
     def _default_clip_reward_for_algo(algo: str) -> str:
         normalized = str(algo or "").strip().lower()
-        if normalized in {"dqn", "ppo"}:
+        if normalized in {"dqn", "ppo", "phoenix"}:
             return "off"
         return "1"
 
@@ -5559,6 +5619,7 @@ class GUIController(QtCore.QObject):
         self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
         self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
         self._smz_hyperparams = dict(self._default_smz_hyperparams)
+        self._phoenix_hyperparams = dict(self._default_phoenix_hyperparams)
         self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
         self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
         self._refresh_training_profile_labels()
@@ -5596,6 +5657,13 @@ class GUIController(QtCore.QObject):
                 "Исправьте значения Sampled MuZero и повторите сохранение."
             )
             return
+        phoenix_error = self._validate_phoenix_hyperparams(self._phoenix_hyperparams)
+        if phoenix_error:
+            self._emit_status(
+                f"Не удалось сохранить hyperparams.json в Настройках: {phoenix_error}. "
+                "Исправьте значения PHOENIX и повторите сохранение."
+            )
+            return
         az_tree_error = self._validate_az_hyperparams(self._az_tree_hyperparams, section="alphazero_tree")
         if az_tree_error:
             self._emit_status(
@@ -5629,6 +5697,7 @@ class GUIController(QtCore.QObject):
             merged_payload["gumbel_muzero"] = dict(self._gmz_hyperparams)
             merged_payload["gumbel_az"] = dict(self._gaz_hyperparams)
             merged_payload["sampled_muzero"] = dict(self._smz_hyperparams)
+            merged_payload["phoenix"] = dict(self._phoenix_hyperparams)
             merged_payload["alphazero_tree"] = dict(self._az_tree_hyperparams)
             merged_payload["alphazero_proxy"] = dict(self._az_proxy_hyperparams)
             merged_payload.pop("alphazero", None)
@@ -5803,6 +5872,27 @@ class GUIController(QtCore.QObject):
             return "sampled_muzero.num_samples должен быть >= 1"
         return None
 
+    def _validate_phoenix_hyperparams(self, payload: dict[str, int | float | str]) -> str | None:
+        replay_ratio = int(payload.get("replay_ratio", 2))
+        reset_interval = int(payload.get("reset_interval", 40000))
+        replay_capacity = int(payload.get("replay_capacity", 200000))
+        spr_k = int(payload.get("spr_horizon_K", 5))
+        ve_h = int(payload.get("ve_horizon", 3))
+        if replay_ratio < 1:
+            return "phoenix.replay_ratio должен быть >= 1"
+        if reset_interval < 1:
+            return "phoenix.reset_interval должен быть >= 1"
+        if replay_capacity < 1024:
+            return "phoenix.replay_capacity должен быть >= 1024"
+        if spr_k < 1:
+            return "phoenix.spr_horizon_K должен быть >= 1"
+        if ve_h < 0:
+            return "phoenix.ve_horizon должен быть >= 0"
+        dynamics = str(payload.get("dynamics_type", "mlp")).strip().lower()
+        if dynamics not in {"mlp", "gru"}:
+            return "phoenix.dynamics_type должен быть mlp или gru"
+        return None
+
     def _load_hyperparams_from_disk(self, log_errors: bool = False) -> bool:
         try:
             with open(self._hyperparams_path, encoding="utf-8") as handle:
@@ -5813,6 +5903,7 @@ class GUIController(QtCore.QObject):
             self._gmz_hyperparams = dict(self._default_gmz_hyperparams)
             self._gaz_hyperparams = dict(self._default_gaz_hyperparams)
             self._smz_hyperparams = dict(self._default_smz_hyperparams)
+            self._phoenix_hyperparams = dict(self._default_phoenix_hyperparams)
             self._az_tree_hyperparams = dict(self._default_az_tree_hyperparams)
             self._az_proxy_hyperparams = dict(self._default_az_proxy_hyperparams)
             self._refresh_training_profile_labels()
@@ -5859,6 +5950,13 @@ class GUIController(QtCore.QObject):
             "sampled_muzero",
             self._default_smz_hyperparams,
             SMZ_HYPERPARAM_KEYS,
+            root_fallback=False,
+        )
+        self._phoenix_hyperparams = self._load_algo_hyperparams_section(
+            payload,
+            "phoenix",
+            self._default_phoenix_hyperparams,
+            PHOENIX_HYPERPARAM_KEYS,
             root_fallback=False,
         )
         self._az_tree_hyperparams = self._load_az_hyperparams_section(

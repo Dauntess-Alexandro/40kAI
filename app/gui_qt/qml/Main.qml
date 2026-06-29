@@ -4611,6 +4611,7 @@ ApplicationWindow {
                                     id: algoHyperparamsTabs
                                     Layout.fillWidth: true
                                     TabButton { text: "DQN" }
+                                    TabButton { text: "PHOENIX" }
                                     TabButton { text: "PPO" }
                                     TabButton { text: "AlphaZero Tree" }
                                     TabButton { text: "AlphaZero Proxy" }
@@ -4642,6 +4643,14 @@ ApplicationWindow {
                                                 algoSection: "dqn"
                                                 rootUi: root
                                             }
+                                        }
+                                    }
+                                    ScrollView {
+                                        clip: true
+                                        SectionHyperparamsEditor {
+                                            width: algoHyperparamsStack.width
+                                            algoSection: "phoenix"
+                                            rootUi: root
                                         }
                                     }
                                     ScrollView {

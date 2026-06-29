@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: hpEditor
-    required property string algoSection  // dqn | ppo | tree | proxy | gmz | gaz | smz
+    required property string algoSection  // dqn | phoenix | ppo | tree | proxy | gmz | gaz | smz
     property var rootUi: null
 
     spacing: rootUi ? rootUi.spacingSm : 8
@@ -16,6 +16,7 @@ ColumnLayout {
 
     function sectionTitle() {
         if (algoSection === "dqn") return "DQN"
+        if (algoSection === "phoenix") return "PHOENIX"
         if (algoSection === "ppo") return "PPO"
         if (algoSection === "tree") return "AlphaZero (Tree)"
         if (algoSection === "proxy") return "AlphaZero (Proxy)"
@@ -28,6 +29,7 @@ ColumnLayout {
     function groupsList() {
         if (typeof controller === "undefined" || !controller) return []
         if (algoSection === "dqn") return controller.hpDqnGroups
+        if (algoSection === "phoenix") return controller.hpPhoenixGroups
         if (algoSection === "ppo") return controller.hpPpoGroups
         if (algoSection === "tree" || algoSection === "proxy") return controller.hpAzGroups
         if (algoSection === "gmz") return controller.hpGmzGroups
@@ -39,6 +41,7 @@ ColumnLayout {
     function basicKeysList() {
         if (typeof controller === "undefined" || !controller) return []
         if (algoSection === "dqn") return controller.hpDqnBasicKeys
+        if (algoSection === "phoenix") return controller.hpPhoenixBasicKeys
         if (algoSection === "ppo") return controller.hpPpoBasicKeys
         if (algoSection === "tree") return controller.hpAzTreeBasicKeys
         if (algoSection === "proxy") return controller.hpAzProxyBasicKeys
@@ -69,6 +72,9 @@ ColumnLayout {
         if (algoSection === "dqn") {
             hpMap = controller.hpDqnHyperparamsMap
             defaultsMap = controller.hpDqnDefaultsMap
+        } else if (algoSection === "phoenix") {
+            hpMap = controller.hpPhoenixHyperparamsMap
+            defaultsMap = controller.hpPhoenixDefaultsMap
         } else if (algoSection === "ppo") {
             hpMap = controller.hpPpoHyperparamsMap
             defaultsMap = controller.hpPpoDefaultsMap
@@ -104,6 +110,7 @@ ColumnLayout {
     function setKey(key, value) {
         if (typeof controller === "undefined" || !controller) return
         if (algoSection === "dqn") controller.set_dqn_hyperparam(key, value)
+        else if (algoSection === "phoenix") controller.set_phoenix_hyperparam(key, value)
         else if (algoSection === "ppo") controller.set_ppo_hyperparam(key, value)
         else if (algoSection === "tree") controller.set_az_tree_hyperparam(key, value)
         else if (algoSection === "proxy") controller.set_az_proxy_hyperparam(key, value)
@@ -177,6 +184,7 @@ ColumnLayout {
         if (typeof controller === "undefined" || !controller) return ""
         var tips
         if (algoSection === "dqn") tips = controller.hpDqnFieldTooltips
+        else if (algoSection === "phoenix") tips = controller.hpPhoenixFieldTooltips
         else if (algoSection === "ppo") tips = controller.hpPpoFieldTooltips
         else if (algoSection === "tree" || algoSection === "proxy") tips = controller.hpAzFieldTooltips
         else if (algoSection === "gmz") tips = controller.hpGmzFieldTooltips
@@ -252,6 +260,11 @@ ColumnLayout {
             || k.indexOf("double_dqn") >= 0 || k.indexOf("dueling") >= 0
             || k.indexOf("adaptive_entropy") >= 0 || k.indexOf("noisy_disable") >= 0
             || k.indexOf("noisy_sigma_anneal") >= 0 || k.indexOf("iqn_n_") === 0
+            || k.indexOf("iqn_num_") === 0 || k.indexOf("replay_ratio") >= 0
+            || k.indexOf("reset_interval") >= 0 || k.indexOf("anneal_steps") >= 0
+            || k.indexOf("spr_horizon") >= 0 || k.indexOf("ve_horizon") >= 0
+            || k.indexOf("ve_steve") >= 0 || k.indexOf("nstep_") === 0
+            || k.indexOf("n_ensemble") >= 0 || k.indexOf("emb_dim") >= 0 || k === "noisy"
             || k.indexOf("rollout") >= 0 || k.indexOf("update_epochs") >= 0
             || k.indexOf("minibatch") >= 0
             || k.indexOf("det_eval") >= 0 || k.indexOf("mcts_eval") >= 0
@@ -267,6 +280,7 @@ ColumnLayout {
             || k === "mcts_candidate_mode"
             || k === "dist_type" || k === "eps_schedule"
             || k === "actor_device" || k === "atom_range"
+            || k === "dynamics_type"
     }
 
     function isCandidateModeKey(key) {
@@ -292,6 +306,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         spacing: rootUi ? rootUi.spacingSm : 8
+        visible: algoSection !== "phoenix"
 
         Label {
             text: "Пресеты"

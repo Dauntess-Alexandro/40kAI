@@ -5,9 +5,10 @@ from PySide6 import QtCore
 from app.gui_qt.main import GUIController
 
 
-def test_clip_reward_default_is_off_for_dqn_and_ppo():
+def test_clip_reward_default_is_off_for_dqn_ppo_and_phoenix():
     assert GUIController._default_clip_reward_for_algo("dqn") == "off"
     assert GUIController._default_clip_reward_for_algo("ppo") == "off"
+    assert GUIController._default_clip_reward_for_algo("phoenix") == "off"
 
 
 def test_clip_reward_default_keeps_legacy_for_other_algos():
