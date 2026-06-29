@@ -1,6 +1,10 @@
 import torch
 
-from core.models.phoenix_loss import spr_consistency_loss, value_expansion_target
+from core.models.phoenix_loss import (
+    spr_consistency_loss,
+    value_expansion_target,
+    value_expansion_target_masked,
+)
 
 
 def test_spr_zero_when_pred_equals_target():
@@ -54,3 +58,37 @@ def test_ve_target_nstep_accumulation():
     out = value_expansion_target(rewards, gammas, boot, h=2)
     expected = 1.0 + 0.5 * 1.0 + (0.5 ** 2) * 4.0
     assert abs(float(out) - expected) < 1e-6
+
+
+def test_ve_masked_equals_unmasked_without_done():
+    # Без терминала маскированный VE совпадает с обычным
+    rewards = torch.tensor([[1.0, 1.0, 0.0]])
+    gammas = torch.full((1, 3), 0.5)
+    boot = torch.tensor([4.0])
+    done = torch.zeros(1, 3)
+    out = value_expansion_target_masked(rewards, gammas, boot, done, h=2)
+    expected = value_expansion_target(rewards, gammas, boot, h=2)
+    assert torch.allclose(out, expected)
+
+
+def test_ve_masked_zeroes_bootstrap_past_terminal():
+    # Терминал на шаге 1 → шаг 2 невалиден (done[2]=1): bootstrap на obs[h=2] зануляется,
+    # но реальные награды r0, r1 (шаг терминала валиден) остаются.
+    rewards = torch.tensor([[1.0, 1.0, 9.0]])  # 9.0 — награда из чужого эпизода
+    gammas = torch.full((1, 3), 0.5)
+    boot = torch.tensor([4.0])
+    done = torch.tensor([[0.0, 0.0, 1.0]])
+    out = value_expansion_target_masked(rewards, gammas, boot, done, h=2)
+    # r0 + γ r1 + γ^2 * 0  = 1 + 0.5 = 1.5 (boot обрезан, r2 за горизонтом)
+    assert abs(float(out) - 1.5) < 1e-6
+
+
+def test_ve_masked_truncates_reward_leak():
+    # Терминал на шаге 0 → шаги 1,2 невалидны: ни награды, ни bootstrap из следующего эпизода.
+    rewards = torch.tensor([[1.0, 9.0, 9.0]])  # 9.0 — утечка из чужого эпизода
+    gammas = torch.full((1, 3), 0.5)
+    boot = torch.tensor([4.0])
+    done = torch.tensor([[0.0, 1.0, 1.0]])
+    out = value_expansion_target_masked(rewards, gammas, boot, done, h=2)
+    # только r0; r1 занулён маской, boot занулён (done[2]=1)
+    assert abs(float(out) - 1.0) < 1e-6

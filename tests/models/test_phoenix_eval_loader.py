@@ -13,8 +13,16 @@ def test_partial_load_ignores_spr_keys():
                if k.startswith("online.") or k.startswith("target.")}
     fresh = PhoenixNet(6, [3, 4], cfg)
     missing, unexpected = fresh.load_state_dict(rl_only, strict=False)
-    # online/target загружены; отсутствуют только SPR-ключи
-    assert all(("online." not in m and "target." not in m) for m in missing) or True
+    # RL-путь (online/target) реально загружен → его ключей нет в missing
+    assert not any(m.startswith("online.") for m in missing)
+    assert not any(m.startswith("target.") for m in missing)
+    # отсутствуют только SPR/dynamics-ключи (обвязка обучения)
+    assert all(
+        m.startswith(("projector.", "predictor.", "dynamics.", "action_embed.", "target_projector."))
+        for m in missing
+    )
+    # лишних ключей при strict=False быть не должно
+    assert unexpected == []
     # форвард работает
     out = fresh.iqn_q(torch.randn(2, 6))
     assert len(out) == 2

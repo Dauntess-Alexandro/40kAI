@@ -5,16 +5,17 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from core.models.phoenix_loss import spr_consistency_loss, value_expansion_target
+from core.models.phoenix_loss import spr_consistency_loss, value_expansion_target_masked
 
 
 def anneal_value(start: float, end: float, step: int, anneal_steps: int) -> float:
+    # Линейная интерполяция start→end за anneal_steps шагов (Волна 1).
+    # Полноценный экспоненциальный профиль — задача Волны 2; концы заякорены на DQN.
     if anneal_steps <= 0 or step >= anneal_steps:
         return float(end)
     if step <= 0:
         return float(start)
     frac = step / anneal_steps
-    # экспоненциальная интерполяция в лог-пространстве сдвига
     return float(start + (end - start) * frac)
 
 
@@ -75,6 +76,8 @@ class PhoenixTrainer:
         spr = spr_consistency_loss(pred, tgt_proj, dones[:, 1 : K + 1])
 
         # --- IQN TD с value-expansion (фикс. h = ve_horizon, ve_steve=False по умолчанию) ---
+        # Волна 1: горизонт h фиксирован на ve_horizon. Аннелинг n-step (current_nstep) и
+        # применение PER IS-весов к лоссу — задачи Волны 2 (см. план Task 8 / спека §4).
         h = min(self.cfg.ve_horizon, span - 1)
         # online quantiles на obs[:,0] для выбранных действий первой головы (упрощённо: голова 0)
         q_online = self.net.online_quantiles(obs[:, 0])  # list per-head [B,A,Nq]
@@ -84,7 +87,8 @@ class PhoenixTrainer:
             tq = self.net.target.q_values(obs[:, h])  # list per-head [B,A]
             boot = torch.stack([qh.max(dim=1).values for qh in tq], dim=1).mean(dim=1)  # [B]
         gammas = torch.full((B, span), gamma, device=self.device)
-        y = value_expansion_target(rewards[:, :h], gammas[:, :h], boot, h=h)  # [B]
+        # done-маска (спека §7): VE-возврат честно обрезается на границе эпизода в окне.
+        y = value_expansion_target_masked(rewards[:, :h], gammas[:, :h], boot, dones, h=h)  # [B]
         # текущая оценка V(s0) ≈ mean по головам от mean-quantile max
         v0 = torch.stack([qh.mean(dim=2).max(dim=1).values for qh in q_online], dim=1).mean(dim=1)
         td_errors = y.detach() - v0
