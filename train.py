@@ -1161,6 +1161,176 @@ def save_extra_metrics(
     print(f"[metrics] saved: {csv_path}")
 
 
+def _save_runtime_metric_plot(
+    *,
+    run_id: str,
+    name: str,
+    title: str,
+    ylabel: str,
+    values: list[float],
+    metrics_dir: str | None = None,
+) -> None:
+    metrics_dir = metrics_dir or METRICS_DIR
+    os.makedirs(metrics_dir, exist_ok=True)
+    os.makedirs(RUNTIME_IMG_DIR, exist_ok=True)
+    vals = [float(v) for v in (values or [0.0])]
+    x = list(range(1, len(vals) + 1))
+    plt.figure()
+    plt.plot(x, vals, color="#2f7df0", linewidth=1.8)
+    if len(vals) >= 10:
+        window = int(max(5, min(50, len(vals) // 10 or 5)))
+        plt.plot(x, moving_avg(vals, window=window), color="#d4a11d", linewidth=2.0)
+    plt.xlabel("Episodes" if name != "loss" else "Updates")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.grid(True, alpha=0.25)
+    plt.tight_layout()
+    for path in (
+        os.path.join(metrics_dir, f"{name}_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"{name}_{run_id}.png"),
+        os.path.join(RUNTIME_IMG_DIR, f"{name}.png"),
+    ):
+        plt.savefig(path)
+    plt.close()
+
+
+def _write_train_window_data_json(
+    *,
+    run_id: str,
+    model_path: str,
+    extra: dict | None = None,
+) -> str:
+    os.makedirs(MODELS_DIR, exist_ok=True)
+    payload = {
+        "run_id": str(run_id),
+        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "model_path": str(model_path or "").replace("\\", "/"),
+        "reward": f"img/reward_{run_id}.png",
+        "loss": f"img/loss_{run_id}.png",
+        "epLen": f"img/epLen_{run_id}.png",
+        "winrate": f"img/winrate_{run_id}.png",
+        "vpdiff": f"img/vpdiff_{run_id}.png",
+        "endreasons": f"img/endreasons_{run_id}.png",
+    }
+    if extra:
+        payload.update(extra)
+    data_json_path = os.path.join(MODELS_DIR, f"data_{run_id}.json")
+    with open(data_json_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+    try:
+        with open(os.path.join(MODELS_DIR, "data_latest.json"), "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+    except OSError:
+        pass
+    return data_json_path
+
+
+def save_phoenix_training_metrics(
+    *,
+    run_id: str,
+    ep_rows: list[dict],
+    loss_values: list[float],
+    model_path: str,
+    mode: str,
+    learner_identity: AgentIdentity,
+    roster_config: dict,
+    num_actors: int,
+    elapsed_s: float,
+) -> str | None:
+    """Сохранить PHOENIX training-window метрики для GUI вкладки «Метрики модели»."""
+    if not ep_rows:
+        append_agent_log(
+            "[PHOENIX][METRICS][WARN] Метрики не сохранены: нет ep_rows. "
+            "Где: train.py (save_phoenix_training_metrics). Что делать: проверьте actor ep-сообщения."
+        )
+        return None
+    try:
+        save_extra_metrics(run_id=str(run_id), ep_rows=ep_rows, metrics_dir=METRICS_DIR, write_legacy_gui_plots=True)
+        _save_runtime_metric_plot(
+            run_id=str(run_id),
+            name="reward",
+            title="PHOENIX reward",
+            ylabel="Reward",
+            values=[float(r.get("ep_reward", 0.0) or 0.0) for r in ep_rows],
+        )
+        _save_runtime_metric_plot(
+            run_id=str(run_id),
+            name="loss",
+            title="PHOENIX IQN+SPR loss",
+            ylabel="Loss",
+            values=[float(v) for v in (loss_values or [0.0])],
+        )
+        _save_runtime_metric_plot(
+            run_id=str(run_id),
+            name="epLen",
+            title="PHOENIX episode length",
+            ylabel="Episode length",
+            values=[float(r.get("ep_len", 0) or 0) for r in ep_rows],
+        )
+        learner_side = str(getattr(learner_identity, "side", "P1") or "P1").strip().upper() or "P1"
+        opponent_side = "P2" if learner_side == "P1" else "P1"
+        labels = {str(row.get("opponent_label", "") or "").strip().lower() for row in ep_rows}
+        labels.discard("")
+        agent_ids = {str(row.get("opponent_agent_id", "") or "").strip() for row in ep_rows}
+        agent_ids.discard("")
+        has_policy_opponent = bool(agent_ids) or any(label not in {"heuristic", "heuristic_auto", "-"} for label in labels)
+        has_heuristic_opponent = any(label in {"heuristic", "heuristic_auto"} for label in labels)
+        looks_like_pool = has_policy_opponent and (has_heuristic_opponent or len(labels) > 1 or len(agent_ids) > 1)
+        opponent_source = (
+            "pool"
+            if (POOL_CONFIG.enabled or looks_like_pool)
+            else ("snapshot_policy_fn" if (SELF_PLAY_ENABLED or has_policy_opponent) else "heuristic_auto")
+        )
+        last_label = ""
+        last_agent_id = ""
+        for row in reversed(ep_rows):
+            last_label = str(row.get("opponent_label", "") or "").strip()
+            last_agent_id = str(row.get("opponent_agent_id", "") or "").strip()
+            if last_label or last_agent_id:
+                break
+        opponent_algo = "pool" if opponent_source == "pool" else "policy"
+        if opponent_source != "pool" and last_label and ":" in last_label:
+            opponent_algo = last_label.split(":", 1)[0].strip().lower() or opponent_algo
+        elif opponent_source != "pool" and last_label and "heuristic" in last_label.lower():
+            opponent_algo = "heuristic"
+        elif not SELF_PLAY_ENABLED and opponent_source != "pool":
+            opponent_algo = "heuristic"
+        data_json = _write_train_window_data_json(
+            run_id=str(run_id),
+            model_path=str(model_path or ""),
+            extra={
+                "mode": str(mode),
+                "algo": "phoenix",
+                "learner_side": learner_side,
+                "learner_faction": str(getattr(learner_identity, "faction", "Unknown") or "Unknown"),
+                "opponent_side": opponent_side,
+                "opponent_faction": str(roster_config.get("enemy_faction", "Unknown")).strip(),
+                "opponent_algo": str(opponent_algo),
+                "opponent_source": str(opponent_source),
+                "opponent_id": str(last_agent_id or OPPONENT_AGENT_ID or ""),
+                "num_actors": int(num_actors),
+            },
+        )
+        save_training_summary(
+            run_id=str(run_id),
+            model_tag=str(model_path or "").replace("\\", "/"),
+            ep_rows=ep_rows,
+            elapsed_s=float(elapsed_s),
+        )
+        save_heuristic_metrics_snapshot(run_id=str(run_id), ep_rows=ep_rows, metrics_dir=METRICS_DIR)
+        append_agent_log(f"[PHOENIX][METRICS] saved run_id={run_id} data={data_json}")
+        print("Generated metrics", flush=True)
+        return data_json
+    except Exception as exc:
+        append_agent_log(
+            "[PHOENIX][METRICS][WARN] Не удалось сохранить метрики. "
+            f"Где: train.py (save_phoenix_training_metrics). Что делать: проверьте artifacts/metrics и права записи. exc={exc}"
+        )
+        return None
+
+
 def _append_jsonl(path: str, payload: dict) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     line = json.dumps(payload, ensure_ascii=False)
@@ -3980,7 +4150,7 @@ def _phoenix_save_checkpoint(
     return ckpt_path
 
 
-def _phoenix_learn_from_buffer(buf, trainer, cfg, *, max_updates: int | None = None) -> int:
+def _phoenix_learn_from_buffer(buf, trainer, cfg, *, max_updates: int | None = None, loss_values: list[float] | None = None) -> int:
     min_replay = max(1, int(getattr(cfg, "replay_min_size", 256)))
     batch_size = max(1, int(getattr(cfg, "batch_size", 32)))
     if len(buf) < min_replay:
@@ -3996,6 +4166,11 @@ def _phoenix_learn_from_buffer(buf, trainer, cfg, *, max_updates: int | None = N
                 break
             out = trainer.learn_step(windows, is_weights=_weights)
             buf.update_priorities(idx, out["td_errors"] + 1e-3)
+            if loss_values is not None:
+                try:
+                    loss_values.append(float(out.get("loss", 0.0) or 0.0))
+                except Exception:
+                    pass
             learned += 1
             if trainer.maybe_reset(trainer.grad_step):
                 append_agent_log(
@@ -4063,6 +4238,9 @@ def _main_actor_learner_phoenix_single(
     )
     total_episodes = max(1, int(episodes_raw))
     steps_done = 0
+    loss_values: list[float] = []
+    ep_rows: list[dict] = []
+    started = time.perf_counter()
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     checkpoint_dir = os.path.join(MODELS_DIR, "phoenix", f"phoenix-run-{timestamp}")
@@ -4093,6 +4271,7 @@ def _main_actor_learner_phoenix_single(
         ep_reward = 0.0
         ep_len = 0
         last_info: dict = {}
+        last_res = 0
 
         while not done:
             eps_threshold = float(compute_epsilon(steps_done))
@@ -4105,9 +4284,10 @@ def _main_actor_learner_phoenix_single(
                 env_unwrapped.enemyTurn(trunc=trunc)
 
             def _model_half() -> None:
-                nonlocal obs, done, ep_reward, ep_len, last_info, steps_done
-                next_obs, reward, done_flag, _res, info2 = env.step(action_dict)
+                nonlocal obs, done, ep_reward, ep_len, last_info, last_res, steps_done
+                next_obs, reward, done_flag, res, info2 = env.step(action_dict)
                 last_info = info2 if isinstance(info2, dict) else {}
+                last_res = res
                 done_local = bool(done_flag)
                 r_clipped, _ = maybe_clip_reward(
                     float(reward),
@@ -4122,7 +4302,7 @@ def _main_actor_learner_phoenix_single(
                     reward=float(r_clipped),
                     done=done_local,
                 )
-                _phoenix_learn_from_buffer(buf, trainer, cfg)
+                _phoenix_learn_from_buffer(buf, trainer, cfg, loss_values=loss_values)
                 obs = next_obs
                 ep_reward += float(r_clipped)
                 ep_len += 1
@@ -4143,6 +4323,27 @@ def _main_actor_learner_phoenix_single(
             f"[PHOENIX][TRAIN] ep={ep} reward={ep_reward:.2f} "
             f"eps={float(compute_epsilon(steps_done)):.3f} grad_step={trainer.grad_step} ep_len={ep_len}"
         )
+        end_reason = str(last_info.get("end reason", "") or "")
+        model_vp = int(last_info.get("model VP", 0) or 0)
+        player_vp = int(last_info.get("player VP", 0) or 0)
+        vp_diff = int(model_vp) - int(player_vp)
+        row = {
+            "episode": int(ep + 1),
+            "actor_idx": 0,
+            "ep_reward": float(ep_reward),
+            "ep_len": int(ep_len),
+            "turn": int(last_info.get("turn", 0) or 0),
+            "model_vp": int(model_vp),
+            "player_vp": int(player_vp),
+            "vp_diff": int(vp_diff),
+            "result": _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff),
+            "end_reason": str(end_reason),
+            "end_code": int(last_res),
+            "battle_round": int(last_info.get("battle round", 0) or 0),
+        }
+        _attach_episode_opponent(None, row)
+        ep_rows.append(row)
+        log_train_episode_line(row, ep=int(ep + 1), total=int(total_episodes), algo="phoenix", actor_idx=0)
         if SAVE_EVERY > 0 and (ep + 1) % int(SAVE_EVERY) == 0:
             _phoenix_save_checkpoint(
                 net=net,
@@ -4155,7 +4356,7 @@ def _main_actor_learner_phoenix_single(
                 checkpoint_dir=checkpoint_dir,
             )
 
-    _phoenix_save_checkpoint(
+    final_model_path = _phoenix_save_checkpoint(
         net=net,
         trainer=trainer,
         episode=total_episodes,
@@ -4165,6 +4366,17 @@ def _main_actor_learner_phoenix_single(
         learner_identity=learner_identity,
         checkpoint_dir=checkpoint_dir,
         final=True,
+    )
+    save_phoenix_training_metrics(
+        run_id=datetime.datetime.now().strftime("%H%M%S"),
+        ep_rows=ep_rows,
+        loss_values=loss_values,
+        model_path=final_model_path,
+        mode="single_process",
+        learner_identity=learner_identity,
+        roster_config=roster_config,
+        num_actors=1,
+        elapsed_s=time.perf_counter() - started,
     )
     try:
         env.close()
@@ -4731,6 +4943,8 @@ def _main_actor_learner_phoenix_distributed(
     global_windows = 0
     last_loss = None
     ep_rows: list[dict] = []
+    loss_values: list[float] = []
+    run_id = str(random.randint(1000000, 9999999))
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     checkpoint_dir = os.path.join(MODELS_DIR, "phoenix", f"phoenix-dist-run-{timestamp}")
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -4879,7 +5093,7 @@ def _main_actor_learner_phoenix_distributed(
             global_windows += int(pushed)
             updates = max(1, int(cfg.replay_ratio) * int(pushed))
             before_grad = int(trainer.grad_step)
-            learned = _phoenix_learn_from_buffer(buf, trainer, cfg, max_updates=updates)
+            learned = _phoenix_learn_from_buffer(buf, trainer, cfg, max_updates=updates, loss_values=loss_values)
             if learned > 0:
                 last_loss = "updated"
                 if (
@@ -4913,7 +5127,7 @@ def _main_actor_learner_phoenix_distributed(
         f"grad_step={trainer.grad_step} replay={len(buf)} elapsed_s={elapsed:.2f} last_loss={last_loss}"
     )
     final_ep = max(episodes_finished, total_episodes)
-    _phoenix_save_checkpoint(
+    final_model_path = _phoenix_save_checkpoint(
         net=net,
         trainer=trainer,
         episode=final_ep,
@@ -4925,6 +5139,17 @@ def _main_actor_learner_phoenix_distributed(
         final=True,
         mode="actor_learner",
         num_actors=int(num_actors),
+    )
+    save_phoenix_training_metrics(
+        run_id=run_id,
+        ep_rows=ep_rows,
+        loss_values=loss_values,
+        model_path=final_model_path,
+        mode="actor_learner",
+        learner_identity=learner_identity,
+        roster_config=roster_config,
+        num_actors=int(num_actors),
+        elapsed_s=elapsed,
     )
 
 
