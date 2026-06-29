@@ -3773,7 +3773,7 @@ def main():
 
     raise ValueError(
         f"[TRAIN][ERROR] Неподдерживаемый TRAIN_ALGO={TRAIN_ALGO!r}. "
-        "Где: train.py (main). Что делать дальше: выберите dqn/ppo/alphazero_tree/gumbel_az/gumbel_muzero/sampled_muzero."
+        "Где: train.py (main). Что делать дальше: выберите dqn/ppo/alphazero_tree/gumbel_az/gumbel_muzero/sampled_muzero/phoenix."
     )
 
 

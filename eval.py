@@ -1788,6 +1788,8 @@ def main():
         learner_state = checkpoint.get("gumbel_muzero_net") if isinstance(checkpoint, dict) else None
     elif algo == "sampled_muzero":
         learner_state = checkpoint.get("sampled_muzero_net") if isinstance(checkpoint, dict) else None
+    elif algo == "phoenix":
+        learner_state = checkpoint.get("policy_net") if isinstance(checkpoint, dict) else None
     else:  # dqn
         learner_state = None
     if not isinstance(learner_state, dict):
@@ -1899,7 +1901,7 @@ def main():
             gaz_opp_tail += f"(temp={float(os.getenv('GAZ_EVAL_TEMPERATURE', '0.05')):.3f})"
         mode_parts.append(gaz_eval_tail)
         mode_parts.append(gaz_opp_tail)
-    if algo == "dqn" or opponent_algo_label == "dqn":
+    if algo in {"dqn", "phoenix"} or opponent_algo_label in {"dqn", "phoenix"}:
         # DQN→epsilon. Значение читаем из env (DQN_EVAL_EPSILON): резолвер унифицирован,
         # и для dqn-оппонента learner-cfg.epsilon относится к другому algo — врал бы 0.
         dqn_mode = str(os.getenv("DQN_EVAL_MODE", "greedy")).strip().lower() or "greedy"

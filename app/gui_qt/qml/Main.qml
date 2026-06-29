@@ -1874,7 +1874,8 @@ ApplicationWindow {
                                                         { value: "alphazero_proxy", label: "ALPHAZERO PROXY" },
                                                         { value: "gumbel_muzero", label: "GUMBEL MUZERO" },
                                                         { value: "sampled_muzero", label: "SAMPLED MUZERO" },
-                                                        { value: "gumbel_az", label: "GUMBEL ALPHAZERO" }
+                                                        { value: "gumbel_az", label: "GUMBEL ALPHAZERO" },
+                                                        { value: "phoenix", label: "PHOENIX" }
                                                     ]
                                                     textRole: "label"
                                                     valueRole: "value"

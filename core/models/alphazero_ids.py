@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 VALID_TRAIN_ALGOS = frozenset(
-    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "distill", "sampled_muzero"}
+    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "distill", "sampled_muzero", "phoenix"}
 )
 VALID_AZ_ALGOS = frozenset({"alphazero_tree", "alphazero_proxy"})
 GUMBEL_AZ_ALGO = "gumbel_az"

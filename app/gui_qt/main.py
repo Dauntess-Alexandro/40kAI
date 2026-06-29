@@ -530,7 +530,7 @@ class GUIController(QtCore.QObject):
         self._train_context_opponent_algo_short = "Эвристика"
         self._train_context_opponent_side = "P2"
 
-        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"]
+        self._training_algo_options = ["dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az", "phoenix"]
         self._training_algo = str(os.getenv("TRAIN_ALGO", "dqn")).strip().lower() or "dqn"
         if self._training_algo not in self._training_algo_options:
             self._training_algo = "dqn"
@@ -4029,7 +4029,7 @@ class GUIController(QtCore.QObject):
             algo = str(payload.get("algo", "")).strip().lower()
             if algo == "alphazero":
                 continue
-            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}:
+            if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az", "phoenix"}:
                 # Backward-compat: старые снапшоты могли не писать "algo" в meta.json.
                 # Инферим по наличию target.pth: у DQN он есть, у PPO обычно отсутствует.
                 paths = payload.get("paths") if isinstance(payload, dict) else None
@@ -4469,7 +4469,7 @@ class GUIController(QtCore.QObject):
         learner_faction = self._display_faction_for_side(learner_side)
         opponent_faction = self._display_faction_for_side(opponent_side)
         learner_algo = (self._training_algo or "dqn").strip().lower()
-        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}:
+        if learner_algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az", "phoenix"}:
             learner_algo = "dqn"
 
         opponent_algo = "unknown"
@@ -8457,7 +8457,7 @@ class GUIController(QtCore.QObject):
                 payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
                 if isinstance(payload, dict):
                     algo = str(payload.get("algo", "") or "").strip().lower()
-                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}:
+                    if algo in {"ppo", "dqn", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az", "phoenix"}:
                         return algo
                     if algo == "alphazero":
                         return ""
@@ -9501,7 +9501,7 @@ class GUIController(QtCore.QObject):
                 self.playModelLabelChanged.emit(self._play_model_label)
             self._play_model_algo_label = (
                 f"Алгоритм: {self._format_algo_label(self._play_model_algo_key)}"
-                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az"}
+                if agent_algo in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "sampled_muzero", "gumbel_az", "phoenix"}
                 else "Алгоритм: —"
             )
             self._play_model_checkpoint_label = f"Agent: {latest_agent_id}"

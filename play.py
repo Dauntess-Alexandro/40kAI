@@ -217,7 +217,7 @@ if args.agent_id:
     _log(f"[LEAGUE] Используется agent-id={args.agent_id} из registry.")
 
 algo = str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero"}:
+if algo not in {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero", "phoenix"}:
     algo = "dqn"
 if is_gumbel_az_algo(algo):
     gaz_tail = f", temperature={GAZ_PLAY_TEMPERATURE:.3f}, sims={GAZ_PLAY_SIMS}" if GAZ_PLAY_MODE == "gumbel" else ""
