@@ -379,7 +379,7 @@ def _load_checkpoint_payload(checkpoint_path: str):
 def _extract_policy_state_dict(checkpoint):
     if not isinstance(checkpoint, dict):
         return checkpoint
-    for key in ("policy_net", "model_state_dict", "state_dict"):
+    for key in ("phoenix_net", "policy_net", "model_state_dict", "state_dict"):
         value = checkpoint.get(key)
         if isinstance(value, dict):
             return value
@@ -1774,9 +1774,16 @@ def main():
         )
         return 0
 
-    algo = learner_algo_override or (
-        str(checkpoint.get("algo", "dqn")).strip().lower() if isinstance(checkpoint, dict) else "dqn"
-    )
+    if learner_algo_override:
+        algo = learner_algo_override
+    elif isinstance(checkpoint, dict):
+        ck_algo = str(checkpoint.get("algo", "")).strip().lower()
+        if ck_algo == "phoenix" or isinstance(checkpoint.get("phoenix_net"), dict):
+            algo = "phoenix"
+        else:
+            algo = ck_algo or "dqn"
+    else:
+        algo = "dqn"
     # Извлечение learner net-state под algo-специфичным ключом checkpoint'а
     # (registry-путь уже даёт корректный policy_state). Конструкция сети/поиска —
     # внутри build_eval_agent (единый путь обеих сторон, Task 5).
@@ -1789,7 +1796,7 @@ def main():
     elif algo == "sampled_muzero":
         learner_state = checkpoint.get("sampled_muzero_net") if isinstance(checkpoint, dict) else None
     elif algo == "phoenix":
-        learner_state = checkpoint.get("policy_net") if isinstance(checkpoint, dict) else None
+        learner_state = checkpoint.get("phoenix_net") if isinstance(checkpoint, dict) else None
     else:  # dqn
         learner_state = None
     if not isinstance(learner_state, dict):

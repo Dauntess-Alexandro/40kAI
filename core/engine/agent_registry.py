@@ -269,6 +269,14 @@ def infer_algo_from_policy_state(policy_state: dict[str, Any] | None) -> str | N
     if not isinstance(policy_state, dict) or not policy_state:
         return None
     keys = [str(k) for k in policy_state.keys()]
+    if any(
+        k.startswith("action_embed.")
+        or k.startswith("dynamics.")
+        or k.startswith("projector.")
+        or k.startswith("predictor.")
+        for k in keys
+    ):
+        return "phoenix"
     if any(k.startswith("repr_input_fc.") or k.startswith("dyn_fc1.") for k in keys):
         return "gumbel_muzero"
     if any(
@@ -325,6 +333,10 @@ def resolve_agent_algo(
         # авторитетна (её пишет тренер), иначе sampled-агент молча станет gumbel_muzero.
         if resolved == "gumbel_muzero" and meta_algo == "sampled_muzero":
             return "sampled_muzero"
+        # Phoenix шарит DQN-ключи (online./head_bundles./iqn_pi_multipliers) — веса
+        # без SPR-голов неотличимы от DQN; meta.algo авторитетна (её пишет тренер).
+        if resolved == "dqn" and meta_algo == "phoenix":
+            return "phoenix"
         if meta_algo in _VALID_AGENT_ALGOS and meta_algo != resolved:
             aid = str(agent_id or (meta or {}).get("agent_id", "") or "").strip()
             prefix = f"agent '{aid}'" if aid else "agent"

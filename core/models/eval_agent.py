@@ -110,8 +110,8 @@ def resolve_eval_search_cfg(algo: str) -> EvalSearchCfg:
             sample_temperature=float(os.getenv("SMZ_EVAL_SAMPLE_TEMPERATURE", "1.0")),
             discount=float(os.getenv("SMZ_DISCOUNT", "0.997")),
         )
-    elif algo == "dqn":
-        # DQN→epsilon: режимы greedy/epsilon (по аналогии с mode у старших алго).
+    elif algo in {"dqn", "phoenix"}:
+        # DQN/Phoenix→epsilon: режимы greedy/epsilon (по аналогии с mode у старших алго).
         # greedy — argmax (как раньше); epsilon — epsilon-greedy по легальным маскам.
         mode = str(os.getenv("DQN_EVAL_MODE", "greedy")).strip().lower()
         if mode not in {"greedy", "epsilon"}:
@@ -170,7 +170,7 @@ class EvalAgent:
         obs_t = torch.tensor(obs_np, dtype=torch.float32, device=self.device).unsqueeze(0)
         # Честный eval: маски строятся для стороны side (model/enemy), а не всегда "model".
         masks_cpu = build_action_masks_by_head(env, self.len_model, log_fn=None, debug=False, side=side)
-        if self.algo == "dqn":
+        if self.algo in {"dqn", "phoenix"}:
             return self._select_dqn(env, obs_t, masks_cpu, side)
         if self.algo == "ppo":
             return self._select_ppo(env, obs_t, masks_cpu, side)
@@ -202,7 +202,10 @@ class EvalAgent:
             action_list = sample_action_list_from_space(env, self.len_model, masks_seq=masks_cpu)
             return action_tensor_to_dict(torch.tensor([action_list], device="cpu"), len_model=self.len_model), None
         with torch.no_grad():
-            decision = self.net(obs_t)
+            if self.algo == "phoenix":
+                decision = self.net.iqn_q(obs_t)
+            else:
+                decision = self.net(obs_t)
         ordered_keys = ordered_action_keys(self.len_model)
         legal_by_head = {key: mask for key, mask in zip(ordered_keys, masks_cpu)}
         action = greedy_action_list_from_decision(decision, ordered_keys, legal_by_head)
@@ -423,6 +426,48 @@ def build_eval_agent(
         arch = infer_dqn_arch_from_state_dict(state)
         net = make_dqn(n_obs, n_actions, **arch).to(device)
         net.load_state_dict(state)
+        net.eval()
+        return EvalAgent(
+            algo=algo,
+            net=net,
+            reaction_net=_reaction_net_for_algo(algo, net),
+            search=None,
+            cfg=cfg,
+            len_model=len_model,
+        )
+
+    if algo == "phoenix":
+        import dataclasses
+        import json
+
+        from core.models.phoenix_config import resolve_phoenix_config
+        from core.models.phoenix_model import PhoenixNet, infer_phoenix_arch_from_state_dict
+
+        state = normalize_state_dict(policy_state)
+        arch_from_sd = infer_phoenix_arch_from_state_dict(state)
+        hp: dict = {}
+        try:
+            with open("hyperparams.json", encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            if isinstance(loaded, dict):
+                hp = loaded
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+        phoenix_cfg = resolve_phoenix_config(hp, os.environ)
+        phoenix_cfg = dataclasses.replace(
+            phoenix_cfg,
+            **{k: v for k, v in arch_from_sd.items() if v is not None},
+        )
+        net = PhoenixNet(n_obs, n_actions, phoenix_cfg).to(device)
+        try:
+            net.load_state_dict(state, strict=False)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"[PHOENIX][EVAL] не удалось загрузить чекпойнт: {exc}. "
+                "Где: core/models/eval_agent.py (build_eval_agent, phoenix loader). "
+                "Что делать дальше: проверьте, что форма RL-пути (encoder+IQN-голова) "
+                "совпадает с обучающей; SPR/dynamics ключи допускают strict=False."
+            ) from exc
         net.eval()
         return EvalAgent(
             algo=algo,
