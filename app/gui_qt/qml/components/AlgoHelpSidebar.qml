@@ -15,19 +15,20 @@ Item {
 
     readonly property var groups: [
         { family: qsTr("Off-policy"), items: [
-            { name: "DQN",      idx: 0, color: "#2563eb" }
+            { name: "DQN",      idx: 0, color: "#2563eb" },
+            { name: "PHOENIX",  idx: 1, color: "#f59e0b" }
         ]},
         { family: qsTr("On-policy"), items: [
-            { name: "PPO",      idx: 1, color: "#0d9488" }
+            { name: "PPO",      idx: 2, color: "#0d9488" }
         ]},
         { family: qsTr("AlphaZero"), items: [
-            { name: "AZ Tree",  idx: 2, color: "#7c3aed" },
-            { name: "AZ Proxy", idx: 3, color: "#6366f1" },
-            { name: "GAZ",      idx: 6, color: "#0891b2" }
+            { name: "AZ Tree",  idx: 3, color: "#7c3aed" },
+            { name: "AZ Proxy", idx: 4, color: "#6366f1" },
+            { name: "GAZ",      idx: 7, color: "#0891b2" }
         ]},
         { family: qsTr("MuZero"), items: [
-            { name: "GMZ",      idx: 4, color: "#d97706" },
-            { name: "SMZ",      idx: 5, color: "#be185d" }
+            { name: "GMZ",      idx: 5, color: "#d97706" },
+            { name: "SMZ",      idx: 6, color: "#be185d" }
         ]}
     ]
 
@@ -155,7 +156,7 @@ Item {
                     width: sv.width
                     height: Math.round(32 * root.uiScale)
 
-                    readonly property bool active: root.currentIndex === 7
+                    readonly property bool active: root.currentIndex === 8
 
                     Rectangle {
                         anchors.fill: parent
@@ -208,7 +209,7 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.indexSelected(7)
+                            onClicked: root.indexSelected(8)
                         }
                     }
                 }

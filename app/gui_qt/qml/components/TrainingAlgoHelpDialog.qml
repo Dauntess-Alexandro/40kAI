@@ -15,8 +15,8 @@ Dialog {
     property int spacingSm: rootUi ? rootUi.spacingSm : 8
     property int spacingMd: rootUi ? rootUi.spacingMd : 12
 
-    readonly property var algoColors: ["#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706", "#be185d", "#0891b2"]
-    readonly property var algoTabNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ", "SMZ", "GAZ"]
+    readonly property var algoColors: ["#2563eb", "#f59e0b", "#0d9488", "#7c3aed", "#6366f1", "#d97706", "#be185d", "#0891b2"]
+    readonly property var algoTabNames: ["DQN", "PHOENIX", "PPO", "AZ Tree", "AZ Proxy", "GMZ", "SMZ", "GAZ"]
 
     // --- стат-бары ---
     readonly property var dqnStats: [
@@ -24,6 +24,12 @@ Dialog {
         { label: qsTr("Сила тактики"),    value: 4 },
         { label: qsTr("Цена инференса"),  value: 1 },
         { label: qsTr("Сложность"),       value: 4 }
+    ]
+    readonly property var phoenixStats: [
+        { label: qsTr("Скорость старта"), value: 3 },
+        { label: qsTr("Сила тактики"),    value: 4 },
+        { label: qsTr("Цена инференса"),  value: 1 },
+        { label: qsTr("Сложность"),       value: 5 }
     ]
     readonly property var ppoStats: [
         { label: qsTr("Скорость старта"), value: 5 },
@@ -68,6 +74,12 @@ Dialog {
         { text: qsTr("IQN + Noisy"), bg: "#e0e7ff", fg: "#3730a3" },
         { text: qsTr("PER + n-step"),bg: "#dbeafe", fg: "#1e40af" },
         { text: qsTr("Q-оценки"),    bg: "#e0e7ff", fg: "#3730a3" }
+    ]
+    readonly property var phoenixBadges: [
+        { text: qsTr("Фирменная"),         bg: "#fef3c7", fg: "#92400e" },
+        { text: qsTr("SPR + value-exp."),  bg: "#fde68a", fg: "#78350f" },
+        { text: qsTr("IQN off-policy"),    bg: "#fef3c7", fg: "#92400e" },
+        { text: qsTr("BBF-resets"),        bg: "#fde68a", fg: "#78350f" }
     ]
     readonly property var ppoBadges: [
         { text: qsTr("Рабочий дефолт"), bg: "#ccfbf1", fg: "#115e59" },
@@ -118,6 +130,18 @@ Dialog {
           text: qsTr("• без поиска может хуже видеть длинную тактику;\n• Rainbow-набор тянет больше настроек, чем чистый DQN;\n• качество сильно зависит от reward shaping.") },
         { icon: "★", title: qsTr("Когда выбирать"),
           text: qsTr("Первый запуск и проверка train/eval-потока — но уже как сильный baseline: часто его одного достаточно без MCTS.") }
+    ]
+    readonly property var phoenixSections: [
+        { icon: "ⓘ", title: qsTr("Что это"),
+          text: qsTr("Фирменный off-policy агент 40kAI: IQN на базе DQN + self-predictive репрезентации (SPR), латентный value-expansion и BBF-рецепт (resets, replay ratio). На инференсе — без поиска, только per-head IQN.") },
+        { icon: "▶", title: qsTr("Как учится"),
+          text: qsTr("Sequence-replay: латентная динамика раскручивает будущее в скрытом пространстве, SPR учит репрезентации (BYOL), value-expansion строит таргеты через предсказанные латенты. Периодические reset+shrink стабилизируют обучение; exploration — ε-greedy.") },
+        { icon: "✓", title: qsTr("Сильные стороны"),
+          text: qsTr("• выше sample-efficiency, чем у Rainbow-DQN;\n• дешёвый инференс (как DQN, без MCTS);\n• лучше видит горизонт через латентную динамику;\n• совместим с opponent pool / лигой;\n• model-based только в обучении — model-free на ходу.") },
+        { icon: "⚠", title: qsTr("Ограничения"),
+          text: qsTr("• сложнее DQN в настройке (SPR, VE, resets);\n• off-policy n-step без importance sampling;\n• NoisyNet выключен — exploration через ε;\n• пока single-process обучение (волна 1).") },
+        { icon: "★", title: qsTr("Когда выбирать"),
+          text: qsTr("Когда нужен сильный off-policy baseline с лучшим бюджетом эпизодов, чем DQN, но без цены MCTS/MuZero. Фирменный выбор для долгого value-обучения.") }
     ]
     readonly property var ppoSections: [
         { icon: "ⓘ", title: qsTr("Что это"),
@@ -218,12 +242,13 @@ Dialog {
 
     function tabIndexForAlgo(algo) {
         var a = String(algo || "")
-        if (a === "ppo") return 1
-        if (a === "alphazero_tree") return 2
-        if (a === "alphazero_proxy") return 3
-        if (a === "gumbel_muzero") return 4
-        if (a === "sampled_muzero") return 5
-        if (a === "gumbel_az") return 6
+        if (a === "phoenix") return 1
+        if (a === "ppo") return 2
+        if (a === "alphazero_tree") return 3
+        if (a === "alphazero_proxy") return 4
+        if (a === "gumbel_muzero") return 5
+        if (a === "sampled_muzero") return 6
+        if (a === "gumbel_az") return 7
         return 0
     }
 
@@ -259,7 +284,7 @@ Dialog {
                         Layout.fillWidth: true
                     }
                     Label {
-                        text: qsTr("DQN · PPO — быстрые итерации, удобный старт обучения.")
+                        text: qsTr("DQN · PPO — быстрые итерации, удобный старт. PHOENIX — фирменный off-policy с лучшей sample-efficiency.")
                         wrapMode: Text.WordWrap
                         color: dlg.textMuted
                         Layout.fillWidth: true
@@ -344,9 +369,27 @@ Dialog {
                     AlgoHelpCard {
                         width: helpStack.width
                         rootUi: dlg.rootUi
+                        algoTitle: qsTr("PHOENIX (Self-Predictive Reset Q)")
+                        tldr: qsTr("Фирменный off-policy: IQN + SPR + латентный value-expansion + BBF-resets. Сильнее DQN по sample-efficiency, дешёвый инференс.")
+                        accentColor: dlg.algoColors[1]
+                        abbr: "PHX"
+                        role: qsTr("Фирменный off-policy")
+                        stats: dlg.phoenixStats
+                        badges: dlg.phoenixBadges
+                        sections: dlg.phoenixSections
+                    }
+                }
+                ScrollView {
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                    AlgoHelpCard {
+                        width: helpStack.width
+                        rootUi: dlg.rootUi
                         algoTitle: qsTr("PPO (Proximal Policy Optimization)")
                         tldr: qsTr("On-policy policy-агент. Стабильно учится, удобный дефолт для RL.")
-                        accentColor: dlg.algoColors[1]
+                        accentColor: dlg.algoColors[2]
                         abbr: "PPO"
                         role: qsTr("Линейный штурмовик")
                         stats: dlg.ppoStats
@@ -364,7 +407,7 @@ Dialog {
                         rootUi: dlg.rootUi
                         algoTitle: qsTr("AlphaZero Tree (AZ Tree)")
                         tldr: qsTr("Policy + Value с настоящим MCTS. Сильная тактика, дорогой инференс.")
-                        accentColor: dlg.algoColors[2]
+                        accentColor: dlg.algoColors[3]
                         abbr: "AZ"
                         role: qsTr("Тактик-предиктор")
                         stats: dlg.azTreeStats
@@ -382,7 +425,7 @@ Dialog {
                         rootUi: dlg.rootUi
                         algoTitle: qsTr("AlphaZero Proxy (AZ Proxy)")
                         tldr: qsTr("Тот же AZ-пайплайн, на ходу без полного дерева. Быстрее, но потолок ниже.")
-                        accentColor: dlg.algoColors[3]
+                        accentColor: dlg.algoColors[4]
                         abbr: "AZP"
                         role: qsTr("Лёгкий тактик")
                         stats: dlg.azProxyStats
@@ -400,7 +443,7 @@ Dialog {
                         rootUi: dlg.rootUi
                         algoTitle: qsTr("Gumbel MuZero (GMZ)")
                         tldr: qsTr("MuZero с Gumbel-поиском и моделью динамики. Потолок качества, самый дорогой режим.")
-                        accentColor: dlg.algoColors[4]
+                        accentColor: dlg.algoColors[5]
                         abbr: "GMZ"
                         role: qsTr("Стратег-планировщик")
                         stats: dlg.gmzStats
@@ -418,7 +461,7 @@ Dialog {
                         rootUi: dlg.rootUi
                         algoTitle: qsTr("Sampled MuZero (SMZ)")
                         tldr: qsTr("MuZero с сэмплированием K joint-ходов и IS-коррекцией. Координация юнитов, v1 — одна машина.")
-                        accentColor: dlg.algoColors[5]
+                        accentColor: dlg.algoColors[6]
                         abbr: "SMZ"
                         role: qsTr("Стратег-снайпер")
                         stats: dlg.smzStats
@@ -436,7 +479,7 @@ Dialog {
                         rootUi: dlg.rootUi
                         algoTitle: qsTr("Gumbel AlphaZero (GAZ)")
                         tldr: qsTr("AlphaZero с Gumbel-планированием (top-k + Sequential Halving, depth-1). Улучшение политики при малом бюджете симуляций.")
-                        accentColor: dlg.algoColors[6]
+                        accentColor: dlg.algoColors[7]
                         abbr: "GAZ"
                         role: qsTr("Gumbel-тактик")
                         stats: dlg.gazStats

@@ -13,26 +13,26 @@ Rectangle {
     property color borderColor: rootUi ? rootUi.uiBorder : "#334155"
 
     readonly property var algoColors: [
-        "#2563eb", "#0d9488", "#7c3aed", "#6366f1", "#d97706"
+        "#2563eb", "#f59e0b", "#0d9488", "#7c3aed", "#6366f1", "#d97706"
     ]
-    readonly property var algoNames: ["DQN", "PPO", "AZ Tree", "AZ Proxy", "GMZ"]
+    readonly property var algoNames: ["DQN", "PHOENIX", "PPO", "AZ Tree", "AZ Proxy", "GMZ"]
 
     readonly property var rows: [
-        { label: "Поиск на ходу",  values: ["—", "—", "MCTS", "proxy", "MCTS + model"] },
-        { label: "Self-play",      values: ["—", "—", "+", "+", "+"] },
-        { label: "Скорость train", values: ["★★★", "★★★★", "★★", "★★★", "★"] },
-        { label: "Скорость хода",  values: ["★★★★", "★★★★", "★★", "★★★", "★★"] },
-        { label: "Потолок силы",   values: ["★★", "★★★", "★★★★★", "★★★", "★★★★★"] },
-        { label: "Compute",        values: ["low", "low", "very high", "mid", "very high"] },
-        { label: "Сложность тюна", values: ["mid", "low", "high", "mid", "very high"] },
-        { label: "Температура",    values: ["—", "—", "в MCTS", "в search", "в Search"] }
+        { label: "Поиск на ходу",  values: ["—", "—", "—", "MCTS", "proxy", "MCTS + model"] },
+        { label: "Self-play",      values: ["—", "+", "—", "+", "+", "+"] },
+        { label: "Скорость train", values: ["★★★", "★★★", "★★★★", "★★", "★★★", "★"] },
+        { label: "Скорость хода",  values: ["★★★★", "★★★★", "★★★★", "★★", "★★★", "★★"] },
+        { label: "Потолок силы",   values: ["★★", "★★★", "★★★", "★★★★★", "★★★", "★★★★★"] },
+        { label: "Compute",        values: ["low", "mid", "low", "very high", "mid", "very high"] },
+        { label: "Сложность тюна", values: ["mid", "high", "low", "high", "mid", "very high"] },
+        { label: "Температура",    values: ["—", "—", "—", "в MCTS", "в search", "в Search"] }
     ]
 
-    readonly property int cols: 6
+    readonly property int cols: 7
     readonly property int firstColWidth: Math.round(150 * uiScale)
     readonly property int otherColWidth: Math.max(
-        Math.round(70 * uiScale),
-        Math.floor((width - firstColWidth - Math.round(28 * uiScale) - 5 * Math.round(8 * uiScale)) / 5)
+        Math.round(64 * uiScale),
+        Math.floor((width - firstColWidth - Math.round(28 * uiScale) - 6 * Math.round(8 * uiScale)) / 6)
     )
 
     function cellText(rowIdx, colIdx) {
