@@ -37,6 +37,23 @@ def test_batch_dropped_when_hash_mismatch():
     assert q.empty()
 
 
+def test_pool_result_is_forwarded_to_single_writer_queue():
+    q: queue.Queue = queue.Queue()
+    rcv = RolloutReceiver(q, expected_contract_hash="H1")
+    wire = build_wire_message(kind="pool_result", payload={
+        "actor_idx": 4,
+        "kind": "snapshot",
+        "agent_id": "A",
+        "result": "draw",
+        "vp_diff": 0,
+    })
+    rcv._handle_message(encode_rollout_message(wire))
+    kind, payload = q.get_nowait()
+    assert kind == "pool_result"
+    assert payload["agent_id"] == "A"
+    assert payload["source"] == "remote"
+
+
 def _drain_for_batch(q: "queue.Queue", timeout: float = 3.0):
     deadline = time.time() + timeout
     while time.time() < deadline:

@@ -7,18 +7,22 @@ import ".."
 Item {
     id: leaguePanel
 
-    readonly property real _colId: Math.round(168 * root.uiScale)
+    readonly property real _colId: Math.round(190 * root.uiScale)
     readonly property real _colAlgo: Math.round(44 * root.uiScale)
-    readonly property real _colEp: Math.round(44 * root.uiScale)
-    readonly property real _colNum: Math.round(48 * root.uiScale)
-    readonly property real _colProb: Math.round(40 * root.uiScale)
+    readonly property real _colAge: Math.round(58 * root.uiScale)
+    readonly property real _colNum: Math.round(58 * root.uiScale)
+    readonly property real _colWr: Math.round(108 * root.uiScale)
+    readonly property real _colProb: Math.round(118 * root.uiScale)
+    readonly property real _colWdl: Math.round(82 * root.uiScale)
+    readonly property real _colUpdated: Math.round(112 * root.uiScale)
     readonly property real _colReason: Math.round(64 * root.uiScale)
     readonly property real _colPool: Math.round(36 * root.uiScale)
-    readonly property real _tableWidth: _colId + _colAlgo + _colEp + _colNum * 4 + _colProb + _colReason + root.spacingSm * 8
-    readonly property real _historyTableWidth: _colId + _colAlgo + _colPool + _colNum * 4 + root.spacingSm * 6
+    readonly property real _tableWidth: _colId + _colAlgo + _colAge + _colNum * 4 + _colWr + _colProb * 3 + _colWdl + _colReason + root.spacingSm * 12
+    readonly property real _historyTableWidth: _colId + _colAlgo + _colPool + _colAge + _colNum * 3 + _colWr + _colWdl + _colUpdated + root.spacingSm * 9
     readonly property real _rowH: Math.round(26 * root.uiScale)
 
     property var poolContext: ({})
+    property var heuristicState: ({})
 
     function _fmtFloat(val, dec) {
         if (val === undefined || val === null || isNaN(Number(val)))
@@ -67,9 +71,14 @@ Item {
         return String(ep)
     }
 
+    function _fmtWdl(wins, draws, losses) {
+        return Number(wins || 0) + "/" + Number(draws || 0) + "/" + Number(losses || 0)
+    }
+
     function _rebuildFromState() {
         var payload = controller.opponentPoolState || {}
         poolContext = payload.context || {}
+        heuristicState = payload.heuristic || {}
 
         candidatesModel.clear()
         var cands = payload.candidates || []
@@ -79,14 +88,19 @@ Item {
                 label: c.label || c.agent_id || "—",
                 agent_id: c.agent_id || "",
                 algo: c.algo_short || c.algo || "?",
-                ep: leaguePanel._fmtEp(c.ep),
+                age: c.age || "—",
                 games: Number(c.games || 0),
-                winrate: leaguePanel._fmtFloat(c.winrate, 2),
+                winrate: leaguePanel._fmtPct(c.winrate),
                 draw_pct: leaguePanel._fmtPct(c.draw_pct),
                 vp_per_game: leaguePanel._fmtSigned(c.vp_per_game, 2),
-                prob: leaguePanel._fmtFloat(c.prob, 2),
+                prob_snapshot: leaguePanel._fmtPct(c.prob_snapshot),
+                prob_episode: leaguePanel._fmtPct(c.prob_episode),
+                run_games: Number(c.run_games || 0),
+                run_actual: leaguePanel._fmtPct(c.run_actual_prob),
+                run_wdl: leaguePanel._fmtWdl(c.run_wins, c.run_draws, c.run_losses),
                 reason: leaguePanel._reasonBadge(c.reason),
-                created_at: c.created_at || ""
+                created_at: c.created_at || "",
+                updated_at: c.updated_at || ""
             })
         }
 
@@ -99,11 +113,15 @@ Item {
                 agent_id: h.agent_id || "",
                 algo: h.algo_short || h.algo || "?",
                 in_pool: h.in_pool === true,
+                age: h.age || "—",
                 games: Number(h.games || 0),
-                winrate: leaguePanel._fmtFloat(h.winrate, 2),
+                winrate: leaguePanel._fmtPct(h.winrate),
                 draw_pct: leaguePanel._fmtPct(h.draw_pct),
                 vp_per_game: leaguePanel._fmtSigned(h.vp_per_game, 2),
-                created_at: h.created_at || ""
+                wdl: leaguePanel._fmtWdl(h.wins, h.tracked_draws, h.losses)
+                     + (Number(h.unclassified_games || 0) > 0 ? (" +?" + Number(h.unclassified_games)) : ""),
+                created_at: h.created_at || "",
+                updated_at: h.updated_at || "—"
             })
         }
 
@@ -131,6 +149,24 @@ Item {
     ListModel { id: historyModel }
     ListModel { id: trainLiveModel }
 
+    component HelpLabel: Label {
+        property string labelText: ""
+        property string helpText: ""
+        text: labelText + "  ⓘ"
+        color: helpMouse.containsMouse ? root.uiTextMain : root.uiTextMuted
+        font.pixelSize: root.evalCaptionSize
+        ToolTip.visible: helpMouse.containsMouse
+        ToolTip.text: helpText
+        ToolTip.delay: 250
+        ToolTip.timeout: 12000
+        MouseArea {
+            id: helpMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+        }
+    }
+
     component CandidateTableHeader: RowLayout {
         width: leaguePanel._tableWidth
         spacing: root.spacingSm
@@ -138,12 +174,16 @@ Item {
             model: [
                 { label: "ID", w: leaguePanel._colId, fill: true },
                 { label: "Algo", w: leaguePanel._colAlgo, fill: false },
-                { label: "Ep", w: leaguePanel._colEp, fill: false },
+                { label: "Возраст", w: leaguePanel._colAge, fill: false },
                 { label: "Games", w: leaguePanel._colNum, fill: false },
-                { label: "WR", w: leaguePanel._colNum, fill: false },
+                { label: "EMA WR learner", w: leaguePanel._colWr, fill: false },
                 { label: "Draw%", w: leaguePanel._colNum, fill: false },
                 { label: "VP/ep", w: leaguePanel._colNum, fill: false },
-                { label: "P", w: leaguePanel._colProb, fill: false },
+                { label: "P среди снапшотов", w: leaguePanel._colProb, fill: false },
+                { label: "P эпизода", w: leaguePanel._colProb, fill: false },
+                { label: "Run игр", w: leaguePanel._colNum, fill: false },
+                { label: "Факт.", w: leaguePanel._colProb, fill: false },
+                { label: "Run W/D/L", w: leaguePanel._colWdl, fill: false },
                 { label: "Reason", w: leaguePanel._colReason, fill: false }
             ]
             delegate: Text {
@@ -167,10 +207,13 @@ Item {
                 { label: "Agent", w: leaguePanel._colId, fill: true },
                 { label: "Algo", w: leaguePanel._colAlgo, fill: false },
                 { label: "Пул", w: leaguePanel._colPool, fill: false },
+                { label: "Возраст", w: leaguePanel._colAge, fill: false },
                 { label: "Games", w: leaguePanel._colNum, fill: false },
-                { label: "WR", w: leaguePanel._colNum, fill: false },
+                { label: "EMA WR learner", w: leaguePanel._colWr, fill: false },
+                { label: "W/D/L tracked", w: leaguePanel._colWdl, fill: false },
                 { label: "Draw%", w: leaguePanel._colNum, fill: false },
-                { label: "VP/ep", w: leaguePanel._colNum, fill: false }
+                { label: "VP/ep", w: leaguePanel._colNum, fill: false },
+                { label: "Stats updated", w: leaguePanel._colUpdated, fill: false }
             ]
             delegate: Text {
                 text: modelData.label
@@ -189,12 +232,16 @@ Item {
         property string labelText: ""
         property string agentIdText: ""
         property string algoText: "?"
-        property string epText: "—"
+        property string ageText: "—"
         property int gamesVal: 0
         property string wrText: "—"
         property string drawText: "—"
         property string vpText: "—"
-        property string probText: "—"
+        property string probSnapshotText: "—"
+        property string probEpisodeText: "—"
+        property int runGamesVal: 0
+        property string runActualText: "—"
+        property string runWdlText: "0/0/0"
         property string reasonText: "—"
         width: leaguePanel._tableWidth
         spacing: root.spacingSm
@@ -228,11 +275,11 @@ Item {
             horizontalAlignment: Text.AlignRight
         }
         Text {
-            text: epText
+            text: ageText
             color: root.uiTextMuted
             font.pixelSize: root.evalCaptionSize
             font.family: root.fontDataFamily
-            Layout.preferredWidth: leaguePanel._colEp
+            Layout.preferredWidth: leaguePanel._colAge
             horizontalAlignment: Text.AlignRight
         }
         Text {
@@ -248,7 +295,7 @@ Item {
             color: root.uiTextMain
             font.pixelSize: root.evalCaptionSize
             font.family: root.fontDataFamily
-            Layout.preferredWidth: leaguePanel._colNum
+            Layout.preferredWidth: leaguePanel._colWr
             horizontalAlignment: Text.AlignRight
         }
         Text {
@@ -268,11 +315,43 @@ Item {
             horizontalAlignment: Text.AlignRight
         }
         Text {
-            text: probText
+            text: probSnapshotText
             color: root.uiTextMain
             font.pixelSize: root.evalCaptionSize
             font.family: root.fontDataFamily
             Layout.preferredWidth: leaguePanel._colProb
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: probEpisodeText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colProb
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: runGamesVal
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: runActualText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colProb
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: runWdlText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colWdl
             horizontalAlignment: Text.AlignRight
         }
         Text {
@@ -291,10 +370,13 @@ Item {
         property string agentIdText: ""
         property string algoText: "?"
         property bool inPool: false
+        property string ageText: "—"
         property int gamesVal: 0
         property string wrText: "—"
+        property string wdlText: "—"
         property string drawText: "—"
         property string vpText: "—"
+        property string updatedText: "—"
         width: leaguePanel._historyTableWidth
         spacing: root.spacingSm
 
@@ -335,6 +417,14 @@ Item {
             horizontalAlignment: Text.AlignHCenter
         }
         Text {
+            text: ageText
+            color: root.uiTextMuted
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colAge
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
             text: gamesVal
             color: root.uiTextMain
             font.pixelSize: root.evalCaptionSize
@@ -347,8 +437,24 @@ Item {
             color: root.uiTextMain
             font.pixelSize: root.evalCaptionSize
             font.family: root.fontDataFamily
-            Layout.preferredWidth: leaguePanel._colNum
+            Layout.preferredWidth: leaguePanel._colWr
             horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: wdlText
+            color: wdlText.indexOf("+?") >= 0 ? "#e6a23c" : root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colWdl
+            horizontalAlignment: Text.AlignRight
+            ToolTip.visible: histWdlMouse.containsMouse && wdlText.indexOf("+?") >= 0
+            ToolTip.text: "Игры schema v1 не содержали отдельных W/L; +? — честно не классифицированные старые игры."
+            MouseArea {
+                id: histWdlMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+            }
         }
         Text {
             text: drawText
@@ -364,6 +470,14 @@ Item {
             font.pixelSize: root.evalCaptionSize
             font.family: root.fontDataFamily
             Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: updatedText
+            color: root.uiTextMuted
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colUpdated
             horizontalAlignment: Text.AlignRight
         }
     }
@@ -519,7 +633,10 @@ Item {
                             columnSpacing: root.spacingMd
                             rowSpacing: root.spacingSm
 
-                            Label { text: "PFSP power"; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                            HelpLabel {
+                                labelText: "PFSP power"
+                                helpText: "Степень в формуле (1 − EMA WR learner)^power. Чем выше значение, тем сильнее пул концентрируется на оппонентах, которым learner чаще проигрывает."
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 text: String(controller.poolPfspPower)
@@ -534,7 +651,10 @@ Item {
                                 onEditingFinished: controller.set_pool_pfsp_power(parseFloat(text))
                             }
 
-                            Label { text: "Uniform floor"; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                            HelpLabel {
+                                labelText: "Uniform floor"
+                                helpText: "Доля равномерной смеси внутри snapshot-ветки. 0.10 означает: 90% распределения даёт PFSP, 10% делятся поровну между всеми снапшотами."
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 text: String(controller.poolUniformFloor)
@@ -549,7 +669,10 @@ Item {
                                 onEditingFinished: controller.set_pool_uniform_floor(parseFloat(text))
                             }
 
-                            Label { text: "Novelty bonus"; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                            HelpLabel {
+                                labelText: "Novelty bonus"
+                                helpText: "Добавочный вес новым снапшотам, по которым ещё мало игр. Нужен, чтобы быстро собрать первичную статистику и не игнорировать новичка."
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 text: String(controller.poolNoveltyBonus)
@@ -564,7 +687,10 @@ Item {
                                 onEditingFinished: controller.set_pool_novelty_bonus(parseFloat(text))
                             }
 
-                            Label { text: "Min games (PFSP)"; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                            HelpLabel {
+                                labelText: "Min games (PFSP)"
+                                helpText: "Сколько игр нужно накопить до перехода от режима novelty к обычному PFSP-весу по EMA WR learner."
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 text: String(controller.poolMinGames)
@@ -579,7 +705,10 @@ Item {
                                 onEditingFinished: controller.set_pool_min_games(parseInt(text))
                             }
 
-                            Label { text: "EMA α"; color: root.uiTextMuted; font.pixelSize: root.evalCaptionSize }
+                            HelpLabel {
+                                labelText: "EMA α"
+                                helpText: "Скорость реакции EMA WR на последний результат: новое EMA = (1−α)·старое + α·результат, где win=1, draw=0.5, loss=0."
+                            }
                             TextField {
                                 Layout.fillWidth: true
                                 text: String(controller.poolEmaAlpha)
@@ -729,6 +858,8 @@ Item {
                                 anchors.centerIn: parent
                                 text: "последний [POOL]: " + String(poolContext.last_pick_label)
                                       + (poolContext.last_pick_reason ? (" · " + poolContext.last_pick_reason) : "")
+                                      + (poolContext.last_pick_result ? (" · " + poolContext.last_pick_result) : "")
+                                      + (poolContext.last_pick_at ? (" · " + poolContext.last_pick_at) : "")
                                 color: "#4a9fd4"
                                 font.pixelSize: root.evalCaptionSize
                             }
@@ -749,6 +880,96 @@ Item {
                                 color: "#4caf6e"
                                 font.pixelSize: root.evalCaptionSize
                                 font.bold: true
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Ожидаемо: эвристика " + leaguePanel._fmtPct(poolContext.p_heuristic)
+                              + " · снапшоты " + leaguePanel._fmtPct(1.0 - Number(poolContext.p_heuristic || 0))
+                              + (Number(poolContext.run_total_games || 0) > 0
+                                 ? ("    Фактически за run (" + Number(poolContext.run_total_games) + "): эвристика "
+                                    + leaguePanel._fmtPct(poolContext.run_heuristic_actual) + " · снапшоты "
+                                    + leaguePanel._fmtPct(poolContext.run_snapshot_actual) + " · W/D/L "
+                                    + leaguePanel._fmtWdl(poolContext.run_wins, poolContext.run_draws, poolContext.run_losses))
+                                 : "    Текущий run: данных пока нет")
+                        color: root.uiTextMain
+                        font.pixelSize: root.evalCaptionSize
+                        font.family: root.fontDataFamily
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        visible: poolContext.formation !== undefined
+                        property var f: poolContext.formation || ({})
+                        text: "Формирование: реестр всего " + Number(f.registry_total || 0)
+                              + " → сторона " + String(f.opponent_side || poolContext.opponent_side || "P?")
+                              + " " + Number(f.side_compatible || 0)
+                              + " → контракт совместим " + Number(f.contract_compatible || 0)
+                              + " → взято " + Number(f.selected || 0)
+                              + ". Отброшено: другая сторона " + Number(f.filtered_side || 0)
+                              + ", контракт " + Number(f.filtered_contract || 0)
+                              + ", дубль " + Number(f.filtered_duplicate || 0)
+                              + ", вне лимита " + Number(f.limited_out || 0) + "."
+                        color: root.uiTextMuted
+                        font.pixelSize: Math.round(11 * root.uiScale)
+                        wrapMode: Text.WordWrap
+                    }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: root.spacingSm
+
+                        Rectangle {
+                            visible: Number(poolContext.draw_rate) >= 0
+                            color: poolContext.draw_pit_alert ? "#3a201c" : "#142318"
+                            border.color: poolContext.draw_pit_alert ? "#e05a47" : "#4caf6e"
+                            border.width: 1
+                            implicitWidth: healthDraw.implicitWidth + root.spacingSm * 2
+                            implicitHeight: healthDraw.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: healthDraw
+                                anchors.centerIn: parent
+                                text: (poolContext.draw_pit_alert ? "⚠ Ничейная яма " : "✓ Draw под порогом ")
+                                      + leaguePanel._fmtPct(poolContext.draw_rate) + " / 70%"
+                                color: poolContext.draw_pit_alert ? "#e05a47" : "#4caf6e"
+                                font.pixelSize: root.evalCaptionSize
+                                font.bold: true
+                            }
+                        }
+
+                        Rectangle {
+                            color: poolContext.concentration_alert ? "#3a201c" : "#142318"
+                            border.color: poolContext.concentration_alert ? "#e05a47" : "#4caf6e"
+                            border.width: 1
+                            implicitWidth: healthConcentration.implicitWidth + root.spacingSm * 2
+                            implicitHeight: healthConcentration.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: healthConcentration
+                                anchors.centerIn: parent
+                                text: (poolContext.concentration_alert ? "⚠ Концентрация PFSP " : "✓ Концентрация PFSP нормальная · max ")
+                                      + leaguePanel._fmtPct(poolContext.max_snapshot_prob)
+                                color: poolContext.concentration_alert ? "#e05a47" : "#4caf6e"
+                                font.pixelSize: root.evalCaptionSize
+                                font.bold: true
+                            }
+                        }
+
+                        Rectangle {
+                            visible: String(poolContext.stats_updated_at || "").length > 0
+                            color: "#1f2430"
+                            border.color: root.uiBorder
+                            border.width: 1
+                            implicitWidth: healthUpdated.implicitWidth + root.spacingSm * 2
+                            implicitHeight: healthUpdated.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: healthUpdated
+                                anchors.centerIn: parent
+                                text: "stats обновлены " + String(poolContext.stats_updated_at)
+                                color: root.uiTextMuted
+                                font.pixelSize: root.evalCaptionSize
                             }
                         }
                     }
@@ -862,12 +1083,16 @@ Item {
                                             labelText: model.label
                                             agentIdText: model.agent_id
                                             algoText: model.algo
-                                            epText: model.ep
+                                            ageText: model.age
                                             gamesVal: model.games
                                             wrText: model.winrate
                                             drawText: model.draw_pct
                                             vpText: model.vp_per_game
-                                            probText: model.prob
+                                            probSnapshotText: model.prob_snapshot
+                                            probEpisodeText: model.prob_episode
+                                            runGamesVal: model.run_games
+                                            runActualText: model.run_actual
+                                            runWdlText: model.run_wdl
                                             reasonText: model.reason
                                         }
                                     }
@@ -889,9 +1114,14 @@ Item {
 
                             Text {
                                 visible: candidatesModel.count > 0
-                                text: "+ эвристика-анкер · p_heur "
-                                      + leaguePanel._fmtFloat(poolContext.p_heuristic !== undefined
-                                          ? poolContext.p_heuristic : controller.poolPHeuristic, 2)
+                                text: "Эвристика-анкер: P эпизода "
+                                      + leaguePanel._fmtPct(heuristicState.prob_episode)
+                                      + " · run игр " + Number(heuristicState.run_games || 0)
+                                      + " · факт. " + leaguePanel._fmtPct(heuristicState.run_actual_prob)
+                                      + " · run W/D/L " + leaguePanel._fmtWdl(
+                                            heuristicState.run_wins,
+                                            heuristicState.run_draws,
+                                            heuristicState.run_losses)
                                 color: root.uiTextMuted
                                 font.pixelSize: Math.round(11 * root.uiScale)
                                 Layout.fillWidth: true
@@ -928,10 +1158,13 @@ Item {
                                             agentIdText: model.agent_id
                                             algoText: model.algo
                                             inPool: model.in_pool
+                                            ageText: model.age
                                             gamesVal: model.games
                                             wrText: model.winrate
+                                            wdlText: model.wdl
                                             drawText: model.draw_pct
                                             vpText: model.vp_per_game
+                                            updatedText: model.updated_at
                                         }
                                     }
                                 }

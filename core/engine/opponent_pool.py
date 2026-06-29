@@ -109,11 +109,24 @@ class OpponentStatsStore:
         rec = self._data.get(aid)
         result = _result_value(win=win, draw=draw)
         if rec is None:
-            rec = {"games": 0, "ema_winrate": 0.5, "draws": 0, "vp_sum": 0.0, "updated_at": ""}
+            rec = {
+                "games": 0,
+                "ema_winrate": 0.5,
+                "draws": 0,
+                "vp_sum": 0.0,
+                "updated_at": "",
+                "wins": 0,
+                "losses": 0,
+                "tracked_draws": 0,
+                "unclassified_games": 0,
+            }
             self._data[aid] = rec
         rec["ema_winrate"] = (1.0 - self._alpha) * float(rec["ema_winrate"]) + self._alpha * result
         rec["games"] = int(rec["games"]) + 1
         rec["draws"] = int(rec["draws"]) + (1 if draw else 0)
+        rec["wins"] = int(rec.get("wins", 0) or 0) + (1 if win else 0)
+        rec["losses"] = int(rec.get("losses", 0) or 0) + (1 if not win and not draw else 0)
+        rec["tracked_draws"] = int(rec.get("tracked_draws", 0) or 0) + (1 if draw else 0)
         rec["vp_sum"] = float(rec["vp_sum"]) + float(vp_diff)
         rec["updated_at"] = datetime.now().isoformat(timespec="seconds")
 
@@ -127,7 +140,17 @@ class OpponentStatsStore:
 
     def record(self, agent_id: str) -> dict[str, Any]:
         rec = self._data.get(str(agent_id or "").strip())
-        return dict(rec) if rec else {"games": 0, "ema_winrate": 0.5, "draws": 0, "vp_sum": 0.0, "updated_at": ""}
+        return dict(rec) if rec else {
+            "games": 0,
+            "ema_winrate": 0.5,
+            "draws": 0,
+            "vp_sum": 0.0,
+            "updated_at": "",
+            "wins": 0,
+            "losses": 0,
+            "tracked_draws": 0,
+            "unclassified_games": 0,
+        }
 
     def all_records(self) -> dict[str, dict[str, Any]]:
         return {k: dict(v) for k, v in self._data.items()}
@@ -138,7 +161,7 @@ class OpponentStatsStore:
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         tmp = self._path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump({"opponents": self._data}, handle, ensure_ascii=False, indent=2)
+            json.dump({"schema_version": 2, "opponents": self._data}, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
         os.replace(tmp, self._path)  # атомарная запись (SMB-safe, ср. state_export.py)
 
@@ -151,7 +174,30 @@ class OpponentStatsStore:
                     payload = json.load(handle)
                 opp = payload.get("opponents", {}) if isinstance(payload, dict) else {}
                 if isinstance(opp, dict):
-                    store._data = {str(k): dict(v) for k, v in opp.items() if isinstance(v, dict)}
+                    for key, value in opp.items():
+                        if not isinstance(value, dict):
+                            continue
+                        rec = dict(value)
+                        games = max(0, int(rec.get("games", 0) or 0))
+                        rec["games"] = games
+                        rec["draws"] = max(0, int(rec.get("draws", 0) or 0))
+                        rec["vp_sum"] = float(rec.get("vp_sum", 0.0) or 0.0)
+                        ema_raw = rec.get("ema_winrate", 0.5)
+                        rec["ema_winrate"] = float(ema_raw) if ema_raw is not None else 0.5
+                        rec["updated_at"] = str(rec.get("updated_at", "") or "")
+                        if not any(k in rec for k in ("wins", "losses", "tracked_draws", "unclassified_games")):
+                            # Старый schema v1 не позволял восстановить W/L: были только games/draws/vp_sum.
+                            # Не выдумываем результаты — помечаем старые игры как неклассифицированные.
+                            rec["wins"] = 0
+                            rec["losses"] = 0
+                            rec["tracked_draws"] = 0
+                            rec["unclassified_games"] = games
+                        else:
+                            rec["wins"] = max(0, int(rec.get("wins", 0) or 0))
+                            rec["losses"] = max(0, int(rec.get("losses", 0) or 0))
+                            rec["tracked_draws"] = max(0, int(rec.get("tracked_draws", 0) or 0))
+                            rec["unclassified_games"] = max(0, int(rec.get("unclassified_games", 0) or 0))
+                        store._data[str(key)] = rec
             except (OSError, json.JSONDecodeError):
                 store._data = {}
         return store
@@ -177,6 +223,17 @@ class OpponentPool:
         self._provider = candidate_provider
         self._log = log_fn
         self._candidates: list[str] = []
+        self._refresh_diagnostics: dict[str, int | str] = {
+            "registry_total": 0,
+            "opponent_side": self._opponent_side(),
+            "side_compatible": 0,
+            "contract_compatible": 0,
+            "selected": 0,
+            "filtered_side": 0,
+            "filtered_contract": 0,
+            "filtered_duplicate": 0,
+            "limited_out": 0,
+        }
 
     def set_candidates(self, ids: list[str]) -> None:
         self._candidates = [str(a) for a in ids if str(a or "").strip()]
@@ -242,25 +299,55 @@ class OpponentPool:
         rows = sorted(rows, key=lambda r: (str(r.get("created_at", "")), str(r.get("agent_id", ""))), reverse=True)
         out: list[str] = []
         seen: set[str] = set()
+        filtered_side = 0
         filtered_contract = 0
+        filtered_duplicate = 0
+        side_compatible = 0
+        contract_compatible = 0
+        limited_out = 0
         for r in rows:
             aid = str(r.get("agent_id", "") or "").strip()
-            if not aid or aid in seen:
+            if not aid:
                 continue
+            if aid in seen:
+                filtered_duplicate += 1
+                continue
+            seen.add(aid)
             if str(r.get("side", "")).upper() != opp_side:
+                filtered_side += 1
                 continue
+            side_compatible += 1
             ok, _reason = compatible_contracts(self.learner_contract, r.get("contract", {}) or {})
             if not ok:
                 filtered_contract += 1
                 continue
-            out.append(aid)
-            seen.add(aid)
-            if len(out) >= self.config.pool_size:
-                break
-        if self._log and filtered_contract:
-            self._log(f"[POOL][REFRESH] filtered_incompatible={filtered_contract} kept={len(out)}")
+            contract_compatible += 1
+            if len(out) < self.config.pool_size:
+                out.append(aid)
+            else:
+                limited_out += 1
+        self._refresh_diagnostics = {
+            "registry_total": len(rows),
+            "opponent_side": opp_side,
+            "side_compatible": side_compatible,
+            "contract_compatible": contract_compatible,
+            "selected": len(out),
+            "filtered_side": filtered_side,
+            "filtered_contract": filtered_contract,
+            "filtered_duplicate": filtered_duplicate,
+            "limited_out": limited_out,
+        }
+        if self._log:
+            self._log(
+                f"[POOL][REFRESH] registry={len(rows)} side={opp_side} side_ok={side_compatible} "
+                f"contract_ok={contract_compatible} selected={len(out)} filtered_side={filtered_side} "
+                f"filtered_contract={filtered_contract} duplicate={filtered_duplicate} limited={limited_out}"
+            )
         self._candidates = out
         return list(out)
+
+    def refresh_diagnostics(self) -> dict[str, int | str]:
+        return dict(self._refresh_diagnostics)
 
     def record_result(self, *, agent_id: str, win: bool, draw: bool, vp_diff: float) -> None:
         if not str(agent_id or "").strip():
@@ -284,4 +371,5 @@ class OpponentPool:
             "strategy": self.config.strategy,
             "p_heuristic": self.config.p_heuristic,
             "candidates": rows,
+            "refresh": self.refresh_diagnostics(),
         }

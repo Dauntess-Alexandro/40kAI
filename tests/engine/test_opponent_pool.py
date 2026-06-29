@@ -1,4 +1,5 @@
 # tests/engine/test_opponent_pool.py
+import json
 import random
 from core.engine.opponent_pool import OpponentPool, OpponentStatsStore, PoolConfig
 
@@ -77,6 +78,12 @@ def test_refresh_filters_side_and_contract():
     )
     ids = pool.refresh_candidates()
     assert ids == ["p2_new", "p2_old"]  # P1 (своя сторона) и несовместимый отфильтрованы; новые первыми
+    diag = pool.refresh_diagnostics()
+    assert diag["registry_total"] == 4
+    assert diag["filtered_side"] == 1
+    assert diag["filtered_contract"] == 1
+    assert diag["contract_compatible"] == 2
+    assert diag["selected"] == 2
 
 
 def test_refresh_trims_to_pool_size():
@@ -105,3 +112,27 @@ def test_record_result_updates_stats():
     )
     pool.record_result(agent_id="A", win=True, draw=False, vp_diff=2.0)
     assert stats.games("A") == 1
+    assert stats.record("A")["wins"] == 1
+    assert stats.record("A")["losses"] == 0
+
+
+def test_legacy_stats_migration_keeps_unknown_results_honest(tmp_path):
+    path = tmp_path / "stats.json"
+    path.write_text(json.dumps({
+        "opponents": {
+            "OLD": {"games": 10, "ema_winrate": 0.6, "draws": 4, "vp_sum": 2.0, "updated_at": "x"}
+        }
+    }), encoding="utf-8")
+
+    stats = OpponentStatsStore.load(str(path))
+    rec = stats.record("OLD")
+    assert rec["wins"] == 0
+    assert rec["losses"] == 0
+    assert rec["tracked_draws"] == 0
+    assert rec["unclassified_games"] == 10
+
+    stats.update(agent_id="OLD", win=False, draw=False, vp_diff=-1.0)
+    rec = stats.record("OLD")
+    assert rec["games"] == 11
+    assert rec["losses"] == 1
+    assert rec["unclassified_games"] == 10

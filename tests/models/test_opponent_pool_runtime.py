@@ -1,10 +1,14 @@
+import json
 import random
 
 from core.engine.opponent_pool import OpponentPool, OpponentStatsStore, PoolConfig
 from core.models.opponent_pool_runtime import (
+    OpponentPoolStatsWriter,
     OpponentRuntimeCache,
     algo_short_label,
+    build_pool_result_payload,
     build_pool_for_actor,
+    build_pool_ui_state,
     choose_opponent_policy_fn,
 )
 
@@ -93,3 +97,103 @@ def test_choose_opponent_heuristic_anchor_no_build():
     assert choice.kind == "heuristic"
     assert fn is None
     assert built["n"] == 0                             # эвристика не строит оппонента
+
+
+def test_learner_writer_aggregates_multiple_actor_results(tmp_path):
+    stats_path = tmp_path / "stats.json"
+    run_path = tmp_path / "run.json"
+    cfg = PoolConfig(enabled=True, p_heuristic=0.30, ema_alpha=0.15)
+    writer = OpponentPoolStatsWriter(
+        stats_path=str(stats_path),
+        run_state_path=str(run_path),
+        config=cfg,
+        learner_side="P1",
+        learner_algo="ppo",
+        run_id="test-run",
+    )
+    writer.handle({
+        "actor_idx": 0, "actor_ep": 1, "kind": "snapshot", "agent_id": "A",
+        "reason": "pfsp", "prob_episode": 0.35, "result": "win", "vp_diff": 1,
+    })
+    writer.handle({
+        "actor_idx": 7, "actor_ep": 1, "kind": "snapshot", "agent_id": "A",
+        "reason": "pfsp", "prob_episode": 0.35, "result": "loss", "vp_diff": -1,
+    })
+    writer.handle({
+        "actor_idx": 3, "actor_ep": 1, "kind": "heuristic", "agent_id": "",
+        "reason": "heuristic_anchor", "prob_episode": 0.30, "result": "draw", "vp_diff": 0,
+    })
+
+    persisted = json.loads(stats_path.read_text(encoding="utf-8"))
+    assert persisted["schema_version"] == 2
+    assert persisted["opponents"]["A"]["games"] == 2
+    assert persisted["opponents"]["A"]["wins"] == 1
+    assert persisted["opponents"]["A"]["losses"] == 1
+    run = json.loads(run_path.read_text(encoding="utf-8"))
+    assert run["total_games"] == 3
+    assert run["snapshot_games"] == 2
+    assert run["heuristic_games"] == 1
+    assert run["wins"] == 1 and run["draws"] == 1 and run["losses"] == 1
+
+
+def test_actor_result_payload_updates_only_local_sampler():
+    pool = _pool_with(["A"])
+    choice = pool.sample()
+    payload = build_pool_result_payload(
+        pool=pool,
+        choice=choice,
+        result="win",
+        vp_diff=1,
+        actor_idx=2,
+        actor_ep=5,
+    )
+    assert pool.stats.games("A") == 1
+    assert payload["kind"] == "snapshot"
+    assert payload["prob_snapshot"] == 1.0
+    assert payload["prob_episode"] == 1.0
+
+
+def test_ui_state_exposes_episode_probability_and_run_stats(tmp_path, monkeypatch):
+    import core.models.opponent_pool_runtime as runtime
+
+    stats_path = tmp_path / "stats.json"
+    run_path = tmp_path / "run.json"
+    stats = OpponentStatsStore(str(stats_path))
+    stats.update(agent_id="A", win=False, draw=True, vp_diff=0)
+    stats.save()
+    run_path.write_text(json.dumps({
+        "learner_side": "P1",
+        "total_games": 4,
+        "snapshot_games": 3,
+        "heuristic_games": 1,
+        "wins": 1,
+        "draws": 2,
+        "losses": 1,
+        "opponents": {
+            "A": {"games": 3, "wins": 1, "draws": 1, "losses": 1},
+            "__heuristic__": {"games": 1, "wins": 0, "draws": 1, "losses": 0},
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr(runtime, "default_candidate_provider", lambda: [
+        {"agent_id": "A", "side": "P2", "contract": {}, "created_at": "2026-06-29T10:00:00"}
+    ])
+    monkeypatch.setattr(runtime, "_resolve_learner_contract_for_ui", lambda learner_side: {})
+    monkeypatch.setattr(runtime, "_registry_meta_index", lambda: {
+        "A": {"agent_id": "A", "algo": "ppo", "created_at": "2026-06-29T10:00:00"}
+    })
+    monkeypatch.setattr(runtime, "_count_registry_side", lambda side: 1)
+
+    state = build_pool_ui_state(
+        learner_side="P1",
+        learner_faction="Necrons",
+        config=PoolConfig(enabled=True, p_heuristic=0.30, pool_size=1),
+        stats_path=str(stats_path),
+        run_state_path=str(run_path),
+    )
+    row = state["candidates"][0]
+    assert row["prob_snapshot"] == 1.0
+    assert row["prob_episode"] == 0.7
+    assert row["run_games"] == 3
+    assert row["run_actual_prob"] == 0.75
+    assert row["run_wins"] == 1 and row["run_draws"] == 1 and row["run_losses"] == 1
+    assert state["heuristic"]["run_actual_prob"] == 0.25

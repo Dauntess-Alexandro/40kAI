@@ -507,7 +507,7 @@ class LocalRolloutSink:
         self._source = str(source or "local")
 
     def put(self, kind: str, payload: Any) -> None:
-        if kind in ("rollout", "ep") and isinstance(payload, dict):
+        if kind in ("rollout", "ep", "pool_result") and isinstance(payload, dict):
             out = dict(payload)
             out.setdefault("source", self._source)
             self._q.put((kind, out))
@@ -599,7 +599,7 @@ class RemoteRolloutSink:
                 self._send("error", {"message": str(payload)})
             return
         out = dict(payload)
-        out.setdefault("source", self._source)
+        out["source"] = self._source
         if kind == "rollout":
             out.setdefault("env_contract_hash", out.get("env_contract_hash", ""))
         self._send(str(kind), out)

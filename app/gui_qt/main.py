@@ -515,6 +515,7 @@ class GUIController(QtCore.QObject):
             "train_live": [],
             "heuristic": {},
         }
+        self._opponent_pool_live_refresh_mono = 0.0
         self._specific_opponent_agent_ids: list[str] = []
         self._specific_opponent_agent_labels: list[str] = []
         self._specific_opponent_algo_by_id: dict[str, str] = {}
@@ -3857,7 +3858,9 @@ class GUIController(QtCore.QObject):
 
     def _build_opponent_pool_state(self) -> dict:
         stats_path = os.path.join(str(ARTIFACTS_MODELS_DIR), "opponent_pool_stats.json")
-        draw_raw = float(self._heuristic_metrics.get("train_draw_rate", -1.0) or -1.0)
+        run_state_path = os.path.join(str(ARTIFACTS_MODELS_DIR), "opponent_pool_run_state.json")
+        draw_value = self._heuristic_metrics.get("train_draw_rate", -1.0)
+        draw_raw = float(draw_value) if draw_value is not None else -1.0
         draw_rate = draw_raw if draw_raw >= 0.0 else None
         try:
             state = build_pool_ui_state(
@@ -3865,6 +3868,7 @@ class GUIController(QtCore.QObject):
                 learner_faction=self._learner_faction,
                 config=self._pool_config_from_settings(),
                 stats_path=stats_path,
+                run_state_path=run_state_path,
                 mission_name=str(self._selected_mission or ""),
                 draw_rate=draw_rate,
                 pool_enabled=bool(self._pool_enabled),
@@ -6925,6 +6929,10 @@ class GUIController(QtCore.QObject):
         if self._training_start_time <= 0:
             return
         self._update_progress_stats(self._progress_current_ep)
+        now_mono = time.monotonic()
+        if self._pool_enabled and (now_mono - self._opponent_pool_live_refresh_mono) >= 2.0:
+            self._opponent_pool_live_refresh_mono = now_mono
+            self._refresh_opponent_pool_state()
 
     def _update_progress_stats(self, current_episode: int) -> None:
         now = time.time()

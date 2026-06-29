@@ -182,7 +182,7 @@ class RolloutReceiver:
             self._enqueue("error", payload.get("message", payload))
             return
 
-        if kind not in ("rollout", "ep", "batch"):
+        if kind not in ("rollout", "ep", "batch", "pool_result"):
             return
 
         with self._workers_lock:
@@ -200,8 +200,9 @@ class RolloutReceiver:
                     pass
 
     def _enqueue(self, kind: str, payload: Any) -> None:
-        # ep/error не дропаем: иначе learner зависает на ep_done < total.
-        if kind in ("ep", "error"):
+        # ep/error/pool_result не дропаем: pool_result — единственный источник
+        # авторитетной статистики league, его потеря снова сделает Games/WR неверными.
+        if kind in ("ep", "error", "pool_result"):
             while not self._stop.is_set():
                 try:
                     self._data_q.put((kind, payload), timeout=0.25)

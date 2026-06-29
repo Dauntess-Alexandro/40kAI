@@ -116,6 +116,7 @@ from core.models.az_rollout_sink import (
     write_az_dist_train_context,
     write_az_remote_search_cfg,
 )
+from core.models.opponent_pool_runtime import OpponentPoolStatsWriter, build_pool_result_payload
 from core.models.DQN import *
 from core.models.dqn_dist import (
     DQN_DIST_TOPUP_ACTOR_IDX,
@@ -384,6 +385,42 @@ SELF_PLAY_DRAW_RATE_LOW = float(os.getenv("SELF_PLAY_DRAW_RATE_LOW", "0.45"))
 POOL_CONFIG = resolve_pool_config(
     section=(data.get("opponent_pool") if isinstance(data, dict) else None)
 )
+
+
+def _make_opponent_pool_stats_writer(*, algo: str, roster_config: dict | None = None):
+    """Создать единственный persistent writer в learner-процессе текущего train."""
+    if not (SELF_PLAY_ENABLED and POOL_CONFIG.enabled):
+        return None
+    roster = roster_config if isinstance(roster_config, dict) else {}
+    mission_name = normalize_mission_name(roster.get("mission", os.getenv("MISSION_NAME", DEFAULT_MISSION_NAME)))
+    writer = OpponentPoolStatsWriter(
+        stats_path=os.path.join(MODELS_DIR, "opponent_pool_stats.json"),
+        run_state_path=os.path.join(MODELS_DIR, "opponent_pool_run_state.json"),
+        config=POOL_CONFIG,
+        learner_side=LEARNER_SIDE,
+        learner_algo=str(algo or TRAIN_ALGO),
+        mission_name=mission_name,
+    )
+    append_agent_log(
+        f"[POOL][WRITER][INIT] owner=learner algo={str(algo or TRAIN_ALGO)} "
+        f"stats={os.path.join(MODELS_DIR, 'opponent_pool_stats.json')} "
+        f"run_state={os.path.join(MODELS_DIR, 'opponent_pool_run_state.json')}"
+    )
+    return writer
+
+
+def _consume_opponent_pool_message(writer, kind: str, payload) -> bool:
+    if str(kind) != "pool_result":
+        return False
+    if writer is None:
+        append_agent_log(
+            "[POOL][WARN] Получен pool_result без learner-writer. "
+            "Где: train.py (_consume_opponent_pool_message). "
+            "Что делать: проверьте SELF_PLAY_ENABLED и OPPONENT_POOL_ENABLED."
+        )
+        return True
+    writer.handle(payload if isinstance(payload, dict) else {}, log_fn=append_agent_log)
+    return True
 
 EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
 EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
@@ -3954,6 +3991,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
 
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
+    pool_stats_writer = _make_opponent_pool_stats_writer(algo="dqn", roster_config=roster_config)
 
     # --- Distributed actors (ПК2): receiver + SMB train-context ---
     rollout_receiver = None
@@ -4353,6 +4391,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                         break
             continue
 
+        if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
+            continue
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -5012,6 +5052,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
+    pool_stats_writer = _make_opponent_pool_stats_writer(algo="ppo", roster_config=roster_config)
 
     procs = []
     for a_idx in range(num_actors):
@@ -5089,6 +5130,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
         except mp_queue.Empty:
             continue
 
+        if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
+            continue
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -5883,20 +5926,15 @@ def _actor_learner_actor_entry(
 
                 # PFSP-stats пишем ПОСЛЕ финализации result: suspicious_wipeout мог понизить
                 # win->draw — иначе статистика пула расходится с learner-result (MEDIUM-фикс).
-                if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
-                    _pool.record_result(
-                        agent_id=_pool_choice.agent_id,
-                        win=(result == "win"),
-                        draw=(result == "draw"),
+                if _pool is not None and _pool_choice is not None:
+                    data_q.put(("pool_result", build_pool_result_payload(
+                        pool=_pool,
+                        choice=_pool_choice,
+                        result=result,
                         vp_diff=float(vp_diff),
-                    )
-                    _pool.stats.save()
-                    append_agent_log(
-                        f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
-                        f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
-                        f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
-                        f"games={_pool.stats.games(_pool_choice.agent_id)}"
-                    )
+                        actor_idx=int(actor_idx),
+                        actor_ep=int(ep_idx_1based),
+                    )))
 
                 # Стратагемная сводка per-episode для learner-лога
                 from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
@@ -6252,20 +6290,15 @@ def _actor_learner_actor_entry_ppo(
 
                 result = _episode_result(winner=last_info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
-                if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
-                    _pool.record_result(
-                        agent_id=_pool_choice.agent_id,
-                        win=(result == "win"),
-                        draw=(result == "draw"),
+                if _pool is not None and _pool_choice is not None:
+                    data_q.put(("pool_result", build_pool_result_payload(
+                        pool=_pool,
+                        choice=_pool_choice,
+                        result=result,
                         vp_diff=float(vp_diff),
-                    )
-                    _pool.stats.save()
-                    append_agent_log(
-                        f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
-                        f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
-                        f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
-                        f"games={_pool.stats.games(_pool_choice.agent_id)}"
-                    )
+                        actor_idx=int(actor_idx),
+                        actor_ep=int(ep_idx_1based),
+                    )))
 
                 # Стратагемная сводка per-episode для learner-лога
                 from core.telemetry.stratagem_trace import collect_ep_stratagem_payload
@@ -6558,20 +6591,16 @@ def _actor_learner_actor_entry_alphazero(
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
-            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
-                _pool.record_result(
-                    agent_id=_pool_choice.agent_id,
-                    win=(result == "win"),
-                    draw=(result == "draw"),
+            if _pool is not None and _pool_choice is not None:
+                sink.put("pool_result", build_pool_result_payload(
+                    pool=_pool,
+                    choice=_pool_choice,
+                    result=result,
                     vp_diff=float(vp_diff),
-                )
-                _pool.stats.save()
-                append_agent_log(
-                    f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
-                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
-                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
-                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
-                )
+                    actor_idx=int(actor_idx),
+                    actor_ep=int(ep_idx_1based),
+                    source=str(rollout_sink_mode or "local"),
+                ))
 
             ep_payload = {
                 "episode": None,
@@ -6893,20 +6922,16 @@ def _az_env_worker_entry(
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
-            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
-                _pool.record_result(
-                    agent_id=_pool_choice.agent_id,
-                    win=(result == "win"),
-                    draw=(result == "draw"),
+            if _pool is not None and _pool_choice is not None:
+                sink.put("pool_result", build_pool_result_payload(
+                    pool=_pool,
+                    choice=_pool_choice,
+                    result=result,
                     vp_diff=float(vp_diff),
-                )
-                _pool.stats.save()
-                append_agent_log(
-                    f"[POOL][RESULT] worker={int(worker_id)} agent={_pool_choice.agent_id} "
-                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
-                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
-                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
-                )
+                    actor_idx=int(worker_id),
+                    actor_ep=int(ep_idx_1based),
+                    source=str(rollout_sink_mode or "local"),
+                ))
 
             ep_payload = {
                 "episode": None,
@@ -7259,6 +7284,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(AZ_ACTOR_QUEUE_MAX))
+    pool_stats_writer = _make_opponent_pool_stats_writer(algo=TRAIN_ALGO, roster_config=roster_config)
     procs = []
     inf_proc = None  # inference server process (variant B only)
 
@@ -7698,6 +7724,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 last_heartbeat = now
             continue
 
+        if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
+            continue
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -8474,20 +8502,15 @@ def _actor_learner_actor_entry_gumbel_muzero(
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
-            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
-                _pool.record_result(
-                    agent_id=_pool_choice.agent_id,
-                    win=(result == "win"),
-                    draw=(result == "draw"),
+            if _pool is not None and _pool_choice is not None:
+                data_q.put(("pool_result", build_pool_result_payload(
+                    pool=_pool,
+                    choice=_pool_choice,
+                    result=result,
                     vp_diff=float(vp_diff),
-                )
-                _pool.stats.save()
-                append_agent_log(
-                    f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
-                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
-                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
-                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
-                )
+                    actor_idx=int(actor_idx),
+                    actor_ep=int(ep_idx_1based),
+                )))
 
             data_q.put(
                 (
@@ -8740,20 +8763,15 @@ def _actor_learner_actor_entry_sampled_muzero(
             vp_diff = int(model_vp) - int(player_vp)
             result = _episode_result(winner=info.get("winner"), end_reason=end_reason, vp_diff=vp_diff)
 
-            if _pool is not None and _pool_choice is not None and _pool_choice.kind == "snapshot":
-                _pool.record_result(
-                    agent_id=_pool_choice.agent_id,
-                    win=(result == "win"),
-                    draw=(result == "draw"),
+            if _pool is not None and _pool_choice is not None:
+                data_q.put(("pool_result", build_pool_result_payload(
+                    pool=_pool,
+                    choice=_pool_choice,
+                    result=result,
                     vp_diff=float(vp_diff),
-                )
-                _pool.stats.save()
-                append_agent_log(
-                    f"[POOL][RESULT] actor={int(actor_idx)} agent={_pool_choice.agent_id} "
-                    f"win={int(result == 'win')} draw={int(result == 'draw')} vp={int(vp_diff)} "
-                    f"ema_wr={_pool.stats.winrate(_pool_choice.agent_id):.3f} "
-                    f"games={_pool.stats.games(_pool_choice.agent_id)}"
-                )
+                    actor_idx=int(actor_idx),
+                    actor_ep=int(ep_idx_1based),
+                )))
 
             data_q.put(
                 (
@@ -9167,6 +9185,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(GMZ_ACTOR_QUEUE_MAX))
+    pool_stats_writer = _make_opponent_pool_stats_writer(algo="gumbel_muzero", roster_config=roster_config)
     procs: list = []
     inf_proc = None
     request_q = None
@@ -9338,6 +9357,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
             _maybe_train_progress_heartbeat()
+            continue
+        if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
         if kind == "error":
             raise RuntimeError(payload)
@@ -9941,6 +9962,7 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
     remaining_episodes = max(0, int(totLifeT) - int(episodes_finished))
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(SMZ_ACTOR_QUEUE_MAX))
+    pool_stats_writer = _make_opponent_pool_stats_writer(algo="sampled_muzero", roster_config=roster_config)
     procs: list = []
     inf_proc = None
     request_q = None
@@ -10110,6 +10132,8 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
             kind, payload = data_q.get(timeout=1.0)
         except mp_queue.Empty:
             _maybe_train_progress_heartbeat()
+            continue
+        if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
         if kind == "error":
             raise RuntimeError(payload)
