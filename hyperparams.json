@@ -369,6 +369,23 @@
         "num_considered_actions": 8,
         "batch_eval_size": 16
     },
+    "phoenix": {
+        "replay_ratio": 2,
+        "reset_interval": 40000,
+        "anneal_steps": 10000,
+        "shrink_alpha": 0.5,
+        "spr_horizon_K": 5,
+        "spr_coef": 2.0,
+        "ve_horizon": 3,
+        "ve_steve": false,
+        "dynamics_type": "mlp",
+        "emb_dim": 64,
+        "noisy": false,
+        "gamma_start": 0.97,
+        "gamma_end": 0.99,
+        "nstep_start": 10,
+        "nstep_end": 3
+    },
     "opponent_pool": {
         "enabled": false,
         "p_heuristic": 0.3,

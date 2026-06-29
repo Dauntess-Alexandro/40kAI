@@ -3759,6 +3759,18 @@ def main():
         )
         return
 
+    if TRAIN_ALGO == "phoenix":
+        if TRAIN_LOG_TO_CONSOLE:
+            print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (PHOENIX off-policy + learner)")
+        _main_actor_learner_phoenix(
+            roster_config=roster_config,
+            totLifeT=totLifeT,
+            clip_reward_enabled=clip_reward_enabled,
+            clip_reward_min=clip_reward_min,
+            clip_reward_max=clip_reward_max,
+        )
+        return
+
     if TRAIN_ALGO == "dqn":
         if TRAIN_LOG_TO_CONSOLE:
             print("[TRAIN][MODE] PRO_ACTOR_LEARNER=1 (DQN actors CPU + learner GPU)")
@@ -3869,6 +3881,270 @@ def _format_dqn_queue_metrics(
         f"updates={int(updates)} "
         f"interval_s={float(interval_s):.1f}"
     )
+
+
+def _phoenix_active_mask_from_env(env, len_model: int) -> np.ndarray:
+    """Per-head маска активности из legal-контракта env (как DQN infer/masks_by_head)."""
+    ordered_keys = ordered_action_keys(int(len_model))
+    legal_by_head = _build_select_action_masks(env, int(len_model))
+    out: list[bool] = []
+    for key in ordered_keys:
+        if key in legal_by_head:
+            arr = np.asarray(legal_by_head[key], dtype=bool)
+            out.append(bool(arr.any()))
+        else:
+            out.append(True)
+    return np.asarray(out, dtype=bool)
+
+
+def _phoenix_select_action(net, env, state, epsilon: float, len_model: int):
+    """Выбор действия через online-IQN голову PhoenixNet + маска активных голов."""
+    action_t = select_action_with_epsilon(env, state, net.online, epsilon, int(len_model))
+    action_vec = action_t.detach().cpu().numpy()[0].astype(np.int64)
+    active_mask = _phoenix_active_mask_from_env(env, int(len_model))
+    return action_vec, active_mask
+
+
+def _phoenix_save_checkpoint(
+    *,
+    net,
+    trainer,
+    episode: int,
+    n_observations: int,
+    n_actions: list[int],
+    env_contract: dict,
+    learner_identity: AgentIdentity,
+    checkpoint_dir: str,
+    final: bool = False,
+) -> str:
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    ckpt_path = os.path.join(checkpoint_dir, f"checkpoint_ep{int(episode)}.pth")
+    state_cpu = normalize_state_dict(net.state_dict())
+    payload = {
+        "algo": "phoenix",
+        "phoenix_net": state_cpu,
+        "optimizer": trainer.optimizer.state_dict(),
+        "episode": int(episode),
+        "grad_step": int(trainer.grad_step),
+        "n_observations": int(n_observations),
+        "n_actions": [int(x) for x in n_actions],
+        "env_contract": env_contract,
+    }
+    torch.save(payload, ckpt_path)
+    tag = "final" if final else "periodic"
+    append_agent_log(f"[PHOENIX][SAVE] kind={tag} ep={int(episode)} path={ckpt_path}")
+    if final:
+        try:
+            agent_id = build_agent_id(learner_identity, f"final_ep{int(episode)}")
+            artifact_dir = save_agent_artifact(
+                identity=learner_identity,
+                agent_id=agent_id,
+                env_contract=env_contract,
+                policy_state_dict=state_cpu,
+                target_state_dict=None,
+                optimizer_state_dict=trainer.optimizer.state_dict(),
+                extra_meta={
+                    "algo": "phoenix",
+                    "episode": int(episode),
+                    "grad_step": int(trainer.grad_step),
+                    "mode": "single_process",
+                },
+            )
+            append_agent_log(f"[PHOENIX][SAVE] agent_id={agent_id} artifact_dir={artifact_dir}")
+        except Exception as exc:
+            append_agent_log(
+                "[PHOENIX][WARN] Не удалось сохранить agent snapshot. "
+                f"Где: train.py (_phoenix_save_checkpoint/save_agent_artifact). exc={exc}"
+            )
+    return ckpt_path
+
+
+def _phoenix_learn_from_buffer(buf, trainer, cfg) -> None:
+    min_replay = int(os.getenv("PHOENIX_MIN_REPLAY", "256"))
+    batch_size = max(1, int(os.getenv("PHOENIX_BATCH", "32")))
+    if len(buf) < min_replay:
+        return
+    net_was_training = trainer.net.training
+    trainer.net.train()
+    try:
+        for _ in range(int(cfg.replay_ratio)):
+            windows, idx, _weights = buf.sample(batch_size)
+            if not windows:
+                break
+            out = trainer.learn_step(windows)
+            buf.update_priorities(idx, out["td_errors"] + 1e-3)
+            if trainer.maybe_reset(trainer.grad_step):
+                append_agent_log(
+                    f"[PHOENIX][RESET] grad_step={trainer.grad_step} alpha={cfg.shrink_alpha}"
+                )
+    finally:
+        if not net_was_training:
+            trainer.net.eval()
+
+
+def _main_actor_learner_phoenix(
+    *,
+    roster_config,
+    totLifeT,
+    clip_reward_enabled,
+    clip_reward_min,
+    clip_reward_max,
+) -> None:
+    """PHOENIX single-process learner (Волна 1): актор+обучение в одном процессе."""
+    from core.models.phoenix_config import resolve_phoenix_config
+    from core.models.phoenix_model import PhoenixNet
+    from core.models.phoenix_replay import SequenceReplayBuffer
+    from core.models.phoenix_trainer import PhoenixTrainer
+
+    cfg = resolve_phoenix_config(data if isinstance(data, dict) else {}, os.environ)
+    append_agent_log(
+        f"[PHOENIX][CONFIG] replay_ratio={cfg.replay_ratio} reset_interval={cfg.reset_interval} "
+        f"K={cfg.spr_horizon_K} ve_h={cfg.ve_horizon} ve_steve={cfg.ve_steve} noisy={cfg.noisy} "
+        f"gamma={cfg.gamma_start}->{cfg.gamma_end} nstep={cfg.nstep_start}->{cfg.nstep_end}"
+    )
+
+    b_len = int(roster_config["b_len"])
+    b_hei = int(roster_config["b_hei"])
+    trunc = True
+    n_observations, n_actions = _infer_env_shape_from_roster(roster_config)
+
+    learner_identity = AgentIdentity(
+        side=LEARNER_SIDE if LEARNER_SIDE in {"P1", "P2"} else "P1",
+        faction=LEARNER_FACTION,
+        ruleset_version=RULESET_VERSION,
+    ).normalized()
+    mission_name = normalize_mission_name(roster_config.get("mission", DEFAULT_MISSION_NAME))
+    env_contract = make_env_contract(
+        n_observations=n_observations,
+        n_actions=n_actions,
+        mission_name=mission_name,
+        ruleset_version=learner_identity.ruleset_version,
+        extras={"train_algo": "phoenix", "mode": "single_process"},
+    )
+
+    phoenix_device = str(device)
+    net = PhoenixNet(n_observations, n_actions, cfg).to(phoenix_device)
+    net.eval()
+    trainer = PhoenixTrainer(net, cfg, device=phoenix_device)
+    buf = SequenceReplayBuffer(capacity=cfg.replay_capacity, window=cfg.window_horizon)
+
+    enemy, model = _build_units_from_config(roster_config, b_len, b_hei)
+    env = gym.make("40kAI-v0", disable_env_checker=True, enemy=enemy, model=model, b_len=b_len, b_hei=b_hei)
+
+    episodes_raw = (
+        os.getenv("NUM_EPISODES")
+        or os.getenv("TOTAL_EPISODES")
+        or str(int(totLifeT))
+    )
+    total_episodes = max(1, int(episodes_raw))
+    steps_done = 0
+
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    checkpoint_dir = os.path.join(MODELS_DIR, "phoenix", f"phoenix-run-{timestamp}")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    from core.engine.turn_sequencing import run_battle_round
+
+    for ep in range(total_episodes):
+        attacker_side, defender_side = roll_off_attacker_defender(manual_roll_allowed=False, log_fn=None)
+        deploy_for_mission(
+            mission_name,
+            model_units=model,
+            enemy_units=enemy,
+            b_len=b_len,
+            b_hei=b_hei,
+            attacker_side=attacker_side,
+            log_fn=None,
+        )
+        post_deploy_setup(log_fn=None)
+        env.attacker_side = attacker_side
+        env.defender_side = defender_side
+
+        env_u_for_ft = unwrap_env(env)
+        env_u_for_ft.first_turn_side = resolve_first_turn_side(manual_roll_allowed=False, log_fn=None)
+
+        obs, _info = env.reset(options={"m": model, "e": enemy, "Type": "small", "trunc": trunc})
+        done = False
+        ep_reward = 0.0
+        ep_len = 0
+        last_info: dict = {}
+
+        while not done:
+            eps_threshold = float(compute_epsilon(steps_done))
+            action_vec, active_mask = _phoenix_select_action(net, env, obs, eps_threshold, len(model))
+            action_dict = action_tensor_to_dict(torch.tensor([action_vec], dtype=torch.long), len_model=len(model))
+
+            env_unwrapped = unwrap_env(env)
+
+            def _enemy_half() -> None:
+                env_unwrapped.enemyTurn(trunc=trunc)
+
+            def _model_half() -> None:
+                nonlocal obs, done, ep_reward, ep_len, last_info, steps_done
+                next_obs, reward, done_flag, _res, info2 = env.step(action_dict)
+                last_info = info2 if isinstance(info2, dict) else {}
+                done_local = bool(done_flag)
+                r_clipped, _ = maybe_clip_reward(
+                    float(reward),
+                    bool(clip_reward_enabled),
+                    float(clip_reward_min) if clip_reward_min is not None else None,
+                    float(clip_reward_max) if clip_reward_max is not None else None,
+                )
+                buf.push(
+                    to_np_state(obs),
+                    action_vec,
+                    active_mask,
+                    reward=float(r_clipped),
+                    done=done_local,
+                )
+                _phoenix_learn_from_buffer(buf, trainer, cfg)
+                obs = next_obs
+                ep_reward += float(r_clipped)
+                ep_len += 1
+                steps_done += 1
+                done = done_local
+
+            run_battle_round(env_unwrapped, run_model_half=_model_half, run_enemy_half=_enemy_half)
+
+            if bool(getattr(env_unwrapped, "game_over", False)) and not done:
+                done = True
+                if hasattr(env_unwrapped, "get_info"):
+                    last_info = env_unwrapped.get_info() or last_info
+                draw_penalty = _turn_limit_draw_penalty_from_info(last_info)
+                if draw_penalty > 0 and ep_len > 0:
+                    ep_reward -= float(draw_penalty)
+
+        append_agent_log(
+            f"[PHOENIX][TRAIN] ep={ep} reward={ep_reward:.2f} "
+            f"eps={float(compute_epsilon(steps_done)):.3f} grad_step={trainer.grad_step} ep_len={ep_len}"
+        )
+        if SAVE_EVERY > 0 and (ep + 1) % int(SAVE_EVERY) == 0:
+            _phoenix_save_checkpoint(
+                net=net,
+                trainer=trainer,
+                episode=ep + 1,
+                n_observations=n_observations,
+                n_actions=n_actions,
+                env_contract=env_contract,
+                learner_identity=learner_identity,
+                checkpoint_dir=checkpoint_dir,
+            )
+
+    _phoenix_save_checkpoint(
+        net=net,
+        trainer=trainer,
+        episode=total_episodes,
+        n_observations=n_observations,
+        n_actions=n_actions,
+        env_contract=env_contract,
+        learner_identity=learner_identity,
+        checkpoint_dir=checkpoint_dir,
+        final=True,
+    )
+    try:
+        env.close()
+    except Exception:
+        pass
 
 
 def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_reward_min, clip_reward_max) -> None:
