@@ -56,6 +56,34 @@ class TestFormatTrainEpLogLine(unittest.TestCase):
         self.assertIn("vp_diff=0", line)
         self.assertIn("turns=21", line)
 
+    def test_opponent_agent_is_visible_in_episode_line(self):
+        agent_id = "P2_Necrons_annihilation_v2_final_ep100_20260629_104052"
+        line = format_train_ep_log_line(
+            ep=7,
+            total=400,
+            algo="ppo",
+            actor_idx=3,
+            opponent_label="PPO:ep100",
+            opponent_agent_id=agent_id,
+            result="draw",
+            end_reason="turn_limit",
+            turns=9,
+        )
+        self.assertIn("opponent=PPO:ep100", line)
+        self.assertIn(f"opp_id={agent_id}", line)
+
+    def test_heuristic_is_visible_in_episode_line(self):
+        line = format_train_ep_log_line(
+            ep=8,
+            total=400,
+            algo="ppo",
+            opponent_label="heuristic",
+            result="draw",
+            end_reason="turn_limit",
+        )
+        self.assertIn("opponent=heuristic", line)
+        self.assertNotIn("opp_id=", line)
+
     def test_optional_mission_fields_absent_when_none(self):
         line = format_train_ep_log_line(
             ep=3,
@@ -117,7 +145,41 @@ class TestFormatTrainEpLogLine(unittest.TestCase):
             self.assertIn("ep=7/300", out)
             self.assertIn("algo=az", out)
             self.assertIn("actor=3", out)
+            self.assertIn("opponent=heuristic", out)
             self.assertIn("result=draw", out)
+        finally:
+            train_mod.TRAIN_LOG_ENABLED = old_enabled
+            train_mod.TRAIN_LOG_TO_FILE = old_file
+            train_mod.TRAIN_LOG_TO_CONSOLE = old_console
+
+    def test_log_helper_preserves_actor_zero_and_attached_pool_opponent(self):
+        import io
+        from contextlib import redirect_stdout
+
+        import train as train_mod
+
+        old_enabled = train_mod.TRAIN_LOG_ENABLED
+        old_file = train_mod.TRAIN_LOG_TO_FILE
+        old_console = train_mod.TRAIN_LOG_TO_CONSOLE
+        try:
+            train_mod.TRAIN_LOG_ENABLED = True
+            train_mod.TRAIN_LOG_TO_FILE = False
+            train_mod.TRAIN_LOG_TO_CONSOLE = True
+            row = {
+                "episode": 1,
+                "actor_idx": 0,
+                "opponent_label": "PPO:ep100",
+                "opponent_agent_id": "P2_Necrons_annihilation_v2_final_ep100_20260629_104052",
+                "result": "draw",
+                "end_reason": "turn_limit",
+            }
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                log_train_episode_line(row, total=8, algo="ppo", actor_idx=-1)
+            out = buf.getvalue().strip()
+            self.assertIn("actor=0", out)
+            self.assertIn("opponent=PPO:ep100", out)
+            self.assertIn("opp_id=P2_Necrons_annihilation_v2_final_ep100_20260629_104052", out)
         finally:
             train_mod.TRAIN_LOG_ENABLED = old_enabled
             train_mod.TRAIN_LOG_TO_FILE = old_file

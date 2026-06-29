@@ -239,6 +239,7 @@ class GUIController(QtCore.QObject):
     poolNoveltyBonusChanged = QtCore.Signal(float)
     poolMinGamesChanged = QtCore.Signal(int)
     poolEmaAlphaChanged = QtCore.Signal(float)
+    selfPlaySnapshotEveryChanged = QtCore.Signal(int)
     opponentPoolStateChanged = QtCore.Signal()
     factionIconSizeChanged = QtCore.Signal(int)
     unitIconSizeChanged = QtCore.Signal(int)
@@ -507,6 +508,10 @@ class GUIController(QtCore.QObject):
         self._pool_novelty_bonus = 0.25
         self._pool_min_games = 3
         self._pool_ema_alpha = 0.15
+        self._self_play_snapshot_every = max(
+            1,
+            int(os.getenv("SELF_PLAY_UPDATE_EVERY_EPISODES", os.getenv("OPPONENT_POOL_LEAGUE_SNAPSHOT_EVERY", "100"))),
+        )
         self._pool_enabled = False
         self._opponent_pool_state_dict: dict = {
             "context": {},
@@ -1921,6 +1926,10 @@ class GUIController(QtCore.QObject):
     @QtCore.Property(float, notify=poolEmaAlphaChanged)
     def poolEmaAlpha(self) -> float:
         return float(self._pool_ema_alpha)
+
+    @QtCore.Property(int, notify=selfPlaySnapshotEveryChanged)
+    def selfPlaySnapshotEvery(self) -> int:
+        return int(self._self_play_snapshot_every)
 
     @QtCore.Property("QVariantMap", notify=opponentPoolStateChanged)
     def opponentPoolState(self) -> dict:
@@ -3698,6 +3707,15 @@ class GUIController(QtCore.QObject):
         self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
+    @QtCore.Slot(int)
+    def set_self_play_snapshot_every(self, value: int) -> None:
+        every = max(1, int(value))
+        if self._self_play_snapshot_every == every:
+            return
+        self._self_play_snapshot_every = every
+        self.selfPlaySnapshotEveryChanged.emit(every)
+        self.mark_settings_dirty()
+
     @QtCore.Slot(str)
     def set_deployment_mode(self, value: str) -> None:
         mode = str(value or "").strip().lower()
@@ -3841,6 +3859,7 @@ class GUIController(QtCore.QObject):
             "novelty_bonus": float(self._pool_novelty_bonus),
             "min_games_for_pfsp": int(self._pool_min_games),
             "ema_alpha": float(self._pool_ema_alpha),
+            "league_snapshot_every": int(self._self_play_snapshot_every),
         }
 
     def _pool_config_from_settings(self) -> PoolConfig:
@@ -3854,6 +3873,7 @@ class GUIController(QtCore.QObject):
             novelty_bonus=float(self._pool_novelty_bonus),
             min_games_for_pfsp=max(0, int(self._pool_min_games)),
             ema_alpha=float(self._pool_ema_alpha),
+            league_snapshot_every=max(1, int(self._self_play_snapshot_every)),
         )
 
     def _build_opponent_pool_state(self) -> dict:
@@ -3915,6 +3935,10 @@ class GUIController(QtCore.QObject):
         ema_alpha = 0.0 if ema_alpha < 0.0 else (1.0 if ema_alpha > 1.0 else ema_alpha)
         if ema_alpha <= 0.0:
             ema_alpha = 0.15
+        league_snapshot_every = max(
+            1,
+            int(section.get("league_snapshot_every", self._self_play_snapshot_every)),
+        )
         p_heuristic = 0.0 if p_heuristic < 0.0 else (1.0 if p_heuristic > 1.0 else p_heuristic)
         self._pool_enabled = enabled
         self._pool_p_heuristic = p_heuristic
@@ -3925,6 +3949,7 @@ class GUIController(QtCore.QObject):
         self._pool_novelty_bonus = novelty_bonus
         self._pool_min_games = min_games
         self._pool_ema_alpha = ema_alpha
+        self._self_play_snapshot_every = league_snapshot_every
         self.poolEnabledChanged.emit(self._pool_enabled)
         self.poolPHeuristicChanged.emit(self._pool_p_heuristic)
         self.poolSizeChanged.emit(self._pool_size)
@@ -3934,6 +3959,7 @@ class GUIController(QtCore.QObject):
         self.poolNoveltyBonusChanged.emit(self._pool_novelty_bonus)
         self.poolMinGamesChanged.emit(self._pool_min_games)
         self.poolEmaAlphaChanged.emit(self._pool_ema_alpha)
+        self.selfPlaySnapshotEveryChanged.emit(self._self_play_snapshot_every)
         self._refresh_opponent_pool_state()
 
     def _mission_from_ruleset_version(self, ruleset_version: str) -> str:
@@ -7031,6 +7057,7 @@ class GUIController(QtCore.QObject):
         elif selected_opponent_source == "latest_snapshot":
             env_overrides["SELF_PLAY_ENABLED"] = "1"
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = env_overrides.get("SELF_PLAY_OPPONENT_MODE", "snapshot")
+            env_overrides["SELF_PLAY_UPDATE_EVERY_EPISODES"] = str(max(1, int(self._self_play_snapshot_every)))
             # Для Actor-Learner self-play нам нужен конкретный agent_id (чтобы акторы могли загрузить снапшот).
             if self._selected_specific_opponent_id:
                 env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
@@ -7044,12 +7071,14 @@ class GUIController(QtCore.QObject):
                 return
             env_overrides["SELF_PLAY_ENABLED"] = "1"
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "snapshot"
+            env_overrides["SELF_PLAY_UPDATE_EVERY_EPISODES"] = str(max(1, int(self._self_play_snapshot_every)))
             env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
             env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
         elif selected_opponent_source == "pool":
             env_overrides["SELF_PLAY_ENABLED"] = "1"
             env_overrides["SELF_PLAY_OPPONENT_MODE"] = "snapshot"
             env_overrides["OPPONENT_POOL_ENABLED"] = "1"
+            env_overrides["SELF_PLAY_UPDATE_EVERY_EPISODES"] = str(max(1, int(self._self_play_snapshot_every)))
             if self._selected_specific_opponent_id:
                 env_overrides["OPPONENT_AGENT_ID"] = self._selected_specific_opponent_id
             pool_cfg = self._opponent_pool_settings()
@@ -7061,6 +7090,7 @@ class GUIController(QtCore.QObject):
             env_overrides["OPPONENT_POOL_NOVELTY_BONUS"] = str(pool_cfg["novelty_bonus"])
             env_overrides["OPPONENT_POOL_MIN_GAMES"] = str(pool_cfg["min_games_for_pfsp"])
             env_overrides["OPPONENT_POOL_EMA_ALPHA"] = str(pool_cfg["ema_alpha"])
+            env_overrides["OPPONENT_POOL_LEAGUE_SNAPSHOT_EVERY"] = str(pool_cfg["league_snapshot_every"])
             env_overrides.pop("SELF_PLAY_FIXED_PATH", None)
 
         # PRO actor-learner теперь единственный поддерживаемый training pipeline.

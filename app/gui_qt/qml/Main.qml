@@ -1824,6 +1824,45 @@ ApplicationWindow {
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 spacing: root.spacingSm
+                                                visible: controller.opponentSource !== "heuristic"
+                                                Label {
+                                                    text: "СНАПШОТ В РЕЕСТР"
+                                                    font.bold: true
+                                                    color: root.uiTextMuted
+                                                    ToolTip.visible: hovered
+                                                    ToolTip.text: "Как часто сохранять learner в реестр лиги (каждые N игр) и обновлять зеркало PPO self-play. В конце прогона — всегда финальный снапшот."
+                                                    ToolTip.delay: 400
+                                                }
+                                                TextField {
+                                                    id: selfPlaySnapshotEveryField
+                                                    text: controller.selfPlaySnapshotEvery.toString()
+                                                    validator: IntValidator { bottom: 1 }
+                                                    Layout.preferredWidth: root.inputWidthMd
+                                                    font.family: root.fontDataFamily
+                                                    enabled: !controller.running
+                                                    background: Rectangle {
+                                                        radius: 0
+                                                        color: parent.activeFocus ? "#1e2633" : "#141b26"
+                                                        border.width: 1
+                                                        border.color: parent.activeFocus ? "#b88a26" : "#2f3848"
+                                                    }
+                                                    onEditingFinished: {
+                                                        var value = parseInt(text)
+                                                        if (!isNaN(value)) {
+                                                            controller.set_self_play_snapshot_every(value)
+                                                        }
+                                                    }
+                                                }
+                                                Label {
+                                                    text: "игр"
+                                                    color: root.uiTextMuted
+                                                    font.pixelSize: root.evalCaptionSize
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: root.spacingSm
                                                 Label { text: "АЛГОРИТМ"; font.bold: true; color: root.uiTextMuted }
                                                 StyledComboBox {
                                                     id: trainingAlgoComboMain

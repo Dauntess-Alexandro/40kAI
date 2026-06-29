@@ -6,16 +6,19 @@ import random
 import re
 from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
 
-from core.engine.opponent_pool import OpponentChoice, OpponentPool, OpponentStatsStore, PoolConfig
+from core.engine.opponent_pool import OpponentChoice, OpponentPool, OpponentStatsStore, PoolConfig, atomic_write_json
 
 __all__ = [
     "OpponentRuntimeCache",
     "OpponentPoolStatsWriter",
     "algo_short_label",
     "build_pool_result_payload",
+    "describe_episode_opponent",
     "default_candidate_provider",
     "build_pool_for_actor",
     "build_pool_ui_state",
@@ -23,6 +26,8 @@ __all__ = [
     "parse_last_pool_pick",
     "parse_pool_log_tail",
     "short_agent_label",
+    "LeagueLearnerSnapshotWriter",
+    "LeagueSnapshotSaveArgs",
 ]
 
 POOL_RUN_HEURISTIC_KEY = "__heuristic__"
@@ -144,6 +149,48 @@ def short_agent_label(agent_id: str) -> str:
     return aid if len(aid) <= 40 else aid[:37] + "..."
 
 
+@lru_cache(maxsize=512)
+def _registered_agent_algo(agent_id: str) -> str:
+    aid = str(agent_id or "").strip()
+    if not aid:
+        return ""
+    return str(_registry_meta_index().get(aid, {}).get("algo", "") or "").strip().lower()
+
+
+def describe_episode_opponent(
+    *,
+    kind: str,
+    agent_id: str = "",
+    algo_hint: str = "",
+    reason: str = "",
+) -> dict[str, Any]:
+    """Компактные поля оппонента для `[TRAIN][EP]` и live-state."""
+    kind_norm = str(kind or "heuristic").strip().lower()
+    aid = str(agent_id or "").strip()
+    if kind_norm != "snapshot" or not aid:
+        return {
+            "opponent_kind": "heuristic",
+            "opponent_label": "heuristic",
+            "opponent_agent_id": "",
+            "opponent_algo": "heuristic",
+            "opponent_ep": -1,
+            "opponent_reason": str(reason or ""),
+        }
+    algo = str(algo_hint or "").strip().lower() or _registered_agent_algo(aid) or "agent"
+    match = _EP_LABEL_RE.search(aid)
+    ep = int(match.group(1)) if match else -1
+    algo_label = algo_short_label(algo)
+    label = f"{algo_label}:ep{ep}" if ep >= 0 else algo_label
+    return {
+        "opponent_kind": "snapshot",
+        "opponent_label": label,
+        "opponent_agent_id": aid,
+        "opponent_algo": algo,
+        "opponent_ep": ep,
+        "opponent_reason": str(reason or ""),
+    }
+
+
 def parse_pool_log_tail(log_path: str, *, max_lines: int = 20) -> list[dict[str, str]]:
     """Последние строки [POOL] из train-лога для вкладки «Train live»."""
     path = str(log_path or "").strip()
@@ -166,17 +213,7 @@ def parse_pool_log_tail(log_path: str, *, max_lines: int = 20) -> list[dict[str,
 
 
 def _atomic_write_json(path: str, payload: dict[str, Any]) -> None:
-    target = str(path or "").strip()
-    if not target or target == ":memory:":
-        return
-    parent = os.path.dirname(target)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    tmp = target + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
-        handle.write("\n")
-    os.replace(tmp, target)
+    atomic_write_json(path, payload)
 
 
 def _load_json_object(path: str) -> dict[str, Any]:
@@ -221,6 +258,13 @@ def build_pool_result_payload(
         prob_snapshot = 0.0
         # При пустом пуле sample() возвращает weight=1.0; при fallback — 0.0.
         prob_episode = max(0.0, float(choice.weight))
+    candidate_meta = pool.candidate_metadata(choice.agent_id) if choice.kind == "snapshot" else {}
+    opponent_fields = describe_episode_opponent(
+        kind=choice.kind,
+        agent_id=choice.agent_id,
+        algo_hint=str(candidate_meta.get("algo", "") or ""),
+        reason=choice.reason,
+    )
     return {
         "actor_idx": int(actor_idx),
         "actor_ep": int(actor_ep),
@@ -232,6 +276,7 @@ def build_pool_result_payload(
         "prob_episode": float(prob_episode),
         "result": result_norm,
         "vp_diff": float(vp_diff),
+        **opponent_fields,
     }
 
 
@@ -277,6 +322,7 @@ class OpponentPoolStatsWriter:
         self.run_state_path = str(run_state_path)
         self.config = config
         self.stats = OpponentStatsStore.load(self.stats_path, ema_alpha=config.ema_alpha)
+        self._episode_opponents: dict[tuple[str, int, int], dict[str, Any]] = {}
         now = datetime.now().isoformat(timespec="seconds")
         self.run_state: dict[str, Any] = {
             "schema_version": 1,
@@ -299,8 +345,15 @@ class OpponentPoolStatsWriter:
         }
         self._save_run_state()
 
-    def _save_run_state(self) -> None:
-        _atomic_write_json(self.run_state_path, self.run_state)
+    def _save_run_state(self, *, log_fn=None) -> None:
+        try:
+            _atomic_write_json(self.run_state_path, self.run_state)
+        except OSError as exc:
+            if log_fn:
+                log_fn(
+                    f"[POOL][WARN] run_state save failed: {exc} "
+                    f"path={self.run_state_path}; stats в памяти learner актуальны, повторим на след. эпизоде"
+                )
 
     def handle(self, payload: dict[str, Any], *, log_fn=None) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -321,13 +374,20 @@ class OpponentPoolStatsWriter:
         actor_ep = int(actor_ep_raw) if actor_ep_raw is not None else 0
 
         if kind == "snapshot":
-            self.stats.update(
-                agent_id=agent_id,
-                win=(result == "win"),
-                draw=(result == "draw"),
-                vp_diff=vp_diff,
-            )
-            self.stats.save()
+            try:
+                self.stats.update(
+                    agent_id=agent_id,
+                    win=(result == "win"),
+                    draw=(result == "draw"),
+                    vp_diff=vp_diff,
+                )
+                self.stats.save()
+            except OSError as exc:
+                if log_fn:
+                    log_fn(
+                        f"[POOL][WARN] stats save failed: {exc} "
+                        f"path={self.stats_path}; продолжаем train без записи stats на диск"
+                    )
 
         now = datetime.now().isoformat(timespec="seconds")
         state = self.run_state
@@ -358,6 +418,14 @@ class OpponentPoolStatsWriter:
         rec["last_selected_at"] = now
         rec["last_reason"] = str(payload.get("reason", "") or "")
         rec["expected_prob"] = float(payload.get("prob_episode", 0.0) or 0.0)
+        opponent_fields = describe_episode_opponent(
+            kind=kind,
+            agent_id=agent_id,
+            algo_hint=str(payload.get("opponent_algo", "") or ""),
+            reason=rec["last_reason"],
+        )
+        source = str(payload.get("source", "local") or "local").strip().lower()
+        self._episode_opponents[(source, actor_idx, actor_ep)] = dict(opponent_fields)
         state["last_opponent"] = {
             "kind": kind,
             "agent_id": agent_id,
@@ -368,7 +436,7 @@ class OpponentPoolStatsWriter:
             "actor_ep": actor_ep,
             "selected_at": now,
         }
-        self._save_run_state()
+        self._save_run_state(log_fn=log_fn)
 
         persistent = self.stats.record(agent_id) if kind == "snapshot" else {}
         if log_fn is not None:
@@ -383,6 +451,28 @@ class OpponentPoolStatsWriter:
                 f"run_games={int(rec['games'])} p_episode={float(rec['expected_prob']):.3f}{suffix}"
             )
         return dict(rec)
+
+    def attach_episode_opponent(self, episode_payload: dict[str, Any]) -> dict[str, Any]:
+        """Добавить фактического pool-оппонента в следующий `ep` того же актора."""
+        if not isinstance(episode_payload, dict):
+            return episode_payload
+        actor_raw = episode_payload.get("actor_idx", -1)
+        actor_idx = int(actor_raw) if actor_raw is not None else -1
+        actor_ep_raw = episode_payload.get("actor_ep", 0)
+        actor_ep = int(actor_ep_raw) if actor_ep_raw is not None else 0
+        source = str(episode_payload.get("source", "local") or "local").strip().lower()
+        episode_payload["source"] = source
+        fields = self._episode_opponents.pop((source, actor_idx, actor_ep), None)
+        if fields is None:
+            matching = [
+                key for key in self._episode_opponents
+                if key[1] == actor_idx and key[2] == actor_ep
+            ]
+            if len(matching) == 1:
+                fields = self._episode_opponents.pop(matching[0])
+        if fields:
+            episode_payload.update(fields)
+        return episode_payload
 
 
 def _resolve_learner_contract_for_ui(*, learner_side: str) -> dict:
@@ -604,6 +694,78 @@ def build_pool_ui_state(
     }
 
 
+@dataclass
+class LeagueSnapshotSaveArgs:
+    policy_state_dict: dict[str, Any]
+    target_state_dict: dict[str, Any] | None = None
+    optimizer_state_dict: dict[str, Any] | None = None
+    extra_meta: dict[str, Any] | None = None
+
+
+class LeagueLearnerSnapshotWriter:
+    """Периодические снапшоты learner в реестр для лиги (отдельно от mirror-sync)."""
+
+    def __init__(
+        self,
+        *,
+        every_episodes: int,
+        identity,
+        env_contract: dict[str, Any],
+        log_fn: Callable[[str], None] | None = None,
+    ) -> None:
+        self.every_episodes = max(1, int(every_episodes))
+        self.identity = identity
+        self.env_contract = dict(env_contract or {})
+        self._log = log_fn
+        self._last_saved_cumulative: int | None = None
+
+    def maybe_periodic(self, cumulative_episode: int, args: LeagueSnapshotSaveArgs) -> str | None:
+        ep = int(cumulative_episode)
+        if ep < 1 or ep % self.every_episodes != 0:
+            return None
+        if self._last_saved_cumulative == ep:
+            return None
+        return self._save(ep, tag=f"ep{ep}", args=args, kind="periodic")
+
+    def maybe_final(self, cumulative_episode: int, args: LeagueSnapshotSaveArgs) -> str | None:
+        ep = int(cumulative_episode)
+        if ep < 1:
+            return None
+        if self._last_saved_cumulative == ep:
+            return None
+        return self._save(ep, tag=f"final_ep{ep}", args=args, kind="final")
+
+    def _save(self, ep: int, *, tag: str, args: LeagueSnapshotSaveArgs, kind: str) -> str | None:
+        from core.engine.agent_registry import build_agent_id, save_agent_artifact
+
+        agent_id = build_agent_id(self.identity, tag)
+        extra_meta = dict(args.extra_meta or {})
+        extra_meta.setdefault("episode", ep)
+        extra_meta["league_snapshot"] = kind
+        try:
+            artifact_dir = save_agent_artifact(
+                identity=self.identity,
+                agent_id=agent_id,
+                env_contract=self.env_contract,
+                policy_state_dict=dict(args.policy_state_dict),
+                target_state_dict=dict(args.target_state_dict) if args.target_state_dict else None,
+                optimizer_state_dict=dict(args.optimizer_state_dict) if args.optimizer_state_dict else None,
+                extra_meta=extra_meta,
+            )
+            self._last_saved_cumulative = ep
+            if self._log:
+                self._log(
+                    f"[LEAGUE][SAVE] kind={kind} agent_id={agent_id} ep={ep} artifact_dir={artifact_dir}"
+                )
+            return agent_id
+        except Exception as exc:
+            if self._log:
+                self._log(
+                    f"[LEAGUE][WARN] league snapshot ({kind}) ep={ep} не сохранён: {exc}"
+                )
+            return None
+
+
 class OpponentRuntimeCache:
     """LRU-кэш agent_id -> потребляемый объект (policy_fn/net). build_fn зовётся один раз на id."""
 
@@ -645,6 +807,7 @@ def default_candidate_provider() -> list[dict]:
             "agent_id": aid,
             "side": str(rec.get("side", "")).upper(),
             "created_at": str(rec.get("created_at", "")),
+            "algo": str(rec.get("algo", "") or ""),
             "contract": contracts.get(aid, {}),
         })
     return rows

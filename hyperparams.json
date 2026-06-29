@@ -378,6 +378,7 @@
         "uniform_floor": 0.1,
         "novelty_bonus": 0.25,
         "min_games_for_pfsp": 3,
-        "ema_alpha": 0.15
+        "ema_alpha": 0.15,
+        "league_snapshot_every": 100
     }
 }

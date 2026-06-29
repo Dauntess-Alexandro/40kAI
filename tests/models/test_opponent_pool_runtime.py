@@ -3,6 +3,8 @@ import random
 
 from core.engine.opponent_pool import OpponentPool, OpponentStatsStore, PoolConfig
 from core.models.opponent_pool_runtime import (
+    LeagueLearnerSnapshotWriter,
+    LeagueSnapshotSaveArgs,
     OpponentPoolStatsWriter,
     OpponentRuntimeCache,
     algo_short_label,
@@ -10,6 +12,7 @@ from core.models.opponent_pool_runtime import (
     build_pool_for_actor,
     build_pool_ui_state,
     choose_opponent_policy_fn,
+    describe_episode_opponent,
 )
 
 
@@ -155,6 +158,23 @@ def test_learner_writer_preserves_actor_zero_in_log_and_live_state(tmp_path):
     }, log_fn=logs.append)
     assert "actor=0" in logs[-1]
     assert writer.run_state["last_opponent"]["actor_idx"] == 0
+    ep = {"actor_idx": 0, "actor_ep": 1}
+    writer.attach_episode_opponent(ep)
+    assert ep["source"] == "local"
+    assert ep["opponent_label"] == "heuristic"
+
+
+def test_episode_opponent_descriptor_contains_algo_and_epoch():
+    fields = describe_episode_opponent(
+        kind="snapshot",
+        agent_id="P2_Necrons_annihilation_v2_final_ep100_20260629_104052",
+        algo_hint="ppo",
+        reason="pfsp",
+    )
+    assert fields["opponent_label"] == "PPO:ep100"
+    assert fields["opponent_algo"] == "ppo"
+    assert fields["opponent_ep"] == 100
+    assert fields["opponent_reason"] == "pfsp"
 
 
 def test_actor_result_payload_updates_only_local_sampler():
@@ -218,3 +238,49 @@ def test_ui_state_exposes_episode_probability_and_run_stats(tmp_path, monkeypatc
     assert row["run_actual_prob"] == 0.75
     assert row["run_wins"] == 1 and row["run_draws"] == 1 and row["run_losses"] == 1
     assert state["heuristic"]["run_actual_prob"] == 0.25
+
+
+def test_league_snapshot_writer_periodic_and_final(monkeypatch, tmp_path):
+    from core.engine.agent_registry import AgentIdentity
+
+    saved: list[tuple[str, int, str]] = []
+
+    def _fake_save(**kwargs):
+        saved.append((str(kwargs["agent_id"]), int(kwargs["extra_meta"]["episode"]), str(kwargs["extra_meta"]["league_snapshot"])))
+        return str(tmp_path / "artifact")
+
+    monkeypatch.setattr(
+        "core.engine.agent_registry.save_agent_artifact",
+        lambda **kwargs: _fake_save(**kwargs),
+    )
+    monkeypatch.setattr(
+        "core.engine.agent_registry.build_agent_id",
+        lambda identity, tag: f"{identity.side}_test_{tag}",
+    )
+
+    identity = AgentIdentity(side="P1", faction="Necrons", ruleset_version="w40k_v1")
+    writer = LeagueLearnerSnapshotWriter(
+        every_episodes=100,
+        identity=identity,
+        env_contract={"contract_hash": "x"},
+        log_fn=None,
+    )
+    args = LeagueSnapshotSaveArgs(policy_state_dict={"w": 1})
+
+    assert writer.maybe_periodic(50, args) is None
+    assert writer.maybe_periodic(100, args) is not None
+    assert writer.maybe_periodic(100, args) is None
+    assert writer.maybe_periodic(190, args) is None
+    assert writer.maybe_final(190, args) is not None
+    assert writer.maybe_final(190, args) is None
+
+    writer2 = LeagueLearnerSnapshotWriter(
+        every_episodes=100,
+        identity=identity,
+        env_contract={"contract_hash": "x"},
+        log_fn=None,
+    )
+    writer2.maybe_periodic(200, args)
+    assert writer2.maybe_final(200, args) is None
+
+    assert [row[1:] for row in saved] == [(100, "periodic"), (190, "final"), (200, "periodic")]

@@ -25,7 +25,10 @@ def test_env_overrides_section():
     assert cfg.pool_size == 12
 
 
-def test_clamps_invalid_values():
+def test_env_league_snapshot_every():
+    env = {"OPPONENT_POOL_LEAGUE_SNAPSHOT_EVERY": "50"}
+    cfg = resolve_pool_config(section=None, getenv=lambda k: env.get(k))
+    assert cfg.league_snapshot_every == 50
     env = {"OPPONENT_POOL_SIZE": "0", "OPPONENT_POOL_P_HEURISTIC": "1.5", "OPPONENT_POOL_UNIFORM_FLOOR": "-0.2"}
     cfg = resolve_pool_config(section=None, getenv=lambda k: env.get(k))
     assert cfg.pool_size == 1          # >=1

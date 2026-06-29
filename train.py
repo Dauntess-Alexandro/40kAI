@@ -116,7 +116,12 @@ from core.models.az_rollout_sink import (
     write_az_dist_train_context,
     write_az_remote_search_cfg,
 )
-from core.models.opponent_pool_runtime import OpponentPoolStatsWriter, build_pool_result_payload
+from core.models.opponent_pool_runtime import (
+    LeagueSnapshotSaveArgs,
+    OpponentPoolStatsWriter,
+    build_pool_result_payload,
+    describe_episode_opponent,
+)
 from core.models.DQN import *
 from core.models.dqn_dist import (
     DQN_DIST_TOPUP_ACTOR_IDX,
@@ -409,6 +414,33 @@ def _make_opponent_pool_stats_writer(*, algo: str, roster_config: dict | None = 
     return writer
 
 
+def _make_league_snapshot_writer(*, learner_identity, env_contract):
+    """Писатель league-снапшотов learner в реестр (только при pool+self_play)."""
+    if not (SELF_PLAY_ENABLED and POOL_CONFIG.enabled):
+        return None
+    from core.models.opponent_pool_runtime import LeagueLearnerSnapshotWriter
+
+    every = max(1, int(getattr(POOL_CONFIG, "league_snapshot_every", 100) or 100))
+    append_agent_log(
+        f"[LEAGUE][INIT] registry snapshots every={every} ep "
+        "(pool+self_play; отдельно от mirror-sync)"
+    )
+    return LeagueLearnerSnapshotWriter(
+        every_episodes=every,
+        identity=learner_identity,
+        env_contract=env_contract,
+        log_fn=append_agent_log,
+    )
+
+
+def _save_learner_registry_final(*, writer, cumulative_episode: int, args, legacy_save_fn) -> None:
+    """Финальный снапшот learner: через league-writer или legacy-путь (GUI без пула)."""
+    if writer is not None:
+        writer.maybe_final(int(cumulative_episode), args)
+        return
+    legacy_save_fn()
+
+
 def _consume_opponent_pool_message(writer, kind: str, payload) -> bool:
     if str(kind) != "pool_result":
         return False
@@ -421,6 +453,40 @@ def _consume_opponent_pool_message(writer, kind: str, payload) -> bool:
         return True
     writer.handle(payload if isinstance(payload, dict) else {}, log_fn=append_agent_log)
     return True
+
+
+def _attach_episode_opponent(writer, payload: dict) -> dict:
+    """Привязать фактический pool-result к ep; для остальных режимов дать честный fallback."""
+    if writer is not None:
+        writer.attach_episode_opponent(payload)
+    if str(payload.get("opponent_label", "") or "").strip():
+        return payload
+    if POOL_CONFIG.enabled and SELF_PLAY_ENABLED:
+        payload.update({
+            "opponent_kind": "unknown",
+            "opponent_label": "pool_unknown",
+            "opponent_agent_id": "",
+        })
+        return payload
+    if SELF_PLAY_ENABLED and OPPONENT_AGENT_ID:
+        payload.update(describe_episode_opponent(kind="snapshot", agent_id=OPPONENT_AGENT_ID))
+        return payload
+    if SELF_PLAY_ENABLED and SELF_PLAY_FIXED_PATH:
+        payload.update({
+            "opponent_kind": "snapshot",
+            "opponent_label": "fixed_checkpoint",
+            "opponent_agent_id": str(SELF_PLAY_FIXED_PATH),
+        })
+        return payload
+    if SELF_PLAY_ENABLED:
+        payload.update({
+            "opponent_kind": "snapshot",
+            "opponent_label": "selfplay_snapshot",
+            "opponent_agent_id": "",
+        })
+        return payload
+    payload.update(describe_episode_opponent(kind="heuristic"))
+    return payload
 
 EVAL_WINDOW_EPISODES = int(os.getenv("EVAL_WINDOW_EPISODES", "100"))
 EVAL_WINDOW_LOG_EVERY = int(os.getenv("EVAL_WINDOW_LOG_EVERY", "50"))
@@ -1317,6 +1383,8 @@ def format_train_ep_log_line(
     total: int | None,
     algo: str = "",
     actor_idx: int | None = None,
+    opponent_label: str = "",
+    opponent_agent_id: str = "",
     result: str = "draw",
     end_reason: str = "unknown",
     vp_diff: int | float = 0,
@@ -1351,6 +1419,10 @@ def format_train_ep_log_line(
         pieces.append(f"algo={algo}")
     if actor_idx is not None and int(actor_idx) >= 0:
         pieces.append(f"actor={int(actor_idx)}")
+    if str(opponent_label or "").strip():
+        pieces.append(f"opponent={str(opponent_label).strip()}")
+    if str(opponent_agent_id or "").strip():
+        pieces.append(f"opp_id={str(opponent_agent_id).strip()}")
     pieces.extend(
         [
             f"result={result or 'draw'}",
@@ -1390,7 +1462,11 @@ def log_train_episode_line(
     """Печатает [TRAIN][EP] в лог-файл и stdout (если включено в TRAIN_LOG_*)."""
     if not TRAIN_LOG_ENABLED:
         return
-    actor_raw = actor_idx if actor_idx is not None else row.get("actor_idx")
+    _attach_episode_opponent(None, row)
+    row_actor = row.get("actor_idx")
+    actor_raw = actor_idx
+    if actor_raw is None or int(actor_raw) < 0:
+        actor_raw = row_actor
     actor_out = int(actor_raw) if actor_raw is not None and int(actor_raw) >= 0 else None
     # Опциональные mission-поля: добавляем в строку только если они есть в row
     # (есть у AZ/GAZ/DQN-рядов; отсутствие → поле просто не печатается).
@@ -1413,6 +1489,8 @@ def log_train_episode_line(
         total=total,
         algo=algo,
         actor_idx=actor_out,
+        opponent_label=str(row.get("opponent_label", "") or ""),
+        opponent_agent_id=str(row.get("opponent_agent_id", "") or ""),
         result=str(row.get("result") or "draw"),
         end_reason=str(row.get("end_reason") or "unknown"),
         vp_diff=int(row.get("vp_diff", 0) or 0),
@@ -3992,6 +4070,7 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
     pool_stats_writer = _make_opponent_pool_stats_writer(algo="dqn", roster_config=roster_config)
+    league_writer = _make_league_snapshot_writer(learner_identity=learner_identity, env_contract=env_contract)
 
     # --- Distributed actors (ПК2): receiver + SMB train-context ---
     rollout_receiver = None
@@ -4393,6 +4472,8 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
 
         if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
+        if kind == "ep" and isinstance(payload, dict):
+            _attach_episode_opponent(pool_stats_writer, payload)
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -4423,6 +4504,21 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
                     algo="dqn",
                     actor_idx=int(payload.get("actor_idx", -1) or -1),
                 )
+                if league_writer is not None:
+                    league_writer.maybe_periodic(
+                        int(resume_episode_base + episodes_finished),
+                        LeagueSnapshotSaveArgs(
+                            policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+                            target_state_dict=normalize_state_dict(target_net.state_dict()),
+                            extra_meta={
+                                "algo": "dqn",
+                                "mode": "actor_learner",
+                                "num_actors": int(num_actors),
+                                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                            },
+                        ),
+                    )
                 # Per-episode стратагемная сводка (DQN)
                 if _trace_ep_enabled(int(episodes_finished)):
                     from core.telemetry.stratagem_trace import episode_stratagem_summary_line
@@ -4824,25 +4920,47 @@ def _main_actor_learner(*, roster_config, totLifeT, clip_reward_enabled, clip_re
             safe_model_tag = model_path.replace("\\", "/")  # type: ignore[name-defined]
         except Exception:
             safe_model_tag = ""
-        final_agent_id = build_agent_id(learner_identity, f"final_ep{resume_episode_base + len(ep_rows)}")
-        artifact_dir = save_agent_artifact(
-            identity=learner_identity,
-            agent_id=final_agent_id,
-            env_contract=env_contract,
-            policy_state_dict=normalize_state_dict(policy_net.state_dict()),
-            target_state_dict=normalize_state_dict(target_net.state_dict()),
-            optimizer_state_dict=optimizer.state_dict(),
-            extra_meta={
-                "algo": "dqn",
-                "episode": int(resume_episode_base + len(ep_rows)),
-                "legacy_model_tag": safe_model_tag,
-                "mode": "actor_learner",
-                "num_actors": int(num_actors),
-                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
-                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
-            },
+        final_cumulative_episode = int(resume_episode_base + len(ep_rows))
+
+        def _dqn_legacy_final_save() -> None:
+            final_agent_id = build_agent_id(learner_identity, f"final_ep{final_cumulative_episode}")
+            artifact_dir = save_agent_artifact(
+                identity=learner_identity,
+                agent_id=final_agent_id,
+                env_contract=env_contract,
+                policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+                target_state_dict=normalize_state_dict(target_net.state_dict()),
+                optimizer_state_dict=optimizer.state_dict(),
+                extra_meta={
+                    "algo": "dqn",
+                    "episode": int(final_cumulative_episode),
+                    "legacy_model_tag": safe_model_tag,
+                    "mode": "actor_learner",
+                    "num_actors": int(num_actors),
+                    "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                    "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                },
+            )
+            append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
+
+        _save_learner_registry_final(
+            writer=league_writer,
+            cumulative_episode=final_cumulative_episode,
+            args=LeagueSnapshotSaveArgs(
+                policy_state_dict=normalize_state_dict(policy_net.state_dict()),
+                target_state_dict=normalize_state_dict(target_net.state_dict()),
+                optimizer_state_dict=optimizer.state_dict(),
+                extra_meta={
+                    "algo": "dqn",
+                    "legacy_model_tag": safe_model_tag,
+                    "mode": "actor_learner",
+                    "num_actors": int(num_actors),
+                    "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                    "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                },
+            ),
+            legacy_save_fn=_dqn_legacy_final_save,
         )
-        append_agent_log(f"[LEAGUE][SAVE] agent_id={final_agent_id} artifact_dir={artifact_dir}")
     except Exception as exc:
         warn = f"[LEAGUE][WARN] DQN agent snapshot не сохранён: {exc}"
         append_agent_log(warn)
@@ -5053,6 +5171,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=queue_max)
     pool_stats_writer = _make_opponent_pool_stats_writer(algo="ppo", roster_config=roster_config)
+    league_writer = _make_league_snapshot_writer(learner_identity=learner_identity, env_contract=env_contract)
 
     procs = []
     for a_idx in range(num_actors):
@@ -5132,6 +5251,8 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
 
         if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
+        if kind == "ep" and isinstance(payload, dict):
+            _attach_episode_opponent(pool_stats_writer, payload)
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -5154,6 +5275,9 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                 ep_row = {k: payload.get(k) for k in (
                     "episode", "ep_reward", "ep_len", "turn", "model_vp", "player_vp",
                     "vp_diff", "result", "end_reason", "end_code",
+                    "actor_idx", "actor_ep", "source",
+                    "opponent_kind", "opponent_label", "opponent_agent_id",
+                    "opponent_algo", "opponent_ep", "opponent_reason",
                 )}
                 append_episode_diagnostics(
                     run_id=run_id,
@@ -5162,7 +5286,7 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                         "algo": "ppo",
                         "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
                         "opponent_source": str(opponent_source_label),
-                        "opponent_agent_id": str(opponent_agent_id or ""),
+                        "configured_opponent_agent_id": str(opponent_agent_id or ""),
                         "snapshot_update_every": int(snapshot_update_every),
                         "policy_loss": float(last_update_metrics.get("policy_loss", 0.0)),
                         "value_loss": float(last_update_metrics.get("value_loss", 0.0)),
@@ -5175,12 +5299,27 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
                     metrics_dir=METRICS_DIR,
                 )
                 log_train_episode_line(
-                    ep_row,
+                    payload,
                     ep=int(episodes_finished),
                     total=int(totLifeT),
                     algo="ppo",
                     actor_idx=int(payload.get("actor_idx", -1) or -1),
                 )
+                if league_writer is not None:
+                    league_writer.maybe_periodic(
+                        int(episode_base + episodes_finished),
+                        LeagueSnapshotSaveArgs(
+                            policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+                            extra_meta={
+                                "algo": "ppo",
+                                "arch": _ppo_arch_dict(actor_critic),
+                                "mode": "actor_learner",
+                                "num_actors": int(num_actors),
+                                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                            },
+                        ),
+                    )
                 # Per-episode стратагемная сводка (PPO)
                 if _trace_ep_enabled(int(episodes_finished)):
                     from core.telemetry.stratagem_trace import episode_stratagem_summary_line
@@ -5478,25 +5617,45 @@ def _main_actor_learner_ppo(*, roster_config, totLifeT, clip_reward_enabled, cli
     # Важно: сохраняем даже при SELF_PLAY_ENABLED=0 (PPO vs эвристика), иначе агент не появляется в GUI.
     try:
         final_cumulative_episode = episode_base + int(episodes_finished or len(ep_rows))
-        final_agent_id = build_agent_id(learner_identity, f"final_ep{final_cumulative_episode}")
-        artifact_dir = save_agent_artifact(
-            identity=learner_identity,
-            agent_id=final_agent_id,
-            env_contract=env_contract,
-            policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
-            target_state_dict=None,
-            optimizer_state_dict=optimizer.state_dict(),
-            extra_meta={
-                "algo": "ppo",
-                "arch": _ppo_arch_dict(actor_critic),
-                "episode": int(final_cumulative_episode),
-                "mode": "actor_learner",
-                "num_actors": int(num_actors),
-                "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
-                "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
-            },
+
+        def _ppo_legacy_final_save() -> None:
+            final_agent_id = build_agent_id(learner_identity, f"final_ep{final_cumulative_episode}")
+            artifact_dir = save_agent_artifact(
+                identity=learner_identity,
+                agent_id=final_agent_id,
+                env_contract=env_contract,
+                policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+                target_state_dict=None,
+                optimizer_state_dict=optimizer.state_dict(),
+                extra_meta={
+                    "algo": "ppo",
+                    "arch": _ppo_arch_dict(actor_critic),
+                    "episode": int(final_cumulative_episode),
+                    "mode": "actor_learner",
+                    "num_actors": int(num_actors),
+                    "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                    "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                },
+            )
+            append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={final_agent_id} artifact_dir={artifact_dir}")
+
+        _save_learner_registry_final(
+            writer=league_writer,
+            cumulative_episode=final_cumulative_episode,
+            args=LeagueSnapshotSaveArgs(
+                policy_state_dict=normalize_state_dict(actor_critic.state_dict()),
+                optimizer_state_dict=optimizer.state_dict(),
+                extra_meta={
+                    "algo": "ppo",
+                    "arch": _ppo_arch_dict(actor_critic),
+                    "mode": "actor_learner",
+                    "num_actors": int(num_actors),
+                    "self_play_enabled": int(1 if SELF_PLAY_ENABLED else 0),
+                    "opponent_agent_id": str(OPPONENT_AGENT_ID or ""),
+                },
+            ),
+            legacy_save_fn=_ppo_legacy_final_save,
         )
-        append_agent_log(f"[LEAGUE][SAVE][PPO] agent_id={final_agent_id} artifact_dir={artifact_dir}")
     except Exception as exc:
         append_agent_log(f"[PPO][ACTOR_LEARNER][WARN] PPO final agent snapshot failed: {exc}")
 
@@ -7285,6 +7444,7 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(AZ_ACTOR_QUEUE_MAX))
     pool_stats_writer = _make_opponent_pool_stats_writer(algo=TRAIN_ALGO, roster_config=roster_config)
+    league_writer = _make_league_snapshot_writer(learner_identity=learner_identity, env_contract=env_contract)
     procs = []
     inf_proc = None  # inference server process (variant B only)
 
@@ -7726,6 +7886,8 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
 
         if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
+        if kind == "ep" and isinstance(payload, dict):
+            _attach_episode_opponent(pool_stats_writer, payload)
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -7765,6 +7927,28 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
                 algo="gumbel_az" if is_gumbel_az_algo(TRAIN_ALGO) else "az",
                 actor_idx=int(payload.get("actor_idx", -1) or -1),
             )
+            if league_writer is not None:
+                league_writer.maybe_periodic(
+                    int(resume_episode_base + episodes_finished),
+                    LeagueSnapshotSaveArgs(
+                        policy_state_dict=normalize_state_dict(az_net.state_dict()),
+                        target_state_dict={},
+                        extra_meta={
+                            "algo": TRAIN_ALGO,
+                            "arch": dict(az_kw),
+                            "mcts_mode": AZ_MCTS_MODE,
+                            "mode": "actor_learner",
+                            "num_actors": int(AZ_NUM_ACTORS),
+                            "policy_version": int(policy_version),
+                            "outcome_only": bool(AZ_OUTCOME_ONLY),
+                            "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+                            "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+                            "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+                            "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
+                            "reward_shaping_weight": float(AZ_REWARD_SHAPING_WEIGHT),
+                        },
+                    ),
+                )
 
             if (
                 ACTOR_DET_EVAL_ENABLED
@@ -7997,30 +8181,58 @@ def _main_actor_learner_alphazero(*, roster_config, totLifeT, clip_reward_enable
             pass
 
     final_episode = int(resume_episode_base + episodes_finished)
-    final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
-    save_agent_artifact(
-        identity=learner_identity,
-        agent_id=final_agent_id,
-        env_contract=env_contract,
-        policy_state_dict=normalize_state_dict(az_net.state_dict()),
-        target_state_dict={},
-        optimizer_state_dict=optimizer.state_dict(),
-        extra_meta={
-            "algo": TRAIN_ALGO,
-            "arch": dict(az_kw),
-            "mcts_mode": AZ_MCTS_MODE,
-            "episode": int(final_episode),
-            "source_model_path": str(last_checkpoint or ""),
-            "mode": "actor_learner",
-            "num_actors": int(AZ_NUM_ACTORS),
-            "policy_version": int(policy_version),
-            "outcome_only": bool(AZ_OUTCOME_ONLY),
-            "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
-            "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
-            "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
-            "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
-            "reward_shaping_weight": float(AZ_REWARD_SHAPING_WEIGHT),
-        },
+
+    def _az_legacy_final_save() -> None:
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
+        save_agent_artifact(
+            identity=learner_identity,
+            agent_id=final_agent_id,
+            env_contract=env_contract,
+            policy_state_dict=normalize_state_dict(az_net.state_dict()),
+            target_state_dict={},
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": TRAIN_ALGO,
+                "arch": dict(az_kw),
+                "mcts_mode": AZ_MCTS_MODE,
+                "episode": int(final_episode),
+                "source_model_path": str(last_checkpoint or ""),
+                "mode": "actor_learner",
+                "num_actors": int(AZ_NUM_ACTORS),
+                "policy_version": int(policy_version),
+                "outcome_only": bool(AZ_OUTCOME_ONLY),
+                "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+                "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
+                "reward_shaping_weight": float(AZ_REWARD_SHAPING_WEIGHT),
+            },
+        )
+
+    _save_learner_registry_final(
+        writer=league_writer,
+        cumulative_episode=final_episode,
+        args=LeagueSnapshotSaveArgs(
+            policy_state_dict=normalize_state_dict(az_net.state_dict()),
+            target_state_dict={},
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": TRAIN_ALGO,
+                "arch": dict(az_kw),
+                "mcts_mode": AZ_MCTS_MODE,
+                "source_model_path": str(last_checkpoint or ""),
+                "mode": "actor_learner",
+                "num_actors": int(AZ_NUM_ACTORS),
+                "policy_version": int(policy_version),
+                "outcome_only": bool(AZ_OUTCOME_ONLY),
+                "outcome_value_win": float(AZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(AZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(AZ_OUTCOME_VALUE_DRAW),
+                "mission_bootstrap_coef": float(AZ_MISSION_BOOTSTRAP_COEF),
+                "reward_shaping_weight": float(AZ_REWARD_SHAPING_WEIGHT),
+            },
+        ),
+        legacy_save_fn=_az_legacy_final_save,
     )
     az_done_msg = (
         "[AZ][ACTOR_LEARNER] done "
@@ -9186,6 +9398,7 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(GMZ_ACTOR_QUEUE_MAX))
     pool_stats_writer = _make_opponent_pool_stats_writer(algo="gumbel_muzero", roster_config=roster_config)
+    league_writer = _make_league_snapshot_writer(learner_identity=learner_identity, env_contract=env_contract)
     procs: list = []
     inf_proc = None
     request_q = None
@@ -9360,6 +9573,8 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
             continue
         if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
+        if kind == "ep" and isinstance(payload, dict):
+            _attach_episode_opponent(pool_stats_writer, payload)
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -9395,6 +9610,25 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
                 algo="gmz",
                 actor_idx=int(payload.get("actor_idx", -1) or -1),
             )
+            if league_writer is not None:
+                league_writer.maybe_periodic(
+                    int(resume_episode_base + episodes_finished),
+                    LeagueSnapshotSaveArgs(
+                        policy_state_dict=normalize_state_dict(gmz_net.state_dict()),
+                        target_state_dict={},
+                        extra_meta={
+                            "algo": "gumbel_muzero",
+                            "arch": gumbel_muzero_kwargs_from_env(),
+                            "mode": "actor_learner",
+                            "num_actors": int(GMZ_NUM_ACTORS),
+                            "policy_version": int(policy_version),
+                            "outcome_only": bool(GMZ_OUTCOME_ONLY),
+                            "outcome_value_win": float(GMZ_OUTCOME_VALUE_WIN),
+                            "outcome_value_loss": float(GMZ_OUTCOME_VALUE_LOSS),
+                            "outcome_value_draw": float(GMZ_OUTCOME_VALUE_DRAW),
+                        },
+                    ),
+                )
             _maybe_train_progress_heartbeat(force=True)
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
                 last_checkpoint = _save_checkpoint(resume_episode_base + episodes_finished)
@@ -9582,27 +9816,52 @@ def _main_actor_learner_gumbel_muzero(*, roster_config, totLifeT, clip_reward_en
         _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
 
     final_episode = int(resume_episode_base + episodes_finished)
-    final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
-    save_agent_artifact(
-        identity=learner_identity,
-        agent_id=final_agent_id,
-        env_contract=env_contract,
-        policy_state_dict=normalize_state_dict(gmz_net.state_dict()),
-        target_state_dict={},
-        optimizer_state_dict=optimizer.state_dict(),
-        extra_meta={
-            "algo": "gumbel_muzero",
-            "arch": gumbel_muzero_kwargs_from_env(),
-            "episode": int(final_episode),
-            "source_model_path": str(last_checkpoint or ""),
-            "mode": "actor_learner",
-            "num_actors": int(GMZ_NUM_ACTORS),
-            "policy_version": int(policy_version),
-            "outcome_only": bool(GMZ_OUTCOME_ONLY),
-            "outcome_value_win": float(GMZ_OUTCOME_VALUE_WIN),
-            "outcome_value_loss": float(GMZ_OUTCOME_VALUE_LOSS),
-            "outcome_value_draw": float(GMZ_OUTCOME_VALUE_DRAW),
-        },
+
+    def _gmz_legacy_final_save() -> None:
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
+        save_agent_artifact(
+            identity=learner_identity,
+            agent_id=final_agent_id,
+            env_contract=env_contract,
+            policy_state_dict=normalize_state_dict(gmz_net.state_dict()),
+            target_state_dict={},
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": "gumbel_muzero",
+                "arch": gumbel_muzero_kwargs_from_env(),
+                "episode": int(final_episode),
+                "source_model_path": str(last_checkpoint or ""),
+                "mode": "actor_learner",
+                "num_actors": int(GMZ_NUM_ACTORS),
+                "policy_version": int(policy_version),
+                "outcome_only": bool(GMZ_OUTCOME_ONLY),
+                "outcome_value_win": float(GMZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(GMZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(GMZ_OUTCOME_VALUE_DRAW),
+            },
+        )
+
+    _save_learner_registry_final(
+        writer=league_writer,
+        cumulative_episode=final_episode,
+        args=LeagueSnapshotSaveArgs(
+            policy_state_dict=normalize_state_dict(gmz_net.state_dict()),
+            target_state_dict={},
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": "gumbel_muzero",
+                "arch": gumbel_muzero_kwargs_from_env(),
+                "source_model_path": str(last_checkpoint or ""),
+                "mode": "actor_learner",
+                "num_actors": int(GMZ_NUM_ACTORS),
+                "policy_version": int(policy_version),
+                "outcome_only": bool(GMZ_OUTCOME_ONLY),
+                "outcome_value_win": float(GMZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(GMZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(GMZ_OUTCOME_VALUE_DRAW),
+            },
+        ),
+        legacy_save_fn=_gmz_legacy_final_save,
     )
     append_agent_log(
         "[GMZ][ACTOR_LEARNER] done "
@@ -9963,6 +10222,7 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
     ctx = mp.get_context("spawn")
     data_q: mp.Queue = ctx.Queue(maxsize=int(SMZ_ACTOR_QUEUE_MAX))
     pool_stats_writer = _make_opponent_pool_stats_writer(algo="sampled_muzero", roster_config=roster_config)
+    league_writer = _make_league_snapshot_writer(learner_identity=learner_identity, env_contract=env_contract)
     procs: list = []
     inf_proc = None
     request_q = None
@@ -10135,6 +10395,8 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
             continue
         if _consume_opponent_pool_message(pool_stats_writer, kind, payload):
             continue
+        if kind == "ep" and isinstance(payload, dict):
+            _attach_episode_opponent(pool_stats_writer, payload)
         if kind == "error":
             raise RuntimeError(payload)
         if kind == "done":
@@ -10170,6 +10432,25 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
                 algo="smz",
                 actor_idx=int(payload.get("actor_idx", -1) or -1),
             )
+            if league_writer is not None:
+                league_writer.maybe_periodic(
+                    int(resume_episode_base + episodes_finished),
+                    LeagueSnapshotSaveArgs(
+                        policy_state_dict=normalize_state_dict(smz_net.state_dict()),
+                        target_state_dict={},
+                        extra_meta={
+                            "algo": "sampled_muzero",
+                            "arch": sampled_muzero_kwargs_from_env(),
+                            "mode": "actor_learner",
+                            "num_actors": int(SMZ_NUM_ACTORS),
+                            "policy_version": int(policy_version),
+                            "outcome_only": bool(SMZ_OUTCOME_ONLY),
+                            "outcome_value_win": float(SMZ_OUTCOME_VALUE_WIN),
+                            "outcome_value_loss": float(SMZ_OUTCOME_VALUE_LOSS),
+                            "outcome_value_draw": float(SMZ_OUTCOME_VALUE_DRAW),
+                        },
+                    ),
+                )
             _maybe_train_progress_heartbeat(force=True)
             if SAVE_EVERY > 0 and (episodes_finished % max(1, SAVE_EVERY) == 0):
                 last_checkpoint = _save_checkpoint(resume_episode_base + episodes_finished)
@@ -10357,27 +10638,52 @@ def _main_actor_learner_sampled_muzero(*, roster_config, totLifeT, clip_reward_e
         _log_train_summary(ep_rows, time.perf_counter() - train_t0_summary)
 
     final_episode = int(resume_episode_base + episodes_finished)
-    final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
-    save_agent_artifact(
-        identity=learner_identity,
-        agent_id=final_agent_id,
-        env_contract=env_contract,
-        policy_state_dict=normalize_state_dict(smz_net.state_dict()),
-        target_state_dict={},
-        optimizer_state_dict=optimizer.state_dict(),
-        extra_meta={
-            "algo": "sampled_muzero",
-            "arch": sampled_muzero_kwargs_from_env(),
-            "episode": int(final_episode),
-            "source_model_path": str(last_checkpoint or ""),
-            "mode": "actor_learner",
-            "num_actors": int(SMZ_NUM_ACTORS),
-            "policy_version": int(policy_version),
-            "outcome_only": bool(SMZ_OUTCOME_ONLY),
-            "outcome_value_win": float(SMZ_OUTCOME_VALUE_WIN),
-            "outcome_value_loss": float(SMZ_OUTCOME_VALUE_LOSS),
-            "outcome_value_draw": float(SMZ_OUTCOME_VALUE_DRAW),
-        },
+
+    def _smz_legacy_final_save() -> None:
+        final_agent_id = build_agent_id(learner_identity, f"final_ep{final_episode}")
+        save_agent_artifact(
+            identity=learner_identity,
+            agent_id=final_agent_id,
+            env_contract=env_contract,
+            policy_state_dict=normalize_state_dict(smz_net.state_dict()),
+            target_state_dict={},
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": "sampled_muzero",
+                "arch": sampled_muzero_kwargs_from_env(),
+                "episode": int(final_episode),
+                "source_model_path": str(last_checkpoint or ""),
+                "mode": "actor_learner",
+                "num_actors": int(SMZ_NUM_ACTORS),
+                "policy_version": int(policy_version),
+                "outcome_only": bool(SMZ_OUTCOME_ONLY),
+                "outcome_value_win": float(SMZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(SMZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(SMZ_OUTCOME_VALUE_DRAW),
+            },
+        )
+
+    _save_learner_registry_final(
+        writer=league_writer,
+        cumulative_episode=final_episode,
+        args=LeagueSnapshotSaveArgs(
+            policy_state_dict=normalize_state_dict(smz_net.state_dict()),
+            target_state_dict={},
+            optimizer_state_dict=optimizer.state_dict(),
+            extra_meta={
+                "algo": "sampled_muzero",
+                "arch": sampled_muzero_kwargs_from_env(),
+                "source_model_path": str(last_checkpoint or ""),
+                "mode": "actor_learner",
+                "num_actors": int(SMZ_NUM_ACTORS),
+                "policy_version": int(policy_version),
+                "outcome_only": bool(SMZ_OUTCOME_ONLY),
+                "outcome_value_win": float(SMZ_OUTCOME_VALUE_WIN),
+                "outcome_value_loss": float(SMZ_OUTCOME_VALUE_LOSS),
+                "outcome_value_draw": float(SMZ_OUTCOME_VALUE_DRAW),
+            },
+        ),
+        legacy_save_fn=_smz_legacy_final_save,
     )
     append_agent_log(
         "[SMZ][ACTOR_LEARNER] done "

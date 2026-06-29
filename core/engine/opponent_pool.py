@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import random
+import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,7 +12,64 @@ from typing import Any
 
 from core.engine.agent_registry import compatible_contracts
 
-__all__ = ["OpponentChoice", "OpponentPool", "OpponentStatsStore", "PoolConfig", "resolve_pool_config"]
+__all__ = [
+    "OpponentChoice",
+    "OpponentPool",
+    "OpponentStatsStore",
+    "PoolConfig",
+    "atomic_write_json",
+    "resolve_pool_config",
+]
+
+
+def atomic_write_json(path: str, payload: dict[str, Any]) -> None:
+    """Атомарная запись JSON; на Windows повторяет replace при WinError 5 (файл занят GUI/AV)."""
+    target = str(path or "").strip()
+    if not target or target == ":memory:":
+        return
+    parent = os.path.dirname(target) or "."
+    os.makedirs(parent, exist_ok=True)
+
+    temp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=parent,
+            delete=False,
+            prefix=f"{os.path.basename(target)}.",
+            suffix=".tmp",
+        ) as handle:
+            temp_path = handle.name
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
+
+        last_err: OSError | None = None
+        for attempt in range(8):
+            try:
+                os.replace(temp_path, target)
+                temp_path = None
+                return
+            except OSError as exc:
+                last_err = exc
+                winerr = getattr(exc, "winerror", None)
+                if attempt < 7 and (isinstance(exc, PermissionError) or winerr == 5):
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                raise
+        if last_err is not None:
+            raise last_err
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
 
 @dataclass(frozen=True)
@@ -25,6 +84,7 @@ class PoolConfig:
     min_games_for_pfsp: int = 3
     ema_alpha: float = 0.15
     seed: int | None = None
+    league_snapshot_every: int = 100
 
 
 def _as_bool(v: Any, default: bool) -> bool:
@@ -79,6 +139,7 @@ def resolve_pool_config(*, section: dict | None, getenv: Callable[[str], str | N
         min_games_for_pfsp=max(0, _as_int(pick("OPPONENT_POOL_MIN_GAMES", "min_games_for_pfsp"), d.min_games_for_pfsp)),
         ema_alpha=_clamp01(_as_float(pick("OPPONENT_POOL_EMA_ALPHA", "ema_alpha"), d.ema_alpha)) or d.ema_alpha,
         seed=_as_int(seed_raw, 0) if seed_raw is not None else None,
+        league_snapshot_every=max(1, _as_int(pick("OPPONENT_POOL_LEAGUE_SNAPSHOT_EVERY", "league_snapshot_every"), d.league_snapshot_every)),
     )
 
 
@@ -158,12 +219,10 @@ class OpponentStatsStore:
     def save(self) -> None:
         if self._path == ":memory:":
             return
-        os.makedirs(os.path.dirname(self._path), exist_ok=True)
-        tmp = self._path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as handle:
-            json.dump({"schema_version": 2, "opponents": self._data}, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-        os.replace(tmp, self._path)  # атомарная запись (SMB-safe, ср. state_export.py)
+        atomic_write_json(
+            self._path,
+            {"schema_version": 2, "opponents": self._data},
+        )
 
     @classmethod
     def load(cls, path: str, *, ema_alpha: float = 0.15) -> OpponentStatsStore:
@@ -223,6 +282,7 @@ class OpponentPool:
         self._provider = candidate_provider
         self._log = log_fn
         self._candidates: list[str] = []
+        self._candidate_meta: dict[str, dict[str, Any]] = {}
         self._refresh_diagnostics: dict[str, int | str] = {
             "registry_total": 0,
             "opponent_side": self._opponent_side(),
@@ -237,15 +297,20 @@ class OpponentPool:
 
     def set_candidates(self, ids: list[str]) -> None:
         self._candidates = [str(a) for a in ids if str(a or "").strip()]
+        self._candidate_meta = {aid: self._candidate_meta.get(aid, {}) for aid in self._candidates}
 
     def drop_candidate(self, agent_id: str) -> None:
         """Убрать кандидата из пула (напр. битый/несовместимый снапшот не смог построиться)."""
         aid = str(agent_id or "").strip()
         if aid:
             self._candidates = [c for c in self._candidates if c != aid]
+            self._candidate_meta.pop(aid, None)
 
     def current_candidates(self) -> list[str]:
         return list(self._candidates)
+
+    def candidate_metadata(self, agent_id: str) -> dict[str, Any]:
+        return dict(self._candidate_meta.get(str(agent_id or "").strip(), {}))
 
     def _weights(self, ids: list[str]) -> tuple[list[float], list[str]]:
         cfg = self.config
@@ -301,6 +366,7 @@ class OpponentPool:
         # сортировка: новые первыми (по created_at, затем agent_id)
         rows = sorted(rows, key=lambda r: (str(r.get("created_at", "")), str(r.get("agent_id", ""))), reverse=True)
         out: list[str] = []
+        selected_meta: dict[str, dict[str, Any]] = {}
         seen: set[str] = set()
         filtered_side = 0
         filtered_contract = 0
@@ -327,6 +393,7 @@ class OpponentPool:
             contract_compatible += 1
             if len(out) < self.config.pool_size:
                 out.append(aid)
+                selected_meta[aid] = dict(r)
             else:
                 limited_out += 1
         self._refresh_diagnostics = {
@@ -347,6 +414,7 @@ class OpponentPool:
                 f"filtered_contract={filtered_contract} duplicate={filtered_duplicate} limited={limited_out}"
             )
         self._candidates = out
+        self._candidate_meta = selected_meta
         return list(out)
 
     def refresh_diagnostics(self) -> dict[str, int | str]:
