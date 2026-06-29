@@ -3,6 +3,7 @@ import random
 from core.engine.opponent_pool import OpponentPool, OpponentStatsStore, PoolConfig
 from core.models.opponent_pool_runtime import (
     OpponentRuntimeCache,
+    algo_short_label,
     build_pool_for_actor,
     choose_opponent_policy_fn,
 )
@@ -17,6 +18,12 @@ def _pool_with(candidates, *, p_heuristic=0.0, seed=0):
     )
     pool.set_candidates(candidates)
     return pool
+
+
+def test_algo_short_label_mapping():
+    assert algo_short_label("ppo") == "PPO"
+    assert algo_short_label("gumbel_az") == "GAZ"
+    assert algo_short_label("unknown_algo") == "UNKN"
 
 
 def test_cache_builds_once_per_id():

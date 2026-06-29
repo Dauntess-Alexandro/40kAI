@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>40kAI — макеты вкладки «Лига»</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #161f31;
+      --border: #2f3d58;
+      --text: #d7dde7;
+      --muted: #98a4b8;
+      --accent: #b88a26;
+      --p1: #4a9eff;
+      --p2: #e05a6a;
+      --ok: #4caf6e;
+      --warn: #b88a26;
+      --bad: #cf3f3f;
+      --heur: #9b7bd4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+      background: #121820;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 { margin: 0 0 6px; font-size: 1.35rem; }
+    header p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    .tab {
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    }
+    .tab:hover { border-color: var(--accent); }
+    .tab.active {
+      border-color: var(--accent);
+      background: #1e2734;
+      box-shadow: inset 0 0 0 1px #b88a2644;
+    }
+    main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .variant { display: none; }
+    .variant.active { display: block; }
+    .desc {
+      background: #1a2333;
+      border: 1px solid var(--border);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      font-size: 0.88rem;
+      color: var(--muted);
+    }
+    .desc strong { color: var(--accent); }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 16px;
+      margin-bottom: 16px;
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      border: 1px solid var(--border);
+      background: #121820;
+    }
+    .chip.ok { border-color: var(--ok); color: var(--ok); }
+    .chip.warn { border-color: var(--warn); color: var(--warn); }
+    .chip.p1 { border-color: var(--p1); color: var(--p1); }
+    .chip.p2 { border-color: var(--p2); color: var(--p2); }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .kpi {
+      background: #121820;
+      border: 1px solid var(--border);
+      padding: 12px;
+    }
+    .kpi .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .kpi .value { font-size: 1.35rem; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .kpi .sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .kpi.good .value { color: var(--ok); }
+    .kpi.bad .value { color: var(--bad); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      font-variant-numeric: tabular-nums;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid #243044;
+      white-space: nowrap;
+    }
+    th { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    td.id { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-family: Consolas, monospace; font-size: 0.78rem; }
+    tr:hover td { background: #1a2333; }
+    .bar-wrap { width: 72px; height: 6px; background: #243044; display: inline-block; vertical-align: middle; margin-right: 6px; }
+    .bar { height: 100%; background: var(--accent); }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      font-size: 0.68rem;
+      border: 1px solid;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge.pfsp { border-color: var(--accent); color: var(--accent); }
+    .badge.novelty { border-color: var(--p1); color: var(--p1); }
+    .badge.anchor { border-color: var(--heur); color: var(--heur); }
+    .badge.in-pool { border-color: var(--ok); color: var(--ok); }
+    .badge.history { border-color: var(--muted); color: var(--muted); }
+    .subtabs { display: flex; gap: 0; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .subtab {
+      padding: 8px 14px;
+      cursor: pointer;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      font-size: 0.85rem;
+    }
+    .subtab.active { color: var(--text); border-bottom-color: var(--accent); }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+    .chart {
+      display: flex;
+      height: 28px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .chart span { display: block; height: 100%; }
+    .chart .h { background: var(--heur); }
+    .chart .s { background: var(--p1); }
+    .alert {
+      border-left: 3px solid var(--warn);
+      background: #1a2333;
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .pick-banner {
+      margin-top: 24px;
+      padding: 16px;
+      border: 1px dashed var(--accent);
+      background: #1a2333;
+      text-align: center;
+    }
+    .pick-banner button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      background: var(--accent);
+      border: none;
+      color: #111;
+      font-weight: 700;
+      cursor: pointer;
+      clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+    }
+    #choice { color: var(--ok); font-weight: 700; margin-top: 8px; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Макеты: вкладка «Лига / Opponent Pool»</h1>
+    <p>Данные — из вашего P2-прогона (run 7198926). Выбери вариант → кнопка «Выбираю этот».</p>
+    <div class="tabs">
+      <button class="tab active" data-v="a">A · KPI + таблица</button>
+      <button class="tab" data-v="b">B · Две зоны</button>
+      <button class="tab" data-v="c">C · Табы</button>
+      <button class="tab" data-v="d">D · Дашборд + график</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- VARIANT A -->
+    <section class="variant active" id="v-a">
+      <div class="desc"><strong>A — KPI + одна таблица.</strong> Минимум переделки: фиксированные колонки, контекст learner, KPI train, таблица только <em>активных</em> 8 кандидатов + строка эвристики. Prob/reason из PFSP.</div>
+
+      <div class="panel">
+        <div class="row" style="margin-bottom:14px">
+          <span class="chip p2">Learner P2 · Necrons</span>
+          <span class="chip p1">Пул: P1 · 8/8</span>
+          <span class="chip ok">PFSP · p_heur 0.30</span>
+          <span class="chip">annihilation_v2</span>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi good"><div class="label">Draw train</div><div class="value">73%</div><div class="sub">Δ −9 п.п. vs P1-only</div></div>
+          <div class="kpi"><div class="label">Win train</div><div class="value">16%</div><div class="sub">было 9%</div></div>
+          <div class="kpi bad"><div class="label">turn_limit</div><div class="value">98%</div><div class="sub">annihilation</div></div>
+          <div class="kpi"><div class="label">Факт. эвристика</div><div class="value">31%</div><div class="sub">цель 30%</div></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Сторона</th><th>Ep</th><th>Games</th><th>WR learner</th><th>Draw</th><th>P(выбора)</th><th>Reason</th><th>Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>P1</td><td>950</td><td>6</td><td>0.44</td><td>83%</td><td><span class="bar-wrap"><span class="bar" style="width:75%"></span></span>0.15</td><td><span class="badge pfsp">pfsp</span></td><td><span class="badge in-pool">в пуле</span></td></tr>
+            <tr><td>P1</td><td>900</td><td>8</td><td>0.53</td><td>63%</td><td><span class="bar-wrap"><span class="bar" style="width:50%"></span></span>0.10</td><td><span class="badge pfsp">pfsp</span></td><td><span class="badge in-pool">в пуле</span></td></tr>
+            <tr><td>P1</td><td>1000</td><td>11</td><td>0.44</td><td>55%</td><td><span class="bar-wrap"><span class="bar" style="width:70%"></span></span>0.14</td><td><span class="badge pfsp">pfsp</span></td><td><span class="badge in-pool">в пуле</span></td></tr>
+            <tr><td colspan="8" style="color:var(--muted);font-size:0.78rem">… ещё 5 кандидатов в пуле</td></tr>
+            <tr style="background:#1a2333"><td>—</td><td>HEUR</td><td>~302</td><td>0.11</td><td>85%</td><td>0.30</td><td><span class="badge anchor">anchor</span></td><td>эвристика</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- VARIANT B -->
+    <section class="variant" id="v-b">
+      <div class="desc"><strong>B — Две зоны.</strong> Слева «кто может выпасть» (registry + PFSP prob). Справа «история stats» (все записи JSON). Чётко разделяет планировщик и память.</div>
+      <div class="split">
+        <div class="panel">
+          <h2>Активный пул (8 слотов)</h2>
+          <div class="alert">Обновлено из реестра · learner P2 → ищем P1 · контракт annihilation_v2</div>
+          <table>
+            <thead><tr><th>Ep</th><th>P(sel)</th><th>Reason</th><th>Games</th><th>WR</th></tr></thead>
+            <tbody>
+              <tr><td>750</td><td>0.13</td><td><span class="badge novelty">novelty</span></td><td>8</td><td>0.47</td></tr>
+              <tr><td>800</td><td>0.12</td><td><span class="badge pfsp">pfsp</span></td><td>5</td><td>0.50</td></tr>
+              <tr><td>850</td><td>0.11</td><td><span class="badge pfsp">pfsp</span></td><td>6</td><td>0.44</td></tr>
+              <tr><td>900</td><td>0.10</td><td><span class="badge pfsp">pfsp</span></td><td>8</td><td>0.53</td></tr>
+              <tr><td>950</td><td>0.15</td><td><span class="badge pfsp">pfsp</span></td><td>6</td><td>0.45</td></tr>
+              <tr><td>1000</td><td>0.14</td><td><span class="badge pfsp">pfsp</span></td><td>11</td><td>0.44</td></tr>
+              <tr><td>final</td><td>0.12</td><td><span class="badge pfsp">pfsp</span></td><td>11</td><td>0.54</td></tr>
+              <tr><td>700</td><td>0.13</td><td><span class="badge pfsp">pfsp</span></td><td>10</td><td>0.48</td></tr>
+            </tbody>
+          </table>
+          <div style="margin-top:12px;padding:8px;border:1px dashed var(--heur);font-size:0.82rem">
+            + эвристика-анкер · 30% эпизодов · не в stats-таблице слева
+          </div>
+        </div>
+        <div class="panel">
+          <h2>История stats (JSON)</h2>
+          <div class="alert">16 записей · P1+P2 накоплено · multi-actor может занижать games</div>
+          <table>
+            <thead><tr><th>Agent</th><th>G</th><th>WR</th><th>Draw</th></tr></thead>
+            <tbody>
+              <tr><td class="id">P1…ep1000</td><td>11</td><td>0.44</td><td>55%</td></tr>
+              <tr><td class="id">P1…final</td><td>11</td><td>0.54</td><td>64%</td></tr>
+              <tr><td class="id">P2…ep650</td><td>4</td><td>0.50</td><td>—</td></tr>
+              <tr><td colspan="4" style="color:var(--muted)">… старые записи других прогонов</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- VARIANT C -->
+    <section class="variant" id="v-c">
+      <div class="desc"><strong>C — Табы внутри live-блока.</strong> «Кандидаты» / «История» / «Последний train» — не перегружает одним экраном. Настройки сверху без дублирования summary.</div>
+      <div class="panel">
+        <div class="row" style="margin-bottom:12px">
+          <span class="chip p2">P2 learner</span>
+          <span class="chip ok">Пул вкл · 8/8</span>
+          <span class="chip warn">draw 73%</span>
+        </div>
+        <div class="subtabs">
+          <div class="subtab active">Кандидаты</div>
+          <div class="subtab">История stats</div>
+          <div class="subtab">Train live</div>
+        </div>
+        <table>
+          <thead><tr><th>ID (кратко)</th><th>Games</th><th>WR</th><th>Draw%</th><th>VP/ep</th><th>P</th><th>Reason</th></tr></thead>
+          <tbody>
+            <tr><td class="id">P1 Necrons ep950</td><td>6</td><td>0.45</td><td>83%</td><td>−0.17</td><td>0.15</td><td><span class="badge pfsp">pfsp</span></td></tr>
+            <tr><td class="id">P1 Necrons ep900</td><td>8</td><td>0.53</td><td>63%</td><td>+0.13</td><td>0.10</td><td><span class="badge pfsp">pfsp</span></td></tr>
+            <tr><td class="id">P1 Necrons ep750</td><td>8</td><td>0.47</td><td>75%</td><td>0.00</td><td>0.13</td><td><span class="badge novelty">novelty</span></td></tr>
+          </tbody>
+        </table>
+        <p style="font-size:0.78rem;color:var(--muted);margin:12px 0 0">Вкладка «Train live»: последние 20 строк [POOL] из лога · текущий оппонент · running/idle</p>
+      </div>
+    </section>
+
+    <!-- VARIANT D -->
+    <section class="variant" id="v-d">
+      <div class="desc"><strong>D — Полный дашборд.</strong> KPI, stacked bar доли оппонентов, предупреждения, таблица. Максимум информации для A/B annihilation.</div>
+      <div class="panel">
+        <h2>Контекст</h2>
+        <div class="row">
+          <span class="chip p2">Learner P2</span>
+          <span class="chip p1">Opponent pool P1</span>
+          <span class="chip">977 ep · run 7198926</span>
+        </div>
+        <div class="kpi-grid" style="margin-top:14px">
+          <div class="kpi good"><div class="label">Δ draw</div><div class="value">−9pp</div><div class="sub">vs P1 heuristic-only</div></div>
+          <div class="kpi"><div class="label">Snapshot share</div><div class="value">69%</div><div class="sub">heur 31%</div></div>
+          <div class="kpi"><div class="label">Последний [POOL]</div><div class="value" style="font-size:0.95rem">P1 ep900</div><div class="sub">pfsp · weight 0.10</div></div>
+          <div class="kpi warn"><div class="label">Wipeouts</div><div class="value">22</div><div class="sub">из 977 ep</div></div>
+        </div>
+        <div class="alert">⚠ Stats JSON: 65 games в файле vs ~650 [POOL][RESULT] в логе — 12 акторов перезаписывают файл. Нужен merge или learner-side агрегация.</div>
+        <h2>Доля оппонентов (последние 200 ep)</h2>
+        <div class="chart" title="heuristic 31% | snapshots 69%">
+          <span class="h" style="width:31%"></span>
+          <span class="s" style="width:69%"></span>
+        </div>
+        <div class="row" style="margin-top:6px;font-size:0.75rem;color:var(--muted)">
+          <span>■ эвристика 31%</span><span>■ P1 snapshots 69%</span>
+        </div>
+        <h2 style="margin-top:16px">Кандидаты пула</h2>
+        <table>
+          <thead><tr><th>Ep</th><th>WR</th><th>Draw</th><th>P</th><th>Тренд WR</th></tr></thead>
+          <tbody>
+            <tr><td>950</td><td>0.45</td><td>83%</td><td>0.15</td><td style="color:var(--bad)">▼ плохо бьём → чаще</td></tr>
+            <tr><td>900</td><td>0.53</td><td>63%</td><td>0.10</td><td style="color:var(--muted)">— нейтрально</td></tr>
+            <tr><td>1000</td><td>0.44</td><td>55%</td><td>0.14</td><td style="color:var(--bad)">▼ pfsp</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="pick-banner">
+      <div>Какой макет ближе? Можно комбинировать (например KPI из D + две зоны из B).</div>
+      <button type="button" onclick="pickCurrent()">Выбираю этот вариант</button>
+      <div id="choice"></div>
+    </div>
+  </main>
+
+  <script>
+    const labels = { a: 'A · KPI + таблица', b: 'B · Две зоны', c: 'C · Табы', d: 'D · Дашборд + график' };
+    let current = 'a';
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        current = btn.dataset.v;
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.v === current));
+        document.querySelectorAll('.variant').forEach(v => v.classList.toggle('active', v.id === 'v-' + current));
+        document.getElementById('choice').textContent = '';
+      });
+    });
+    function pickCurrent() {
+      const el = document.getElementById('choice');
+      el.textContent = 'Выбран: ' + labels[current] + ' — напиши агенту в чат, можно с правками.';
+      el.style.color = '#4caf6e';
+    }
+  </script>
+</body>
+</html>

@@ -7,6 +7,19 @@ import ".."
 Item {
     id: leaguePanel
 
+    readonly property real _colId: Math.round(168 * root.uiScale)
+    readonly property real _colAlgo: Math.round(44 * root.uiScale)
+    readonly property real _colEp: Math.round(44 * root.uiScale)
+    readonly property real _colNum: Math.round(48 * root.uiScale)
+    readonly property real _colProb: Math.round(40 * root.uiScale)
+    readonly property real _colReason: Math.round(64 * root.uiScale)
+    readonly property real _colPool: Math.round(36 * root.uiScale)
+    readonly property real _tableWidth: _colId + _colAlgo + _colEp + _colNum * 4 + _colProb + _colReason + root.spacingSm * 8
+    readonly property real _historyTableWidth: _colId + _colAlgo + _colPool + _colNum * 4 + root.spacingSm * 6
+    readonly property real _rowH: Math.round(26 * root.uiScale)
+
+    property var poolContext: ({})
+
     function _fmtFloat(val, dec) {
         if (val === undefined || val === null || isNaN(Number(val)))
             return "—"
@@ -14,33 +27,93 @@ Item {
     }
 
     function _fmtPct(val) {
-        if (val === undefined || val === null || isNaN(Number(val)))
+        if (val === undefined || val === null || isNaN(Number(val)) || Number(val) < 0)
             return "—"
         return _fmtFloat(Number(val) * 100, 1) + "%"
     }
 
-    function _rebuildOpponentsModel() {
-        opponentsModel.clear()
+    function _fmtSigned(val, dec) {
+        if (val === undefined || val === null || isNaN(Number(val)))
+            return "—"
+        var n = Number(val)
+        var sign = n > 0 ? "+" : ""
+        return sign + n.toFixed(dec !== undefined ? dec : 2)
+    }
+
+    function _reasonBadge(reason) {
+        var r = String(reason || "").toLowerCase()
+        if (r === "novelty") return "novelty"
+        if (r === "pfsp") return "pfsp"
+        if (r === "uniform_floor") return "uniform"
+        if (r.indexOf("heur") >= 0) return "anchor"
+        return r || "—"
+    }
+
+    function _algoColor(algo) {
+        var a = String(algo || "").toUpperCase()
+        if (a === "PPO") return "#4a9fd4"
+        if (a === "DQN") return "#b88a26"
+        if (a === "AZ" || a === "AZP") return "#9b59b6"
+        if (a === "GAZ") return "#e67e22"
+        if (a === "GMZ") return "#1abc9c"
+        if (a === "SMZ") return "#3498db"
+        return root.uiTextMuted
+    }
+
+    function _fmtEp(val) {
+        var ep = Number(val)
+        if (isNaN(ep) || ep < 0)
+            return "—"
+        return String(ep)
+    }
+
+    function _rebuildFromState() {
         var payload = controller.opponentPoolState || {}
-        var opps = payload.opponents || {}
-        var keys = Object.keys(opps)
-        keys.sort(function(a, b) {
-            var ga = Number((opps[a] || {}).games || 0)
-            var gb = Number((opps[b] || {}).games || 0)
-            return gb - ga
-        })
-        for (var i = 0; i < keys.length; i++) {
-            var aid = keys[i]
-            var stat = opps[aid] || {}
-            var games = Number(stat.games || 0)
-            var wr = stat.ema_winrate
-            var prob = stat.prob
-            opponentsModel.append({
-                agent_id: aid,
-                games: games,
-                winrate: (wr !== undefined && wr !== null) ? _fmtFloat(wr, 2) : "—",
-                prob: (prob !== undefined && prob !== null) ? _fmtFloat(prob, 2) : "—",
-                reason: stat.reason ? String(stat.reason) : ""
+        poolContext = payload.context || {}
+
+        candidatesModel.clear()
+        var cands = payload.candidates || []
+        for (var ci = 0; ci < cands.length; ci++) {
+            var c = cands[ci] || {}
+            candidatesModel.append({
+                label: c.label || c.agent_id || "—",
+                agent_id: c.agent_id || "",
+                algo: c.algo_short || c.algo || "?",
+                ep: leaguePanel._fmtEp(c.ep),
+                games: Number(c.games || 0),
+                winrate: leaguePanel._fmtFloat(c.winrate, 2),
+                draw_pct: leaguePanel._fmtPct(c.draw_pct),
+                vp_per_game: leaguePanel._fmtSigned(c.vp_per_game, 2),
+                prob: leaguePanel._fmtFloat(c.prob, 2),
+                reason: leaguePanel._reasonBadge(c.reason),
+                created_at: c.created_at || ""
+            })
+        }
+
+        historyModel.clear()
+        var hist = payload.history || []
+        for (var hi = 0; hi < hist.length; hi++) {
+            var h = hist[hi] || {}
+            historyModel.append({
+                label: h.label || h.agent_id || "—",
+                agent_id: h.agent_id || "",
+                algo: h.algo_short || h.algo || "?",
+                in_pool: h.in_pool === true,
+                games: Number(h.games || 0),
+                winrate: leaguePanel._fmtFloat(h.winrate, 2),
+                draw_pct: leaguePanel._fmtPct(h.draw_pct),
+                vp_per_game: leaguePanel._fmtSigned(h.vp_per_game, 2),
+                created_at: h.created_at || ""
+            })
+        }
+
+        trainLiveModel.clear()
+        var live = payload.train_live || []
+        for (var li = 0; li < live.length; li++) {
+            var row = live[li] || {}
+            trainLiveModel.append({
+                text: row.text || "",
+                kind: row.kind || "info"
             })
         }
     }
@@ -48,13 +121,252 @@ Item {
     Connections {
         target: controller
         function onOpponentPoolStateChanged() {
-            leaguePanel._rebuildOpponentsModel()
+            leaguePanel._rebuildFromState()
         }
     }
 
-    Component.onCompleted: _rebuildOpponentsModel()
+    Component.onCompleted: _rebuildFromState()
 
-    ListModel { id: opponentsModel }
+    ListModel { id: candidatesModel }
+    ListModel { id: historyModel }
+    ListModel { id: trainLiveModel }
+
+    component CandidateTableHeader: RowLayout {
+        width: leaguePanel._tableWidth
+        spacing: root.spacingSm
+        Repeater {
+            model: [
+                { label: "ID", w: leaguePanel._colId, fill: true },
+                { label: "Algo", w: leaguePanel._colAlgo, fill: false },
+                { label: "Ep", w: leaguePanel._colEp, fill: false },
+                { label: "Games", w: leaguePanel._colNum, fill: false },
+                { label: "WR", w: leaguePanel._colNum, fill: false },
+                { label: "Draw%", w: leaguePanel._colNum, fill: false },
+                { label: "VP/ep", w: leaguePanel._colNum, fill: false },
+                { label: "P", w: leaguePanel._colProb, fill: false },
+                { label: "Reason", w: leaguePanel._colReason, fill: false }
+            ]
+            delegate: Text {
+                text: modelData.label
+                font.bold: true
+                font.pixelSize: root.evalCaptionSize
+                color: root.uiTextMuted
+                Layout.preferredWidth: modelData.w
+                Layout.fillWidth: modelData.fill
+                horizontalAlignment: modelData.fill ? Text.AlignLeft : Text.AlignRight
+                elide: Text.ElideRight
+            }
+        }
+    }
+
+    component HistoryTableHeader: RowLayout {
+        width: leaguePanel._historyTableWidth
+        spacing: root.spacingSm
+        Repeater {
+            model: [
+                { label: "Agent", w: leaguePanel._colId, fill: true },
+                { label: "Algo", w: leaguePanel._colAlgo, fill: false },
+                { label: "Пул", w: leaguePanel._colPool, fill: false },
+                { label: "Games", w: leaguePanel._colNum, fill: false },
+                { label: "WR", w: leaguePanel._colNum, fill: false },
+                { label: "Draw%", w: leaguePanel._colNum, fill: false },
+                { label: "VP/ep", w: leaguePanel._colNum, fill: false }
+            ]
+            delegate: Text {
+                text: modelData.label
+                font.bold: true
+                font.pixelSize: root.evalCaptionSize
+                color: root.uiTextMuted
+                Layout.preferredWidth: modelData.w
+                Layout.fillWidth: modelData.fill
+                horizontalAlignment: modelData.fill ? Text.AlignLeft : Text.AlignRight
+                elide: Text.ElideRight
+            }
+        }
+    }
+
+    component CandidateRow: RowLayout {
+        property string labelText: ""
+        property string agentIdText: ""
+        property string algoText: "?"
+        property string epText: "—"
+        property int gamesVal: 0
+        property string wrText: "—"
+        property string drawText: "—"
+        property string vpText: "—"
+        property string probText: "—"
+        property string reasonText: "—"
+        width: leaguePanel._tableWidth
+        spacing: root.spacingSm
+
+        Text {
+            id: idCell
+            text: labelText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colId
+            Layout.fillWidth: true
+            elide: Text.ElideMiddle
+            ToolTip.visible: idTipMouse.containsMouse && agentIdText.length > 0
+            ToolTip.text: agentIdText
+            ToolTip.delay: 400
+            MouseArea {
+                id: idTipMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+            }
+        }
+        Text {
+            text: algoText
+            color: leaguePanel._algoColor(algoText)
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            font.bold: true
+            Layout.preferredWidth: leaguePanel._colAlgo
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: epText
+            color: root.uiTextMuted
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colEp
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: gamesVal
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: wrText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: drawText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: vpText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: probText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colProb
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: reasonText
+            color: reasonText === "novelty" ? "#e6a23c"
+                 : (reasonText === "pfsp" ? "#4caf6e" : root.uiTextMuted)
+            font.pixelSize: root.evalCaptionSize
+            font.bold: reasonText === "novelty" || reasonText === "pfsp"
+            Layout.preferredWidth: leaguePanel._colReason
+            horizontalAlignment: Text.AlignRight
+        }
+    }
+
+    component HistoryRow: RowLayout {
+        property string labelText: ""
+        property string agentIdText: ""
+        property string algoText: "?"
+        property bool inPool: false
+        property int gamesVal: 0
+        property string wrText: "—"
+        property string drawText: "—"
+        property string vpText: "—"
+        width: leaguePanel._historyTableWidth
+        spacing: root.spacingSm
+
+        Text {
+            id: histIdCell
+            text: labelText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colId
+            Layout.fillWidth: true
+            elide: Text.ElideMiddle
+            ToolTip.visible: histTipMouse.containsMouse && agentIdText.length > 0
+            ToolTip.text: agentIdText
+            ToolTip.delay: 400
+            MouseArea {
+                id: histTipMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+            }
+        }
+        Text {
+            text: algoText
+            color: leaguePanel._algoColor(algoText)
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            font.bold: true
+            Layout.preferredWidth: leaguePanel._colAlgo
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: inPool ? "✓" : "—"
+            color: inPool ? "#4caf6e" : root.uiTextMuted
+            font.pixelSize: root.evalCaptionSize
+            font.bold: inPool
+            Layout.preferredWidth: leaguePanel._colPool
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Text {
+            text: gamesVal
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: wrText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: drawText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+        Text {
+            text: vpText
+            color: root.uiTextMain
+            font.pixelSize: root.evalCaptionSize
+            font.family: root.fontDataFamily
+            Layout.preferredWidth: leaguePanel._colNum
+            horizontalAlignment: Text.AlignRight
+        }
+    }
 
     ScrollView {
         anchors.fill: parent
@@ -288,7 +600,7 @@ Item {
 
             ChamferPanel {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.max(Math.round(220 * root.uiScale), liveCol.implicitHeight + root.spacingMd * 2)
+                Layout.preferredHeight: Math.max(Math.round(320 * root.uiScale), liveCol.implicitHeight + root.spacingMd * 2)
                 fillColor: root.uiBgCard
                 borderColor: root.uiBorder
                 borderWidth: 1
@@ -310,34 +622,207 @@ Item {
                         font.letterSpacing: 0.8
                     }
 
-                    RowLayout {
+                    Flow {
                         Layout.fillWidth: true
-                        spacing: root.spacingMd
-                        Label {
-                            text: "Записей: " + opponentsModel.count
-                            color: root.uiTextMuted
-                            font.pixelSize: root.evalCaptionSize
+                        spacing: root.spacingSm
+
+                        Rectangle {
+                            radius: 0
+                            color: poolContext.learner_side === "P2" ? "#1a2a33" : "#1a2333"
+                            border.color: poolContext.learner_side === "P2" ? "#4a9fd4" : "#b88a26"
+                            border.width: 1
+                            implicitWidth: chipLearner.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipLearner.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipLearner
+                                anchors.centerIn: parent
+                                text: (poolContext.learner_side || controller.learnerSide || "P1") + " learner"
+                                      + (poolContext.learner_algo ? (" · " + poolContext.learner_algo) : "")
+                                      + (poolContext.learner_faction ? (" · " + poolContext.learner_faction) : "")
+                                color: root.uiTextMain
+                                font.pixelSize: root.evalCaptionSize
+                                font.bold: true
+                            }
                         }
-                        Label {
-                            text: controller.poolEnabled ? "Пул: вкл" : "Пул: выкл"
-                            color: controller.poolEnabled ? "#4caf6e" : root.uiTextMuted
-                            font.pixelSize: root.evalCaptionSize
-                            font.bold: true
+
+                        Rectangle {
+                            radius: 0
+                            color: poolContext.pool_enabled ? "#142318" : "#1f2430"
+                            border.color: poolContext.pool_enabled ? "#4caf6e" : root.uiBorder
+                            border.width: 1
+                            implicitWidth: chipPool.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipPool.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipPool
+                                anchors.centerIn: parent
+                                text: (poolContext.pool_enabled ? "Пул вкл" : "Пул выкл")
+                                      + " · " + (poolContext.pool_fill || ("0/" + controller.poolSize))
+                                      + (poolContext.registry_opponent_count !== undefined
+                                         ? (" · реестр " + poolContext.opponent_side + ": " + poolContext.registry_opponent_count)
+                                         : "")
+                                color: poolContext.pool_enabled ? "#4caf6e" : root.uiTextMuted
+                                font.pixelSize: root.evalCaptionSize
+                            }
                         }
-                        Label {
-                            text: "Стратегия: " + (controller.poolStrategy === "uniform" ? "Uniform" : "PFSP")
-                            color: root.uiTextMuted
-                            font.pixelSize: root.evalCaptionSize
+
+                        Rectangle {
+                            visible: poolContext.draw_rate !== undefined && Number(poolContext.draw_rate) >= 0
+                            radius: 0
+                            color: "#2a2418"
+                            border.color: "#e6a23c"
+                            border.width: 1
+                            implicitWidth: chipDraw.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipDraw.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipDraw
+                                anchors.centerIn: parent
+                                text: "draw train " + leaguePanel._fmtPct(poolContext.draw_rate)
+                                color: "#e6a23c"
+                                font.pixelSize: root.evalCaptionSize
+                            }
                         }
-                        Label {
-                            text: "p_heur: " + leaguePanel._fmtFloat(controller.poolPHeuristic, 2)
-                            color: root.uiTextMuted
-                            font.pixelSize: root.evalCaptionSize
+
+                        Rectangle {
+                            visible: poolContext.mission !== undefined && String(poolContext.mission).length > 0
+                            radius: 0
+                            color: "#1f2430"
+                            border.color: root.uiBorder
+                            border.width: 1
+                            implicitWidth: chipMission.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipMission.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipMission
+                                anchors.centerIn: parent
+                                text: String(poolContext.mission)
+                                color: root.uiTextMuted
+                                font.pixelSize: root.evalCaptionSize
+                            }
                         }
-                        Label {
-                            text: "размер: " + controller.poolSize
-                            color: root.uiTextMuted
+
+                        Rectangle {
+                            visible: poolContext.pool_algo_mix !== undefined && String(poolContext.pool_algo_mix).length > 0
+                            radius: 0
+                            color: "#1f2430"
+                            border.color: root.uiBorder
+                            border.width: 1
+                            implicitWidth: chipMix.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipMix.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipMix
+                                anchors.centerIn: parent
+                                text: "оппоненты: " + String(poolContext.pool_algo_mix)
+                                color: root.uiTextMuted
+                                font.pixelSize: root.evalCaptionSize
+                            }
+                        }
+
+                        Rectangle {
+                            visible: poolContext.last_pick_label !== undefined && String(poolContext.last_pick_label).length > 0
+                            radius: 0
+                            color: "#1a2333"
+                            border.color: "#4a9fd4"
+                            border.width: 1
+                            implicitWidth: chipLast.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipLast.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipLast
+                                anchors.centerIn: parent
+                                text: "последний [POOL]: " + String(poolContext.last_pick_label)
+                                      + (poolContext.last_pick_reason ? (" · " + poolContext.last_pick_reason) : "")
+                                color: "#4a9fd4"
+                                font.pixelSize: root.evalCaptionSize
+                            }
+                        }
+
+                        Rectangle {
+                            visible: poolContext.train_running === true
+                            radius: 0
+                            color: "#142318"
+                            border.color: "#4caf6e"
+                            border.width: 1
+                            implicitWidth: chipRun.implicitWidth + root.spacingSm * 2
+                            implicitHeight: chipRun.implicitHeight + root.spacingXs * 2
+                            Text {
+                                id: chipRun
+                                anchors.centerIn: parent
+                                text: "train running"
+                                color: "#4caf6e"
+                                font.pixelSize: root.evalCaptionSize
+                                font.bold: true
+                            }
+                        }
+                    }
+
+                    TabBar {
+                        id: poolTabs
+                        Layout.fillWidth: true
+                        background: Rectangle { color: "transparent"; border.width: 0 }
+
+                        TabButton {
+                            text: "Кандидаты"
                             font.pixelSize: root.evalCaptionSize
+                            implicitHeight: Math.round(32 * root.uiScale)
+                            background: Rectangle {
+                                color: poolTabs.currentIndex === 0 ? root.bgElevated : "transparent"
+                                border.width: 0
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    width: parent.width
+                                    height: 2
+                                    color: poolTabs.currentIndex === 0 ? "#b88a26" : "transparent"
+                                }
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: poolTabs.currentIndex === 0 ? root.uiTextMain : root.uiTextMuted
+                                font: parent.font
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        TabButton {
+                            text: "История stats"
+                            font.pixelSize: root.evalCaptionSize
+                            implicitHeight: Math.round(32 * root.uiScale)
+                            background: Rectangle {
+                                color: poolTabs.currentIndex === 1 ? root.bgElevated : "transparent"
+                                border.width: 0
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    width: parent.width
+                                    height: 2
+                                    color: poolTabs.currentIndex === 1 ? "#b88a26" : "transparent"
+                                }
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: poolTabs.currentIndex === 1 ? root.uiTextMain : root.uiTextMuted
+                                font: parent.font
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        TabButton {
+                            text: "Train live"
+                            font.pixelSize: root.evalCaptionSize
+                            implicitHeight: Math.round(32 * root.uiScale)
+                            background: Rectangle {
+                                color: poolTabs.currentIndex === 2 ? root.bgElevated : "transparent"
+                                border.width: 0
+                                Rectangle {
+                                    anchors.bottom: parent.bottom
+                                    width: parent.width
+                                    height: 2
+                                    color: poolTabs.currentIndex === 2 ? "#b88a26" : "transparent"
+                                }
+                            }
+                            contentItem: Text {
+                                text: parent.text
+                                color: poolTabs.currentIndex === 2 ? root.uiTextMain : root.uiTextMuted
+                                font: parent.font
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
 
@@ -347,82 +832,161 @@ Item {
                         color: root.uiBorder
                     }
 
-                    GridLayout {
+                    StackLayout {
+                        id: poolStack
                         Layout.fillWidth: true
-                        columns: 5
-                        columnSpacing: root.spacingSm
-                        rowSpacing: root.spacingXs
+                        currentIndex: poolTabs.currentIndex
 
-                        Repeater {
-                            model: ["agent_id", "games", "winrate", "P(выбора)", "reason"]
-                            delegate: Text {
-                                text: modelData
-                                font.bold: true
-                                font.pixelSize: root.evalCaptionSize
-                                color: root.uiTextMuted
+                        // ── Кандидаты ──
+                        ColumnLayout {
+                            spacing: root.spacingXs
+
+                            ScrollView {
                                 Layout.fillWidth: true
-                                elide: Text.ElideRight
-                            }
-                        }
-                    }
+                                clip: true
+                                ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                                ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+                                contentWidth: leaguePanel._tableWidth
+                                implicitHeight: Math.min(
+                                    Math.round(268 * root.uiScale),
+                                    Math.max(Math.round(56 * root.uiScale), (candidatesModel.count + 1) * leaguePanel._rowH)
+                                )
 
-                    ListView {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: Math.min(
-                            Math.round(280 * root.uiScale),
-                            Math.max(Math.round(48 * root.uiScale), opponentsModel.count * Math.round(28 * root.uiScale))
-                        )
-                        clip: true
-                        spacing: root.spacingXs
-                        model: opponentsModel
-                        delegate: GridLayout {
-                            width: ListView.view.width
-                            columns: 5
-                            columnSpacing: root.spacingSm
+                                Column {
+                                    width: leaguePanel._tableWidth
+                                    spacing: root.spacingXs
+                                    CandidateTableHeader {}
+                                    Repeater {
+                                        model: candidatesModel
+                                        delegate: CandidateRow {
+                                            labelText: model.label
+                                            agentIdText: model.agent_id
+                                            algoText: model.algo
+                                            epText: model.ep
+                                            gamesVal: model.games
+                                            wrText: model.winrate
+                                            drawText: model.draw_pct
+                                            vpText: model.vp_per_game
+                                            probText: model.prob
+                                            reasonText: model.reason
+                                        }
+                                    }
+                                }
+                            }
 
                             Text {
-                                text: model.agent_id
-                                color: root.uiTextMain
-                                font.pixelSize: root.evalCaptionSize
-                                font.family: root.fontDataFamily
-                                Layout.fillWidth: true
-                                elide: Text.ElideMiddle
-                            }
-                            Text {
-                                text: model.games
-                                color: root.uiTextMain
-                                font.pixelSize: root.evalCaptionSize
-                                font.family: root.fontDataFamily
-                            }
-                            Text {
-                                text: model.winrate
-                                color: root.uiTextMain
-                                font.pixelSize: root.evalCaptionSize
-                                font.family: root.fontDataFamily
-                            }
-                            Text {
-                                text: model.prob
-                                color: root.uiTextMain
-                                font.pixelSize: root.evalCaptionSize
-                                font.family: root.fontDataFamily
-                            }
-                            Text {
-                                text: model.reason || "—"
+                                visible: candidatesModel.count === 0
+                                text: poolContext.has_contract === false
+                                      ? "Нет совместимого контракта в реестре — кандидаты не отфильтрованы."
+                                      : "Нет кандидатов в пуле — нужны снапшоты стороны "
+                                        + (poolContext.opponent_side || "P?")
+                                        + " в реестре (train с «ПУЛ / ЛИГА»)."
                                 color: root.uiTextMuted
                                 font.pixelSize: root.evalCaptionSize
+                                wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
-                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                visible: candidatesModel.count > 0
+                                text: "+ эвристика-анкер · p_heur "
+                                      + leaguePanel._fmtFloat(poolContext.p_heuristic !== undefined
+                                          ? poolContext.p_heuristic : controller.poolPHeuristic, 2)
+                                color: root.uiTextMuted
+                                font.pixelSize: Math.round(11 * root.uiScale)
+                                Layout.fillWidth: true
                             }
                         }
-                    }
 
-                    Text {
-                        visible: opponentsModel.count === 0
-                        text: "Нет данных пула — stats появятся после train с источником «ПУЛ / ЛИГА»."
-                        color: root.uiTextMuted
-                        font.pixelSize: root.evalCaptionSize
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
+                        // ── История stats ──
+                        ColumnLayout {
+                            spacing: root.spacingXs
+
+                            Text {
+                                text: "Накопленный opponent_pool_stats.json · " + historyModel.count + " записей · ✓ = в активном пуле"
+                                color: root.uiTextMuted
+                                font.pixelSize: Math.round(11 * root.uiScale)
+                                Layout.fillWidth: true
+                            }
+
+                            ScrollView {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.round(280 * root.uiScale)
+                                clip: true
+                                ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+                                contentWidth: leaguePanel._historyTableWidth
+
+                                Column {
+                                    width: leaguePanel._historyTableWidth
+                                    spacing: root.spacingXs
+                                    HistoryTableHeader {}
+                                    Repeater {
+                                        model: historyModel
+                                        delegate: HistoryRow {
+                                            labelText: model.label
+                                            agentIdText: model.agent_id
+                                            algoText: model.algo
+                                            inPool: model.in_pool
+                                            gamesVal: model.games
+                                            wrText: model.winrate
+                                            drawText: model.draw_pct
+                                            vpText: model.vp_per_game
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: historyModel.count === 0
+                                text: "История пуста — stats появятся после train с источником «ПУЛ / ЛИГА»."
+                                color: root.uiTextMuted
+                                font.pixelSize: root.evalCaptionSize
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        // ── Train live ──
+                        ColumnLayout {
+                            spacing: root.spacingXs
+
+                            Text {
+                                text: "Последние строки [POOL] из train-лога · " + trainLiveModel.count + " строк"
+                                color: root.uiTextMuted
+                                font.pixelSize: Math.round(11 * root.uiScale)
+                                Layout.fillWidth: true
+                            }
+
+                            ListView {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.min(
+                                    Math.round(280 * root.uiScale),
+                                    Math.max(Math.round(48 * root.uiScale), trainLiveModel.count * Math.round(20 * root.uiScale))
+                                )
+                                clip: true
+                                spacing: 2
+                                model: trainLiveModel
+                                delegate: Text {
+                                    width: ListView.view.width
+                                    text: model.text
+                                    color: model.kind === "warn" ? "#e6a23c"
+                                         : (model.kind === "result" ? "#4caf6e" : root.uiTextMuted)
+                                    font.pixelSize: Math.round(11 * root.uiScale)
+                                    font.family: root.fontDataFamily
+                                    wrapMode: Text.WrapAnywhere
+                                }
+                            }
+
+                            Text {
+                                visible: trainLiveModel.count === 0
+                                text: "Нет строк [POOL] в логе — запустите train с «ПУЛ / ЛИГА»."
+                                color: root.uiTextMuted
+                                font.pixelSize: root.evalCaptionSize
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
                     }
                 }
             }

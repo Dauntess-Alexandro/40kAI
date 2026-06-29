@@ -41,6 +41,7 @@ from app.gui_qt.algo_hyperparams_defaults import (
     PPO_HYPERPARAM_KEYS,
     PPO_PROFILE_PRESETS,
 )
+from app.gui_qt.gui_train_prefs import load_selected_mission, save_selected_mission
 from app.gui_qt.az_hyperparams_defaults import (
     AZ_FIELD_TOOLTIPS,
     AZ_GROUPS,
@@ -100,8 +101,10 @@ from app.gui_qt.sampled_muzero_hyperparams_defaults import (
     SMZ_PROFILE_PRESETS,
 )
 from core.engine.mission import normalize_mission_name
+from core.engine.opponent_pool import PoolConfig
 from core.models.alphazero_ids import is_az_algo, is_gumbel_az_algo
 from core.models.dqn_dist import DQN_DIST_TOPUP_ACTOR_IDX, resolve_dqn_dist_episode_split
+from core.models.opponent_pool_runtime import build_pool_ui_state, parse_pool_log_tail
 from project_paths import (
     AGENT_EVAL_LOG_PATH,
     AGENT_PLAY_LOG_PATH,
@@ -308,7 +311,11 @@ class GUIController(QtCore.QObject):
 
         self._num_games = 100
         self._mission_options = ["only_war", "annihilation"]
-        self._selected_mission = "only_war"
+        self._selected_mission = load_selected_mission(
+            QtCore.QSettings(),
+            data_json_path=TRAIN_DATA_PATH,
+            options=self._mission_options,
+        )
 
         self._train_total_episodes = 0
         self._training_samples = deque()
@@ -501,7 +508,13 @@ class GUIController(QtCore.QObject):
         self._pool_min_games = 3
         self._pool_ema_alpha = 0.15
         self._pool_enabled = False
-        self._opponent_pool_state_dict: dict = {"opponents": {}}
+        self._opponent_pool_state_dict: dict = {
+            "context": {},
+            "candidates": [],
+            "history": [],
+            "train_live": [],
+            "heuristic": {},
+        }
         self._specific_opponent_agent_ids: list[str] = []
         self._specific_opponent_agent_labels: list[str] = []
         self._specific_opponent_algo_by_id: dict[str, str] = {}
@@ -591,6 +604,7 @@ class GUIController(QtCore.QObject):
         self._update_roster_summary()
         self._refresh_specific_opponent_options()
         self._refresh_eval_agent_options()
+        self._refresh_opponent_pool_state()
 
         QtCore.QTimer.singleShot(800, self._sync_all_remote_search_cfgs_idle)
 
@@ -3127,7 +3141,9 @@ class GUIController(QtCore.QObject):
             normalized = "only_war"
         if self._selected_mission != normalized:
             self._selected_mission = normalized
+            save_selected_mission(QtCore.QSettings(), normalized, options=self._mission_options)
             self.missionChanged.emit(normalized)
+            self._refresh_opponent_pool_state()
             self._emit_train_setup_summary_changed()
             self._schedule_roster_remote_search_cfg_sync()
 
@@ -3595,6 +3611,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_enabled = flag
         self.poolEnabledChanged.emit(flag)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(float)
@@ -3604,6 +3621,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_p_heuristic = clamped
         self.poolPHeuristicChanged.emit(clamped)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(int)
@@ -3613,6 +3631,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_size = size
         self.poolSizeChanged.emit(size)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(str)
@@ -3624,6 +3643,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_strategy = strategy
         self.poolStrategyChanged.emit(strategy)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(float)
@@ -3633,6 +3653,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_pfsp_power = power
         self.poolPfspPowerChanged.emit(power)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(float)
@@ -3642,6 +3663,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_uniform_floor = clamped
         self.poolUniformFloorChanged.emit(clamped)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(float)
@@ -3651,6 +3673,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_novelty_bonus = bonus
         self.poolNoveltyBonusChanged.emit(bonus)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(int)
@@ -3660,6 +3683,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_min_games = games
         self.poolMinGamesChanged.emit(games)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(float)
@@ -3670,6 +3694,7 @@ class GUIController(QtCore.QObject):
             return
         self._pool_ema_alpha = alpha
         self.poolEmaAlphaChanged.emit(alpha)
+        self._refresh_opponent_pool_state()
         self.mark_settings_dirty()
 
     @QtCore.Slot(str)
@@ -3696,6 +3721,7 @@ class GUIController(QtCore.QObject):
         self.learnerSideChanged.emit(side)
         self._update_learner_faction_from_rosters()
         self._refresh_specific_opponent_options()
+        self._refresh_opponent_pool_state()
         self._emit_status(f"Сторона обучения: {side}")
         self.mark_settings_dirty()
         self._persist_rosters(schedule_search_cfg_sync=False)
@@ -3710,6 +3736,7 @@ class GUIController(QtCore.QObject):
             return
         self._learner_faction = faction
         self.learnerFactionChanged.emit(faction)
+        self._refresh_opponent_pool_state()
         self._emit_status(f"Фракция обучения: {faction}")
         self.mark_settings_dirty()
         self._update_opponent_preview_text()
@@ -3815,16 +3842,55 @@ class GUIController(QtCore.QObject):
             "ema_alpha": float(self._pool_ema_alpha),
         }
 
-    def _opponent_pool_state(self) -> dict:
-        path = os.path.join(str(ARTIFACTS_MODELS_DIR), "opponent_pool_stats.json")
-        if not os.path.exists(path):
-            return {"opponents": {}}
+    def _pool_config_from_settings(self) -> PoolConfig:
+        return PoolConfig(
+            enabled=bool(self._pool_enabled),
+            p_heuristic=float(self._pool_p_heuristic),
+            pool_size=max(1, int(self._pool_size)),
+            strategy=str(self._pool_strategy or "pfsp"),
+            pfsp_power=float(self._pool_pfsp_power),
+            uniform_floor=float(self._pool_uniform_floor),
+            novelty_bonus=float(self._pool_novelty_bonus),
+            min_games_for_pfsp=max(0, int(self._pool_min_games)),
+            ema_alpha=float(self._pool_ema_alpha),
+        )
+
+    def _build_opponent_pool_state(self) -> dict:
+        stats_path = os.path.join(str(ARTIFACTS_MODELS_DIR), "opponent_pool_stats.json")
+        draw_raw = float(self._heuristic_metrics.get("train_draw_rate", -1.0) or -1.0)
+        draw_rate = draw_raw if draw_raw >= 0.0 else None
         try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                payload = json.load(handle)
-            return payload if isinstance(payload, dict) else {"opponents": {}}
-        except (OSError, json.JSONDecodeError):
-            return {"opponents": {}}
+            state = build_pool_ui_state(
+                learner_side=self._learner_side,
+                learner_faction=self._learner_faction,
+                config=self._pool_config_from_settings(),
+                stats_path=stats_path,
+                mission_name=str(self._selected_mission or ""),
+                draw_rate=draw_rate,
+                pool_enabled=bool(self._pool_enabled),
+                train_running=bool(self._running),
+                learner_algo=str(self._train_context_learner_algo_short or ""),
+                train_log_path=str(AGENT_TRAIN_LOG_PATH),
+            )
+        except Exception:
+            state = {
+                "context": {},
+                "candidates": [],
+                "history": [],
+                "train_live": [],
+                "heuristic": {},
+            }
+        state["train_live"] = parse_pool_log_tail(str(AGENT_TRAIN_LOG_PATH), max_lines=20)
+        return state
+
+    def _refresh_opponent_pool_state(self) -> None:
+        state = self._build_opponent_pool_state()
+        if state != self._opponent_pool_state_dict:
+            self._opponent_pool_state_dict = state
+            self.opponentPoolStateChanged.emit()
+
+    def _opponent_pool_state(self) -> dict:
+        return self._build_opponent_pool_state()
 
     def _apply_opponent_pool_hyperparams(self, payload: dict) -> None:
         section = payload.get("opponent_pool") if isinstance(payload, dict) else None
@@ -3864,6 +3930,7 @@ class GUIController(QtCore.QObject):
         self.poolNoveltyBonusChanged.emit(self._pool_novelty_bonus)
         self.poolMinGamesChanged.emit(self._pool_min_games)
         self.poolEmaAlphaChanged.emit(self._pool_ema_alpha)
+        self._refresh_opponent_pool_state()
 
     def _mission_from_ruleset_version(self, ruleset_version: str) -> str:
         text = str(ruleset_version or "").strip().lower().replace("-", "_").replace(" ", "_")
@@ -8793,28 +8860,24 @@ class GUIController(QtCore.QObject):
         return values
 
     def _league_matchup_summary(self) -> str:
-        payload = self._opponent_pool_state()
-        opponents = payload.get("opponents", {}) if isinstance(payload, dict) else {}
-        if not isinstance(opponents, dict) or not opponents:
+        payload = self._opponent_pool_state_dict
+        history = payload.get("history", []) if isinstance(payload, dict) else []
+        if not isinstance(history, list) or not history:
             return "League: нет данных пула."
-        ranked = sorted(
-            opponents.items(),
-            key=lambda kv: int((kv[1] or {}).get("games", 0) if isinstance(kv[1], dict) else 0),
-            reverse=True,
-        )[:3]
-        lines = ["League (top-3 по числу игр):"]
-        for aid, stat in ranked:
-            if not isinstance(stat, dict):
-                continue
-            games = max(1, int(stat.get("games", 0) or 0))
-            ema_wr = float(stat.get("ema_winrate", 0.5) or 0.5)
-            draws = float(stat.get("draws", 0.0) or 0.0)
-            vp_sum = float(stat.get("vp_sum", 0.0) or 0.0)
-            lines.append(
-                f"• {aid}: games={games}, winrate={ema_wr:.2f}, draw≈{draws/games:.2f}, vp={vp_sum/games:.2f}"
-            )
-        if len(lines) == 1:
+        ranked = [row for row in history if isinstance(row, dict)][:3]
+        if not ranked:
             return "League: матчапы пула пока не записаны."
+        lines = ["League (top-3 по числу игр):"]
+        for stat in ranked:
+            games = max(1, int(stat.get("games", 0) or 0))
+            ema_wr = float(stat.get("winrate", 0.5) or 0.5)
+            draw_pct = float(stat.get("draw_pct", -1.0) or -1.0)
+            vp_pg = float(stat.get("vp_per_game", 0.0) or 0.0)
+            label = str(stat.get("label", stat.get("agent_id", "?")) or "?")
+            draw_txt = f"{draw_pct:.2f}" if draw_pct >= 0.0 else "—"
+            lines.append(
+                f"• {label}: games={games}, winrate={ema_wr:.2f}, draw≈{draw_txt}, vp={vp_pg:.2f}"
+            )
         return "\n".join(lines)
 
     def _refresh_metrics_summaries(self) -> None:
@@ -8981,10 +9044,7 @@ class GUIController(QtCore.QObject):
 
         self._metric_summary_texts = summaries
         self._model_state_text = model_state
-        pool_state = self._opponent_pool_state()
-        if pool_state != self._opponent_pool_state_dict:
-            self._opponent_pool_state_dict = pool_state
-            self.opponentPoolStateChanged.emit()
+        self._refresh_opponent_pool_state()
         self.metricsSummaryChanged.emit()
         self._load_latest_heuristic_metrics(run_id=str(run_id))
 
