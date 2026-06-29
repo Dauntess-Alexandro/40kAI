@@ -16,3 +16,17 @@ def spr_consistency_loss(pred_seq: torch.Tensor, target_proj_seq: torch.Tensor,
     valid = (1.0 - done_mask).to(per_step.dtype)
     denom = valid.sum().clamp(min=1.0)
     return (per_step * valid).sum() / denom
+
+
+def value_expansion_target(rewards: torch.Tensor, gammas: torch.Tensor,
+                           bootstrap_q: torch.Tensor, h: int) -> torch.Tensor:
+    # rewards, gammas: [B, Hmax]; bootstrap_q: [B]; возврат [B]
+    h = int(h)
+    if h <= 0:
+        return bootstrap_q
+    acc = torch.zeros_like(bootstrap_q)
+    discount = torch.ones_like(bootstrap_q)
+    for j in range(h):
+        acc = acc + discount * rewards[:, j]
+        discount = discount * gammas[:, j]
+    return acc + discount * bootstrap_q

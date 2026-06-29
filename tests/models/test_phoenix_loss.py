@@ -1,5 +1,6 @@
 import torch
-from core.models.phoenix_loss import spr_consistency_loss
+
+from core.models.phoenix_loss import spr_consistency_loss, value_expansion_target
 
 
 def test_spr_zero_when_pred_equals_target():
@@ -35,3 +36,21 @@ def test_spr_no_grad_to_target():
     loss = spr_consistency_loss(pred, target, done)
     loss.backward()
     assert target.grad is None or torch.allclose(target.grad, torch.zeros_like(target))
+
+
+def test_ve_target_h0_returns_bootstrap():
+    rewards = torch.zeros(3, 4)
+    gammas = torch.full((3, 4), 0.99)
+    boot = torch.tensor([1.0, 2.0, 3.0])
+    out = value_expansion_target(rewards, gammas, boot, h=0)
+    assert torch.allclose(out, boot)
+
+
+def test_ve_target_nstep_accumulation():
+    # h=2: r0 + γ r1 + γ^2 boot, при γ=0.5
+    rewards = torch.tensor([[1.0, 1.0, 0.0]])
+    gammas = torch.full((1, 3), 0.5)
+    boot = torch.tensor([4.0])
+    out = value_expansion_target(rewards, gammas, boot, h=2)
+    expected = 1.0 + 0.5 * 1.0 + (0.5 ** 2) * 4.0
+    assert abs(float(out) - expected) < 1e-6
