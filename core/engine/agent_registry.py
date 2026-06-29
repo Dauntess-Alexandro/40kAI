@@ -260,7 +260,7 @@ def compatible_contracts(left: dict[str, Any], right: dict[str, Any]) -> tuple[b
 
 
 _VALID_AGENT_ALGOS = frozenset(
-    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero"}
+    {"dqn", "ppo", "alphazero_tree", "alphazero_proxy", "gumbel_muzero", "gumbel_az", "sampled_muzero", "phoenix"}
 )
 
 

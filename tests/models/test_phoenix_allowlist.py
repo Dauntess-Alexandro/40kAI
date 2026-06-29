@@ -5,6 +5,12 @@ def test_phoenix_in_valid_train_algos():
     assert "phoenix" in VALID_TRAIN_ALGOS
 
 
+def test_phoenix_in_valid_agent_algos():
+    from core.engine.agent_registry import _VALID_AGENT_ALGOS
+
+    assert "phoenix" in _VALID_AGENT_ALGOS
+
+
 def test_phoenix_in_train_opponent_and_eval_lists():
     import re
     for path in ("train.py", "eval.py", "play.py"):
